@@ -9,6 +9,7 @@
 mod commands;
 mod error;
 mod filter;
+mod skills;
 mod workspace;
 
 pub use error::{CliError, CliResult};
@@ -59,10 +60,33 @@ enum Commands {
     },
 
     /// Install Aristo skills for a coding agent (claude-code, cursor, codex, opencode, antigravity).
-    InstallSkills,
+    InstallSkills {
+        /// Target agent. Required unless `--list-agents` is used.
+        #[arg(long, value_name = "name")]
+        agent: Option<String>,
+        /// List supported agents and exit.
+        #[arg(long)]
+        list_agents: bool,
+        /// Install at user-level (e.g. ~/.claude/skills/) instead of project-level.
+        #[arg(long)]
+        user: bool,
+        /// Force reinstall (re-pinning to current SDK version).
+        #[arg(long)]
+        update: bool,
+    },
 
     /// Reverse `install-skills`: remove SDK-bundled skills.
-    UninstallSkills,
+    UninstallSkills {
+        /// Target agent. Required.
+        #[arg(long, value_name = "name")]
+        agent: String,
+        /// Uninstall from user-level instead of project-level.
+        #[arg(long)]
+        user: bool,
+        /// Override the "skip locally-modified" safety check.
+        #[arg(long)]
+        force: bool,
+    },
 
     /// Walk source, parse via syn, write .aristo/index.toml.
     Index,
@@ -122,8 +146,15 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
     match cmd {
         Commands::Init { force } => commands::init::run(force),
         Commands::Lang { file } => commands::lang::run(file),
-        Commands::InstallSkills => not_yet("aristo install-skills", "slice 13"),
-        Commands::UninstallSkills => not_yet("aristo uninstall-skills", "slice 13"),
+        Commands::InstallSkills {
+            agent,
+            list_agents,
+            user,
+            update,
+        } => commands::install_skills::install(agent, list_agents, user, update),
+        Commands::UninstallSkills { agent, user, force } => {
+            commands::install_skills::uninstall(agent, user, force)
+        }
         Commands::Index => not_yet("aristo index", "slice 16"),
         Commands::Stamp => not_yet("aristo stamp", "slice 17"),
         Commands::Show => not_yet("aristo show", "slice 18"),
@@ -173,8 +204,6 @@ mod tests {
         // to update the slice pointer. Implemented commands (Init, Lang) are
         // tested elsewhere.
         let variants = [
-            (Commands::InstallSkills, "slice 13"),
-            (Commands::UninstallSkills, "slice 13"),
             (Commands::Index, "slice 16"),
             (Commands::Stamp, "slice 17"),
             (Commands::Show, "slice 18"),

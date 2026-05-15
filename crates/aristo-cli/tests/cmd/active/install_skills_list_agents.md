@@ -2,7 +2,7 @@
 
 Source: `../aretta-sdk/docs/mockups/12-phase-1-architecture/cli-sessions.md` § "K4 → Listing supported agents".
 
-Enumerates supported agents and their install models. Initial Phase 1 set: `claude-code`, `cursor`, `codex`, `opencode`, `antigravity`. Project-level scope is the default; `--user` switches to user-level dirs. Adding agent N (per K4 `Agent` trait) extends this list automatically.
+Enumerates supported agents and their install models. Phase 1 set: `claude-code`, `cursor`, `codex`, `opencode`, `antigravity`. Project-level scope is the default; `--user` switches to user-level dirs. Adding agent N (per K4 `Agent` trait) extends this list automatically.
 
 ```console
 $ aristo install-skills --list-agents
@@ -15,4 +15,5 @@ Supported agents:
 
 Default install scope: project-level. Pass --user to install at user level
 (skills available across all projects on this machine).
+
 ```
