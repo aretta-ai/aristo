@@ -12,4 +12,4 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
-# Re-exports added as the macro and core crates grow public API.
+aristo-macros = { workspace = true }

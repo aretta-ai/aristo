@@ -70,6 +70,9 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 [[package]]
 name = "aristo"
 version = "0.0.1"
+dependencies = [
+ "aristo-macros",
+]
 
 [[package]]
 name = "aristo-cli"
