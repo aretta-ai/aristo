@@ -14,5 +14,6 @@
 //! Cross-language consumers receive a JSON Schema derived from these types
 //! via `schemars` (see the `dump-schemas` example in a later slice).
 
+pub mod config;
 pub mod index;
 pub mod spec;

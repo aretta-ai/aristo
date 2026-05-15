@@ -1,0 +1,39 @@
+# Comprehensive paid-tier config: cloud spec cache, all hooks installed,
+# strict lint with custom rule, corpus contribution opted in, doc artifacts
+# rendered after user prose.
+[verify]
+default_method = "full"
+
+[verify.cache]
+strategy     = "aristo-cloud"
+commit_specs = false
+
+[stamp]
+hooks            = "pre-commit"
+hash_crate_root  = true
+
+[telemetry]
+enabled = false
+
+[lint]
+pre_commit = "fix"
+strict     = true
+
+[lint.rules.empty_text]
+severity = "error"
+
+[lint.rules.long_text]
+severity  = "warn"
+threshold = 200
+
+[lint.rules.custom_no_todo]
+severity = "warn"
+pattern  = "TODO"
+message  = "annotation text contains TODO"
+
+[corpus]
+contribute = true
+
+[doc]
+commit_artifacts = true
+position         = "after"

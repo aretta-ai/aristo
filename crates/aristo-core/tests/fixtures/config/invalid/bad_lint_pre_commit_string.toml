@@ -1,0 +1,4 @@
+# `[lint] pre_commit` string form must be "off" / "check" / "fix"; an
+# unknown string is rejected (despite the bool back-compat path).
+[lint]
+pre_commit = "sometimes"

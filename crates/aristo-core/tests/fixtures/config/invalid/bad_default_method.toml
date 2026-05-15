@@ -1,0 +1,3 @@
+# `default_method` must be one of "neural" / "test" / "full".
+[verify]
+default_method = "partial"

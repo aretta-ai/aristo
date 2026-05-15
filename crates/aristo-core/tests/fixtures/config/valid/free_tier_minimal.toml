@@ -1,0 +1,6 @@
+# Free-tier minimal config — only the fields a typical OSS project sets.
+[verify]
+default_method = "test"
+
+[lint]
+pre_commit = "check"

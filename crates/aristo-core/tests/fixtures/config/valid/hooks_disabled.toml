@@ -1,0 +1,6 @@
+# Project relies on CI gates instead of git hooks.
+[stamp]
+hooks = "none"
+
+[lint]
+pre_commit = "off"

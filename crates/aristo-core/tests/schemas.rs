@@ -54,6 +54,14 @@ fn aristo_spec_schema_is_in_sync() {
     );
 }
 
+#[test]
+fn aristo_config_schema_is_in_sync() {
+    assert_committed_matches(
+        "aristo-config.schema.json",
+        aristo_core::config::config_file_schema_json(),
+    );
+}
+
 fn first_diff_excerpt(committed: &str, derived: &str) -> String {
     for (line_no, (c, d)) in committed.lines().zip(derived.lines()).enumerate() {
         if c != d {

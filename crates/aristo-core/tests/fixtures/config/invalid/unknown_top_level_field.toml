@@ -1,0 +1,5 @@
+# Unknown top-level field — rejected by deny_unknown_fields on ConfigFile.
+[verify]
+default_method = "full"
+
+undeclared = 42

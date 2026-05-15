@@ -1,0 +1,3 @@
+# Unknown section — rejected by deny_unknown_fields on ConfigFile.
+[unknown_section]
+foo = "bar"

@@ -1,0 +1,3 @@
+# `[verify.cache] strategy` must be "local" or "aristo-cloud".
+[verify.cache]
+strategy = "private-bucket"

@@ -1,0 +1,4 @@
+# [verify] with an unknown sub-field.
+[verify]
+default_method = "full"
+this_is_not_a_field = "rejected"

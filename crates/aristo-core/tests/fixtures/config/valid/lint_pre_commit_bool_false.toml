@@ -1,0 +1,3 @@
+# J6 back-compat — bool form of [lint] pre_commit (false → "off").
+[lint]
+pre_commit = false

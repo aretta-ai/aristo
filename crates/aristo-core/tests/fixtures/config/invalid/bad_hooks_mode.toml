@@ -1,0 +1,3 @@
+# `[stamp] hooks` must be "pre-commit" or "none".
+[stamp]
+hooks = "post-merge"

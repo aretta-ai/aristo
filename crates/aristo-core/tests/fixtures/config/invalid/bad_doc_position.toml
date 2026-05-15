@@ -1,0 +1,3 @@
+# `[doc] position` must be "before" or "after".
+[doc]
+position = "interleaved"

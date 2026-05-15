@@ -1,0 +1,3 @@
+# `[lint.rules.<n>] severity` must be "info" / "warn" / "error".
+[lint.rules.empty_text]
+severity = "critical"

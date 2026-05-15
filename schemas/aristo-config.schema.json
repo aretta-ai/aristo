@@ -1,0 +1,333 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ConfigFile",
+  "description": "Top-level `aristo.toml` document. Every field defaults; an empty file produces a `ConfigFile` with each section at its default.",
+  "type": "object",
+  "properties": {
+    "corpus": {
+      "default": {
+        "contribute": false
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/CorpusConfig"
+        }
+      ]
+    },
+    "doc": {
+      "default": {
+        "commit_artifacts": true,
+        "position": "before"
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/DocConfig"
+        }
+      ]
+    },
+    "lint": {
+      "default": {
+        "pre_commit": "check",
+        "strict": false
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/LintConfig"
+        }
+      ]
+    },
+    "stamp": {
+      "default": {
+        "hash_crate_root": false,
+        "hooks": "pre-commit"
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/StampConfig"
+        }
+      ]
+    },
+    "telemetry": {
+      "default": {
+        "enabled": false
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/TelemetryConfig"
+        }
+      ]
+    },
+    "verify": {
+      "default": {
+        "cache": {
+          "commit_specs": true,
+          "strategy": "local"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/VerifyConfig"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "CacheStrategy": {
+      "oneOf": [
+        {
+          "description": "`.aristo/specs/` only — no server roundtrip.",
+          "type": "string",
+          "enum": [
+            "local"
+          ]
+        },
+        {
+          "description": "Opt-in cross-machine cache via the Aristo server.",
+          "type": "string",
+          "enum": [
+            "aristo-cloud"
+          ]
+        }
+      ]
+    },
+    "CorpusConfig": {
+      "type": "object",
+      "properties": {
+        "contribute": {
+          "description": "Opt-in for paid users to contribute abstracted annotation patterns to the server-side property-template library. Default `false`. Default-on for design partners (set in their contract, applied as user-visible `true`).",
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DocConfig": {
+      "type": "object",
+      "properties": {
+        "commit_artifacts": {
+          "description": "Whether `.aristo/doc/*` markdown + graph artifacts are committed. Default `true` so a fresh clone renders correct docs without re-running anything.",
+          "default": true,
+          "type": "boolean"
+        },
+        "position": {
+          "description": "Where the Aristo-injected `#[doc = ...]` block sits relative to the user's hand-written `///` comments. Default `Before` (verified-intent claims at the top of each item's rendered docs).",
+          "default": "before",
+          "allOf": [
+            {
+              "$ref": "#/definitions/DocPosition"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "DocPosition": {
+      "type": "string",
+      "enum": [
+        "before",
+        "after"
+      ]
+    },
+    "HooksMode": {
+      "oneOf": [
+        {
+          "description": "Install a `.git/hooks/pre-commit` script that runs `aristo stamp` and (per `[lint] pre_commit`) `aristo lint`.",
+          "type": "string",
+          "enum": [
+            "pre-commit"
+          ]
+        },
+        {
+          "description": "Don't install any git hooks. CI is expected to gate via `aristo stamp --check` / `aristo lint --check`.",
+          "type": "string",
+          "enum": [
+            "none"
+          ]
+        }
+      ]
+    },
+    "LintConfig": {
+      "type": "object",
+      "properties": {
+        "pre_commit": {
+          "description": "Pre-commit-hook lint mode. Per J6: string enum (`\"off\"` / `\"check\"` / `\"fix\"`) with bool back-compat (`true` → `Check`, `false` → `Off`).",
+          "default": "check",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LintPreCommit"
+            }
+          ]
+        },
+        "rules": {
+          "description": "Per-rule configuration overrides. Map key is the rule name (e.g., `\"empty_text\"`).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/LintRuleConfig"
+          }
+        },
+        "strict": {
+          "description": "When `true`, `aristo lint --check` exits non-zero on `warn` findings as well as `error`. Default `false`.",
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LintPreCommit": {
+      "description": "`[lint] pre_commit` — string enum (\"off\" | \"check\" | \"fix\") or bool (true → \"check\", false → \"off\") for J6 back-compat.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "off",
+            "check",
+            "fix"
+          ]
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "LintRuleConfig": {
+      "description": "Per-rule lint configuration. All fields are optional; each individual rule consumes the subset that applies to it (e.g., `pattern` + `message` are only meaningful for the custom-regex rule).",
+      "type": "object",
+      "properties": {
+        "auto_fix": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pattern": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Severity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threshold": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warn",
+        "error"
+      ]
+    },
+    "StampConfig": {
+      "type": "object",
+      "properties": {
+        "hash_crate_root": {
+          "description": "Whether to hash the entire crate token-stream for crate-root annotation staleness detection. Default `false` (expensive on large crates per B3).",
+          "default": false,
+          "type": "boolean"
+        },
+        "hooks": {
+          "description": "Which git hook to install. Default `PreCommit`.",
+          "default": "pre-commit",
+          "allOf": [
+            {
+              "$ref": "#/definitions/HooksMode"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "TelemetryConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Opt-in toggle for free-tier usage telemetry. Default `false`. Per H8: never gated as required; fully off by default.",
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "VerifyCacheConfig": {
+      "type": "object",
+      "properties": {
+        "commit_specs": {
+          "description": "Whether to commit `.aristo/specs/` to git. Default `true` (matches the .gitignore precedent — fresh clones produce reproducible verification runs).",
+          "default": true,
+          "type": "boolean"
+        },
+        "strategy": {
+          "description": "Where mined-assertion specs are cached. `Local` keeps them in `.aristo/specs/` only; `AristoCloud` opts in to cross-machine caching via the Aristo server (free users must explicitly enable per G7).",
+          "default": "local",
+          "allOf": [
+            {
+              "$ref": "#/definitions/CacheStrategy"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "VerifyConfig": {
+      "type": "object",
+      "properties": {
+        "cache": {
+          "default": {
+            "commit_specs": true,
+            "strategy": "local"
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/VerifyCacheConfig"
+            }
+          ]
+        },
+        "default_method": {
+          "description": "Resolves `verify = true` on annotations to a concrete method. `None` means \"use the per-tier default\" (free → `\"test\"`, paid → `\"full\"` per G1).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/VerifyMethod"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "VerifyMethod": {
+      "description": "Named verification methods (the string form of [`VerifyLevel`]).",
+      "type": "string",
+      "enum": [
+        "neural",
+        "test",
+        "full"
+      ]
+    }
+  }
+}
