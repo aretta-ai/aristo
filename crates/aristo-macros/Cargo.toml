@@ -1,0 +1,17 @@
+[package]
+name = "aristo-macros"
+description = "Aristo SDK proc-macros: #[aristo::intent], #[aristo::assume]."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]

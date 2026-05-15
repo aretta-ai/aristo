@@ -1,0 +1,18 @@
+[package]
+name = "aristo-cli"
+description = "Aristo CLI binary (the `aristo` command)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "aristo"
+path = "src/main.rs"
+
+[dependencies]

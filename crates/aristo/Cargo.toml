@@ -1,0 +1,15 @@
+[package]
+name = "aristo"
+description = "Aristo SDK — annotation macros and verification (meta-crate)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Re-exports added as the macro and core crates grow public API.

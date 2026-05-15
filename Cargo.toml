@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/aristo",
+    "crates/aristo-core",
+    "crates/aristo-macros",
+    "crates/aristo-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/aretta-dev/aristo"
+rust-version = "1.75"
+authors = ["Aretta <hello@aretta.dev>"]
+
+[workspace.dependencies]
+aristo-core = { path = "crates/aristo-core", version = "0.0.1" }
+aristo-macros = { path = "crates/aristo-macros", version = "0.0.1" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# Conservative defaults; tighten as the codebase grows.
+all = { level = "deny", priority = -1 }
