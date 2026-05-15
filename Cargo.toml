@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/aretta-dev/aristo"
@@ -16,13 +16,13 @@ rust-version = "1.75"
 authors = ["Aretta <hello@aretta.dev>"]
 
 [workspace.dependencies]
-aristo = { path = "crates/aristo", version = "0.0.1" }
-aristo-core = { path = "crates/aristo-core", version = "0.0.1" }
+aristo = { path = "crates/aristo", version = "0.0.2" }
+aristo-core = { path = "crates/aristo-core", version = "0.0.2" }
 # default-features = false at the workspace level so the `aristo` meta-crate
 # can route the user's `aristo_check` feature through (member crates that
 # want defaults on can override per-dep, and the macro crate itself has
 # its own default-on for direct `cargo test` runs).
-aristo-macros = { path = "crates/aristo-macros", version = "0.0.1", default-features = false }
+aristo-macros = { path = "crates/aristo-macros", version = "0.0.2", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

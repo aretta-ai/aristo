@@ -93,14 +93,14 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "aristo"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "aristo-macros",
 ]
 
 [[package]]
 name = "aristo-cli"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "aristo-core"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "schemars",
  "serde",
@@ -122,7 +122,7 @@ dependencies = [
 
 [[package]]
 name = "aristo-macros"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "aristo",
  "proc-macro2",
