@@ -1,0 +1,389 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IndexFile",
+  "description": "Top-level `.aristo/index.toml` document.\n\n`__meta__` carries the schema version (currently `1`); every other key is an annotation id mapping to its [`IndexEntry`]. Iteration order follows `BTreeMap`'s sorted-by-key semantics so on-disk ordering is deterministic.\n\nNote: serde forbids `#[serde(deny_unknown_fields)]` together with `#[serde(flatten)]`, so unknown top-level keys flow into `entries` and either parse as `IndexEntry` (legal addition) or fail to parse against the entry schema (clear \"unknown variant\" / \"missing field\" error). Unknown-field rejection still happens INSIDE each entry via `IntentEntryWire` / `AssumeEntry`'s own `deny_unknown_fields`.",
+  "type": "object",
+  "required": [
+    "__meta__"
+  ],
+  "properties": {
+    "__meta__": {
+      "$ref": "#/definitions/Meta"
+    }
+  },
+  "definitions": {
+    "AnnotationId": {
+      "description": "Annotation id: local snake_case, stamp-assigned `aret_<alphanumeric>`, or server-bound `aristos:<snake_case>`.",
+      "type": "string",
+      "pattern": "^(aristos:)?[a-z_][a-z0-9_]{0,127}$|^aret_[A-Za-z0-9]{4,64}$"
+    },
+    "ArtaId": {
+      "description": "Opaque server identity, prefixed `arta_`, 8-64 alphanumeric chars.",
+      "type": "string",
+      "pattern": "^arta_[A-Za-z0-9]{8,64}$"
+    },
+    "CommitHash": {
+      "description": "Git commit hash: 40 lowercase hex chars (SHA-1) or 64 (SHA-256).",
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "CoveredRegion": {
+      "description": "What syntactic region an annotation covers. Determines the body region hashed for staleness detection (per B3) and the scope a `\"test\"`-mode assertion is injected over.",
+      "oneOf": [
+        {
+          "description": "Whole function body (most common; α-form attribute on a fn).",
+          "type": "string",
+          "enum": [
+            "function"
+          ]
+        },
+        {
+          "description": "A single statement (β-form macro before a stmt or loop).",
+          "type": "string",
+          "enum": [
+            "statement"
+          ]
+        },
+        {
+          "description": "Every method in an `impl` block.",
+          "type": "string",
+          "enum": [
+            "impl_methods"
+          ]
+        },
+        {
+          "description": "The inline body of a module item.",
+          "type": "string",
+          "enum": [
+            "module_inline_body"
+          ]
+        },
+        {
+          "description": "A struct or enum item.",
+          "type": "string",
+          "enum": [
+            "type"
+          ]
+        },
+        {
+          "description": "A struct field or enum variant.",
+          "type": "string",
+          "enum": [
+            "field"
+          ]
+        },
+        {
+          "description": "The crate root.",
+          "type": "string",
+          "enum": [
+            "crate"
+          ]
+        },
+        {
+          "description": "A trait declaration.",
+          "type": "string",
+          "enum": [
+            "trait"
+          ]
+        }
+      ]
+    },
+    "IndexEntry": {
+      "description": "One annotation's record in `.aristo/index.toml`. Tagged on `kind`: `kind = \"intent\"` deserializes as [`IntentEntry`]; `kind = \"assume\"` as [`AssumeEntry`].",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "body_hash",
+            "covered_region",
+            "file",
+            "kind",
+            "site",
+            "status",
+            "text",
+            "text_hash",
+            "verify"
+          ],
+          "properties": {
+            "body_hash": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "covered_region": {
+              "$ref": "#/definitions/CoveredRegion"
+            },
+            "file": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "intent"
+              ]
+            },
+            "last_verified_at_commit": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/CommitHash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "linked": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ArtaId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parent": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ParentLink"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "site": {
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/definitions/Status"
+            },
+            "text": {
+              "type": "string"
+            },
+            "text_hash": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "verified_outcome": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/VerifiedOutcome"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verify": {
+              "$ref": "#/definitions/VerifyLevel"
+            }
+          }
+        },
+        {
+          "description": "`assume` annotation: states an external invariant the code relies on. No `verify` (assumptions aren't verification targets per A5) and no `verified_outcome` (nothing is being verified). MAY be server-bound: the server can match an assumption against a known external-invariant template (per A5 + B5a), recorded as `linked`.",
+          "type": "object",
+          "required": [
+            "body_hash",
+            "covered_region",
+            "file",
+            "kind",
+            "site",
+            "status",
+            "text",
+            "text_hash"
+          ],
+          "properties": {
+            "body_hash": {
+              "$ref": "#/definitions/Sha256"
+            },
+            "covered_region": {
+              "$ref": "#/definitions/CoveredRegion"
+            },
+            "file": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "assume"
+              ]
+            },
+            "linked": {
+              "description": "Server-template binding (per A5 + B5a). No certificate companion because nothing is verified — that's why this stays a single `Option` rather than a [`BindingState`]-style enum.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ArtaId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parent": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ParentLink"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "site": {
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/definitions/Status"
+            },
+            "text": {
+              "type": "string"
+            },
+            "text_hash": {
+              "$ref": "#/definitions/Sha256"
+            }
+          }
+        }
+      ]
+    },
+    "Meta": {
+      "description": "`[__meta__]` header carrying the schema version plus optional generator metadata (who/when/where wrote the file; useful for debugging stale indices but not load-bearing for any logic).",
+      "type": "object",
+      "required": [
+        "schema_version"
+      ],
+      "properties": {
+        "generated_at": {
+          "description": "Timestamp of last write, RFC 3339 format (e.g., `\"2026-05-13T14:23:00Z\"`). Optional; informational only. String-typed (not a `DateTime`) to avoid pulling chrono / toml::Datetime into the public API; consumers can parse if needed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generated_by": {
+          "description": "Identity of the writer (e.g., `\"aristo index v0.1.0\"`). Optional; informational only.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schema_version": {
+          "description": "Schema version of this index file. Always `1` in the current SDK.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "source_root": {
+          "description": "Path to the source root the index was generated from, relative to the project root (e.g., `\".\"`). Optional; informational only.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ParentLink": {
+      "description": "Parent linkage: a single id or a list of ids (AND-semantics per C1/C2).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/AnnotationId"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AnnotationId"
+          }
+        }
+      ]
+    },
+    "Sha256": {
+      "description": "SHA-256 hash, lowercase hex, prefixed `sha256:`.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "Status": {
+      "description": "Current verification state. The wire form uses kebab-case to keep `pending-deepen` readable on disk.",
+      "oneOf": [
+        {
+          "description": "Verified at the strongest method available; signature is current.",
+          "type": "string",
+          "enum": [
+            "verified"
+          ]
+        },
+        {
+          "description": "Verified via assertion-style testing (mined assertions, free or paid).",
+          "type": "string",
+          "enum": [
+            "tested"
+          ]
+        },
+        {
+          "description": "Verified via neural reasoning (LLM-based).",
+          "type": "string",
+          "enum": [
+            "neural"
+          ]
+        },
+        {
+          "description": "Was verified at a prior code state; current `body_hash` differs from the signed outcome. Sig still valid; only the code drifted.",
+          "type": "string",
+          "enum": [
+            "stale"
+          ]
+        },
+        {
+          "description": "`verified_outcome.commit_hash` is not in this repository's history. Most likely cause: index entry copied from another repo (B5b).",
+          "type": "string",
+          "enum": [
+            "orphan"
+          ]
+        },
+        {
+          "description": "`verified_outcome` does not verify against any bundled public key — either tampered or signed by a revoked/unknown key (B5b).",
+          "type": "string",
+          "enum": [
+            "forged"
+          ]
+        },
+        {
+          "description": "Has not yet been verified, or was reverted to unknown after a rename or rebind operation invalidated the prior signature.",
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        },
+        {
+          "description": "Sig is valid but commit ancestry could not be confirmed because the outcome's commit falls outside a shallow checkout's window (B5b).",
+          "type": "string",
+          "enum": [
+            "pending-deepen"
+          ]
+        }
+      ]
+    },
+    "VerifiedOutcome": {
+      "description": "Ed25519 verification certificate, base64-URL-safe, version-prefixed `v1:`.",
+      "type": "string",
+      "pattern": "^v1:[A-Za-z0-9+/=_-]{64,256}$"
+    },
+    "VerifyLevel": {
+      "description": "`verify` field value. Mixed-type per design (G1):\n\n- `false` (TOML bool): documentation only; no check ever runs. - `true` (TOML bool): resolves to project default in `aristo.toml [verify] default_method`. - one of `\"neural\"`, `\"test\"`, `\"full\"` (TOML string): named method.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/VerifyMethod"
+        }
+      ]
+    },
+    "VerifyMethod": {
+      "description": "Named verification methods (the string form of [`VerifyLevel`]).",
+      "type": "string",
+      "enum": [
+        "neural",
+        "test",
+        "full"
+      ]
+    }
+  }
+}

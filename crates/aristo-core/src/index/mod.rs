@@ -102,6 +102,21 @@ pub enum ValidationError {
     NonAristosIdIsBound { id: String },
 }
 
+/// Produce the canonical JSON Schema (draft 2020-12 via schemars 0.8)
+/// describing `.aristo/index.toml`. Output is the source of truth for
+/// non-Rust language SDKs that need to validate index files without
+/// re-implementing the constraint logic.
+///
+/// The `dump-schemas` example writes this string to
+/// `schemas/aristo-index.schema.json` at the workspace root; the
+/// `tests/schemas.rs` integration test re-generates it and diffs
+/// against the committed file as a CI gate.
+pub fn index_file_schema_json() -> String {
+    let schema = schemars::schema_for!(IndexFile);
+    serde_json::to_string_pretty(&schema)
+        .expect("serializing a schemars-derived schema cannot fail")
+}
+
 impl IndexFile {
     /// Validate every entry's id-namespace ↔ binding-state agreement.
     pub fn validate(&self) -> Result<(), ValidationError> {
