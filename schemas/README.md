@@ -5,7 +5,7 @@ Canonical JSON Schemas (draft-07 via `schemars` 0.8) for every Aristo on-disk fi
 | File | Source type | What it describes |
 |---|---|---|
 | `aristo-index.schema.json` | `aristo_core::index::IndexFile` | `.aristo/index.toml` — annotation metadata, hashes, server-binding state |
-| _(slice 4)_ `aristo-spec.schema.json` | `aristo_core::spec::SpecFile` | `.aristo/specs/<id>.spec` — mined assertions for free-tier `verify = "test"` |
+| `aristo-spec.schema.json` | `aristo_core::spec::SpecHeader` | TOML header of `.aristo/specs/<id>.spec`. The body (raw text after the `---` separator line) is opaque and not part of the schema. |
 | _(slice 5)_ `aristo-config.schema.json` | `aristo_core::config::ConfigFile` | `aristo.toml` — project configuration |
 
 ## Regenerating after a Rust type change

@@ -15,3 +15,4 @@
 //! via `schemars` (see the `dump-schemas` example in a later slice).
 
 pub mod index;
+pub mod spec;

@@ -26,6 +26,11 @@ fn main() {
         "aristo-index.schema.json",
         aristo_core::index::index_file_schema_json(),
     );
+    write_schema(
+        &schemas_dir,
+        "aristo-spec.schema.json",
+        aristo_core::spec::spec_header_schema_json(),
+    );
 }
 
 fn write_schema(dir: &std::path::Path, name: &str, body: String) {

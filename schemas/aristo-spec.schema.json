@@ -1,0 +1,135 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpecHeader",
+  "type": "object",
+  "required": [
+    "annotation_id",
+    "annotation_text_hash",
+    "covered_region",
+    "covered_region_path",
+    "human_reviewed",
+    "mined_at",
+    "mined_by",
+    "source_body_hash"
+  ],
+  "properties": {
+    "annotation_id": {
+      "$ref": "#/definitions/AnnotationId"
+    },
+    "annotation_text_hash": {
+      "$ref": "#/definitions/Sha256"
+    },
+    "covered_region": {
+      "$ref": "#/definitions/CoveredRegion"
+    },
+    "covered_region_path": {
+      "type": "string"
+    },
+    "current_body_hash": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "human_reviewed": {
+      "type": "boolean"
+    },
+    "mined_at": {
+      "type": "string"
+    },
+    "mined_by": {
+      "type": "string"
+    },
+    "notes": {
+      "default": "",
+      "type": "string"
+    },
+    "source_body_hash": {
+      "$ref": "#/definitions/Sha256"
+    },
+    "stale_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "AnnotationId": {
+      "description": "Annotation id: local snake_case, stamp-assigned `aret_<alphanumeric>`, or server-bound `aristos:<snake_case>`.",
+      "type": "string",
+      "pattern": "^(aristos:)?[a-z_][a-z0-9_]{0,127}$|^aret_[A-Za-z0-9]{4,64}$"
+    },
+    "CoveredRegion": {
+      "description": "What syntactic region an annotation covers. Determines the body region hashed for staleness detection (per B3) and the scope a `\"test\"`-mode assertion is injected over.",
+      "oneOf": [
+        {
+          "description": "Whole function body (most common; α-form attribute on a fn).",
+          "type": "string",
+          "enum": [
+            "function"
+          ]
+        },
+        {
+          "description": "A single statement (β-form macro before a stmt or loop).",
+          "type": "string",
+          "enum": [
+            "statement"
+          ]
+        },
+        {
+          "description": "Every method in an `impl` block.",
+          "type": "string",
+          "enum": [
+            "impl_methods"
+          ]
+        },
+        {
+          "description": "The inline body of a module item.",
+          "type": "string",
+          "enum": [
+            "module_inline_body"
+          ]
+        },
+        {
+          "description": "A struct or enum item.",
+          "type": "string",
+          "enum": [
+            "type"
+          ]
+        },
+        {
+          "description": "A struct field or enum variant.",
+          "type": "string",
+          "enum": [
+            "field"
+          ]
+        },
+        {
+          "description": "The crate root.",
+          "type": "string",
+          "enum": [
+            "crate"
+          ]
+        },
+        {
+          "description": "A trait declaration.",
+          "type": "string",
+          "enum": [
+            "trait"
+          ]
+        }
+      ]
+    },
+    "Sha256": {
+      "description": "SHA-256 hash, lowercase hex, prefixed `sha256:`.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}
