@@ -10,6 +10,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ### Added
 - feat(macros): `#[aristo::intent]` attribute macro — slice 6B. Parses the canonical argument shape (positional `text` string literal, then key=value `verify` / `parent` / `id`) matching the subset of `IntentEntry` developers write by hand; `aristo stamp` populates the rest from source position. Slice 6 is pass-through expansion only — the macro emits the wrapped item unchanged. Validation lands with the `aristo_check` cargo feature in slice 8; trybuild compile-fail tests in slice 7. Applies to fn / impl / struct / trait / type / mod (and trait impl bodies) per mockup 01. `proc-macro2 = "1.0"` / `quote = "1.0"` / `syn = "2.0"` (feature `full`) added to `aristo-macros` deps.
+- feat(macros): `#[aristo::assume]` attribute macro — slice 6C. Same shape as `#[aristo::intent]` minus `verify` (per A5: assumptions describe invariants the code RELIES ON — OS guarantees, library contracts, upstream caller promises — they are not verification targets). Passing `verify =` to `assume` is rejected at parse time with a category-error message that points the user at `intent` instead. Pass-through expansion; same item-surface coverage as `intent` (fn, impl, struct, trait, trait impl, type alias, mod).
 
 ### (older entries, not yet promoted)
 - repo: initial repository scaffold — LICENSE (MIT), README, `.gitignore`, this CHANGELOG, and `CLAUDE.md` working agreement.

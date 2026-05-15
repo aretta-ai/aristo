@@ -76,3 +76,68 @@ pub fn intent(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(err) => err.to_compile_error().into(),
     }
 }
+
+/// Parsed `#[aristo::assume("text", parent = ..., id = ...)]`.
+///
+/// `assume` is `intent` minus `verify` per A5 — assumptions describe
+/// invariants the code RELIES ON (OS guarantees, library contracts,
+/// upstream invariants); they aren't verification targets, so passing
+/// `verify` is a category error caught at parse time with a friendly
+/// message (the user is probably reaching for `intent`).
+#[derive(Default)]
+struct AssumeArgs {
+    text: Option<LitStr>,
+    parent: Option<Expr>,
+    id: Option<LitStr>,
+}
+
+impl Parse for AssumeArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut args = AssumeArgs::default();
+        if input.is_empty() {
+            return Ok(args);
+        }
+        args.text = Some(input.parse::<LitStr>()?);
+        while input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+            let key: syn::Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            match key.to_string().as_str() {
+                "parent" => args.parent = Some(input.parse()?),
+                "id" => args.id = Some(input.parse()?),
+                "verify" => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        "`verify` is not allowed on `assume` (A5): assumptions describe \
+                         invariants you rely on, not properties to be verified. \
+                         Use `intent` if you meant a verifiable claim.",
+                    ));
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown `assume` argument `{other}`; expected one of: parent, id"),
+                    ));
+                }
+            }
+        }
+        Ok(args)
+    }
+}
+
+/// `#[aristo::assume("...", parent = ..., id = ...)]`
+///
+/// Item-level assumption: state an invariant the code relies on but does
+/// not itself enforce (an OS guarantee, a library contract, an upstream
+/// caller's promise). No `verify` argument — see `AssumeArgs` doc above.
+/// Pass-through during slice 6.
+#[proc_macro_attribute]
+pub fn assume(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match syn::parse::<AssumeArgs>(attr) {
+        Ok(_args) => item,
+        Err(err) => err.to_compile_error().into(),
+    }
+}
