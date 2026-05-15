@@ -77,6 +77,27 @@ pub fn intent(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
+/// `aristo::intent_stmt!("...", verify = ..., parent = ..., id = ...);`
+///
+/// Sub-item annotation: used inside a function body to attach intent to a
+/// statement, block, or loop that the attribute form can't reach. Per
+/// mockup 01 the parameter shape is identical to the attribute form;
+/// expansion is empty (compile-time annotation only — no runtime trace).
+///
+/// Naming note: Rust requires distinct fn names for attribute and function-
+/// like proc-macros within a single crate (E0428). Convention in the
+/// ecosystem (tokio: `#[tokio::main]` + `tokio::select!`; tracing:
+/// `#[tracing::instrument]` + `tracing::trace!`) is to use different names
+/// per kind. We follow that with the `_stmt` suffix to make the statement-
+/// position context explicit at the call site.
+#[proc_macro]
+pub fn intent_stmt(input: TokenStream) -> TokenStream {
+    match syn::parse::<IntentArgs>(input) {
+        Ok(_args) => TokenStream::new(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
 /// Parsed `#[aristo::assume("text", parent = ..., id = ...)]`.
 ///
 /// `assume` is `intent` minus `verify` per A5 — assumptions describe
