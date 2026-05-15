@@ -45,6 +45,21 @@ Resolution: scenarios for not-yet-implemented commands live in `tests/cmd/_pendi
 
 **Promotion rule (NON-NEGOTIABLE):** the commit that lands command `X` is also the commit that `git mv`'s the corresponding scenario file from `_pending/` to `active/`. There is no separate "enable tests" commit.
 
+## Sandbox isolation for filesystem-effecting commands
+
+Stateful commands (`aristo init`, `stamp`, `index`, `doc`, etc.) write files. By default trycmd runs each test with cwd set to the test file's parent dir (`tests/cmd/active/`), which would pollute the project source tree.
+
+**To enable trycmd's per-run sandbox, drop two siblings next to the `.md`:**
+
+- `<scenario>.in/` — directory of files copied into the sandbox before the test runs (often just an empty dir with `.gitkeep`).
+- `<scenario>.out/` — directory of expected sandbox state after the test (empty dir is fine if you don't care to verify on-disk shape; the imperative test usually owns that).
+
+trycmd's `fs.sandbox` flag is auto-enabled the moment a `.out/` exists. Each test invocation runs in a fresh temp dir copied from `.in/`, then the dir is compared against `.out/` (with `[..]` wildcards working in file content too). **Without `.out/`, trycmd shares the test directory across runs and pollutes the source tree** — every stateful-command scenario MUST include both.
+
+Example: `tests/cmd/active/init_creates_index_file.{md,in/.gitkeep,out/}`.
+
+For setup beyond what `.in/` can provide (creating a git repo, manipulating mtimes, multi-step state), use an imperative test in `tests/<command>_command.rs` instead — see `init_command.rs` for the canonical pattern.
+
 ## Mockup-to-scenario conversion
 
 ### CLI session mockups → trycmd `.md` files

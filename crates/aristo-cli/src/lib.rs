@@ -6,6 +6,7 @@
 //! (the `binary_smoke` test still spawns one, on purpose, as the canary
 //! for the binary's own glue).
 
+mod commands;
 mod error;
 mod filter;
 mod workspace;
@@ -42,7 +43,12 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Bootstrap a project for Aristo (creates aristo.toml, .aristo/, pre-commit hook, CI workflow).
-    Init,
+    Init {
+        /// Modify Cargo.toml to add `aristo` as a dependency. Default
+        /// behavior just prints the dep line for the user to paste in.
+        #[arg(short, long)]
+        force: bool,
+    },
 
     /// Print a syntax cheat sheet for the detected language.
     Lang,
@@ -109,7 +115,7 @@ pub fn run() -> ExitCode {
 /// slices replace each stub.
 fn dispatch(cmd: Commands) -> CliResult<()> {
     match cmd {
-        Commands::Init => not_yet("aristo init", "slice 10"),
+        Commands::Init { force } => commands::init::run(force),
         Commands::Lang => not_yet("aristo lang", "slice 11"),
         Commands::InstallSkills => not_yet("aristo install-skills", "slice 13"),
         Commands::UninstallSkills => not_yet("aristo uninstall-skills", "slice 13"),
@@ -148,19 +154,20 @@ mod tests {
 
     #[test]
     fn dispatch_returns_not_implemented_with_slice_pointer() {
-        // Spot-check one variant; the rest follow the same pattern.
-        let err = dispatch(Commands::Init).unwrap_err();
+        // Spot-check one not-yet-implemented variant; the implemented
+        // ones (Init as of slice 10) are covered by their own tests.
+        let err = dispatch(Commands::Lang).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo init"), "msg: {msg}");
-        assert!(msg.contains("slice 10"), "msg: {msg}");
+        assert!(msg.contains("aristo lang"), "msg: {msg}");
+        assert!(msg.contains("slice 11"), "msg: {msg}");
     }
 
     #[test]
-    fn every_subcommand_dispatches_to_a_distinct_slice() {
+    fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
-        // to update the slice pointer.
+        // to update the slice pointer. Implemented commands (Init) are
+        // tested elsewhere.
         let variants = [
-            (Commands::Init, "slice 10"),
             (Commands::Lang, "slice 11"),
             (Commands::InstallSkills, "slice 13"),
             (Commands::UninstallSkills, "slice 13"),
