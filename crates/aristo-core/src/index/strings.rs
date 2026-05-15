@@ -269,7 +269,6 @@ string_newtype! {
 // ─── AnnotationId ───────────────────────────────────────────────────────────
 
 const ARISTOS_PREFIX: &str = "aristos:";
-const ANUMANA_PREFIX: &str = "anumana:";
 const ARET_PREFIX: &str = "aret_";
 const READABLE_MIN: usize = 1;
 const READABLE_MAX: usize = 128;
@@ -325,12 +324,6 @@ fn parse_annotation_id(s: &str) -> Result<String, ParseError> {
         validate_readable_body(body)?;
         return Ok(s.to_owned());
     }
-    // Reserved sibling namespace; not yet user-creatable but parses
-    // structurally so the type can hold one if it appears in a future index.
-    if let Some(body) = s.strip_prefix(ANUMANA_PREFIX) {
-        validate_readable_body(body)?;
-        return Ok(s.to_owned());
-    }
     // Stamp-assigned opaque id
     if let Some(body) = s.strip_prefix(ARET_PREFIX) {
         if body.len() < OPAQUE_BODY_MIN || body.len() > OPAQUE_BODY_MAX {
@@ -366,13 +359,14 @@ string_newtype! {
     /// - Stamp-assigned opaque: `aret_<alphanumeric>` (e.g., `aret_a1b2c3d4`).
     /// - Server-bound: `aristos:<readable>` (e.g., `aristos:balance_no_dups`).
     ///
-    /// The `aristos:` and `anumana:` namespaces are reserved — `aristo stamp`
-    /// rejects user-written ids in those namespaces; they may only appear
-    /// via `aristo sync` binding.
+    /// The `aristos:` namespace is reserved — `aristo stamp` rejects
+    /// user-written ids in that namespace; the prefix may only appear
+    /// via `aristo sync` binding. Same rule applies to the `aret_*`
+    /// stamp-assigned-opaque space.
     pub AnnotationId,
     parse_fn = parse_annotation_id,
     schema_pattern =
-        r"^(aristos:|anumana:)?[a-z_][a-z0-9_]{0,127}$|^aret_[A-Za-z0-9]{4,64}$",
+        r"^(aristos:)?[a-z_][a-z0-9_]{0,127}$|^aret_[A-Za-z0-9]{4,64}$",
     schema_description =
         "Annotation id: local snake_case, stamp-assigned `aret_<alphanumeric>`, \
          or server-bound `aristos:<snake_case>`.",
@@ -386,9 +380,6 @@ impl AnnotationId {
         } else if self.0.starts_with(ARET_PREFIX) {
             IdNamespace::Opaque
         } else {
-            // anumana: also classifies as Local for now — the namespace is
-            // reserved but unused; callers treat it like any other id until
-            // the second binding kind exists.
             IdNamespace::Local
         }
     }
@@ -577,13 +568,6 @@ mod tests {
     fn annotation_id_accepts_aret_opaque() {
         let id = AnnotationId::parse("aret_a1b2c3d4").unwrap();
         assert_eq!(id.namespace(), IdNamespace::Opaque);
-    }
-
-    #[test]
-    fn annotation_id_accepts_anumana_namespace() {
-        // anumana: is reserved-but-acceptable so a future binding kind
-        // doesn't break parsing of indices that already contain one.
-        AnnotationId::parse("anumana:some_external_property").unwrap();
     }
 
     #[test]

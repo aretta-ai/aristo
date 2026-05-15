@@ -2,7 +2,7 @@
 
 Source: `../aretta-sdk/docs/mockups/06-cross-cutting-cli/examples.md` § F1 → "Error cases".
 
-Covers the duplicate-id collision case, cross-namespace rename rejection (per TOOLS.md rename rule), F1-b (reject readable → opaque, widened to all reserved namespaces `aret_*` / `aristos:*` / `anumana:*`), and F1-c (allow opaque → readable, with promotion note).
+Covers the duplicate-id collision case, cross-namespace rename rejection (per TOOLS.md rename rule), F1-b (reject readable → opaque, widened to all reserved namespaces `aret_*` / `aristos:*`), and F1-c (allow opaque → readable, with promotion note).
 
 ## Target id already in use
 
@@ -32,8 +32,8 @@ $ aristo rename balance_no_duplicate_cells aret_xyz123
 ? 1
 error: id `aret_xyz123` uses the reserved `aret_` prefix (stamp-assigned only).
        Renaming a readable id to an opaque one is not supported.
-       Note: `aristos:` and `anumana:` are also reserved; they may only
-       appear via `aristo sync` binding, never via `aristo rename`.
+       Note: `aristos:` is also reserved; it may only appear via
+       `aristo sync` binding, never via `aristo rename`.
        If you intended to make this annotation unaliased, delete the `id` arg
        in source and re-run `aristo stamp` — stamp will assign an opaque id.
 ```
