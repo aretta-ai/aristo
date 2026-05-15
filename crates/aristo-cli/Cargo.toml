@@ -20,4 +20,5 @@ path = "src/main.rs"
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
+tempfile = "3.10"
 trycmd = "0.15"
