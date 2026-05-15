@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local environment
+.env
+.env.local
+
+# Aristo runtime artifacts that should never be committed in this repo
+# (downstream projects commit .aristo/ per design; this repo is the SDK itself
+# and has no .aristo/ of its own).

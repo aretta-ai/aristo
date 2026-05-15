@@ -1,0 +1,25 @@
+# Aristo
+
+Annotation SDK for verified intent in code. Open-source under MIT, parent company [Aretta](https://aretta.dev).
+
+This repository is the **canonical Rust implementation** of Aristo: proc-macros, shared library, and the `aristo` CLI binary. Other-language SDKs (Python, Go, TypeScript, ...) live in sibling repos and shell out to this CLI for protocol logic — there is one source of truth.
+
+## Status
+
+Phase 1 — initial implementation. Phase 0 design archive lives in the parent [`aretta-sdk/`](https://github.com/aretta-dev/aretta-sdk) repo (see `../docs/` from this directory if checked out as a sibling).
+
+## Workspace layout
+
+```
+crates/
+├── aristo/         meta-crate users add via `cargo add aristo`
+├── aristo-core/    shared library: types, index format, B5b verification, language registry
+├── aristo-macros/  proc-macros (#[aristo::intent], #[aristo::assume]) — intentionally thin
+└── aristo-cli/     binary crate (the `aristo` CLI)
+```
+
+See [`CLAUDE.md`](./CLAUDE.md) for the working agreement (commit hygiene, TDD, CHANGELOG discipline) that all contributors and AI assistants must follow.
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE).
