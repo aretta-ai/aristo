@@ -1,4 +1,5 @@
-fn main() {
-    eprintln!("aristo: not yet implemented");
-    std::process::exit(1);
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    aristo_cli::run()
 }
