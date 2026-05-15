@@ -16,3 +16,8 @@ name = "aristo"
 path = "src/main.rs"
 
 [dependencies]
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+trycmd = "0.15"

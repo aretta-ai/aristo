@@ -11,3 +11,4 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ### Added
 - repo: initial repository scaffold — LICENSE (MIT), README, `.gitignore`, this CHANGELOG, and `CLAUDE.md` working agreement.
 - build: four-crate Cargo workspace (`aristo`, `aristo-core`, `aristo-macros`, `aristo-cli`) per K3 — empty skeletons; `cargo fmt`/`check`/`clippy -D warnings`/`test` all green. CLI binary stubbed to exit 1 with "not yet implemented".
+- test: integration test harness for the CLI — `trycmd` for declarative `console`-fenced session scenarios (sourced from `docs/mockups/`), `assert_cmd` + `predicates` for imperative tests. Convention: `tests/cmd/active/*.md` runs and must pass; `tests/cmd/_pending/*.md` is the parking lot for unimplemented surface, moved into `active/` in the same commit that lands each command. Smoke test asserts the current stub binary's "exit 1 / not yet implemented" behavior.
