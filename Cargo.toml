@@ -16,6 +16,7 @@ rust-version = "1.75"
 authors = ["Aretta <hello@aretta.dev>"]
 
 [workspace.dependencies]
+aristo = { path = "crates/aristo", version = "0.0.1" }
 aristo-core = { path = "crates/aristo-core", version = "0.0.1" }
 aristo-macros = { path = "crates/aristo-macros", version = "0.0.1" }
 
