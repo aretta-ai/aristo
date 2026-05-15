@@ -96,6 +96,38 @@ cargo test --workspace
   - `../docs/TOOLS.md` — current surface (commands, macros, config).
   - `../docs/mockups/12-phase-1-architecture/` — workspace + skills layout this repo implements.
 
+## §10. Annotation discipline — dogfood rule
+
+From slice 6 onward (the moment `aristo-macros` ships), **we annotate Aristo's own source as we write it.** Aristo is its own first user; the friction we feel here is the friction every user will feel.
+
+The rule is restrained, not exhaustive:
+
+- `#[aristo::intent(...)]` and `#[aristo::assume(...)]` document **high-level invariants and properties** that, if violated, would cause silent correctness bugs. They are **not** a replacement for normal Rust doc comments — they **supplement** them.
+- **Apply to:**
+  - Functions whose correctness depends on a non-obvious invariant
+  - Modules / structs / traits that uphold a system-wide property
+  - Anywhere a regression would cause a silent correctness bug rather than a loud panic / type error
+- **Don't apply to:**
+  - Trivial getters / setters / `From` impls / `Display` impls
+  - Pure data containers (a struct with three `pub` fields and no methods)
+  - Anywhere the function name + signature already says everything
+- **Aggressive when in doubt.** We can always relax the rule later; we cannot retroactively recover the experience of having lived with it.
+- Once `aristo install-skills` is in place (slice 13), the **authoring skill writes intents — don't hand-write them.** Hand-writing exists only in the window between slices 6 and 13, deliberately short so we feel the gap the skill closes. The backfill commit at the start of milestone B sweeps slices 1–5 schema crates using the skill (don't hand-write the backfill — that's part of the skill test).
+
+## §11. Release cadence — milestone version bumps
+
+The roadmap (`docs/ROADMAP.md`) groups slices into milestones. Each milestone closes with a workspace version bump and a git tag — the project gains a real release cadence instead of one big-bang publish.
+
+- **Last commit of every milestone:** `chore(release): v0.0.X` (or `v0.X.0` per the roadmap's MVP cutoff).
+  - Bumps `[workspace.package] version` in the root `Cargo.toml`.
+  - CHANGELOG: promote the `## [Unreleased]` block to `## [v0.0.X] — YYYY-MM-DD`, add a fresh empty `## [Unreleased]` heading above it.
+  - Commit body lists the milestone's slices (so the tag message is self-contained for `git show v0.0.X`).
+- **Tag immediately after** the release commit lands on `main`:
+  - `git tag -a v0.0.X -m "Milestone X — <one-line summary>"`
+  - `git push origin v0.0.X`
+- **Versions are dense and small.** v0.0.2 → v0.0.3 → ... → v0.0.8 → v0.1.0 (MVP). Don't skip numbers; don't lump multiple milestones into one bump.
+- Mid-milestone hotfixes — a fix landing in milestone E that must ship before E completes — get a patch bump (e.g. v0.0.5.1 while E is heading to v0.0.6). Rare; should be the exception, not the rule.
+
 ---
 
 ## Definition of Done

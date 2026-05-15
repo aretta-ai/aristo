@@ -6,23 +6,14 @@ The roadmap is organized into **8 milestones (A–H)**, totalling **30 numbered 
 
 **MVP = end of milestone H = v0.1.0.**
 
-## Working agreement (carried forward from `CLAUDE.md`)
+## How this roadmap relates to `CLAUDE.md`
 
-- Each slice ships before the next starts. Smallest viable slice first. No speculative scaffolding.
-- One semantic commit per logical change. CHANGELOG bullet in the same commit.
-- Every commit passes `cargo fmt` / `cargo clippy -D warnings` / `cargo test --workspace`.
-- A `_pending/` scenario is promoted to `active/` in the **same commit** that lands the CLI command it covers.
-- A milestone closes with a `chore(release): v0.0.X` commit bumping `[workspace.package] version` in the root `Cargo.toml`, followed by `git tag v0.0.X`.
+`CLAUDE.md` is the source of truth for **how we work** (commit size, semantic messages, test-first, full-check gating, plan-driven, annotation discipline, release cadence). This roadmap is the source of truth for **what we build, in what order**. Don't duplicate rules between them — when they disagree, `CLAUDE.md` wins.
 
-## Annotation discipline (the dogfood rule)
+Two `CLAUDE.md` rules are load-bearing for this roadmap:
 
-From slice 6 onward, **we annotate Aristo's own source as we write it**. The rule is restrained, not exhaustive:
-
-- `#[intent(...)]` documents **high-level invariants and properties** that, if violated, would cause silent correctness bugs. It is **not** a replacement for normal Rust doc comments — it **supplements** them.
-- Apply to: functions whose correctness depends on a non-obvious invariant; modules/structs that uphold a system-wide property; anywhere a regression would cause a silent failure.
-- Don't apply to: trivial getters/setters; pure data containers; anywhere the function name + signature already says everything.
-- Aggressive when in doubt — friction here is what we want to feel. We can always relax the rule later; we cannot retroactively recover the experience of having lived with it.
-- A backfill commit lands at the start of milestone B (slice 13 area, once skills install): sweep the slices 1–5 schema crates and add intents using the authoring skill (don't hand-write the backfill — that's part of the skill test).
+- **§10 — Annotation discipline.** From slice 6 onward, we annotate Aristo's own source. The authoring skill takes over from slice 13.
+- **§11 — Release cadence.** Each milestone closes with a `chore(release): v0.0.X` commit + `git tag v0.0.X`. Versions are dense and small (v0.0.2 → … → v0.1.0).
 
 ---
 
