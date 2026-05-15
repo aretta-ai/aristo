@@ -51,12 +51,31 @@ pub struct IndexFile {
     pub entries: BTreeMap<AnnotationId, IndexEntry>,
 }
 
-/// `[__meta__]` header carrying the schema version.
+/// `[__meta__]` header carrying the schema version plus optional generator
+/// metadata (who/when/where wrote the file; useful for debugging stale
+/// indices but not load-bearing for any logic).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Meta {
     /// Schema version of this index file. Always `1` in the current SDK.
     pub schema_version: u32,
+
+    /// Identity of the writer (e.g., `"aristo index v0.1.0"`).
+    /// Optional; informational only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_by: Option<String>,
+
+    /// Timestamp of last write, RFC 3339 format
+    /// (e.g., `"2026-05-13T14:23:00Z"`). Optional; informational only.
+    /// String-typed (not a `DateTime`) to avoid pulling chrono / toml::Datetime
+    /// into the public API; consumers can parse if needed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_at: Option<String>,
+
+    /// Path to the source root the index was generated from, relative to
+    /// the project root (e.g., `"."`). Optional; informational only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_root: Option<String>,
 }
 
 /// Cross-entry validation error: an annotation's id namespace must agree
@@ -158,13 +177,52 @@ mod tests {
         }
     }
 
+    fn meta_minimal() -> Meta {
+        Meta {
+            schema_version: 1,
+            generated_by: None,
+            generated_at: None,
+            source_root: None,
+        }
+    }
+
     #[test]
     fn empty_index_validates() {
         let file = IndexFile {
-            meta: Meta { schema_version: 1 },
+            meta: meta_minimal(),
             entries: BTreeMap::new(),
         };
         file.validate().unwrap();
+    }
+
+    #[test]
+    fn meta_optional_fields_default_to_none() {
+        let json = serde_json::json!({ "schema_version": 1 });
+        let meta: Meta = serde_json::from_value(json).unwrap();
+        assert_eq!(meta.schema_version, 1);
+        assert!(meta.generated_by.is_none());
+        assert!(meta.generated_at.is_none());
+        assert!(meta.source_root.is_none());
+    }
+
+    #[test]
+    fn meta_optional_fields_round_trip() {
+        let meta = Meta {
+            schema_version: 1,
+            generated_by: Some("aristo index v0.1.0".into()),
+            generated_at: Some("2026-05-13T14:23:00Z".into()),
+            source_root: Some(".".into()),
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let back: Meta = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, meta);
+    }
+
+    #[test]
+    fn meta_rejects_unknown_field() {
+        let json = serde_json::json!({ "schema_version": 1, "bogus": 42 });
+        let result: Result<Meta, _> = serde_json::from_value(json);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -175,7 +233,7 @@ mod tests {
             IndexEntry::Intent(certified_intent()),
         );
         let file = IndexFile {
-            meta: Meta { schema_version: 1 },
+            meta: meta_minimal(),
             entries,
         };
         file.validate().unwrap();
@@ -189,7 +247,7 @@ mod tests {
             IndexEntry::Intent(local_intent()),
         );
         let file = IndexFile {
-            meta: Meta { schema_version: 1 },
+            meta: meta_minimal(),
             entries,
         };
         assert!(matches!(
@@ -206,7 +264,7 @@ mod tests {
             IndexEntry::Intent(certified_intent()),
         );
         let file = IndexFile {
-            meta: Meta { schema_version: 1 },
+            meta: meta_minimal(),
             entries,
         };
         assert!(matches!(
@@ -226,7 +284,7 @@ mod tests {
             IndexEntry::Assume(a),
         );
         let file = IndexFile {
-            meta: Meta { schema_version: 1 },
+            meta: meta_minimal(),
             entries,
         };
         file.validate().unwrap();
@@ -240,7 +298,7 @@ mod tests {
             IndexEntry::Assume(local_assume()),
         );
         let file = IndexFile {
-            meta: Meta { schema_version: 1 },
+            meta: meta_minimal(),
             entries,
         };
         assert!(matches!(
