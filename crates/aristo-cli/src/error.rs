@@ -24,6 +24,11 @@ pub enum CliError {
     NotInWorkspace { searched_from: PathBuf },
     /// I/O failure during file read/write.
     Io(std::io::Error),
+    /// Catch-all for command-specific errors that carry their own message
+    /// and exit code. Use when no structured variant fits and the message
+    /// is the user-facing diagnostic (e.g. `aristo lang`'s
+    /// "no supported language detected").
+    Other { message: String, exit_code: u8 },
 }
 
 impl fmt::Display for CliError {
@@ -41,6 +46,7 @@ impl fmt::Display for CliError {
                 )
             }
             CliError::Io(e) => write!(f, "io: {e}"),
+            CliError::Other { message, .. } => write!(f, "{message}"),
         }
     }
 }
@@ -67,6 +73,7 @@ impl CliError {
             CliError::NotImplemented { .. } => 64,
             CliError::NotInWorkspace { .. } => 2,
             CliError::Io(_) => 1,
+            CliError::Other { exit_code, .. } => *exit_code,
         }
     }
 }

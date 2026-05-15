@@ -51,21 +51,21 @@ fn help_flag_lists_offline_subcommands() {
 
 #[test]
 fn defined_but_unimplemented_subcommand_exits_64() {
-    // `aristo lang` is defined; its body is the stub from slice 9 (slice 11
-    // will replace it). The exit code (64, "EX_USAGE-ish, not yet
+    // `aristo index` is defined; its body is the stub from slice 9 (slice
+    // 16 will replace it). The exit code (64, "EX_USAGE-ish, not yet
     // implemented") and the stderr message tell the user when to expect
     // the real implementation.
     //
-    // (When slice 11 lands and `lang` becomes a real command, swap to any
-    // other still-stubbed variant — `index`, `stamp`, etc.)
+    // When slice 16 lands and `index` becomes a real command, swap to any
+    // other still-stubbed variant — `stamp`, `show`, etc.
     Command::cargo_bin("aristo")
         .unwrap()
-        .arg("lang")
+        .arg("index")
         .assert()
         .failure()
         .code(64)
         .stderr(contains("not yet implemented"))
-        .stderr(contains("slice 11"));
+        .stderr(contains("slice 16"));
 }
 
 #[test]

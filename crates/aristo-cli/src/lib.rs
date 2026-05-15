@@ -16,6 +16,7 @@ pub use filter::{Filter, FilterParseError};
 pub use workspace::{Workspace, WorkspaceError};
 
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// Aristo annotation SDK CLI.
@@ -51,7 +52,11 @@ enum Commands {
     },
 
     /// Print a syntax cheat sheet for the detected language.
-    Lang,
+    Lang {
+        /// Per-file detection (Phase 2+ — Phase 1 errors on non-Rust extensions).
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
 
     /// Install Aristo skills for a coding agent (claude-code, cursor, codex, opencode, antigravity).
     InstallSkills,
@@ -116,7 +121,7 @@ pub fn run() -> ExitCode {
 fn dispatch(cmd: Commands) -> CliResult<()> {
     match cmd {
         Commands::Init { force } => commands::init::run(force),
-        Commands::Lang => not_yet("aristo lang", "slice 11"),
+        Commands::Lang { file } => commands::lang::run(file),
         Commands::InstallSkills => not_yet("aristo install-skills", "slice 13"),
         Commands::UninstallSkills => not_yet("aristo uninstall-skills", "slice 13"),
         Commands::Index => not_yet("aristo index", "slice 16"),
@@ -155,20 +160,19 @@ mod tests {
     #[test]
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
-        // ones (Init as of slice 10) are covered by their own tests.
-        let err = dispatch(Commands::Lang).unwrap_err();
+        // ones (Init, Lang as of slices 10, 11) are covered by their own tests.
+        let err = dispatch(Commands::Index).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo lang"), "msg: {msg}");
-        assert!(msg.contains("slice 11"), "msg: {msg}");
+        assert!(msg.contains("aristo index"), "msg: {msg}");
+        assert!(msg.contains("slice 16"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
-        // to update the slice pointer. Implemented commands (Init) are
+        // to update the slice pointer. Implemented commands (Init, Lang) are
         // tested elsewhere.
         let variants = [
-            (Commands::Lang, "slice 11"),
             (Commands::InstallSkills, "slice 13"),
             (Commands::UninstallSkills, "slice 13"),
             (Commands::Index, "slice 16"),
