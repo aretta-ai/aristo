@@ -12,18 +12,18 @@ $ aristo show balance_no_dupes
 error: no annotation with id `balance_no_dupes`.
 
 Did you mean:
-  • balance_no_duplicate_cells  (core/storage/btree.rs:[..])
+  • aristos:balance_no_duplicate_cells  (core/storage/btree.rs:[..])
 ```
 
 ## Stale-index advisory (J5 preflight)
 
 ```console
-$ aristo show balance_no_duplicate_cells
+$ aristo show aristos:balance_no_duplicate_cells
 
 ⚠️  .aristo/index.toml is older than [..] .rs files. Output below may be stale.
    Re-run `aristo index` to refresh.
 
-balance_no_duplicate_cells (intent)
+aristos:balance_no_duplicate_cells (intent)
 [..]
 ```
 

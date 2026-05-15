@@ -12,7 +12,7 @@ $ aristo show fn balance_non_root
 Found 1 site matching `fn balance_non_root` in core/storage/btree.rs:[..].
 
 Attached to fn:
-  balance_no_duplicate_cells (intent, verify=full, status=verified)
+  aristos:balance_no_duplicate_cells (intent, verify=full, status=verified)
     "For all B-tree balance operations, no cells are duplicated…"
   cell_array_indices_in_bounds (intent, verify=test, status=tested)
     "All accesses to cell_array are bounds-checked…"

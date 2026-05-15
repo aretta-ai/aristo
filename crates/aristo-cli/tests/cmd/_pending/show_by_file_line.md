@@ -10,7 +10,7 @@ $ aristo show core/storage/btree.rs:3058
 Annotation covering this line:
   cells_extracted_without_aliasing  (intent, verify=full, status=verified)
     @ core/storage/btree.rs:[..] (β-form, covers the for-loop at line 3058)
-    parent: balance_no_duplicate_cells
+    parent: aristos:balance_no_duplicate_cells
 
   Text:
     Each cell pushed here is a distinct memory reference:
