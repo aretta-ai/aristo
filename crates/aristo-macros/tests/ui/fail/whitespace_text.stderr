@@ -1,0 +1,5 @@
+error: annotation text must not be empty
+ --> tests/ui/fail/whitespace_text.rs:5:10
+  |
+5 | #[intent("   \t  ")]
+  |          ^^^^^^^^^

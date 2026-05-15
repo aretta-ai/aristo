@@ -2,15 +2,18 @@
 //!
 //! Intentionally thin: this crate runs during downstream compile time, so
 //! heavy work (project-wide cycle detection, B5b signature validation,
-//! index IO) lives in `aristo-cli`. The macros here only do single-
-//! annotation validation (when the `aristo_check` cargo feature is on,
-//! landing in slice 8) and `include_str!` injection (`aristo_doc`, slice 30).
+//! index IO) lives in `aristo-cli`. The macros here do single-annotation
+//! validation (when the `aristo_check` cargo feature is on — default) and
+//! `include_str!` injection (`aristo_doc`, slice 30).
 //!
-//! Slice 6: pass-through expansion. The macros parse their arguments and
-//! emit the wrapped item unchanged. The argument shape mirrors the subset
-//! of `aristo_core::index::IntentEntry` / `AssumeEntry` that the developer
-//! writes by hand (text, verify, parent, id) — `aristo stamp` populates the
-//! rest from source position.
+//! The macros parse their arguments into `IntentArgs` / `AssumeArgs`, run
+//! validation per `validate.rs`, and (on success) emit the wrapped item
+//! unchanged — they have no runtime effect, only compile-time signal. The
+//! argument shape mirrors the subset of `aristo_core::index::IntentEntry` /
+//! `AssumeEntry` that the developer writes by hand (text, verify, parent,
+//! id) — `aristo stamp` populates the rest from source position.
+
+mod validate;
 
 use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
@@ -18,14 +21,15 @@ use syn::{Expr, LitStr, Token};
 
 /// Parsed `#[aristo::intent("text", verify = ..., parent = ..., id = ...)]`.
 ///
-/// Slice 6 parses but does not validate. Slice 8 (the `aristo_check` cargo
-/// feature) reuses this same parser and adds value validation.
+/// Parsing is always-on; validation is gated by the `aristo_check` cargo
+/// feature (see `validate.rs`).
 #[derive(Default)]
-struct IntentArgs {
-    text: Option<LitStr>,
-    verify: Option<Expr>,
-    parent: Option<Expr>,
-    id: Option<LitStr>,
+pub(crate) struct IntentArgs {
+    pub(crate) text: Option<LitStr>,
+    pub(crate) verify: Option<Expr>,
+    #[allow(dead_code)] // parent shape validation lands with slice 32
+    pub(crate) parent: Option<Expr>,
+    pub(crate) id: Option<LitStr>,
 }
 
 impl Parse for IntentArgs {
@@ -71,8 +75,8 @@ impl Parse for IntentArgs {
 /// unchanged.
 #[proc_macro_attribute]
 pub fn intent(attr: TokenStream, item: TokenStream) -> TokenStream {
-    match syn::parse::<IntentArgs>(attr) {
-        Ok(_args) => item,
+    match syn::parse::<IntentArgs>(attr).and_then(|args| validate::validate_intent(&args)) {
+        Ok(()) => item,
         Err(err) => err.to_compile_error().into(),
     }
 }
@@ -92,8 +96,8 @@ pub fn intent(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// position context explicit at the call site.
 #[proc_macro]
 pub fn intent_stmt(input: TokenStream) -> TokenStream {
-    match syn::parse::<IntentArgs>(input) {
-        Ok(_args) => TokenStream::new(),
+    match syn::parse::<IntentArgs>(input).and_then(|args| validate::validate_intent(&args)) {
+        Ok(()) => TokenStream::new(),
         Err(err) => err.to_compile_error().into(),
     }
 }
@@ -106,10 +110,11 @@ pub fn intent_stmt(input: TokenStream) -> TokenStream {
 /// `verify` is a category error caught at parse time with a friendly
 /// message (the user is probably reaching for `intent`).
 #[derive(Default)]
-struct AssumeArgs {
-    text: Option<LitStr>,
-    parent: Option<Expr>,
-    id: Option<LitStr>,
+pub(crate) struct AssumeArgs {
+    pub(crate) text: Option<LitStr>,
+    #[allow(dead_code)] // parent shape validation lands with slice 32
+    pub(crate) parent: Option<Expr>,
+    pub(crate) id: Option<LitStr>,
 }
 
 impl Parse for AssumeArgs {
@@ -157,8 +162,8 @@ impl Parse for AssumeArgs {
 /// Pass-through during slice 6.
 #[proc_macro_attribute]
 pub fn assume(attr: TokenStream, item: TokenStream) -> TokenStream {
-    match syn::parse::<AssumeArgs>(attr) {
-        Ok(_args) => item,
+    match syn::parse::<AssumeArgs>(attr).and_then(|args| validate::validate_assume(&args)) {
+        Ok(()) => item,
         Err(err) => err.to_compile_error().into(),
     }
 }
@@ -171,8 +176,8 @@ pub fn assume(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// `_stmt` convention from `intent_stmt!`.
 #[proc_macro]
 pub fn assume_stmt(input: TokenStream) -> TokenStream {
-    match syn::parse::<AssumeArgs>(input) {
-        Ok(_args) => TokenStream::new(),
+    match syn::parse::<AssumeArgs>(input).and_then(|args| validate::validate_assume(&args)) {
+        Ok(()) => TokenStream::new(),
         Err(err) => err.to_compile_error().into(),
     }
 }

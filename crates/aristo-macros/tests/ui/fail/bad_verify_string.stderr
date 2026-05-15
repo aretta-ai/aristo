@@ -1,0 +1,5 @@
+error: invalid `verify` value `"yolo"`; expected one of: "false", "test", "neural", "full", or a bool literal
+ --> tests/ui/fail/bad_verify_string.rs:5:27
+  |
+5 | #[intent("text", verify = "yolo")]
+  |                           ^^^^^^

@@ -1,0 +1,5 @@
+error: unknown `intent` argument `widget`; expected one of: verify, parent, id
+ --> tests/ui/fail/unknown_intent_arg.rs:5:18
+  |
+5 | #[intent("text", widget = "wat")]
+  |                  ^^^^^^

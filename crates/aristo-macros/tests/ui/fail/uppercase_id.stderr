@@ -1,0 +1,5 @@
+error: id `FooBar` is not a valid snake_case identifier (lowercase letters, digits, underscores; must start with a letter)
+ --> tests/ui/fail/uppercase_id.rs:5:23
+  |
+5 | #[intent("text", id = "FooBar")]
+  |                       ^^^^^^^^

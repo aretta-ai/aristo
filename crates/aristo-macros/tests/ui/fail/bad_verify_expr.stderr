@@ -1,0 +1,5 @@
+error: `verify` must be a bool literal (true/false) or one of: "false", "test", "neural", "full"
+ --> tests/ui/fail/bad_verify_expr.rs:7:27
+  |
+7 | #[intent("text", verify = SOMETHING)]
+  |                           ^^^^^^^^^

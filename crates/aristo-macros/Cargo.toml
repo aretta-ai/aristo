@@ -14,6 +14,14 @@ workspace = true
 [lib]
 proc-macro = true
 
+[features]
+default = ["aristo_check"]
+# aristo_check: opt-in compile-time validation of single annotations.
+# Default-on so dogfooding the SDK on its own source benefits from the
+# fastest feedback loop. Downstream users who want zero validation cost
+# can disable via `aristo-macros = { default-features = false }`.
+aristo_check = []
+
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"

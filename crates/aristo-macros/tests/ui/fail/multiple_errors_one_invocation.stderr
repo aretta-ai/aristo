@@ -1,0 +1,17 @@
+error: annotation text must not be empty
+ --> tests/ui/fail/multiple_errors_one_invocation.rs:6:10
+  |
+6 | #[intent("", verify = "yolo", id = "aret_x")]
+  |          ^^
+
+error: invalid `verify` value `"yolo"`; expected one of: "false", "test", "neural", "full", or a bool literal
+ --> tests/ui/fail/multiple_errors_one_invocation.rs:6:23
+  |
+6 | #[intent("", verify = "yolo", id = "aret_x")]
+  |                       ^^^^^^
+
+error: the `aret_` id prefix is reserved for ids assigned by `aristo stamp`; omit `id` and let `aristo stamp` assign one, or pick an unreserved name
+ --> tests/ui/fail/multiple_errors_one_invocation.rs:6:36
+  |
+6 | #[intent("", verify = "yolo", id = "aret_x")]
+  |                                    ^^^^^^^^

@@ -11,5 +11,10 @@ authors.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["aristo_check"]
+# Pass-through to aristo-macros/aristo_check; see that crate for rationale.
+aristo_check = ["aristo-macros/aristo_check"]
+
 [dependencies]
 aristo-macros = { workspace = true }

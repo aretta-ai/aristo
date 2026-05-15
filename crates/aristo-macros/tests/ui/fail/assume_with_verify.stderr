@@ -1,0 +1,5 @@
+error: `verify` is not allowed on `assume` (A5): assumptions describe invariants you rely on, not properties to be verified. Use `intent` if you meant a verifiable claim.
+ --> tests/ui/fail/assume_with_verify.rs:6:18
+  |
+6 | #[assume("text", verify = "test")]
+  |                  ^^^^^^

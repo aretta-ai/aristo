@@ -1,0 +1,5 @@
+error: the `aret_` id prefix is reserved for ids assigned by `aristo stamp`; omit `id` and let `aristo stamp` assign one, or pick an unreserved name
+ --> tests/ui/fail/aret_id_reserved.rs:6:23
+  |
+6 | #[intent("text", id = "aret_my_thing")]
+  |                       ^^^^^^^^^^^^^^^
