@@ -9,6 +9,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Added
+- feat(macros): `#[aristo::intent]` attribute macro — slice 6B. Parses the canonical argument shape (positional `text` string literal, then key=value `verify` / `parent` / `id`) matching the subset of `IntentEntry` developers write by hand; `aristo stamp` populates the rest from source position. Slice 6 is pass-through expansion only — the macro emits the wrapped item unchanged. Validation lands with the `aristo_check` cargo feature in slice 8; trybuild compile-fail tests in slice 7. Applies to fn / impl / struct / trait / type / mod (and trait impl bodies) per mockup 01. `proc-macro2 = "1.0"` / `quote = "1.0"` / `syn = "2.0"` (feature `full`) added to `aristo-macros` deps.
+
+### (older entries, not yet promoted)
 - repo: initial repository scaffold — LICENSE (MIT), README, `.gitignore`, this CHANGELOG, and `CLAUDE.md` working agreement.
 - build: four-crate Cargo workspace (`aristo`, `aristo-core`, `aristo-macros`, `aristo-cli`) per K3 — empty skeletons; `cargo fmt`/`check`/`clippy -D warnings`/`test` all green. CLI binary stubbed to exit 1 with "not yet implemented".
 - test: integration test harness for the CLI — `trycmd` for declarative `console`-fenced session scenarios (sourced from `docs/mockups/`), `assert_cmd` + `predicates` for imperative tests. Convention: `tests/cmd/active/*.md` runs and must pass; `tests/cmd/_pending/*.md` is the parking lot for unimplemented surface, moved into `active/` in the same commit that lands each command. Smoke test asserts the current stub binary's "exit 1 / not yet implemented" behavior.

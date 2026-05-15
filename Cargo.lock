@@ -95,6 +95,11 @@ dependencies = [
 [[package]]
 name = "aristo-macros"
 version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "assert_cmd"
