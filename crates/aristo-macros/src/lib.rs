@@ -162,3 +162,17 @@ pub fn assume(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(err) => err.to_compile_error().into(),
     }
 }
+
+/// `aristo::assume_stmt!("...", parent = ..., id = ...);`
+///
+/// Sub-item assumption: used inside a function body to attach an
+/// assumption to a statement, block, or loop. Same shape as the attribute
+/// form (no `verify` per A5); empty expansion. Naming follows the
+/// `_stmt` convention from `intent_stmt!`.
+#[proc_macro]
+pub fn assume_stmt(input: TokenStream) -> TokenStream {
+    match syn::parse::<AssumeArgs>(input) {
+        Ok(_args) => TokenStream::new(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
