@@ -1,0 +1,15 @@
+# `aristos:` namespace id but no `linked` — id namespace and binding
+# state must agree (caught by IndexFile::validate).
+[__meta__]
+schema_version = 1
+
+["aristos:supposed_to_be_bound"]
+kind   = "intent"
+text   = "x"
+verify = "full"
+status = "unknown"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn x"
+covered_region = "function"

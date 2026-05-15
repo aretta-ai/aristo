@@ -1,0 +1,16 @@
+# Server-bound assume — `linked` only (no certificate; assumes aren't
+# verified per A5). The id namespace ↔ binding agreement is what
+# IndexFile::validate checks.
+[__meta__]
+schema_version = 1
+
+["aristos:storage_atomicity"]
+kind   = "assume"
+text   = "OS guarantee: page writes are atomic"
+status = "unknown"
+text_hash      = "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+body_hash      = "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+file           = "src/storage.rs"
+site           = "mod storage"
+covered_region = "module_inline_body"
+linked         = "arta_StorageTplX7zKa"

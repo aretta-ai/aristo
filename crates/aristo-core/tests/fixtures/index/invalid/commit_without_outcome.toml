@@ -1,0 +1,17 @@
+# `last_verified_at_commit` without `verified_outcome` — invalid; the
+# commit hash is part of the certificate or it's not present.
+[__meta__]
+schema_version = 1
+
+["aristos:half_certified"]
+kind   = "intent"
+text   = "x"
+verify = "full"
+status = "verified"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn x"
+covered_region = "function"
+linked         = "arta_op4q3z9NbV"
+last_verified_at_commit = "abc123def4567890abc123def4567890abc123de"

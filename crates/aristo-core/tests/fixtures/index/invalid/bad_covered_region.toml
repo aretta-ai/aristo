@@ -1,0 +1,14 @@
+# `covered_region` is an unknown variant.
+[__meta__]
+schema_version = 1
+
+[bad_region]
+kind   = "intent"
+text   = "x"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn x"
+covered_region = "the_whole_universe"

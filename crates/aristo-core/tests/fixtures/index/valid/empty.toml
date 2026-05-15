@@ -1,0 +1,3 @@
+# Smallest legal index: __meta__ only, zero entries.
+[__meta__]
+schema_version = 1

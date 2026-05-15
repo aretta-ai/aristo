@@ -1,0 +1,26 @@
+# Two entries with `parent` in the singular-string form.
+[__meta__]
+schema_version = 1
+
+[parent_id]
+kind   = "intent"
+text   = "the parent property"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+body_hash      = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+file           = "src/lib.rs"
+site           = "fn parent"
+covered_region = "function"
+
+[child_id]
+kind   = "intent"
+text   = "implies the parent"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+body_hash      = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+file           = "src/lib.rs"
+site           = "fn child"
+covered_region = "function"
+parent         = "parent_id"

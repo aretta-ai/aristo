@@ -1,0 +1,13 @@
+# `kind` is neither "intent" nor "assume" — tagged-enum dispatch fails.
+[__meta__]
+schema_version = 1
+
+[bad_kind]
+kind   = "speculation"
+text   = "x"
+status = "unknown"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn x"
+covered_region = "function"

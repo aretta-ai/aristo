@@ -1,0 +1,16 @@
+# Entry carries a field that isn't in IntentEntry's schema — rejected
+# by deny_unknown_fields on IntentEntryWire.
+[__meta__]
+schema_version = 1
+
+[bad_field]
+kind   = "intent"
+text   = "x"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn x"
+covered_region = "function"
+this_is_not_a_field = "rejected"

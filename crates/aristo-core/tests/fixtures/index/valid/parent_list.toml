@@ -1,0 +1,37 @@
+# Multi-parent entry — `parent` in the list form (AND-semantics per C2).
+[__meta__]
+schema_version = 1
+
+[parent_a]
+kind   = "intent"
+text   = "first parent"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+body_hash      = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+file           = "src/lib.rs"
+site           = "fn parent_a"
+covered_region = "function"
+
+[parent_b]
+kind   = "intent"
+text   = "second parent"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+body_hash      = "sha256:0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+file           = "src/lib.rs"
+site           = "fn parent_b"
+covered_region = "function"
+
+[child_under_two]
+kind   = "intent"
+text   = "implies both parents (AND-semantics, C2)"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+body_hash      = "sha256:0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d"
+file           = "src/lib.rs"
+site           = "fn child"
+covered_region = "function"
+parent         = ["parent_a", "parent_b"]

@@ -1,0 +1,14 @@
+# `verify` is a string but not one of the known methods.
+[__meta__]
+schema_version = 1
+
+[bad_verify]
+kind   = "intent"
+text   = "x"
+verify = "partial"
+status = "tested"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn x"
+covered_region = "function"

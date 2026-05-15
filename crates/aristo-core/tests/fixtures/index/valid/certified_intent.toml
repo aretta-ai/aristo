@@ -1,0 +1,18 @@
+# Server-bound intent in the Certified state — full triple of
+# `linked`, `verified_outcome`, `last_verified_at_commit` present.
+[__meta__]
+schema_version = 1
+
+["aristos:certified_intent"]
+kind   = "intent"
+text   = "a fully verified server-bound intent with an Ed25519 certificate"
+verify = "full"
+status = "verified"
+text_hash      = "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+body_hash      = "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+file           = "src/lib.rs"
+site           = "fn certified"
+covered_region = "function"
+linked         = "arta_op4q3z9NbV"
+verified_outcome = "v1:p7XnKqL9pTm2NfR3jK8Lf0vZ4XbWcL8eRtQwYuIoP1aSdFgHjKlZxC2vBnM3qWeR4tY5uI6oP7aSdFg"
+last_verified_at_commit = "abc123def4567890abc123def4567890abc123de"

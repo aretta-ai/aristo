@@ -1,0 +1,17 @@
+# `verified_outcome` lacks the `v1:` scheme prefix.
+[__meta__]
+schema_version = 1
+
+["aristos:bad_outcome"]
+kind   = "intent"
+text   = "x"
+verify = "full"
+status = "verified"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn x"
+covered_region = "function"
+linked         = "arta_op4q3z9NbV"
+verified_outcome = "p7XnKqL9pTm2NfR3jK8Lf0vZ4XbWcL8eRtQwYuIoP1aSdFgHjKlZxC2vBnM3qWeR4tY5uI6oP7aSdFg"
+last_verified_at_commit = "abc123def4567890abc123def4567890abc123de"

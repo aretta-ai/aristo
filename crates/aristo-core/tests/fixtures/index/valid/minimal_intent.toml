@@ -1,0 +1,14 @@
+# Smallest legal intent entry — local, free-tier, no parent linkage.
+[__meta__]
+schema_version = 1
+
+[smallest_intent]
+kind   = "intent"
+text   = "trivial example"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn smallest"
+covered_region = "function"

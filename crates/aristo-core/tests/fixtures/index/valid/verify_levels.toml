@@ -1,0 +1,58 @@
+# Each `verify` shape: false (bool), true (bool), and each named method.
+[__meta__]
+schema_version = 1
+
+[doc_only]
+kind   = "intent"
+text   = "documentation only"
+verify = false
+status = "unknown"
+text_hash      = "sha256:1010101010101010101010101010101010101010101010101010101010101010"
+body_hash      = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file           = "src/lib.rs"
+site           = "fn a"
+covered_region = "function"
+
+[project_default]
+kind   = "intent"
+text   = "use the project default verify method"
+verify = true
+status = "unknown"
+text_hash      = "sha256:2020202020202020202020202020202020202020202020202020202020202020"
+body_hash      = "sha256:2121212121212121212121212121212121212121212121212121212121212121"
+file           = "src/lib.rs"
+site           = "fn b"
+covered_region = "function"
+
+[neural_check]
+kind   = "intent"
+text   = "AI-reasoned property check"
+verify = "neural"
+status = "neural"
+text_hash      = "sha256:3030303030303030303030303030303030303030303030303030303030303030"
+body_hash      = "sha256:3131313131313131313131313131313131313131313131313131313131313131"
+file           = "src/lib.rs"
+site           = "fn c"
+covered_region = "function"
+
+[mined_test]
+kind   = "intent"
+text   = "mined assertions over existing test suite"
+verify = "test"
+status = "tested"
+text_hash      = "sha256:4040404040404040404040404040404040404040404040404040404040404040"
+body_hash      = "sha256:4141414141414141414141414141414141414141414141414141414141414141"
+file           = "src/lib.rs"
+site           = "fn d"
+covered_region = "function"
+
+[full_method]
+kind   = "intent"
+text   = "strongest available method"
+verify = "full"
+status = "unknown"
+text_hash      = "sha256:5050505050505050505050505050505050505050505050505050505050505050"
+body_hash      = "sha256:5151515151515151515151515151515151515151515151515151515151515151"
+file           = "src/lib.rs"
+site           = "fn e"
+covered_region = "function"

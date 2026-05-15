@@ -1,0 +1,4 @@
+# `[__meta__]` carries a field that isn't in the schema.
+[__meta__]
+schema_version = 1
+this_field_is_not_part_of_meta = "rejected by deny_unknown_fields"

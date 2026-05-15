@@ -41,8 +41,14 @@ use serde::{Deserialize, Serialize};
 /// `__meta__` carries the schema version (currently `1`); every other key is
 /// an annotation id mapping to its [`IndexEntry`]. Iteration order follows
 /// `BTreeMap`'s sorted-by-key semantics so on-disk ordering is deterministic.
+///
+/// Note: serde forbids `#[serde(deny_unknown_fields)]` together with
+/// `#[serde(flatten)]`, so unknown top-level keys flow into `entries`
+/// and either parse as `IndexEntry` (legal addition) or fail to parse
+/// against the entry schema (clear "unknown variant" / "missing field"
+/// error). Unknown-field rejection still happens INSIDE each entry via
+/// `IntentEntryWire` / `AssumeEntry`'s own `deny_unknown_fields`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct IndexFile {
     #[serde(rename = "__meta__")]
     pub meta: Meta,

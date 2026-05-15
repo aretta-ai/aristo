@@ -1,0 +1,17 @@
+# Server-bound intent in the Bound state — `linked` only, no certificate
+# yet. Either pre-first-verify, or after a rename / rebind invalidated
+# the prior outcome.
+[__meta__]
+schema_version = 1
+
+["aristos:bound_intent_no_certificate"]
+kind   = "intent"
+text   = "an intent that has been bound to the server but not yet verified"
+verify = "full"
+status = "unknown"
+text_hash      = "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+body_hash      = "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+file           = "src/lib.rs"
+site           = "fn pending"
+covered_region = "function"
+linked         = "arta_op4q3z9NbV"

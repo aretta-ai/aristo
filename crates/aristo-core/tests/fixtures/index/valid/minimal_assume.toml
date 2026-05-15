@@ -1,0 +1,13 @@
+# Smallest legal assume entry — no verify, no certificate.
+[__meta__]
+schema_version = 1
+
+[smallest_assume]
+kind   = "assume"
+text   = "external invariant taken as given"
+status = "unknown"
+text_hash      = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+body_hash      = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+file           = "src/lib.rs"
+site           = "mod ext"
+covered_region = "module_inline_body"

@@ -1,0 +1,143 @@
+# Sample .aristo/index.toml — illustrative entries drawn from the prior
+# mockups (§1, §2, §3, §4). Committed to the repo by default. Top-level
+# table per annotation id; status fields updated by `aristo stamp` and
+# `aristo verify`.
+
+# ─── Top-level project metadata ──────────────────────────────────────────
+
+[__meta__]
+schema_version = 1
+generated_by   = "aristo index v0"
+generated_at   = "2026-05-13T14:23:00Z"
+source_root    = "."
+
+# ─── §1 worked example: btree_balance_no_duplicates proof ───────────────
+
+# Server-bound and certified entry — section header uses quoted-key form
+# because of the colon in the aristos: namespace prefix. The `linked` and
+# `verified_outcome` fields live HERE in the index (per B5a-revised + B5b),
+# never in source. `verified_outcome` is an Ed25519 sig over the canonical
+# (scheme_version, commit_hash, annotation_id, linked, text_hash, body_hash,
+# status, verified_at) tuple; appears alongside `last_verified_at_commit`
+# (both are required in the Certified binding state).
+
+["aristos:balance_no_duplicate_cells"]
+kind   = "intent"
+text   = """
+For all B-tree balance operations, no cells are duplicated: each cell from \
+the input pages appears exactly once in the output pages.
+"""
+verify = "full"
+status = "verified"
+last_verified_at_commit = "abc123def4567890abc123def4567890abc123de"
+text_hash      = "sha256:3a7c9e1b5f2d4068c91e7b2a8d9c3f4e7a2b5c8d1e4f7a9b2c5e8d1f4a7c9e1b"
+body_hash      = "sha256:8d1f4a7c9e1b5f2d4068c91e7b2a8d9c3f4e7a2b5c8d1e4f7a9b2c5e8d1f4a7c"
+file           = "core/storage/btree.rs"
+site           = "fn balance_non_root"
+covered_region = "function"
+linked         = "arta_op4q3z9NbV"
+verified_outcome = "v1:p7XnKqL9pTm2NfR3jK8Lf0vZ4XbWcL8eRtQwYuIoP1aSdFgHjKlZxC2vBnM3qWeR4tY5uI6oP7aSdFg"
+
+[cells_extracted_without_aliasing]
+kind   = "intent"
+text   = """
+Each cell pushed here is a distinct memory reference: _cell_get_raw_region_faster \
+returns non-overlapping (start, len) regions, so successive pushes never alias.
+"""
+verify = "full"
+status = "verified"
+text_hash      = "sha256:4b8d2c1e9f3a7b5c8d2e4f7a1b5c9e8d3f6a2b5c9e1d4f7a8b3c6e9d2f5a8b1c"
+body_hash      = "sha256:9c2e5d8a7b3f1c4e6d9a2b5c8e1f4a7d2b5c8e9f1a4b7c0d3e6a9b2c5e8f1a4d"
+file           = "core/storage/btree.rs"
+site           = "for cell_idx in 0..cell_count (line 3058)"
+covered_region = "statement"     # β attached to the for-loop statement
+parent         = "aristos:balance_no_duplicate_cells"
+
+[edit_page_writes_each_cell_once]
+kind   = "intent"
+text   = """
+edit_page writes each cell in cell_array[start_new_cells .. start_new_cells + \
+number_new_cells] exactly once to its page. No cell in that range is written \
+twice, and no cell in that range is skipped.
+"""
+verify = "full"
+status = "tested"      # tested locally on free tier; no server certificate
+text_hash      = "sha256:5d2a8b1c4e7f0a3b6c9d2e5f8a1b4c7d0a3b6c9e2d5f8a1b4c7d0a3b6c9e2d5f"
+body_hash      = "sha256:7f3b1c4e7d0a3b6c9e2d5f8a1b4c7d0e3a6b9c2e5d8f1a4b7c0d3e6a9b2c5e8f"
+file           = "core/storage/btree.rs"
+site           = "fn edit_page"
+covered_region = "function"
+parent         = "aristos:balance_no_duplicate_cells"
+
+# ─── §3: second server-bound + certified entry, multi-parent example ────
+
+["aristos:page_type_discriminants_are_format_stable"]
+kind   = "intent"
+text   = """
+PageType discriminants (2 / 5 / 10 / 13) are stable on-disk values per the \
+SQLite file format spec (§ 1.5, § 1.6). They are part of the file format \
+contract — changing them breaks every existing database.
+"""
+verify = "full"
+status = "verified"
+last_verified_at_commit = "abc123def4567890abc123def4567890abc123de"
+text_hash      = "sha256:6e3c9d2f5a8b1c4e7d0a3b6c9e2d5f8a1b4c7d0a3b6c9e2d5f8a1b4c7d0a3b6c"
+body_hash      = "sha256:2c5f8e1a4d7b0c3f6a9e2d5b8c1f4a7d0c3b6e9a2d5b8c1f4a7d0c3b6e9a2d5b"
+file           = "core/storage/sqlite3_ondisk.rs"
+site           = "impl PageType"
+covered_region = "impl_methods"
+linked         = "arta_zmL7p4xQRtY8"
+verified_outcome = "v1:Hd7yKbN3sFp9CrL2vQwM5gZxT6jX1eY4uA0iO8aP7lD3sFgKhJzC2vBnM3qWeR4tY5uI6oP7a"
+
+# ─── §3: synthetic multi-parent example (free-tier tested) ──────────────
+
+[cell_array_indices_in_bounds]
+kind   = "intent"
+text   = """
+All accesses to cell_array are bounds-checked: every index used is in \
+[0, cell_array.len()).
+"""
+verify = "test"
+status = "tested"
+text_hash      = "sha256:1a4b7c0d3e6a9b2c5e8f1a4d7b0c3f6e9a2d5b8c1f4a7d0c3b6e9a2d5f8c1b4e"
+body_hash      = "sha256:8c1b4e7a0d3f6c9b2e5a8d1c4f7b0a3d6c9b2e5f8a1d4b7c0e3a6d9b2c5f8e1a"
+file           = "core/storage/btree.rs"
+site           = "fn balance_non_root"
+covered_region = "function"
+parent         = ["aristos:balance_no_duplicate_cells", "balance_no_cells_lost"]
+
+# ─── §3: opaque-id fallback example ─────────────────────────────────────
+
+[aret_a1b2c3d4]
+kind   = "intent"
+text   = """
+Empirical post-condition validator, debug builds only. Iterates output pages \
+sequentially and verifies that each cell observed during the pre-balance \
+snapshot (cells_debug) appears in exactly one output page at the expected \
+position.
+"""
+verify = false        # documentation only
+status = "unknown"    # never verified; intentional
+text_hash      = "sha256:0d3f6c9b2e5a8d1c4f7b0a3d6c9b2e5f8a1d4b7c0e3a6d9b2c5f8e1a4d7b0c3f"
+body_hash      = "sha256:5a8d1c4f7b0a3d6c9b2e5f8a1d4b7c0e3a6d9b2c5f8e1a4d7b0c3f6c9b2e5a8d"
+file           = "core/storage/btree.rs"
+site           = "fn post_balance_non_root_validation"
+covered_region = "function"
+# no parent (orphan, per A1 assumption framing)
+# no linked/verified_outcome (not server-bound)
+
+# ─── §2: assume macro at module level ───────────────────────────────────
+
+[storage_write_atomicity]
+kind   = "assume"     # no verify field on assume
+text   = """
+Storage layer atomicity: when a page is written via storage.write_page, the \
+write either completes fully or not at all (no torn writes). Required for \
+transactional integrity throughout the storage layer.
+"""
+status = "unknown"    # assume is taken as given; not a verification target
+text_hash      = "sha256:3f6c9b2e5a8d1c4f7b0a3d6c9b2e5f8a1d4b7c0e3a6d9b2c5f8e1a4d7b0c3f6c"
+body_hash      = "sha256:6c9b2e5a8d1c4f7b0a3d6c9b2e5f8a1d4b7c0e3a6d9b2c5f8e1a4d7b0c3f6c9b"
+file           = "core/storage/btree.rs"
+site           = "mod btree"
+covered_region = "module_inline_body"
