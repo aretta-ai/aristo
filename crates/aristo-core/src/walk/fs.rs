@@ -15,6 +15,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use globset::{Glob, GlobSet, GlobSetBuilder};
+
+use crate::config::IndexConfig;
 use crate::walk::extract::{extract_from_source, ExtractError, ExtractedAnnotation};
 
 /// One annotation discovered during a filesystem walk. Wraps
@@ -42,6 +45,70 @@ pub enum FsWalkError {
         #[source]
         source: ExtractError,
     },
+    #[error("invalid exclude pattern `{pattern}`: {source}")]
+    BadPattern {
+        pattern: String,
+        #[source]
+        source: globset::Error,
+    },
+}
+
+/// Options applied to every walk: in addition to the hardcoded default
+/// directory skip set, callers can supply glob patterns (matched
+/// relative to the walk root, forward-slash style) that prune
+/// individual files or whole subtrees from consideration.
+#[derive(Debug, Default, Clone)]
+pub struct WalkOptions {
+    excludes: GlobSet,
+}
+
+impl WalkOptions {
+    /// Empty options — no extra excludes; equivalent to `Default`.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// Build options from a `[index]` config section.
+    pub fn from_index_config(cfg: &IndexConfig) -> Result<Self, FsWalkError> {
+        Self::from_patterns(&cfg.exclude)
+    }
+
+    /// Build options from raw glob pattern strings.
+    pub fn from_patterns<S: AsRef<str>>(patterns: &[S]) -> Result<Self, FsWalkError> {
+        let mut builder = GlobSetBuilder::new();
+        for p in patterns {
+            let p = p.as_ref();
+            let glob = Glob::new(p).map_err(|e| FsWalkError::BadPattern {
+                pattern: p.to_string(),
+                source: e,
+            })?;
+            builder.add(glob);
+        }
+        let excludes = builder.build().map_err(|e| FsWalkError::BadPattern {
+            pattern: "<set>".to_string(),
+            source: e,
+        })?;
+        Ok(Self { excludes })
+    }
+
+    /// True iff `rel` (a path relative to the walk root) matches any
+    /// configured exclude pattern. `false` if no excludes are
+    /// configured. Public so non-walker code (e.g. `aristo lint --fix`,
+    /// which has its own file-iteration loop) can apply the same
+    /// filter consistently.
+    pub fn excludes_path(&self, rel: &Path) -> bool {
+        if self.excludes.is_empty() {
+            return false;
+        }
+        // Normalize to forward slashes so the same glob works on both
+        // Windows and POSIX hosts.
+        let rel_str = rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+        self.excludes.is_match(rel_str)
+    }
 }
 
 /// Default directory names to skip during the walk. Matched against each
@@ -64,6 +131,15 @@ const DEFAULT_IGNORED_DIRS: &[&str] = &["target", ".git", ".aristo", "node_modul
     id = "walk_directory_is_deterministic"
 )]
 pub fn walk_directory(root: &Path) -> Result<Vec<DiscoveredAnnotation>, FsWalkError> {
+    walk_directory_with(root, &WalkOptions::none())
+}
+
+/// Same as [`walk_directory`] but honors the supplied `opts` (project
+/// excludes) on top of the hardcoded default-skipped set.
+pub fn walk_directory_with(
+    root: &Path,
+    opts: &WalkOptions,
+) -> Result<Vec<DiscoveredAnnotation>, FsWalkError> {
     if !root.is_dir() {
         return Err(FsWalkError::BadRoot(root.to_path_buf()));
     }
@@ -95,6 +171,10 @@ pub fn walk_directory(root: &Path) -> Result<Vec<DiscoveredAnnotation>, FsWalkEr
         }
 
         let abs_path = entry.path();
+        let rel_for_glob = abs_path.strip_prefix(root).unwrap_or(abs_path);
+        if opts.excludes_path(rel_for_glob) {
+            continue;
+        }
         let source = std::fs::read_to_string(abs_path).map_err(|source| FsWalkError::Io {
             path: abs_path.to_path_buf(),
             source,
@@ -136,6 +216,14 @@ pub fn walk_directory(root: &Path) -> Result<Vec<DiscoveredAnnotation>, FsWalkEr
 /// Returns absolute paths so callers can stat them directly. Path order
 /// is lexicographic for determinism.
 pub fn walk_for_freshness(root: &Path) -> Result<Vec<PathBuf>, FsWalkError> {
+    walk_for_freshness_with(root, &WalkOptions::none())
+}
+
+/// Same as [`walk_for_freshness`] but honors the supplied `opts`.
+pub fn walk_for_freshness_with(
+    root: &Path,
+    opts: &WalkOptions,
+) -> Result<Vec<PathBuf>, FsWalkError> {
     if !root.is_dir() {
         return Err(FsWalkError::BadRoot(root.to_path_buf()));
     }
@@ -159,6 +247,10 @@ pub fn walk_for_freshness(root: &Path) -> Result<Vec<PathBuf>, FsWalkError> {
             continue;
         }
         if entry.path().extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let rel_for_glob = entry.path().strip_prefix(root).unwrap_or(entry.path());
+        if opts.excludes_path(rel_for_glob) {
             continue;
         }
         out.push(entry.path().to_path_buf());
@@ -322,5 +414,92 @@ mod tests {
         let r1 = walk_directory(tmp.path()).unwrap();
         let r2 = walk_directory(tmp.path()).unwrap();
         assert_eq!(r1, r2, "two walks of the same tree must match exactly");
+    }
+
+    // ─── WalkOptions / exclude globs ─────────────────────────────────────
+
+    #[test]
+    fn exclude_glob_skips_matching_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "src/lib.rs",
+            r#"#[aristo::intent("keep")] fn k() {}"#,
+        );
+        write(
+            tmp.path(),
+            "tests/ui/fail/empty_text.rs",
+            r#"#[aristo::intent("")] fn drop() {}"#,
+        );
+
+        let opts = WalkOptions::from_patterns(&["**/tests/ui/**"]).unwrap();
+        let r = walk_directory_with(tmp.path(), &opts).unwrap();
+        assert_eq!(r.len(), 1, "trybuild fixture must be excluded");
+        assert_eq!(r[0].annotation.text, "keep");
+    }
+
+    #[test]
+    fn exclude_glob_applies_to_freshness_walk() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "src/lib.rs", "fn a() {}");
+        write(tmp.path(), "tests/ui/fail/x.rs", "fn b() {}");
+
+        let opts = WalkOptions::from_patterns(&["**/tests/ui/**"]).unwrap();
+        let paths = walk_for_freshness_with(tmp.path(), &opts).unwrap();
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].ends_with("src/lib.rs"));
+    }
+
+    #[test]
+    fn empty_options_walks_everything() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "src/a.rs",
+            r#"#[aristo::intent("a")] fn a() {}"#,
+        );
+        write(
+            tmp.path(),
+            "tests/b.rs",
+            r#"#[aristo::intent("b")] fn b() {}"#,
+        );
+
+        let r = walk_directory_with(tmp.path(), &WalkOptions::none()).unwrap();
+        assert_eq!(r.len(), 2);
+    }
+
+    #[test]
+    fn bad_glob_pattern_surfaces_error() {
+        // Unterminated character class → globset rejects.
+        let result = WalkOptions::from_patterns(&["src/[unterminated"]);
+        assert!(matches!(result, Err(FsWalkError::BadPattern { .. })));
+    }
+
+    #[test]
+    fn excludes_compose_with_default_ignored_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "src/keep.rs",
+            r#"#[aristo::intent("keep")] fn k() {}"#,
+        );
+        // target/ is always-skipped; this entry must not appear regardless
+        // of opts.
+        write(
+            tmp.path(),
+            "target/debug/build.rs",
+            r#"#[aristo::intent("never")] fn n() {}"#,
+        );
+        // tests/fixtures is excluded via opts.
+        write(
+            tmp.path(),
+            "tests/fixtures/bad.rs",
+            r#"#[aristo::intent("")] fn d() {}"#,
+        );
+
+        let opts = WalkOptions::from_patterns(&["tests/fixtures/**"]).unwrap();
+        let r = walk_directory_with(tmp.path(), &opts).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].annotation.text, "keep");
     }
 }

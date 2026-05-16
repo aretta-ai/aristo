@@ -21,7 +21,7 @@ use aristo_core::index::{
     AnnotationId, AnnotationKind, AssumeEntry, BindingState, IndexEntry, IndexFile, IntentEntry,
     Meta, ParentLink, Status, VerifyLevel, VerifyMethod,
 };
-use aristo_core::walk::{walk_directory, DiscoveredAnnotation, ParentRaw};
+use aristo_core::walk::{walk_directory_with, DiscoveredAnnotation, ParentRaw, WalkOptions};
 
 use crate::{CliError, CliResult, Workspace};
 
@@ -38,7 +38,8 @@ pub(crate) fn run(_all: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
 
     println!("→ Walking source from {} …", ws.root.display());
-    let discovered = walk_directory(&ws.root).map_err(|e| CliError::Other {
+    let walk_opts = walk_options_from_workspace(&ws)?;
+    let discovered = walk_directory_with(&ws.root, &walk_opts).map_err(|e| CliError::Other {
         message: format!("walk failed: {e}"),
         exit_code: 1,
     })?;
@@ -88,6 +89,17 @@ pub(crate) fn workspace_or_error() -> CliResult<Workspace> {
         crate::WorkspaceError::NotFound { searched_from } => {
             CliError::NotInWorkspace { searched_from }
         }
+    })
+}
+
+/// Read the workspace's `[index]` config and turn it into a
+/// [`WalkOptions`]. Bad glob patterns surface as a hard error — the user
+/// authored them and needs to know they don't compile.
+pub(crate) fn walk_options_from_workspace(ws: &Workspace) -> CliResult<WalkOptions> {
+    let cfg = ws.load_config();
+    WalkOptions::from_index_config(&cfg.index).map_err(|e| CliError::Other {
+        message: format!("aristo.toml [index].exclude: {e}"),
+        exit_code: 2,
     })
 }
 

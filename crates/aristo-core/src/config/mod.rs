@@ -58,6 +58,8 @@ pub struct ConfigFile {
     pub corpus: CorpusConfig,
     #[serde(default)]
     pub doc: DocConfig,
+    #[serde(default)]
+    pub index: IndexConfig,
 }
 
 // ─── [verify] ──────────────────────────────────────────────────────────────
@@ -348,6 +350,23 @@ pub enum DocPosition {
     #[default]
     Before,
     After,
+}
+
+// ─── [index] ──────────────────────────────────────────────────────────────
+
+/// Filters applied during the source walk. Always-skipped directory
+/// names (`target/`, `.git/`, `.aristo/`, `node_modules/`) are
+/// hardcoded in the walker; `exclude` adds project-specific globs on
+/// top of that floor (e.g., `"**/tests/ui/**"` to skip trybuild
+/// fixtures that contain intentional empty-text annotations).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct IndexConfig {
+    /// Glob patterns (matched against paths relative to the workspace
+    /// root) that the walker skips. Standard `**` / `*` / `?` syntax
+    /// per `globset`. Paths use forward slashes regardless of host OS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────

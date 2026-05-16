@@ -28,9 +28,11 @@ use std::fs;
 
 use aristo_core::cycle::detect_cycles;
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Meta, Status};
-use aristo_core::walk::walk_directory;
+use aristo_core::walk::walk_directory_with;
 
-use crate::commands::index::{atomic_write, build_entries, now_rfc3339, workspace_or_error};
+use crate::commands::index::{
+    atomic_write, build_entries, now_rfc3339, walk_options_from_workspace, workspace_or_error,
+};
 use crate::{CliError, CliResult};
 
 #[aristo::intent(
@@ -48,7 +50,8 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
     let prev_index = read_existing_index(&ws.index_path())?;
 
     println!("→ Walking source from {} …", ws.root.display());
-    let discovered = walk_directory(&ws.root).map_err(|e| CliError::Other {
+    let walk_opts = walk_options_from_workspace(&ws)?;
+    let discovered = walk_directory_with(&ws.root, &walk_opts).map_err(|e| CliError::Other {
         message: format!("walk failed: {e}"),
         exit_code: 1,
     })?;

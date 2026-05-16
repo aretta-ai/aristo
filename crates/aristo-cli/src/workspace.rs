@@ -86,6 +86,20 @@ impl Workspace {
     pub fn config_path(&self) -> PathBuf {
         self.root.join("aristo.toml")
     }
+
+    /// Read + parse `aristo.toml`. Returns `ConfigFile::default()` on any
+    /// failure (missing file, parse error) — the per-command config-driven
+    /// behaviors all degrade gracefully when their relevant section is
+    /// absent, so a malformed config shouldn't break read commands.
+    /// Callers that need to surface parse errors (`aristo lint`'s
+    /// `aristo.toml` validation in a future slice) should read + parse
+    /// directly.
+    pub fn load_config(&self) -> aristo_core::config::ConfigFile {
+        let Ok(text) = std::fs::read_to_string(self.config_path()) else {
+            return aristo_core::config::ConfigFile::default();
+        };
+        toml::from_str(&text).unwrap_or_default()
+    }
 }
 
 #[cfg(test)]

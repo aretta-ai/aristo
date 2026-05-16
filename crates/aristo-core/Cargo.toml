@@ -14,6 +14,7 @@ workspace = true
 [dependencies]
 aristo = { workspace = true }
 getrandom = "0.2"
+globset = "0.4"
 proc-macro2 = { version = "1.0", features = ["span-locations"] }
 schemars = "0.8"
 serde = { version = "1.0", features = ["derive"] }

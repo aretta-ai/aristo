@@ -19,4 +19,7 @@ pub mod fs;
 pub use extract::{
     extract_from_source, AnnotationForm, ExtractError, ExtractedAnnotation, ParentRaw,
 };
-pub use fs::{walk_directory, walk_for_freshness, DiscoveredAnnotation, FsWalkError};
+pub use fs::{
+    walk_directory, walk_directory_with, walk_for_freshness, walk_for_freshness_with,
+    DiscoveredAnnotation, FsWalkError, WalkOptions,
+};

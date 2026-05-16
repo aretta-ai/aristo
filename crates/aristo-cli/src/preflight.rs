@@ -12,7 +12,7 @@
 use std::fs;
 use std::time::SystemTime;
 
-use aristo_core::walk::walk_for_freshness;
+use aristo_core::walk::{walk_for_freshness_with, WalkOptions};
 
 use crate::Workspace;
 
@@ -53,7 +53,12 @@ pub(crate) fn freshness_check(ws: &Workspace) -> FreshnessReport {
     };
     let index_mtime = index_meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
 
-    let sources = walk_for_freshness(&ws.root).unwrap_or_default();
+    // Honor [index].exclude so trybuild fixtures (or anything else the
+    // user excluded from indexing) don't trigger spurious staleness.
+    // A bad pattern degrades to "no excludes" — the preflight is advisory,
+    // not a place to surface config errors.
+    let opts = WalkOptions::from_index_config(&ws.load_config().index).unwrap_or_default();
+    let sources = walk_for_freshness_with(&ws.root, &opts).unwrap_or_default();
     let stale_count = sources
         .into_iter()
         .filter(|p| {

@@ -18,6 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
+use aristo_core::walk::WalkOptions;
 use proc_macro2::{LineColumn, Span};
 use syn::visit::Visit;
 
@@ -29,7 +30,13 @@ pub(crate) fn run_fix(ws: &Workspace) -> CliResult<(usize, usize)> {
     let mut total_fixes = 0usize;
     let mut files_modified = 0usize;
 
-    for path in collect_rs_files(&ws.root) {
+    let opts =
+        WalkOptions::from_index_config(&ws.load_config().index).map_err(|e| CliError::Other {
+            message: format!("aristo.toml [index].exclude: {e}"),
+            exit_code: 2,
+        })?;
+
+    for path in collect_rs_files(&ws.root, &opts) {
         let source = std::fs::read_to_string(&path).map_err(|e| CliError::Other {
             message: format!("read {}: {e}", path.display()),
             exit_code: 1,
@@ -48,7 +55,7 @@ pub(crate) fn run_fix(ws: &Workspace) -> CliResult<(usize, usize)> {
     Ok((total_fixes, files_modified))
 }
 
-fn collect_rs_files(root: &Path) -> Vec<PathBuf> {
+fn collect_rs_files(root: &Path, opts: &WalkOptions) -> Vec<PathBuf> {
     walkdir::WalkDir::new(root)
         .follow_links(false)
         .sort_by_file_name()
@@ -63,6 +70,10 @@ fn collect_rs_files(root: &Path) -> Vec<PathBuf> {
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("rs"))
+        .filter(|e| {
+            let rel = e.path().strip_prefix(root).unwrap_or(e.path());
+            !opts.excludes_path(rel)
+        })
         .map(|e| e.into_path())
         .collect()
 }
