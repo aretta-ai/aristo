@@ -44,8 +44,9 @@ jobs:
 ";
 
 #[aristo::intent(
-    "aristo init is idempotent: a second invocation never errors and never \
-     overwrites existing files; it notes the existing artifact and continues",
+    "A second invocation never errors and never overwrites existing \
+     files. Each pre-existing artifact is noted; only missing ones get \
+     created.",
     verify = "test",
     id = "init_is_idempotent"
 )]

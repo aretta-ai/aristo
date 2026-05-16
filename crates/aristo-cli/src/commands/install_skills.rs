@@ -62,10 +62,10 @@ impl Agent {
 }
 
 #[aristo::intent(
-    "install_skills emits the same observable user experience whether \
-     invoked at project (cwd) or user (~/) scope; the only difference is \
-     where files land",
-    verify = "test",
+    "The user-visible output (lines printed, progression, success \
+     summary) is identical at project scope (cwd) and user scope (`~/`). \
+     Only the target path differs.",
+    verify = "neural",
     id = "install_skills_scope_symmetry"
 )]
 pub(crate) fn install(
@@ -118,9 +118,12 @@ pub(crate) fn install(
 }
 
 #[aristo::intent(
-    "uninstall_skills reverses install_skills exactly: file-copy agents \
-     get the per-skill files removed; AGENTS.md agents get the marker- \
-     delimited block stripped (surrounding content preserved). Idempotent.",
+    "`install_skills` followed by `uninstall_skills` leaves the project's \
+     relevant on-disk state identical to before either ran (modulo files \
+     the user hand-modified). File-copy agents: the per-skill files we \
+     wrote are removed. AGENTS.md agents: the marker-delimited block is \
+     stripped; surrounding content preserved. Idempotent on \
+     uninstall-while-uninstalled.",
     verify = "test",
     id = "uninstall_skills_reverses_install"
 )]

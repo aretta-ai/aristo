@@ -39,10 +39,10 @@ pub(crate) enum InstallOutcome {
 }
 
 #[aristo::intent(
-    "file_copy_install is idempotent: invoking it twice with identical \
-     content leaves the disk byte-identical the second time and reports \
-     Unchanged; a callers' --update message should distinguish Created vs \
-     Updated vs Unchanged correctly",
+    "A second invocation with identical content leaves the target \
+     byte-identical and returns `Unchanged`. Created (file did not \
+     exist) and Updated (content differed) are distinct outcomes; \
+     idempotence is the Unchanged case specifically.",
     verify = "test",
     id = "file_copy_install_idempotent"
 )]
@@ -65,8 +65,9 @@ pub(crate) fn file_copy_install(target: &Path, skill: &Skill) -> io::Result<Inst
 }
 
 #[aristo::intent(
-    "file_copy_uninstall removes ONLY the file we wrote; absence of the \
-     file is not an error (idempotent uninstall)",
+    "Removes only the file we wrote — no sibling deletion, no \
+     parent-dir cleanup. Absence of the target is not an error; \
+     uninstall-of-already-uninstalled is the idempotent case.",
     verify = "test",
     id = "file_copy_uninstall_idempotent"
 )]
@@ -82,9 +83,10 @@ pub(crate) fn file_copy_uninstall(target: &Path) -> io::Result<bool> {
 /// AGENTS.md-style file. Content outside the markers is preserved
 /// verbatim; if the file doesn't exist, it's created with just the block.
 #[aristo::intent(
-    "agents_md_install preserves all content outside the marker boundaries \
-     verbatim; this is what lets users hand-edit AGENTS.md without losing \
-     their work on aristo install-skills --update",
+    "Content outside the marker boundaries is preserved byte-for-byte \
+     across install and update. Users who hand-edit AGENTS.md alongside \
+     the auto-generated block don't lose their work to a normalization \
+     or reformat pass.",
     verify = "test",
     id = "agents_md_install_preserves_outside_markers"
 )]
@@ -129,8 +131,9 @@ pub(crate) fn agents_md_install(target: &Path, skills: &[&Skill]) -> io::Result<
 /// Strip the marker-delimited Aristo block from an AGENTS.md-style file.
 /// Returns `Ok(false)` if the file or block is absent (idempotent).
 #[aristo::intent(
-    "agents_md_uninstall strips ONLY the marker-delimited block; the \
-     surrounding content is preserved byte-for-byte",
+    "Only the marker-delimited block is stripped; surrounding content \
+     is preserved byte-for-byte. Absent file or absent block is not an \
+     error — idempotent.",
     verify = "test",
     id = "agents_md_uninstall_preserves_outside_markers"
 )]

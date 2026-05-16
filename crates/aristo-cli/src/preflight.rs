@@ -37,10 +37,9 @@ impl FreshnessReport {
 }
 
 #[aristo::intent(
-    "If any source file's mtime is newer than the index file's mtime, \
-     the index is stale relative to source. The comparison is one-shot \
-     per command invocation; no caching, no incremental tracking — \
-     correctness over speed for an advisory check.",
+    "Recomputed from scratch on every invocation — no caching, no \
+     incremental tracking between calls. Correctness over speed: an \
+     advisory check shouldn't introduce its own cache-staleness mode.",
     verify = "neural",
     id = "freshness_check_compares_source_mtimes_to_index"
 )]

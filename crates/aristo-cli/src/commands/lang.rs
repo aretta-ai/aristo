@@ -55,9 +55,10 @@ For full reference: https://aristo.ai/docs/lang/rust
 ";
 
 #[aristo::intent(
-    "aristo lang's output is the single source of truth for annotation \
-     syntax that authoring skills consult; the cheat sheet must always \
-     match the macros aristo-macros currently exports",
+    "The cheat sheet text MUST match the macros `aristo-macros` \
+     currently exports. Adding, renaming, or removing a macro requires \
+     updating the cheat sheet in the same change — agents are \
+     instructed to trust this output over their training data.",
     verify = "test",
     id = "lang_cheat_sheet_matches_macros"
 )]

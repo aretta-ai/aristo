@@ -26,10 +26,10 @@ pub(crate) struct Skill {
 }
 
 #[aristo::intent(
-    "the bundled skills returned here are the authoritative set installed \
-     by aristo install-skills; renaming or removing one is a breaking change \
-     for any user who has the old name on disk and relies on agent matching",
-    verify = "test",
+    "Skill names in this set are part of the public install surface. \
+     Renaming or removing one is a breaking change — users on the old \
+     name have it on disk under that path; agents match by exact name.",
+    verify = "neural",
     id = "bundled_skills_is_stable_set"
 )]
 pub(crate) fn bundled() -> &'static [Skill] {
