@@ -56,9 +56,10 @@ const DEFAULT_IGNORED_DIRS: &[&str] = &["target", ".git", ".aristo", "node_modul
 /// path. A successful walk returns annotations grouped by file (alphabetical
 /// path order), and within each file in source order.
 #[aristo::intent(
-    "walk_directory returns paths RELATIVE to root, in stable lexicographic \
-     order — same input directory must yield byte-identical output across \
-     runs and across machines so .aristo/index.toml stays deterministic.",
+    "The same source tree yields byte-identical results across runs and \
+     machines: lexicographic path order, source order within each file. \
+     Parallelism or unsorted directory reads would silently break the \
+     index's reproducibility guarantee.",
     verify = "test",
     id = "walk_directory_is_deterministic"
 )]

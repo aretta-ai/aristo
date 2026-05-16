@@ -44,16 +44,6 @@ fn parse_filters(filter_strings: &[String]) -> CliResult<Vec<Filter>> {
     Ok(out)
 }
 
-#[aristo::intent(
-    "matches_filter ANDs filters at the call site; here it tests one \
-     clause against one entry. The set of supported clauses is closed by \
-     the Filter enum (id / file / parent / status) — adding a new \
-     filter key in J2 means extending Filter AND adding an arm here. A \
-     missing arm would silently never match, hiding entries from `aristo \
-     list --filter <new-key>=...` output.",
-    verify = "test",
-    id = "matches_filter_arms_cover_filter_enum"
-)]
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
         Filter::Id(want) => id.as_str() == want,

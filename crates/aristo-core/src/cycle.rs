@@ -50,12 +50,10 @@ fn format_path(path: &[AnnotationId]) -> String {
 }
 
 #[aristo::intent(
-    "detect_cycles returns the FIRST cycle it finds and stops; it does \
-     not enumerate all cycles in the graph. The diagnostic-friendly path \
-     is enough for the user to break the cycle and re-run; chasing every \
-     cycle on the same pass would multiply diagnostic noise without \
-     helping the fix.",
-    verify = "test",
+    "One cycle reported per call, then return. This is intentional, not \
+     incomplete — extending to enumerate all cycles would multiply \
+     diagnostic noise without helping the fix.",
+    verify = "neural",
     id = "detect_cycles_returns_first_cycle_only"
 )]
 pub fn detect_cycles(parents: &HashMap<AnnotationId, Vec<AnnotationId>>) -> Result<(), CycleError> {

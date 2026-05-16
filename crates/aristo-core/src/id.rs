@@ -30,15 +30,6 @@ const OPAQUE_BODY_LEN: usize = 8;
 /// `AnnotationId`'s opaque-namespace parser accepts.
 const OPAQUE_ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
 
-#[aristo::intent(
-    "snake_case_from_text returns None if no usable readable id can be \
-     derived (text is empty, all non-ASCII, or contains no word \
-     characters). Callers MUST handle None by falling back to \
-     generate_opaque_id — that's the contract that lets stamp always \
-     produce a valid id even from pathological annotations.",
-    verify = "test",
-    id = "snake_case_from_text_returns_none_for_unusable_input"
-)]
 pub fn snake_case_from_text(text: &str) -> Option<String> {
     let mut out = String::new();
     let mut last_was_underscore = true; // suppress leading _
@@ -72,13 +63,11 @@ pub fn snake_case_from_text(text: &str) -> Option<String> {
 }
 
 #[aristo::intent(
-    "generate_opaque_id always returns a parseable AnnotationId with the \
-     `aret_` prefix. The OS RNG (getrandom) is the source of entropy; if \
-     it fails (extremely rare — usually a misconfigured kernel), this \
-     function panics rather than returning a Result. The reasoning: a \
-     stamped id with weak entropy is worse than a crashed `aristo stamp` \
-     run that the user can retry.",
-    verify = "test",
+    "Opaque ids carry enough entropy that collisions across a project are \
+     negligible. If the OS can't produce randomness, the stamp crashes; a \
+     low-entropy id silently committed would be worse than a failed run \
+     the user can retry.",
+    verify = "neural",
     id = "generate_opaque_id_always_parses"
 )]
 pub fn generate_opaque_id() -> AnnotationId {

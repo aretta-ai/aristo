@@ -153,11 +153,9 @@ string_newtype! {
 }
 
 #[aristo::intent(
-    "Sha256::from_bytes is the only path that produces a Sha256 from raw \
-     input — every other constructor (parse) validates a pre-formatted \
-     string. Computing the digest here, in one place, guarantees the \
-     output is the canonical `sha256:<64-lowercase-hex>` form that round- \
-     trips through parse() and matches the schema pattern.",
+    "A hash computed by this constructor is always in canonical form — \
+     the same form `parse` accepts and the same form written to the \
+     index file. Hashes never need re-validation after computation.",
     verify = "test",
     id = "sha256_from_bytes_is_canonical_form"
 )]

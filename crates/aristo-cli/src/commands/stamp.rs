@@ -34,10 +34,10 @@ use crate::commands::index::{atomic_write, build_entries, now_rfc3339, workspace
 use crate::{CliError, CliResult};
 
 #[aristo::intent(
-    "aristo stamp NEVER writes the index when --check is on; --check is \
-     the CI-safe inspection path. The implementation MUST gate the \
-     atomic_write call on the !check branch — a regression here would \
-     cause CI runs to mutate the index, masking real drift in PRs.",
+    "When `--check` is set, `aristo stamp` never writes the index. CI \
+     relies on this for drift detection: a regression that mutates the \
+     index under `--check` would silently mask the drift it was meant \
+     to catch.",
     verify = "test",
     id = "stamp_check_never_writes"
 )]
@@ -160,11 +160,10 @@ enum NotableKind {
 }
 
 #[aristo::intent(
-    "merge_status_from_prev preserves status when body_hash is unchanged \
-     and flips Verified/Tested/Neural to Stale when body_hash drifts — \
-     the contract that lets developers trust stamp's pre-commit signal: \
-     anything still showing Verified after stamp is verified for THIS \
-     code, not some prior version of it.",
+    "Status after stamp reflects the current code, not any prior \
+     version. Body-unchanged entries keep their prior status. \
+     Body-drifted entries with verified-class status (Verified, Tested, \
+     Neural) flip to Stale. Other prior statuses pass through.",
     verify = "test",
     id = "merge_status_preserves_when_body_unchanged"
 )]

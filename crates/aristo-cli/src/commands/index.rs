@@ -33,15 +33,6 @@ pub(crate) type BuiltEntries = (
     HashMap<AnnotationId, Vec<AnnotationId>>,
 );
 
-#[aristo::intent(
-    "aristo index writes .aristo/index.toml ATOMICALLY: temp file in the \
-     same directory + rename. A crash mid-write leaves the previous index \
-     intact rather than a half-formed one — `aristo show` / `aristo list` \
-     / etc. always see a consistent file or the prior version, never a \
-     parser error from a truncated rewrite.",
-    verify = "test",
-    id = "aristo_index_writes_atomically"
-)]
 pub(crate) fn run(_all: bool) -> CliResult<()> {
     // _all is a slice-17+ flag (mtime cache); accepted as no-op for now.
     let ws = workspace_or_error()?;
@@ -101,11 +92,10 @@ pub(crate) fn workspace_or_error() -> CliResult<Workspace> {
 }
 
 #[aristo::intent(
-    "build_entries assigns an opaque aret_<random> id to every \
-     annotation that lacks a user-written id; aristo stamp (slice 17) \
-     offers to promote opaque ids to readable ones via the rename flow. \
-     The IndexFile schema requires every entry to have an id — there is \
-     no `unindexed` half-state.",
+    "Every discovered annotation gets an id, sourced in this order: \
+     user-written `id =`, then a snake_case slug derived from the text, \
+     then a random `aret_…` opaque id. The build never returns an entry \
+     without an id; there is no `unindexed` half-state.",
     verify = "test",
     id = "build_entries_assigns_opaque_ids_when_missing"
 )]
@@ -289,13 +279,12 @@ fn parse_verify(raw: &Option<String>, d: &DiscoveredAnnotation) -> CliResult<Ver
 }
 
 #[aristo::intent(
-    "atomic_write writes via temp file + rename in the same directory, so \
-     a crash leaves either the prior index or the new one — never a \
-     half-written file. The temp suffix `.tmp` is fixed (no PID / random \
-     component) so concurrent invocations of `aristo index` clash — that's \
-     the right behavior; running two indexers against the same workspace \
-     is a user error.",
-    verify = "test",
+    "A crash mid-write leaves either the prior file or the new file at \
+     the target — never a partial one. The temp file's suffix is fixed, \
+     not randomized, so two concurrent invocations clash on the temp \
+     file — intentional, since running two indexers against one \
+     workspace is a user error we surface loudly.",
+    verify = "neural",
     id = "atomic_write_via_tempfile_rename"
 )]
 pub(crate) fn atomic_write(target: &Path, content: &str) -> CliResult<()> {

@@ -23,10 +23,9 @@
 use crate::index::Sha256;
 
 #[aristo::intent(
-    "text_hash normalizes whitespace before hashing so that lint-induced \
-     reformatting (re-wrapping a long string, fixing indentation) doesn't \
-     invalidate stamped annotations. The mapping is: trim ends, then \
-     collapse runs of ASCII whitespace into a single space.",
+    "Whitespace differences in annotation text — leading, trailing, or \
+     runs collapsed to one space — do not change the text hash. \
+     Reformatting prose is not drift.",
     verify = "test",
     id = "text_hash_normalizes_whitespace"
 )]
@@ -36,12 +35,9 @@ pub fn text_hash(text: &str) -> Sha256 {
 }
 
 #[aristo::intent(
-    "body_hash is verbatim — the covered region's bytes hash exactly as \
-     they appear in source. This is what makes stamp's drift detection \
-     work: any change inside the covered region changes the hash, flips \
-     status to `unknown`, and the author re-verifies. Whitespace-only \
-     edits ARE drift by design (the human reviewed THIS code, not other \
-     code; even cosmetic changes deserve a fresh look).",
+    "Every byte inside the covered region is significant to the body \
+     hash. Identical hash means byte-identical region; any difference, \
+     including whitespace, is drift.",
     verify = "test",
     id = "body_hash_is_verbatim"
 )]

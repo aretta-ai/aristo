@@ -247,12 +247,11 @@ fn no_id_error(index: &IndexFile, raw: &str) -> CliError {
 }
 
 #[aristo::intent(
-    "did_you_mean caps Levenshtein distance at one third of the query \
-     length so unrelated ids never surface as 'did you mean'. A regression \
-     here would either flood the user with irrelevant suggestions \
-     (threshold too loose) or hide genuine typos (threshold too tight) — \
-     both erode trust in the suggestion as a signal worth reading.",
-    verify = "test",
+    "The Levenshtein threshold is tuned to suppress unrelated ids: too \
+     loose floods the user with noise, too tight hides real typos. Both \
+     regressions silently erode trust in the \"did you mean\" signal \
+     until it gets ignored.",
+    verify = "neural",
     id = "did_you_mean_threshold_filters_noise"
 )]
 /// Pick up to 3 close ids by Levenshtein distance, capped at one third of

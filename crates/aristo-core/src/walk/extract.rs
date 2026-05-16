@@ -82,10 +82,9 @@ pub enum ExtractError {
 }
 
 #[aristo::intent(
-    "extract_from_source returns annotations in source order (top of file \
-     first). Tests rely on this ordering to assert specific entries by \
-     index without selector machinery, and the downstream walker depends \
-     on it for stable index.toml ordering when ids haven't been assigned.",
+    "Annotations return in source order — top of file first. Sorting or \
+     hashing the result would silently break stable index ordering and \
+     the test fixtures that index into it positionally.",
     verify = "test",
     id = "extract_returns_annotations_in_source_order"
 )]
