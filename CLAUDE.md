@@ -114,6 +114,26 @@ The rule is restrained, not exhaustive:
 - **Aggressive when in doubt.** We can always relax the rule later; we cannot retroactively recover the experience of having lived with it.
 - Once `aristo install-skills` is in place (slice 13), the **authoring skill writes intents — don't hand-write them.** Hand-writing exists only in the window between slices 6 and 13, deliberately short so we feel the gap the skill closes. The backfill commit at the start of milestone B sweeps slices 1–5 schema crates using the skill (don't hand-write the backfill — that's part of the skill test).
 
+## §10A. Skill-feedback loop — PHILOSOPHY.md + cases (active development; design dated 2026-05-16)
+
+**Status:** designed but not yet wired (lands in milestone D, see ROADMAP). Listed here so the design survives any context reset before the implementation lands.
+
+The authoring skill (and future skills: mining, neural-verify, review) is taste-driven and we're bootstrapping that taste from scratch. The system has TWO living artifacts per skill:
+
+- **`.aristo/feedback/<skill>/PHILOSOPHY.md`** — distilled principles, P-tagged (e.g. `P-VERIFY-OFF-WHEN-COVERED`), each with one-line rule + rationale paragraph + linked example cases. Modeled on Rust API Guidelines / OpenAI Model Spec / Chicago Manual of Style. Anti-patterns first; principles can be drafts; user can write principles directly without waiting for cases. **This is the only feedback artifact the skill itself loads** (alongside its SKILL.md body, via `include_str!`).
+- **`.aristo/feedback/<skill>/cases/<date>-<slug>.md`** — audit-trail evidence per feedback round: original (skill-generated), better (per user), why, candidate_principle. Each case file stays as historical record + regression eval; the principle distilled from it lives in PHILOSOPHY.md.
+
+**REFLECTION protocol** (triggered at milestone close + on-demand):
+1. Read recent open cases for the skill.
+2. Group by candidate_principle (or new draft principle).
+3. Refine PHILOSOPHY.md: add new P-, sharpen existing ones, retire stale.
+4. For each case, verify it now maps to a principle. Mark superseded; keep file as regression evidence.
+5. Commit the PHILOSOPHY.md diff with a message linking the case files it addresses.
+
+**Frequency calibration:** start frequent (every milestone, possibly more often). Track diff size — when REFLECTION starts producing tiny diffs, the philosophy is stabilizing and cadence drops to "as needed." Three reflections in we'll know the shape.
+
+**End-of-milestone-C action item:** surface every #[aristo::intent] added in slices 14–17 (hash + id + walk + cycle + index + stamp), capture user feedback on each as cases, draft initial PHILOSOPHY.md for `aristo-authoring`. This is task #35 in the session task list.
+
 ## §11. Release cadence — milestone version bumps
 
 The roadmap (`docs/ROADMAP.md`) groups slices into milestones. Each milestone closes with a workspace version bump and a git tag — the project gains a real release cadence instead of one big-bang publish.
