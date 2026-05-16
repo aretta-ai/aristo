@@ -104,10 +104,29 @@ enum Commands {
     },
 
     /// Look up an annotation by id, fn / mod / struct name, or file:line.
-    Show,
+    Show {
+        /// Selector: bare id, `fn <name>`, `mod <name>`, `struct <name>`,
+        /// `enum <name>`, `trait <name>`, or `<file>:<line>`.
+        selector: String,
+        /// Emit the entry as JSON instead of human-readable text.
+        #[arg(long, conflicts_with = "toml_out")]
+        json: bool,
+        /// Emit the entry as TOML (mirrors the on-disk index schema).
+        #[arg(long = "toml", conflicts_with = "json")]
+        toml_out: bool,
+    },
 
     /// Flat enumeration of all annotations.
-    List,
+    List {
+        /// J2 unified filter clause (`id=<id>`, `file=<path>`,
+        /// `parent=<id>`, `status=<state>`). Repeatable; multiple
+        /// `--filter` flags AND together.
+        #[arg(long = "filter", value_name = "key=value")]
+        filters: Vec<String>,
+        /// Emit a JSON array of records instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Project-level summary (tier, counts, freshness).
     Status,
@@ -166,8 +185,12 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         }
         Commands::Index { all } => commands::index::run(all),
         Commands::Stamp { check } => commands::stamp::run(check),
-        Commands::Show => not_yet("aristo show", "slice 18"),
-        Commands::List => not_yet("aristo list", "slice 18"),
+        Commands::Show {
+            selector,
+            json,
+            toml_out,
+        } => commands::show::run(&selector, output_mode(json, toml_out)),
+        Commands::List { filters, json } => commands::list::run(&filters, json),
         Commands::Status => not_yet("aristo status", "slice 19"),
         Commands::Lint => not_yet("aristo lint", "slice 20"),
         Commands::Verify => not_yet("aristo verify", "slice 22"),
@@ -181,6 +204,16 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
 
 fn not_yet(what: &'static str, slice: &'static str) -> CliResult<()> {
     Err(CliError::NotImplemented { what, slice })
+}
+
+fn output_mode(json: bool, toml_out: bool) -> commands::show::OutputMode {
+    if json {
+        commands::show::OutputMode::Json
+    } else if toml_out {
+        commands::show::OutputMode::Toml
+    } else {
+        commands::show::OutputMode::Text
+    }
 }
 
 #[cfg(test)]
@@ -201,20 +234,18 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Show).unwrap_err();
+        let err = dispatch(Commands::Status).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo show"), "msg: {msg}");
-        assert!(msg.contains("slice 18"), "msg: {msg}");
+        assert!(msg.contains("aristo status"), "msg: {msg}");
+        assert!(msg.contains("slice 19"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
-        // to update the slice pointer. Implemented commands (Init, Lang) are
-        // tested elsewhere.
+        // to update the slice pointer. Implemented commands (Init, Lang,
+        // Index, Stamp, Show, List) are tested elsewhere.
         let variants = [
-            (Commands::Show, "slice 18"),
-            (Commands::List, "slice 18"),
             (Commands::Status, "slice 19"),
             (Commands::Lint, "slice 20"),
             (Commands::Verify, "slice 22"),

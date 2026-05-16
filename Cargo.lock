@@ -108,6 +108,8 @@ dependencies = [
  "clap",
  "dirs",
  "predicates",
+ "serde",
+ "serde_json",
  "tempfile",
  "time",
  "toml 0.8.23",
