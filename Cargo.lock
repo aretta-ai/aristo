@@ -120,10 +120,12 @@ version = "0.0.3"
 dependencies = [
  "aristo",
  "getrandom 0.2.17",
+ "proc-macro2",
  "schemars",
  "serde",
  "serde_json",
  "sha2",
+ "syn",
  "thiserror 2.0.18",
  "toml 0.8.23",
 ]

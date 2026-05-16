@@ -19,3 +19,4 @@ pub mod hash;
 pub mod id;
 pub mod index;
 pub mod spec;
+pub mod walk;
