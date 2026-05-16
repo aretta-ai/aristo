@@ -89,7 +89,11 @@ enum Commands {
     },
 
     /// Walk source, parse via syn, write .aristo/index.toml.
-    Index,
+    Index {
+        /// Force a full re-walk, ignoring the per-file mtime cache (slice 17+).
+        #[arg(long)]
+        all: bool,
+    },
 
     /// Index + ID assignment + drift detection + (Phase 2) B5b classification.
     Stamp,
@@ -155,7 +159,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::UninstallSkills { agent, user, force } => {
             commands::install_skills::uninstall(agent, user, force)
         }
-        Commands::Index => not_yet("aristo index", "slice 16"),
+        Commands::Index { all } => commands::index::run(all),
         Commands::Stamp => not_yet("aristo stamp", "slice 17"),
         Commands::Show => not_yet("aristo show", "slice 18"),
         Commands::List => not_yet("aristo list", "slice 18"),
@@ -191,11 +195,11 @@ mod tests {
     #[test]
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
-        // ones (Init, Lang as of slices 10, 11) are covered by their own tests.
-        let err = dispatch(Commands::Index).unwrap_err();
+        // ones are covered by their own tests.
+        let err = dispatch(Commands::Stamp).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo index"), "msg: {msg}");
-        assert!(msg.contains("slice 16"), "msg: {msg}");
+        assert!(msg.contains("aristo stamp"), "msg: {msg}");
+        assert!(msg.contains("slice 17"), "msg: {msg}");
     }
 
     #[test]
@@ -204,7 +208,6 @@ mod tests {
         // to update the slice pointer. Implemented commands (Init, Lang) are
         // tested elsewhere.
         let variants = [
-            (Commands::Index, "slice 16"),
             (Commands::Stamp, "slice 17"),
             (Commands::Show, "slice 18"),
             (Commands::List, "slice 18"),

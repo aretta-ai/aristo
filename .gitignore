@@ -13,6 +13,10 @@
 .env
 .env.local
 
-# Aristo runtime artifacts that should never be committed in this repo
-# (downstream projects commit .aristo/ per design; this repo is the SDK itself
-# and has no .aristo/ of its own).
+# Aristo runtime artifacts produced by dogfooding the SDK on its own source.
+# Downstream projects DO commit these (deterministic + reviewable). This repo
+# generates them via `aristo index` / `aristo init` for local validation but
+# excludes them from git so the dogfood doesn't churn the tree.
+/aristo.toml
+/.aristo/
+/.github/workflows/aristo.yml
