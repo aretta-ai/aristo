@@ -36,9 +36,30 @@ pub(crate) fn bundled() -> &'static [Skill] {
     BUNDLED
 }
 
+/// The authoring skill body shipped to disk on install. Concatenates
+/// the agent-facing skill manifest with the canonical PHILOSOPHY.md
+/// (durable principles + case links) so updates to PHILOSOPHY.md
+/// auto-propagate into the bundled skill — no manual sync step.
+///
+/// PHILOSOPHY.md lives at `.aristo/feedback/aristo-authoring/`; it's
+/// human-curated and tracked in git (`.gitignore` whitelists the
+/// `feedback/` subtree). The relative path here climbs four parents
+/// from this file (`crates/aristo-cli/src/skills/` → repo root) before
+/// descending; if the layout changes the build breaks loudly rather
+/// than silently shipping a skill without principles.
+const AUTHORING_BODY: &str = concat!(
+    include_str!("aristo-authoring.md"),
+    "\n\n---\n\n## Canonical principles (verbatim from PHILOSOPHY.md)\n\n\
+     The section below is `include_str!`'d at build time from \
+     `.aristo/feedback/aristo-authoring/PHILOSOPHY.md` so the bundled \
+     skill cannot drift from the project's distilled principles. Edit \
+     the source file, not this section.\n\n",
+    include_str!("../../../../.aristo/feedback/aristo-authoring/PHILOSOPHY.md"),
+);
+
 const AUTHORING: Skill = Skill {
     name: "aristo-authoring",
-    content: include_str!("aristo-authoring.md"),
+    content: AUTHORING_BODY,
 };
 
 const BUNDLED: &[Skill] = &[AUTHORING];
@@ -103,6 +124,41 @@ mod tests {
         assert!(
             s.content.contains("aret_"),
             "skill must warn agents not to write the aret_ prefix"
+        );
+    }
+
+    #[test]
+    fn authoring_skill_embeds_philosophy_principles_verbatim() {
+        let s = find("aristo-authoring").unwrap();
+        // Every distilled-principle heading from PHILOSOPHY.md must
+        // appear in the bundled skill body. The build-time `concat!` +
+        // `include_str!` guarantees this; the test makes the contract
+        // explicit so a future refactor that breaks the include path
+        // fails here (instead of silently shipping a skill without the
+        // canonical principles).
+        for principle in [
+            "P-SPEC-STYLE",
+            "P-CHECK-TYPE-SYSTEM-FIRST",
+            "P-NO-DOUBLE-INTENT",
+            "P-INVARIANT-AT-LOAD-BEARING-SITE",
+            "P-INVARIANT-NOT-IMPL",
+            "P-WHY-AS-INVARIANT",
+            "P-NAME-THE-REFACTOR-TRAP",
+            "P-AGENT-PROOFING",
+            "P-VERIFY-MATCHES-SHAPE",
+        ] {
+            assert!(
+                s.content.contains(principle),
+                "bundled skill is missing `{principle}` — did the \
+                 PHILOSOPHY.md include path break?"
+            );
+        }
+        // The "include marker" line proves the wiring (vs. someone
+        // having pasted PHILOSOPHY's body into the .md by hand).
+        assert!(
+            s.content.contains("`include_str!`'d at build time from"),
+            "missing include-marker phrase — skill may not be \
+             auto-wiring from PHILOSOPHY.md"
         );
     }
 
