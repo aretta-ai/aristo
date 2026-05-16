@@ -11,42 +11,51 @@
 //! That sequence isn't a single CLI invocation, so it doesn't fit a `console`-
 //! fenced trycmd file.
 //!
-//! `#[ignore]`'d until `aristo init` lands the hook installer (slice ≥8 in the
-//! post-compaction plan). The test is in source so:
-//! 1. it stays compile-checked alongside the real test suite
-//! 2. the implementing slice removes `#[ignore]` in the same commit, per the
-//!    `_pending/` → `active/` promotion convention applied to the imperative
-//!    side
-//! 3. the test contract is captured now, before the implementation, so the
-//!    implementer treats it as the spec rather than a post-hoc audit
+//! Un-ignored in slice 21 (the pre-commit hook implementation) per
+//! CLAUDE.md §12A — promoted from `#[ignore]` to active in the same commit
+//! that lands the real hook content. Counts as the imperative-side
+//! equivalent of moving a `_pending/` `.md` scenario to `active/`.
 
 use assert_cmd::Command;
+use std::path::Path;
 
 #[test]
-#[ignore = "pending: requires `aristo init` hook installer + `aristo stamp`/`aristo lint` to be implemented"]
 fn pre_commit_hook_runs_stamp_and_lint() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let repo = tmp.path();
 
+    // The hook script runs `aristo ...` and needs to find it on PATH. In
+    // tests, the cargo-built binary lives next to its dependencies in
+    // target/debug/. Prepend that directory to PATH for every git
+    // invocation so the hook subprocess inherits it.
+    let aristo_bin = assert_cmd::cargo::cargo_bin("aristo");
+    let aristo_dir = aristo_bin.parent().expect("cargo bin has a parent dir");
+    let new_path = match std::env::var_os("PATH") {
+        Some(existing) => {
+            let mut paths = vec![aristo_dir.to_path_buf()];
+            paths.extend(std::env::split_paths(&existing));
+            std::env::join_paths(paths).expect("join PATH entries")
+        }
+        None => aristo_dir.as_os_str().to_owned(),
+    };
+    let git = |dir: &Path| {
+        let mut cmd = Command::new("git");
+        cmd.current_dir(dir).env("PATH", &new_path);
+        cmd
+    };
+
     // 1. fresh git repo
-    Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(repo)
-        .assert()
-        .success();
-    Command::new("git")
+    git(repo).args(["init", "--quiet"]).assert().success();
+    git(repo)
         .args(["config", "user.email", "test@aretta.dev"])
-        .current_dir(repo)
         .assert()
         .success();
-    Command::new("git")
+    git(repo)
         .args(["config", "user.name", "Test"])
-        .current_dir(repo)
         .assert()
         .success();
-    Command::new("git")
+    git(repo)
         .args(["config", "commit.gpgsign", "false"])
-        .current_dir(repo)
         .assert()
         .success();
 
@@ -85,14 +94,9 @@ pub fn stable_hash(_x: &[u8]) -> u64 { 0 }
 "#,
     )
     .unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo)
-        .assert()
-        .success();
-    let commit = Command::new("git")
+    git(repo).args(["add", "."]).assert().success();
+    let commit = git(repo)
         .args(["commit", "-m", "feat: stable_hash"])
-        .current_dir(repo)
         .assert()
         .success();
     let stderr = String::from_utf8_lossy(&commit.get_output().stderr).to_string();
@@ -119,14 +123,9 @@ pub fn empty_text() {}
 "#,
     )
     .unwrap();
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo)
-        .assert()
-        .success();
-    let blocked = Command::new("git")
+    git(repo).args(["add", "."]).assert().success();
+    let blocked = git(repo)
         .args(["commit", "-m", "feat: empty_text"])
-        .current_dir(repo)
         .assert()
         .failure();
     let stderr = String::from_utf8_lossy(&blocked.get_output().stderr).to_string();

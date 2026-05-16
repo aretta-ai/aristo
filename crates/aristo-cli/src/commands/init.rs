@@ -1,9 +1,9 @@
 //! `aristo init` — bootstrap a project for Aristo.
 //!
 //! Creates the four state files (`aristo.toml`, `.aristo/index.toml`,
-//! `.aristo/specs/`, `.aristo/doc/`), installs a placeholder pre-commit
-//! hook (when `.git/hooks/` exists — the real hook content lands in
-//! slice 21), and writes a starter GitHub Actions workflow.
+//! `.aristo/specs/`, `.aristo/doc/`), installs the pre-commit hook
+//! (when `.git/hooks/` exists), and writes a starter GitHub Actions
+//! workflow.
 //!
 //! Per `docs/diagrams/02-state-map.mmd` `w_init`, this is the only writer
 //! of the index file's initial empty state — every read command can
@@ -18,11 +18,31 @@ use aristo_core::index::{IndexFile, Meta};
 
 use crate::{CliError, CliResult};
 
-const PRE_COMMIT_PLACEHOLDER: &str = "\
+/// The shipped pre-commit hook (slice 21).
+///
+/// Runs `aristo stamp` to refresh the index against currently-staged
+/// source, then `aristo lint --check` to fail-fast on annotation
+/// quality issues. Mirrors J6's default `pre_commit = "check"` mode.
+///
+/// `aristo` must be on `PATH` for the hook to execute — `cargo install
+/// aristo` satisfies this for end users. The hook echoes each command
+/// to stderr before running so commit-time output makes the gate
+/// visible in the user's terminal.
+///
+/// The `-e` shell option propagates any non-zero exit from `stamp` or
+/// `lint --check` as the hook's exit code, which aborts the commit.
+const PRE_COMMIT_HOOK: &str = "\
 #!/usr/bin/env bash
-# Aristo pre-commit hook (placeholder — real content lands in slice 21).
-# When slice 21 ships, this script will run `aristo stamp` + `aristo lint --check`.
-exit 0
+# Aristo pre-commit hook. Installed by `aristo init`.
+# Refreshes .aristo/index.toml, then runs lint --check on the index.
+# Non-zero exit aborts the commit.
+set -e
+
+echo \"-> aristo stamp\" >&2
+aristo stamp >&2
+
+echo \"-> aristo lint --check\" >&2
+aristo lint --check >&2
 ";
 
 const GH_WORKFLOW_STARTER: &str = "\
@@ -90,7 +110,7 @@ pub(crate) fn run(_force: bool) -> CliResult<()> {
         if hook_path.exists() {
             println!("note: pre-commit hook already installed.");
         } else {
-            fs::write(&hook_path, PRE_COMMIT_PLACEHOLDER)?;
+            fs::write(&hook_path, PRE_COMMIT_HOOK)?;
             make_executable(&hook_path)?;
             println!("ok: installed pre-commit hook (.git/hooks/pre-commit)");
             any_change = true;
