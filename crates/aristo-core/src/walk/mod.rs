@@ -14,7 +14,9 @@
 //! its own focused tests for things like `target/` exclusion.
 
 pub mod extract;
+pub mod fs;
 
 pub use extract::{
     extract_from_source, AnnotationForm, ExtractError, ExtractedAnnotation, ParentRaw,
 };
+pub use fs::{walk_directory, DiscoveredAnnotation, FsWalkError};
