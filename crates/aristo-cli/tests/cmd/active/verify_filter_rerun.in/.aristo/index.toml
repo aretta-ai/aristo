@@ -1,0 +1,13 @@
+[__meta__]
+schema_version = 1
+
+[noop]
+kind = "intent"
+text = "Documentation-only — filter/rerun scenarios verify no-op."
+verify = false
+status = "unknown"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/lib.rs"
+site = "fn noop (line 2)"
+covered_region = "function"

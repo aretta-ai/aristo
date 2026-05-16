@@ -23,6 +23,7 @@ The split matters because `_pending/` is the "we'll get to it eventually" pile a
 | `install_skills_opencode_shares_block.md` | **slices 23, 24, 27** | Same; also demands the "reusing block already established by codex" path (depends on codex install having run first). |
 | `uninstall_skills_codex_section.md` | **slices 23, 24, 27** (must have something to uninstall) | Spec demands "Removing Aristo skills for Codex" wording + "Stripped marker-delimited Aristo section" detail line. Current impl says "nothing to do" when no Aristo block is present, which is the default state of a fresh sandbox; the scenario implicitly assumes a prior install with all 4 skills. |
 | `uninstall_skills_cursor_files.md` | **slices 23, 24, 27** | Spec demands "3 skills removed, 1 skipped (locally modified; pass --force)" — implies the 4-skill bundle was installed first, then one was hand-edited. |
+| `verify_false_skipped.md` | **slice 25** (verify=test full pipeline closeout) | Section 1 (all-`verify=false` no-op) ships in slice 22 — but the file's sections 2 and 3 require the mining skill (slice 24) and the `aristo_verify` cargo feature (slice 25) to produce the `→ Mining assertions …` / `→ Compiling with aristo_verify cargo feature` lines. trycmd's whole-scenario semantics block partial promotion; the file moves to `active/` byte-for-byte when slice 25 closes the verify=test loop end-to-end. |
 
 ## Promotion protocol (when a blocking slice ships)
 

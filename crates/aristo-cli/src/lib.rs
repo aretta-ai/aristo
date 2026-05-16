@@ -147,7 +147,25 @@ enum Commands {
     },
 
     /// Run verification for every annotation that opted in.
-    Verify,
+    Verify {
+        /// J2 unified filter clause (`id=<id>`, `file=<path>`,
+        /// `parent=<id>`, `status=<state>`). Repeatable; multiple
+        /// `--filter` flags AND together.
+        #[arg(long = "filter", value_name = "key=value")]
+        filters: Vec<String>,
+        /// Re-verify entries already in a clean verified state.
+        /// Default is to skip clean entries; `--rerun` overrides for
+        /// post-key-rotation sweeps.
+        #[arg(long)]
+        rerun: bool,
+        /// CI mode: report whether any status would change but do not
+        /// write the index. Exits non-zero if any changes are needed.
+        #[arg(long)]
+        check: bool,
+        /// Treat warn-severity verification outcomes as failure too.
+        #[arg(long)]
+        strict: bool,
+    },
 
     /// Agentic prose-improvement pass via the review skill.
     Review,
@@ -207,7 +225,12 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::List { filters, json } => commands::list::run(&filters, json),
         Commands::Status => commands::status::run(),
         Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
-        Commands::Verify => not_yet("aristo verify", "slice 22"),
+        Commands::Verify {
+            filters,
+            rerun,
+            check,
+            strict,
+        } => commands::verify::run(&filters, rerun, check, strict),
         Commands::Review => not_yet("aristo review", "slice 27"),
         Commands::Doc => not_yet("aristo doc", "slice 28"),
         Commands::Graph => not_yet("aristo graph", "slice 29"),
@@ -248,19 +271,19 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Verify).unwrap_err();
+        let err = dispatch(Commands::Review).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo verify"), "msg: {msg}");
-        assert!(msg.contains("slice 22"), "msg: {msg}");
+        assert!(msg.contains("aristo review"), "msg: {msg}");
+        assert!(msg.contains("slice 27"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
         // to update the slice pointer. Implemented commands (Init, Lang,
-        // Index, Stamp, Show, List, Status, Lint) are tested elsewhere.
+        // Index, Stamp, Show, List, Status, Lint, Verify) are tested
+        // elsewhere.
         let variants = [
-            (Commands::Verify, "slice 22"),
             (Commands::Review, "slice 27"),
             (Commands::Doc, "slice 28"),
             (Commands::Graph, "slice 29"),

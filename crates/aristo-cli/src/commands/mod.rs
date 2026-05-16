@@ -10,3 +10,4 @@ pub(crate) mod list;
 pub(crate) mod show;
 pub(crate) mod stamp;
 pub(crate) mod status;
+pub(crate) mod verify;

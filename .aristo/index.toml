@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.5"
-generated_at = "2026-05-16T20:39:54.12397Z"
+generated_at = "2026-05-16T20:57:28.01972Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -266,6 +266,39 @@ text_hash = "sha256:7e1d3b4471926c462131212f8301655a744c62c78a1797cd57bf0c5f2c01
 body_hash = "sha256:3884c645e88b89b1e848cab4a96ddadfce79d35dc6c8dc987375f34409b50e45"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
 site = "fn uninstall (line 120)"
+covered_region = "function"
+
+[verify_assumes_are_documentation_only_by_design]
+kind = "intent"
+text = "`assume` entries have no `verify` field by design — they describe external trust (OS guarantees, library invariants, environment contracts), not properties of THIS code, so there is no internal method that could verify them. They resolve to Bool(false) here (the same arm as opt-out intents) so the dispatcher's single skip-without-skill path handles both. A refactor that tries to verify assumes would either invent a verification semantic the design rejects or fail trying."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
+body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
+file = "crates/aristo-cli/src/commands/verify.rs"
+site = "fn resolve_verify_level (line 171)"
+covered_region = "function"
+
+[verify_bool_true_resolves_through_project_default]
+kind = "intent"
+text = """Bool(true) resolves through the project's [verify].default_method and falls back to the free-tier default ("test") when absent. A refactor that hard-codes either side would silently change verification depth for every annotation that opted into the project default — those are precisely the entries where the author deferred to project policy, so a silent override defeats the deferral."""
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
+body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
+file = "crates/aristo-cli/src/commands/verify.rs"
+site = "fn resolve_verify_level (line 183)"
+covered_region = "function"
+
+[verify_skips_clean_entries_unless_rerun]
+kind = "intent"
+text = "Entries with Status in {Verified, Tested, Neural} are skipped by default. --rerun overrides for post-key-rotation sweeps. A refactor that re-runs verification unconditionally would make every CI run pay the LLM / cargo-test cost even when nothing drifted — the default-skip-clean policy is the load-bearing contract that keeps the daily-loop cost bounded."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:dae1e0e130961b9b77849e9d895baea8a7c966a9036d438917feceee2f629984"
+body_hash = "sha256:e8ca34f9ae5d74715ab3c60a66e1ebdecccd7c58c580752bf87d01ca5001f760"
+file = "crates/aristo-cli/src/commands/verify.rs"
+site = "fn is_clean_verified (line 208)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]
