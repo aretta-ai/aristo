@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn future_skill_names_not_yet_bundled() {
         // Sentinels: these skills land in their consuming slices.
-        assert!(find("aristo-mining").is_none()); // slice 24
+        assert!(find("aristo-mine-assertions").is_none()); // slice 24
         assert!(find("aristo-neural-verify").is_none()); // slice 23
         assert!(find("aristo-review-skill").is_none()); // slice 27
     }
