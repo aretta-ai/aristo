@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- docs(skill): rewrite the `aristo-authoring` skill prompt (`crates/aristo-cli/src/skills/aristo-authoring.md`) to absorb the 9 PHILOSOPHY.md principles from the milestone-C reflection round. New sections: **Before writing: the content gate** (filter out annotations that look reasonable but add no value), **The shape of a good intent** (prose-spec calibration with use/avoid lists), **Where the annotation goes** (P-INVARIANT-AT-LOAD-BEARING-SITE), **One annotation, one invariant** (P-NO-DOUBLE-INTENT). The verify-level table rewritten per P-VERIFY-MATCHES-SHAPE (the load-bearing-claim-shape rubric, not just "default to omit"). Four real-world before/after examples drawn from the milestone-C audit (text_hash motivation cleanup; generate_opaque_id "why-as-invariant" with verify shift to neural; extract source-order with "name the refactor trap"; detect_cycles with "intentional, not incomplete"). Anti-patterns section expanded with concrete bad patterns from the audit: don't restate compile-time guarantees, don't duplicate across caller/callee, don't mark design judgments as `verify = "test"`, don't pile two invariants into one. `sdk_version` bumped 0.0.3 → 0.0.4 to match workspace. All 6 skill regression tests still pass (intent_stmt!/aristos:/aret_/frontmatter content checks); the wider 295-test suite is green.
+
 ### Fixed
 - test(cli): `all_flag_is_no_op_in_slice_16` was comparing stdout byte-for-byte across two `aristo index` runs, including the "ok (N entries, X bytes)" line whose `X` value depends on `Meta.generated_at`'s subsecond precision (the `time` crate's RFC3339 format includes variable-length fractional seconds when nanoseconds are present). Intermittent flake when two close-in-time runs straddled a precision boundary. Now compares the resulting on-disk index entries instead — the actual property the test cares about.
 
