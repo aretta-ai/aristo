@@ -6,9 +6,7 @@ Settles the open question flagged in `docs/WORKFLOW-COVERAGE.md` §1.2: does `ar
 
 This rule is what lets every read command (`aristo show`, `aristo list`, `aristo status`, …) safely assume `.aristo/index.toml` exists in any initialized project — they error with "run `aristo init`" if absent, never "run `aristo stamp`".
 
-The pre-commit hook line is conditional: `aristo init` only installs `.git/hooks/pre-commit` when run inside a git repo. The trycmd sandbox isn't a git repo, so this scenario covers the non-git path. The git path is exercised by the imperative test in `crates/aristo-cli/tests/init_command.rs::installs_hook_inside_git_repo`.
-
-## `aristo init` creates the four state files (non-git path)
+## `aristo init` creates the index file with a meta-only body
 
 ```console
 $ aristo init
@@ -16,19 +14,29 @@ ok: created aristo.toml
 ok: created .aristo/index.toml (empty; 0 annotations)
 ok: created .aristo/specs/
 ok: created .aristo/doc/
+ok: installed pre-commit hook (.git/hooks/pre-commit)
 ok: wrote .github/workflows/aristo.yml (starter; edit freely)
 
-```
-
-## `.aristo/index.toml` carries the `[__meta__]` header with zero annotations
-
-```console
 $ cat .aristo/index.toml
 [__meta__]
-schema_version = 1
-generated_by = "aristo init [..]"
-generated_at = "[..]"
+schema_version = "[..]"
+generated_by   = "aristo init [..]"
+generated_at   = "[..]"
+```
 
+## Read commands work on a freshly-initialized project (zero annotations is a valid state)
+
+```console
+$ aristo list
+0 annotations.
+
+$ aristo status
+Aristo SDK v[..]
+  Tier:              [..]
+  Annotations:       0
+  Verified:          0 (n/a)
+  Index:             .aristo/index.toml ([..])
+[..]
 ```
 
 ## `aristo init` in an already-initialized project is a no-op (idempotent)
@@ -39,7 +47,7 @@ note: aristo.toml already exists — leaving as-is.
 note: .aristo/index.toml already exists — leaving as-is.
 note: .aristo/specs/ already exists.
 note: .aristo/doc/ already exists.
+note: pre-commit hook already installed.
 note: .github/workflows/aristo.yml already exists.
 ok: nothing to do.
-
 ```

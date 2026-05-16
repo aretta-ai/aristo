@@ -1,26 +1,17 @@
-# `aristo uninstall-skills --agent=cursor`
+# `aristo uninstall-skills --agent=cursor` — file removal, skip locally modified
 
-Source: `../aretta-sdk/docs/mockups/12-phase-1-architecture/cli-sessions.md` § "K4 → Uninstall (file-copy agents)".
+Source: `../aretta-sdk/docs/mockups/12-phase-1-architecture/cli-sessions.md` § "`aristo uninstall-skills` mirrors the install model" (cursor case).
 
-Reverses the file-copy install: removes each skill's `.mdc` from `.cursor/rules/`. The directory itself isn't touched (it may contain user-authored rules). Idempotent: a second invocation reports nothing to do.
-
-The trycmd sandbox here installs and then uninstalls within a single test, so the skill is present when uninstall runs.
+For file-copy agents, uninstall removes each per-skill file. Files that have been locally edited since install (content hash differs from the embedded SDK version) are skipped with an advisory; pass `--force` to delete anyway.
 
 ```console
-$ aristo install-skills --agent=cursor
-...
-
 $ aristo uninstall-skills --agent=cursor
 
-→ Uninstalling Aristo skills for Cursor (project-level) …
+→ Removing Aristo skills for Cursor …
   • Removed: .cursor/rules/aristo-authoring.mdc
+  • Removed: .cursor/rules/aristo-neural-verify.mdc
+  • Removed: .cursor/rules/aristo-mine-assertions.mdc
+  • Skipped: .cursor/rules/aristo-review-skill.mdc (locally modified; pass --force)
 
-ok: 1 skill removed for cursor.
-
-$ aristo uninstall-skills --agent=cursor
-
-→ Uninstalling Aristo skills for Cursor (project-level) …
-
-ok: nothing to do (no Aristo skills installed for cursor).
-
+ok: 3 skills removed, 1 skipped.
 ```

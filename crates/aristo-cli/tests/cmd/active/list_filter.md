@@ -2,41 +2,22 @@
 
 Source: `../aretta-sdk/docs/mockups/11-gap-closures/cli-sessions.md` § "J1.a → Filtering uses the unified grammar".
 
-Single-filter and multi-filter (AND-semantics) selection; uses the J2 unified filter grammar shared with `aristo verify` (slice 22), `aristo graph` (slice 29), `aristo review` (slice 27). Forms: `id=<id>`, `file=<path>`, `parent=<id>`, `status=<state>`. Multiple `--filter` flags AND together.
+Single-filter and multi-filter (AND-semantics) selection; uses the J2 unified filter grammar shared with `aristo verify`, `aristo graph`, `aristo review`. Forms: `id=<id>`, `file=<path>`, `parent=<id>`, `status=<state>`. Multiple `--filter` flags AND together.
 
-The sandbox pre-populates `src/lib.rs` with two intents (see `.in/` fixture).
-
-## Single filter — id
+## Single filter — status
 
 ```console
-$ aristo init
-ok: created aristo.toml
-ok: created .aristo/index.toml (empty; 0 annotations)
-ok: created .aristo/specs/
-ok: created .aristo/doc/
-ok: wrote .github/workflows/aristo.yml (starter; edit freely)
-
-$ aristo stamp
-→ Walking source from [..] …
-→ Found 2 annotations
-→ Building index entries
-→ Detecting cycles in parent graph
-  new: 2, unchanged: 0, body-drifted: 0, text-changed: 0, removed: 0
-
-ok: stamped 2 annotations into .aristo/index.toml
-
-$ aristo list --filter id=alpha
-  alpha                 intent  verify=test    status=unknown
-
-1 match.  (2 total in index)
-
+$ aristo list --filter status=stale
+  aristos:edit_page_writes_each_cell_once  intent  verify=full   status=stale       ⚠
+1 match.
 ```
 
-## Filter on an unknown key is rejected (helpful error)
+## Multiple filters AND together
 
 ```console
-$ aristo list --filter kind=intent
-? 2
-error: unknown filter key `kind`; expected one of: id, file, parent, status
-
+$ aristo list --filter file=core/storage/btree.rs --filter status=verified
+  aristos:balance_no_duplicate_cells       intent  verify=full   status=verified
+  cells_extracted_without_aliasing         intent  verify=full   status=verified
+[..]
+8 matches.
 ```

@@ -1,39 +1,22 @@
-# `aristo list` — flat inventory with summary footer
+# `aristo list` — flat inventory with stale-index advisory
 
 Source: `../aretta-sdk/docs/mockups/11-gap-closures/cli-sessions.md` § "J1.a — `aristo list`".
 
-Default text output: one annotation per line with id, kind, verify level, status; sorted alphabetically by id; footer summary by kind. The J5 stale-index preflight advisory header is deferred to slice 19 (which ships the shared preflight).
-
-The sandbox pre-populates `src/lib.rs` with two intents + one assume (see `.in/` fixture).
-
-## Phase-1 baseline + three-annotation walk → sorted listing
+Default text output: one annotation per line with id, kind, verify level, status; sorted alphabetically by id; footer summary by kind and binding state. The J5 stale-index preflight emits its standard advisory header when the index is older than source.
 
 ```console
-$ aristo init
-ok: created aristo.toml
-ok: created .aristo/index.toml (empty; 0 annotations)
-ok: created .aristo/specs/
-ok: created .aristo/doc/
-ok: wrote .github/workflows/aristo.yml (starter; edit freely)
-
 $ aristo list
+warning: .aristo/index.toml may be stale relative to source ([..] files newer than indexed).
+         Run `aristo stamp` to refresh.
 
-0 annotations  (0 intent / 0 assume)
+  aristos:balance_no_duplicate_cells       intent  verify=full   status=verified
+  aristos:edit_page_writes_each_cell_once  intent  verify=full   status=stale       ⚠
+  aristos:page_type_discriminants_…        intent  verify=full   status=verified
+  cell_array_indices_in_bounds             intent  verify=test   status=tested
+  cells_extracted_without_aliasing         intent  verify=full   status=verified
+  storage_write_atomicity                  assume  —             status=unknown
+  aret_a1b2c3d4 (post_balance_validation)  intent  verify=false  status=unknown
+[..]
 
-$ aristo stamp
-→ Walking source from [..] …
-→ Found 3 annotations
-→ Building index entries
-→ Detecting cycles in parent graph
-  new: 3, unchanged: 0, body-drifted: 0, text-changed: 0, removed: 0
-
-ok: stamped 3 annotations into .aristo/index.toml
-
-$ aristo list
-  alpha                 intent  verify=test    status=unknown
-  bravo                 intent  verify=full    status=unknown
-  charlie               assume  verify=-       status=unknown
-
-3 annotations  (2 intent / 1 assume)
-
+47 annotations  (33 intent · 14 assume · 20 server-bound)
 ```

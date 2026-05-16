@@ -2,9 +2,7 @@
 
 Source: `../aretta-sdk/docs/mockups/12-phase-1-architecture/cli-sessions.md` § "K5 — `aristo lang` for the current repo".
 
-With no arguments, `aristo lang` detects the repo's primary language by checking for the canonical manifest in the current directory (`Cargo.toml` for Rust) and emits a compact, agent-readable syntax cheat sheet. Phase 1 ships Rust only; per K5, adding language N = implementing the cheat-sheet text + the manifest detector — skills untouched.
-
-The function-like macro is `aristo::intent_stmt!()` (not `intent!()` as the original mockup-12 sketch showed) — Rust requires distinct fn names for attribute and function-like proc-macros within a single crate (E0428); `_stmt` makes the statement-position context explicit at the call site. The cheat sheet is the single source of truth for what authoring skills tell agents to write — so it MUST match the macros `aristo-macros` actually exports.
+With no arguments, `aristo lang` detects the repo's primary language from manifest files (`Cargo.toml`, `pyproject.toml`, `go.mod`, ...) and emits a compact, agent-readable syntax cheat sheet. Phase 1 ships Rust only; per K5, adding language N = implementing `LanguageSyntax` + registering — skills untouched.
 
 ```console
 $ aristo lang
@@ -17,7 +15,7 @@ Detected language: Rust (from Cargo.toml at [..]/Cargo.toml)
   fn the_thing() { ... }
 
 ## Function-like form (sub-item: before a statement / loop / block)
-  aristo::intent_stmt!("text here", verify = "test");
+  aristo::intent!("text here", verify = "test");
   for item in items { ... }
 
 ## Assume (no verify field; states external invariants you rely on)
@@ -45,5 +43,4 @@ Detected language: Rust (from Cargo.toml at [..]/Cargo.toml)
   aristo_doc    | rustdoc integration via include_str!
 
 For full reference: https://aristo.ai/docs/lang/rust
-
 ```
