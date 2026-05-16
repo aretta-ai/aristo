@@ -108,12 +108,15 @@ dependencies = [
  "clap",
  "dirs",
  "predicates",
+ "proc-macro2",
  "serde",
  "serde_json",
+ "syn",
  "tempfile",
  "time",
  "toml 0.8.23",
  "trycmd",
+ "walkdir",
 ]
 
 [[package]]

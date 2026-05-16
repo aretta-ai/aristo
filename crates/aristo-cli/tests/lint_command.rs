@@ -181,6 +181,85 @@ fn per_rule_severity_override_in_aristo_toml_takes_effect() {
         .success();
 }
 
+// ─── --fix tests ────────────────────────────────────────────────────────
+
+#[test]
+fn fix_errors_outside_a_workspace() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path())
+        .args(["lint", "--fix"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("not inside an Aristo workspace"));
+}
+
+#[test]
+fn fix_clean_workspace_reports_zero_fixes_zero_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("src/lib.rs"),
+        "#[aristo::intent(\"already clean\")]\nfn x() {}\n",
+    )
+    .unwrap();
+
+    aristo_in(tmp.path())
+        .args(["lint", "--fix"])
+        .assert()
+        .success()
+        .stdout(contains("fixed: 0 whitespace issues across 0 files"));
+}
+
+#[test]
+fn fix_rewrites_source_in_place_with_correct_count() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    let path = tmp.path().join("src/lib.rs");
+    fs::write(
+        &path,
+        "#[aristo::intent(\"text with  trailing whitespace  \")]\nfn x() {}\n",
+    )
+    .unwrap();
+
+    aristo_in(tmp.path())
+        .args(["lint", "--fix"])
+        .assert()
+        .success()
+        .stdout(contains("fixed: 2 whitespace issues across 1 file"));
+
+    let after = fs::read_to_string(&path).unwrap();
+    assert!(
+        after.contains("\"text with trailing whitespace\""),
+        "expected normalized text in file; got: {after}"
+    );
+}
+
+#[test]
+fn fix_ignores_non_aristo_string_literals() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    let path = tmp.path().join("src/lib.rs");
+    // The let-binding has doubled spaces + trailing whitespace inside a
+    // plain string literal; the lint should not touch it.
+    fs::write(&path, "fn x() {\n    let _ = \"unrelated  text  \";\n}\n").unwrap();
+
+    aristo_in(tmp.path())
+        .args(["lint", "--fix"])
+        .assert()
+        .success()
+        .stdout(contains("fixed: 0 whitespace issues across 0 files"));
+
+    let after = fs::read_to_string(&path).unwrap();
+    assert!(
+        after.contains("\"unrelated  text  \""),
+        "non-aristo literal must be untouched; got: {after}"
+    );
+}
+
 #[test]
 fn multiple_findings_listed_in_stable_order() {
     let tmp = tempfile::tempdir().unwrap();

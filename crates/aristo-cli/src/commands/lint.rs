@@ -8,7 +8,9 @@
 //! `--check` exits non-zero iff at least one finding is `error`
 //! severity (or, with `--strict`, `warn` severity).
 //!
-//! `--fix` lands in C2 of slice 20.
+//! `--fix` walks source files and applies mechanical whitespace fixes
+//! in place (`doubled_spaces`, `trailing_whitespace`). Never applies
+//! semantic rewrites.
 
 use std::cmp::Ordering;
 
@@ -20,16 +22,21 @@ use crate::commands::show::read_index;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
+mod fix;
 mod rules;
 
 use rules::Severity;
 
 pub(crate) fn run(check: bool, fix: bool, strict: bool) -> CliResult<()> {
     if fix {
-        return Err(CliError::NotImplemented {
-            what: "aristo lint --fix",
-            slice: "slice 20 / C2",
-        });
+        let ws = workspace_or_error()?;
+        let (issues, files) = self::fix::run_fix(&ws)?;
+        println!(
+            "fixed: {issues} whitespace {issue_word} across {files} {file_word}",
+            issue_word = if issues == 1 { "issue" } else { "issues" },
+            file_word = if files == 1 { "file" } else { "files" },
+        );
+        return Ok(());
     }
     if !check {
         // Default invocation (no flags) acts like --check for slice 20.
