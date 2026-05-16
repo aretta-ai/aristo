@@ -12,8 +12,11 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+aristo = { workspace = true }
+getrandom = "0.2"
+schemars = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-schemars = "0.8"
+sha2 = "0.10"
 thiserror = "2.0"
 toml = "0.8"

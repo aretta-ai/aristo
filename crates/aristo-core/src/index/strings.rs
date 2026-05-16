@@ -152,6 +152,34 @@ string_newtype! {
     schema_description = "SHA-256 hash, lowercase hex, prefixed `sha256:`.",
 }
 
+#[aristo::intent(
+    "Sha256::from_bytes is the only path that produces a Sha256 from raw \
+     input — every other constructor (parse) validates a pre-formatted \
+     string. Computing the digest here, in one place, guarantees the \
+     output is the canonical `sha256:<64-lowercase-hex>` form that round- \
+     trips through parse() and matches the schema pattern.",
+    verify = "test",
+    id = "sha256_from_bytes_is_canonical_form"
+)]
+impl Sha256 {
+    /// Compute the SHA-256 of `input` and return it in canonical form.
+    /// Always succeeds; the output round-trips through [`Sha256::parse`].
+    pub fn from_bytes(input: &[u8]) -> Self {
+        use sha2::{Digest, Sha256 as Sha256Hasher};
+        let digest = Sha256Hasher::digest(input);
+        let mut s = String::with_capacity(SHA256_PREFIX.len() + SHA256_HEX_LEN);
+        s.push_str(SHA256_PREFIX);
+        for byte in digest {
+            // Lowercase hex per the canonical schema. format! / write! both
+            // allocate; manual encoding stays in the pre-allocated capacity.
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            s.push(HEX[(byte >> 4) as usize] as char);
+            s.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+        Self(s)
+    }
+}
+
 // ─── CommitHash ─────────────────────────────────────────────────────────────
 
 const GIT_SHA1_LEN: usize = 40;
