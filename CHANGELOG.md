@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- docs(skill-feedback): initial `PHILOSOPHY.md` + 15 case files for the `aristo-authoring` skill at `.aristo/feedback/aristo-authoring/` (milestone-C reflection round). Distills 9 principles (P-SPEC-STYLE, P-CHECK-TYPE-SYSTEM-FIRST, P-NO-DOUBLE-INTENT, P-INVARIANT-AT-LOAD-BEARING-SITE, P-INVARIANT-NOT-IMPL, P-WHY-AS-INVARIANT, P-NAME-THE-REFACTOR-TRAP, P-AGENT-PROOFING, P-VERIFY-MATCHES-SHAPE) from auditing every `#[aristo::intent]` written across slices 14–18. Per-case files at `.aristo/feedback/aristo-authoring/cases/2026-05-15-*.md` carry original (v0) prose + better (v2) rewrite + why-the-gap + verify-level decision; deletion cases include author-self-flag analysis. **Skill-loading wiring lands in milestone D** (task #37); until then this is human + skill reference material. Reflection retrospective: 15 intents reviewed, 12 kept-with-rewrites, 3 deleted (1 invariant moved to right enforcement site, 1 atomicity claim duplicated across caller/callee, 1 annotation factually wrong about Rust's exhaustive-match semantics), 3 verify-level shifts (`test` → `neural` for design-judgment intents whose load-bearing claim is reviewable but not runtime-mineable). `.gitignore` updated to exclude only the regenerated `.aristo/` contents (`index.toml`, `specs/`, `doc/`) while tracking the hand-curated `.aristo/feedback/` tree.
+
 ## [v0.0.4] — 2026-05-15
 
 **Milestone C — Index pipeline.** The full inspection loop closes. From source to insight without an external tool: walker + hashing + cycle detection in `aristo-core` (slices 14–15), `aristo index` and `aristo stamp` (slices 16–17), `aristo show` and `aristo list` (slice 18). The dogfood loop now runs end-to-end against Aristo's own source: 103 annotations stamp, query, and round-trip through the CLI. Slices 14–18.
