@@ -51,6 +51,7 @@ Optional scope in parens: `feat(macros): ...`, `fix(cli): ...`, `build(workspace
   2. Write implementation → run test → it passes.
   3. Run the full check suite (§6).
   4. Commit (test + impl + CHANGELOG bullet, all together).
+- **Scenario-level extension** (per §12A): at the start of every slice, the spec scenarios that define the slice's success criterion get promoted from `_pending/`|`_blocked/` to `active/` BEFORE any impl is written. Those scenarios are the slice's red tests at the spec level; unit tests are the slice's red tests at the function level. Both feed §4's "red → green" loop.
 
 ## §5. Autonomous diagnosis when coverage is good
 
@@ -147,6 +148,7 @@ The roadmap (`docs/ROADMAP.md`) groups slices into milestones. Each milestone cl
   - `git push origin v0.0.X`
 - **Versions are dense and small.** v0.0.2 → v0.0.3 → ... → v0.0.8 → v0.1.0 (MVP). Don't skip numbers; don't lump multiple milestones into one bump.
 - Mid-milestone hotfixes — a fix landing in milestone E that must ship before E completes — get a patch bump (e.g. v0.0.5.1 while E is heading to v0.0.6). Rare; should be the exception, not the rule.
+- **Milestone-close gate** (per §12A): before tagging `vX.Y.Z`, verify every scenario any slice in the milestone promised to promote is in `active/` and passing. Any slip surfaces explicitly — either land it in scope or move the promise to the next milestone with the user's sign-off (and a corresponding `_blocked/README.md` update).
 
 ## §12. Specifications are the truth — never rewrite to match impl
 
@@ -176,6 +178,37 @@ The pre-written scenarios in `crates/aristo-cli/tests/cmd/_pending/`, the mockup
 - The test suite stops being a fidelity check and becomes "the code does what the code does."
 
 **Operational test:** when about to edit a scenario file, mockup, or design doc to match what the impl produces, STOP. The discipline says fix the impl, not the spec. If the impl can't be fixed in scope, surface the conflict.
+
+## §12A. Slice-startup protocol — promote the spec FIRST
+
+Counterpart to §12. Specs are the truth; this section says **when** to promote them: at the **start** of a slice, not the end.
+
+**Before writing any implementation for a slice (or starting a milestone):**
+
+1. **Identify the scenarios that define success.** Walk `crates/aristo-cli/tests/cmd/_pending/` and `_blocked/` for scenarios that match the slice's deliverable. Cross-reference `docs/ROADMAP.md` (every slice row's "Promotes X, Y" column) and the design archive (`../aretta-sdk/docs/mockups/`, `TOOLS.md`).
+
+2. **Promote those scenarios to `active/`.** Byte-for-byte. If freshly extracted from a mockup, apply A2.2 mechanical wrapping (opening fence tagged `console`, trailing blank line before closing ```; see `scripts/fix_trycmd_eol.py`). Add `.in/` sandbox fixtures if the spec requires inputs (source files, pre-built index, etc.) — fixture content is test-runner machinery, not spec content.
+
+3. **Watch them fail.** The promoted scenarios are now red. The slice's success criterion is now a concrete, measurable artifact: *"this slice ships when these scenarios go green and §6 checks pass."*
+
+4. **Implement to make them pass.** §4 (test-first) still applies to unit tests; both can be written red before code. Don't write impl that doesn't move at least one red scenario toward green.
+
+5. **Slice closes only when every promoted scenario is green AND the unit tests are green AND §6 checks pass.** No "shipped slice 20 but `lint_check_fail.md` is still in `_pending/`" — if the slice's spec is still pending, the slice isn't done.
+
+**Milestone close (per §11) extends the same rule:** before tagging `vX.Y.Z`, verify every scenario any slice in the milestone promised to promote is in `active/` and passing. If something slipped, surface it explicitly; either land it in scope or move the promise to the next milestone with sign-off.
+
+**Why this works:**
+- Success criterion is concrete, not "felt." You can't fool yourself into thinking a slice is done.
+- Slice scope gets pinned at the start (which scenarios are in vs out), preventing both scope creep and silent under-delivery.
+- Coupled with §12, this prevents the "I'll rewrite the scenario at the end to match what I built" anti-pattern by **forcing the spec into the `active/` suite BEFORE the impl exists** — there's literally nothing for the impl to "match against" except the unedited spec.
+- Dogfooding feeds naturally: the SDK's own scenarios become the eval set; failures pinpoint regressions immediately.
+
+**When a scenario is NOT promotable at slice start:**
+- If it depends on infrastructure another slice owns, it stays in `_blocked/` with explicit "blocking on slice X" mapping in `_blocked/README.md`.
+- If it requires Phase 2 surface, it stays in `_pending/`.
+- The slice's spec is the SUBSET it CAN cover; everything else is explicit deferral, surfaced to the human at slice start, not after the fact.
+
+**Operational test:** when starting a slice, the FIRST commit should be (or include) the `_pending/`|`_blocked/` → `active/` promotion of the slice's scenarios. If the first commit is impl code, that's a §12A violation; the spec hadn't been promoted yet, so the slice was scoped by what felt buildable, not by what the spec demanded.
 
 ---
 
