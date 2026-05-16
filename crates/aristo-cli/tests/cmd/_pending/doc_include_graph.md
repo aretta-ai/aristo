@@ -17,4 +17,5 @@ $ aristo doc --include-graph
 ok: doc artifacts + graph updated.
 
 The summary now embeds the graph at the top.
+
 ```

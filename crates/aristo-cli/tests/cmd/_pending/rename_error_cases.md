@@ -11,6 +11,7 @@ $ aristo rename aristos:balance_no_duplicate_cells aristos:balance_op_unique_cel
 ? 1
 error: id `aristos:balance_op_unique_cells` is already in use at src/btree.rs:[..].
        Pick a different id or delete the conflicting annotation first.
+
 ```
 
 ## Cross-namespace rename rejected (use `aristo unbind` instead)
@@ -23,6 +24,7 @@ error: cross-namespace rename rejected
        Use `aristo unbind aristos:balance_no_duplicate_cells` to drop the
        server binding (preserving the local id), or pick a target inside
        the same namespace (e.g., `aristos:balance_op_unique_cells`).
+
 ```
 
 ## Reject rename to reserved prefix (F1-b)
@@ -36,6 +38,7 @@ error: id `aret_xyz123` uses the reserved `aret_` prefix (stamp-assigned only).
        `aristo sync` binding, never via `aristo rename`.
        If you intended to make this annotation unaliased, delete the `id` arg
        in source and re-run `aristo stamp` — stamp will assign an opaque id.
+
 ```
 
 ## Allow opaque → readable (F1-c) with promotion note
@@ -45,4 +48,5 @@ $ aristo rename aret_a1b2c3d4 post_balance_validator
 ok: renamed 1 annotation
 note: promoted opaque id → readable id. Future references to
       `aret_a1b2c3d4` will fail. Update any external dashboards / links.
+
 ```

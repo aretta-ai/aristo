@@ -34,4 +34,5 @@ aristos:balance_no_duplicate_cells (intent)
       core/storage/btree.rs:[..]  — fn edit_page
     cell_array_indices_in_bounds      (intent, verify=test, status=tested)
       core/storage/btree.rs:[..]  — fn balance_non_root  [also child of balance_no_cells_lost]
+
 ```

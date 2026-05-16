@@ -12,4 +12,5 @@ $ aristo verify --audit-only --strict
   • Local git remote: github.com/priyacorp/distrib-lock-fork  ←  MISMATCH
 
 warning: 1 publisher-identity mismatch (legitimate forks are normal — treat as soft signal)
+
 ```

@@ -13,4 +13,5 @@ $ aristo doc
   • Unchanged: [..] files
 
 ok: doc artifacts updated. ([..] written, [..] unchanged)
+
 ```

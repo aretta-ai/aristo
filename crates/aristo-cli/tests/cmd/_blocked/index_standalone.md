@@ -19,6 +19,7 @@ $ aristo index
 → Writing .aristo/index.toml … ok ([..] entries, [..] bytes)
 
 ok: index regenerated (incremental: 3 files re-walked, 44 from cache).
+
 ```
 
 ## `--all` forces a full rewalk
@@ -32,6 +33,7 @@ $ aristo index --all
 → Writing .aristo/index.toml … ok ([..] entries, [..] bytes)
 
 ok: index regenerated (full: 47 files re-walked).
+
 ```
 
 ## Cycle detection runs in `aristo index` (matches `aristo stamp`)
@@ -49,6 +51,7 @@ Break the cycle by removing one of these parent links:
   • c (src/lib.rs:[..])    has parent = "b"
 
 No files modified. Fix the cycle and re-run `aristo index`.
+
 ```
 
 ## Re-running with no source change is a no-op
@@ -57,4 +60,5 @@ No files modified. Fix the cycle and re-run `aristo index`.
 $ aristo index
 → Walking source from . … 47 files scanned, 0 changed since last run
 ok: index up to date (no rewrite).
+
 ```

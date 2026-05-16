@@ -29,4 +29,5 @@ $ aristo verify
 → Running existing test suite with injected assertions … [..] passed
 ok: 1 annotation verified.
   • rebalance_invariant   status: tested
+
 ```

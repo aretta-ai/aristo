@@ -33,6 +33,7 @@ $ aristo verify
   • commit_atomicity          status: tested  (assertion did not fire — no covering test)
 
 ok: 3 annotations verified (method: test).
+
 ```
 
 ## Spec files exist after a successful run
@@ -50,6 +51,7 @@ rebalance_postcondition (intent)
   binding:   local
   spec:      .aristo/specs/[..].spec
 [..]
+
 ```
 
 ## Re-running with no source change is a no-op (idempotent)
@@ -62,4 +64,5 @@ note: 3 annotations are already in a clean verified/tested state; skipping
       (use `--rerun` to force re-verification).
 
 ok: 0 annotations verified, 3 skipped (already clean).
+
 ```

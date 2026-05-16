@@ -17,4 +17,5 @@ ok: doc artifacts updated.
 ℹ Status is a build-time fact and will become stale as code evolves.
    Re-run `aristo doc --include-status` to refresh, or omit `--include-status`
    for purely static rendering.
+
 ```

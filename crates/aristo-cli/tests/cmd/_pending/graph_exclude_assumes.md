@@ -10,4 +10,5 @@ $ aristo graph --exclude-assumes
 → Reading .aristo/index.toml … ok
 → Filtering: skipping [..] assume nodes
 ok: rendered [..] nodes, [..] edges (Mermaid to stdout)
+
 ```

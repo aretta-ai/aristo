@@ -18,4 +18,5 @@ ok: crate-root summary written.
 To render in `cargo doc`, add to your lib.rs / main.rs:
     //! ...your existing crate doc...
     #![doc = include_str!("../.aristo/doc/_summary.md")]
+
 ```

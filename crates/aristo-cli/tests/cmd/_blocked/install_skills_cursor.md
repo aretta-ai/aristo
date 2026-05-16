@@ -17,4 +17,5 @@ ok: 4 skills installed for cursor.
 
 Tip: commit .cursor/ to share rules with your team. To install globally
 instead, pass --user (writes to ~/.cursor/rules/).
+
 ```

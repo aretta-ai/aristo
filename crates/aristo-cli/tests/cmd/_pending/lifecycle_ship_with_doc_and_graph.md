@@ -22,4 +22,5 @@ $ aristo badge --out=docs/badge.svg
 ok: badge written. Embed in README:
 
   ![aristo verified](https://aretta.dev/[..]/badge.svg)
+
 ```

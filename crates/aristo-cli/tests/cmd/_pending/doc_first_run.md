@@ -26,4 +26,5 @@ Next steps:
   • Or run `cargo doc --features aristo_doc` to render docs with annotations.
   • Optional: add `#[doc = include_str!(".aristo/doc/_summary.md")]`
     above your crate's `//!` doc to render the project-level summary.
+
 ```

@@ -26,6 +26,7 @@ balance_no_duplicate_cells (core/storage/btree.rs:[..])
 [..]
 
 Index updated: [..] entries written `last_reviewed_at_text_hash` + finding count.
+
 ```
 
 ## Filter by id
@@ -37,6 +38,7 @@ running review… (1 target)
 balance_no_duplicate_cells (core/storage/btree.rs:[..])
   ✦ [rephrasing] strong-suggest
 [..]
+
 ```
 
 ## Filter by file
@@ -45,6 +47,7 @@ balance_no_duplicate_cells (core/storage/btree.rs:[..])
 $ aristo review --filter file=core/storage/btree.rs
 running review… ([..] targets)
 [..]
+
 ```
 
 ## Filter by line range (`<file>:<start>-<end>`)
@@ -56,6 +59,7 @@ running review… (1 target in line range)
 edit_page_writes_each_cell_once (core/storage/btree.rs:6911)
   ✦ [vocabulary] info
 [..]
+
 ```
 
 ## Multiple filters AND together (J2 shared grammar)
@@ -64,6 +68,7 @@ edit_page_writes_each_cell_once (core/storage/btree.rs:6911)
 $ aristo review --filter file=core/storage/btree.rs --filter status=verified
 running review… ([..] targets)
 [..]
+
 ```
 
 ## Targets with outstanding lint findings are skipped with a pointer to `aristo lint --fix`
@@ -76,4 +81,5 @@ cell_array_borrows_from_pages (core/storage/btree.rs:[..])
   ⚠ aristo lint flagged this annotation: [text_too_long].
   Run `aristo lint --fix` (or address manually) before deeper review.
   Skipping deeper review for this target until lint findings are resolved.
+
 ```

@@ -16,6 +16,7 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
 ok: badge written. Embed in README:
 
   ![aristo verified](https://aretta.dev/[..]/badge.svg)
+
 ```
 
 ## After `aristo stamp` the warning disappears
@@ -31,6 +32,7 @@ $ aristo badge --out=docs/badge.svg
 ok: badge written. Embed in README:
 
   ![aristo verified](https://aretta.dev/[..]/badge.svg)
+
 ```
 
 ## Stdout target (no `--out`) emits the warning to stderr; SVG to stdout is not corrupted
@@ -42,4 +44,5 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
 <svg [..]
 [..]
 </svg>
+
 ```

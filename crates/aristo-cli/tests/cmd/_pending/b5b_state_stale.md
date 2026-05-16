@@ -17,6 +17,7 @@ warning: 1 stale verified outcome
 
     Re-verify with:    aristo verify --rerun --filter id=aristos:edit_page_writes_each_cell_once
     Or rebind binding: aristo sync --rebind aristos:edit_page_writes_each_cell_once
+
 ```
 
 ## `aristo show` reflects the stale state
@@ -39,6 +40,7 @@ aristos:edit_page_writes_each_cell_once  (intent)
      To resolve:
        aristo verify --rerun --filter id=aristos:edit_page_writes_each_cell_once
        (or `aristo sync --rebind` if you don't want to re-run verification)
+
 ```
 
 ## `aristo verify --check` (CI gate) fails on stale
@@ -50,4 +52,5 @@ error: 1 stale verified outcome (CI mode requires resolution)
   • aristos:edit_page_writes_each_cell_once
     Run `aristo verify --rerun --filter id=aristos:edit_page_writes_each_cell_once`
     locally, commit the updated index, and re-push.
+
 ```

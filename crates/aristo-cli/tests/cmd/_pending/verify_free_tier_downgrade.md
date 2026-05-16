@@ -27,6 +27,7 @@ note: 3 annotations marked verify="full" were downgraded to "test" for this run
   • commit_atomicity         status: tested  (assertion did not fire — no covering test)
 
 ok: [..] annotations verified ([..] downgraded full→test).
+
 ```
 
 ## CI gate doesn't fail on tier alone
@@ -35,4 +36,5 @@ ok: [..] annotations verified ([..] downgraded full→test).
 $ aristo verify --check
 [..]
 ok: [..] annotations verified at the strongest method available on this tier.
+
 ```

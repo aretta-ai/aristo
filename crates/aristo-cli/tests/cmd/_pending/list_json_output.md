@@ -16,4 +16,5 @@ $ aristo list --filter status=stale --json
     "stale_reason": "body_hash"
   }
 ]
+
 ```

@@ -21,4 +21,5 @@ $ aristo graph --include-status --out=status.svg --format=svg
 
 → Shelling out to `dot -Tsvg` … ok
 ok: wrote [..] nodes, [..] edges to status.svg
+
 ```

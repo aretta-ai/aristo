@@ -11,4 +11,5 @@ $ aristo graph --filter file=core/storage/btree.rs
 → Filtering: annotations in core/storage/btree.rs (+ immediate parents for context)
   • [..] in-file nodes + [..] external-parent nodes = [..] nodes
 ok: rendered [..] nodes, [..] edges (Mermaid to stdout)
+
 ```

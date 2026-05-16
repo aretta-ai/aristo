@@ -38,4 +38,5 @@ ok: 4 skills installed for codex.
 
 Note: future `aristo install-skills --agent=codex --update` rewrites ONLY
 the marker-delimited block — your hand-written AGENTS.md content is preserved.
+
 ```

@@ -12,4 +12,5 @@ $ aristo uninstall-skills --agent=codex
   • Hand-written AGENTS.md content preserved.
 
 ok: skills removed.
+
 ```

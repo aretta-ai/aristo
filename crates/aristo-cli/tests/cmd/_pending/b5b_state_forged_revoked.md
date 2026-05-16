@@ -23,4 +23,5 @@ CRITICAL: 1 forged verified outcome — DO NOT TRUST
         — will issue a fresh outcome under the current key.
 
     Status: forged
+
 ```

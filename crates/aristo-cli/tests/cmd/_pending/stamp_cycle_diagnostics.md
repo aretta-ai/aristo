@@ -19,6 +19,7 @@ Break the cycle by removing one of these parent links:
   • c (src/lib.rs:[..])    has parent = "b"
 
 No files modified. Fix the cycle and re-run `aristo stamp`.
+
 ```
 
 ## Self-cycle (F2-b)
@@ -29,6 +30,7 @@ $ aristo stamp
 error: self-cycle: annotation `self_loop` lists itself as parent
        (src/lib.rs:[..])
        An annotation cannot be its own parent.
+
 ```
 
 ## Diamond is a DAG, not a cycle (F2-c)
@@ -36,4 +38,5 @@ error: self-cycle: annotation `self_loop` lists itself as parent
 ```console
 $ aristo stamp
 ok: 4 annotations stamped, no cycles detected.
+
 ```

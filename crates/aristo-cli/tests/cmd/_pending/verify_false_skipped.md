@@ -20,6 +20,7 @@ note: 4 annotations are marked verify = false (documentation only); skipped.
       • design_decision_assume     (src/lib.rs:[..])
 
 ok: 0 annotations verified, 4 skipped (documentation only).
+
 ```
 
 ## Mixed: `verify = false` is skipped, others run normally
@@ -37,6 +38,7 @@ note: 1 annotation is marked verify = false (documentation only); skipped.
 → Running existing test suite with injected assertions … [..] passed
 
 ok: [..] annotations verified, 1 skipped (documentation only).
+
 ```
 
 ## CI gate: `verify = false` does not fail `--check`
@@ -45,4 +47,5 @@ ok: [..] annotations verified, 1 skipped (documentation only).
 $ aristo verify --check
 [..]
 ok: [..] annotations verified at the strongest method available on this tier.
+
 ```

@@ -18,4 +18,5 @@ ok: 4 skills installed for opencode.
 Note: Codex and OpenCode share the AGENTS.md convention; both agents read
 from the same marker-delimited block. Running `aristo install-skills` for
 either is idempotent.
+
 ```

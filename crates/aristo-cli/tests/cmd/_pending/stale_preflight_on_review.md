@@ -21,6 +21,7 @@ ok: reviewed [..] annotations in [..]
 
 findings: [..] ([..] strong-suggest, [..] suggest, [..] info)
 [..]
+
 ```
 
 ## After `aristo stamp` the warning disappears
@@ -34,6 +35,7 @@ running review… (using aristo-review-skill via [..], model=off-the-shelf)
 
 ok: reviewed [..] annotations in [..]
 [..]
+
 ```
 
 ## Composes with `--filter` — warning still emitted
@@ -47,4 +49,5 @@ running review… (1 target)
 
 balance_no_duplicate_cells (core/storage/btree.rs:[..])
 [..]
+
 ```

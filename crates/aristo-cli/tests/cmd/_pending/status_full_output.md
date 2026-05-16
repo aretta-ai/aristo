@@ -28,4 +28,5 @@ Index health:
   Bundled key registry: scheme v1, [..] active keys, [..] revoked
 
 ℹ For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`).
+
 ```

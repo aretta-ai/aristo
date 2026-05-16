@@ -28,6 +28,7 @@ note: 3 annotations are already in a clean verified/tested state; skipping
       (use `--rerun` to force re-verification).
 
 ok: 0 annotations verified, 3 skipped (already clean).
+
 ```
 
 ## Editing one source file un-clean's only its own annotations; others stay skipped
@@ -51,6 +52,7 @@ note: 2 annotations are already in a clean verified/tested state; skipping.
 [..]
 ok: 1 annotation verified (method: test), 2 skipped (already clean).
   • rebalance_postcondition   status: tested
+
 ```
 
 ## `--check` (CI gate) treats already-clean entries as still passing
@@ -60,4 +62,5 @@ $ aristo verify --check
 [..]
 ok: 3 annotations verified at the strongest method available on this tier
     (3 already clean, 0 freshly verified).
+
 ```

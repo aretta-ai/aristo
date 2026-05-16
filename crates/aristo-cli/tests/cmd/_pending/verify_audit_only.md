@@ -20,4 +20,5 @@ $ aristo verify --audit-only
   ✗ 0 forged
 
 ok: bindings appear authentic. No mutations made.
+
 ```

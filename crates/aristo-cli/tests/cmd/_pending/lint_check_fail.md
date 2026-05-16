@@ -9,4 +9,5 @@ $ aristo lint --check
 ? 1
 error: 1 lint finding (error severity)
   • cache_eviction_pre (src/cache.rs:[..]): empty_text (annotation text is empty)
+
 ```

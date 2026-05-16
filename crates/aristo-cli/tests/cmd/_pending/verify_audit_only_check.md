@@ -9,4 +9,5 @@ $ aristo verify --audit-only --check
 ? 2
 [..]
 error: 1 forged verified_outcome — refusing to gate verification
+
 ```

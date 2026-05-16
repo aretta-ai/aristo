@@ -22,6 +22,7 @@ ok: 3 annotations verified (method: neural).
   • api_idempotency           status: verified
   • cache_consistency         status: verified
   • retry_safe_on_5xx         status: failed
+
 ```
 
 ## Filter to a single id (composes with J2 `--filter`)
@@ -35,6 +36,7 @@ $ aristo verify --filter id=api_idempotency
 
 ok: 1 annotation verified (method: neural).
   • api_idempotency           status: verified
+
 ```
 
 ## Index reflects the status, no `verified_outcome` field
@@ -48,4 +50,5 @@ api_idempotency (intent)
   text_hash: sha256:[..]
   body_hash: sha256:[..]
 [..]
+
 ```

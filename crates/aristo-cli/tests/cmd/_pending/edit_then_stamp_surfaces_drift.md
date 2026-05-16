@@ -17,6 +17,7 @@ rebalance_invariant (intent)
   body_hash: sha256:[..]
   text_hash: sha256:[..]
 [..]
+
 ```
 
 ## Edit source body, then `aristo stamp` flips status to `unknown` with a "body changed" note
@@ -37,6 +38,7 @@ rebalance_invariant (intent)
 note: body hash changed since last verification.
       Previously: tested (body_hash sha256:[..])
       Run `aristo verify` to re-verify, or `aristo verify --filter id=rebalance_invariant`.
+
 ```
 
 ## `aristo verify` brings it back to clean
@@ -50,6 +52,7 @@ note: 0 annotations are already in a clean verified/tested state.
 [..]
 ok: 1 annotation verified (method: test).
   • rebalance_invariant       status: tested
+
 ```
 
 ## Editing only annotation TEXT (not body) flips to `text-drift` instead — re-review path
@@ -58,4 +61,5 @@ ok: 1 annotation verified (method: test).
 $ aristo stamp
 ok: 1 annotation stamped, 0 ids assigned.
   • rebalance_invariant       text changed, body unchanged — status held; review-cache invalidated
+
 ```

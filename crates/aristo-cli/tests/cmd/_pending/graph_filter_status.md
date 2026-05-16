@@ -13,6 +13,7 @@ $ aristo graph --filter status=unknown --format=svg --out=review.svg
 → Filtering: [..] annotations with status=unknown (+ immediate neighbors for context)
 → Shelling out to `dot -Tsvg` … ok
 ok: wrote [..] nodes, [..] edges to review.svg
+
 ```
 
 ## Compose with `--include-status` to color by status
@@ -20,4 +21,5 @@ ok: wrote [..] nodes, [..] edges to review.svg
 ```console
 $ aristo graph --filter status=stale --include-status
 [..]
+
 ```

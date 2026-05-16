@@ -12,4 +12,5 @@ $ aristo graph --filter file=core/storage/btree.rs --exclude-assumes --depth=2 -
 → Rendering DOT graph in memory …
 → Shelling out to `dot -Tsvg` … ok
 ok: wrote [..] nodes, [..] edges to btree-intents.svg
+
 ```

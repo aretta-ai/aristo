@@ -13,6 +13,7 @@ error: no annotation with id `balance_no_dupes`.
 
 Did you mean:
   • aristos:balance_no_duplicate_cells  (core/storage/btree.rs:[..])
+
 ```
 
 ## Stale-index advisory (J5 preflight)
@@ -25,6 +26,7 @@ $ aristo show aristos:balance_no_duplicate_cells
 
 aristos:balance_no_duplicate_cells (intent)
 [..]
+
 ```
 
 ## Empty result with next-step hints
@@ -36,4 +38,5 @@ No items matching `fn does_not_exist` found in indexed source files.
 Try:
   • `aristo show --list-functions` to see all indexed functions
   • `aristo index` to refresh if you've added new sources
+
 ```

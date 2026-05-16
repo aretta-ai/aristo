@@ -15,4 +15,5 @@ $ aristo doc --check
 
 error: 1 doc artifact out of sync with the index.
        Run `aristo doc` locally and commit the result.
+
 ```

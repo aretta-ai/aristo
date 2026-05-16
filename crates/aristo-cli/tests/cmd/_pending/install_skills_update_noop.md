@@ -11,4 +11,5 @@ $ aristo install-skills --agent=cursor --update
   • Skill content matches embedded version (v[..]); nothing to update.
 
 ok: 0 skills updated, 4 skills already current.
+
 ```

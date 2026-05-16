@@ -11,6 +11,7 @@ The pre-J2 forms — `aristo verify --rerun aristos:edit_page_writes_each_cell_o
 ```console
 $ aristo verify --filter id=aristos:edit_page_writes_each_cell_once
 [..]
+
 ```
 
 ## Filter by status
@@ -18,6 +19,7 @@ $ aristo verify --filter id=aristos:edit_page_writes_each_cell_once
 ```console
 $ aristo verify --filter status=stale
 [..]
+
 ```
 
 ## Filter by file path
@@ -25,6 +27,7 @@ $ aristo verify --filter status=stale
 ```console
 $ aristo verify --filter file=core/storage/btree.rs
 [..]
+
 ```
 
 ## `--rerun` composes with `--filter`
@@ -32,6 +35,7 @@ $ aristo verify --filter file=core/storage/btree.rs
 ```console
 $ aristo verify --rerun --filter status=verified
 [..]
+
 ```
 
 ## Bare `--rerun` re-verifies everything (rare; for after a server key rotation)
@@ -39,6 +43,7 @@ $ aristo verify --rerun --filter status=verified
 ```console
 $ aristo verify --rerun
 [..]
+
 ```
 
 ## Composes with `--check` and `--strict`
@@ -49,4 +54,5 @@ $ aristo verify --filter file=core/storage/btree.rs --check
 
 $ aristo verify --filter status=stale --check --strict
 [..]
+
 ```

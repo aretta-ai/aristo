@@ -14,4 +14,5 @@ $ aristo uninstall-skills --agent=cursor
   • Skipped: .cursor/rules/aristo-review-skill.mdc (locally modified; pass --force)
 
 ok: 3 skills removed, 1 skipped.
+
 ```

@@ -19,4 +19,5 @@ Note: user-level skills apply to ALL projects on this machine. They may
 become stale relative to project-pinned SDK versions; project-level
 install (the default) keeps each project's skills aligned with that
 project's aristo dependency.
+
 ```

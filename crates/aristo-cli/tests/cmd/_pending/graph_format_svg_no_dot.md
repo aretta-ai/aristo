@@ -19,4 +19,5 @@ Alternatives:
     (then render with any Graphviz tool)
   • aristo graph --format=mermaid > annotations.mmd
     (renders in any markdown viewer that supports Mermaid)
+
 ```

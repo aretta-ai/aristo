@@ -17,4 +17,5 @@ ok: 4 skills installed for antigravity.
 note: Antigravity's skill format is still stabilizing; if this file path
 or frontmatter is wrong, please file an issue with the version of
 Antigravity you're using.
+
 ```

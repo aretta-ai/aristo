@@ -24,6 +24,7 @@ Inside fn body (β-form annotations):
   cumulative_counts_disjoint (intent, verify=full, status=verified)
     @ btree.rs:[..] — before assignment
     "After this assignment, cell_count_per_page_cumulative[i] equals…"
+
 ```
 
 ## Multi-match disambiguation (F3-d)
@@ -43,4 +44,5 @@ Found 3 sites matching `fn seek`. Disambiguate by id, file:line, or item path:
     core/index/cursor.rs:[..]    — fn seek (impl IndexCursor)
 
 To show one, run: `aristo show <id>` or `aristo show <file>:<line>`
+
 ```

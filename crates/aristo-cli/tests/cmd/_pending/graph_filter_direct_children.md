@@ -11,4 +11,5 @@ $ aristo graph --filter parent=aristos:balance_no_duplicate_cells --depth=1
 → Filtering: direct children of `aristos:balance_no_duplicate_cells`
   • [..] children
 ok: rendered [..] nodes (root + [..]), [..] edges (Mermaid to stdout)
+
 ```

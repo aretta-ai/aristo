@@ -12,4 +12,5 @@ warning: server-binding `verified_outcome` invalidated by id change
          Run `aristo sync --rebind aristos:balance_op_unique_cells` to re-bind
          (per B5a-revised + B5b: source aristos: prefix preserved;
          index `verified_outcome` refreshes on re-bind)
+
 ```

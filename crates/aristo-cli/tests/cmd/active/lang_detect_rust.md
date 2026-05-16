@@ -43,4 +43,5 @@ Detected language: Rust (from Cargo.toml at [..]/Cargo.toml)
   aristo_doc    | rustdoc integration via include_str!
 
 For full reference: https://aristo.ai/docs/lang/rust
+
 ```

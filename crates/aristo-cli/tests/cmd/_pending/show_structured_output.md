@@ -15,6 +15,7 @@ $ aristo show aristos:balance_no_duplicate_cells --json
   "status": "verified",
 [..]
 }
+
 ```
 
 ## TOML output (compact, mirrors index schema)
@@ -34,4 +35,5 @@ kind = "intent"
 verify = "full"
 status = "verified"
 [..]
+
 ```

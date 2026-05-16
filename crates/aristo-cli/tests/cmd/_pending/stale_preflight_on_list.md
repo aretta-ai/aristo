@@ -18,6 +18,7 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
   cells_extracted_without_aliasing         intent  verify=full   status=verified
 [..]
 [..] annotations.
+
 ```
 
 ## After `aristo stamp` the warning disappears
@@ -31,6 +32,7 @@ $ aristo list
   aristos:edit_page_writes_each_cell_once  intent  verify=full   status=stale       ⚠
 [..]
 [..] annotations.
+
 ```
 
 ## Composes with `--filter` (J2 unified grammar) — warning still emitted, filter still applies
@@ -44,4 +46,5 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
   cells_extracted_without_aliasing         intent  verify=full   status=verified
 [..]
 [..] matches.
+
 ```

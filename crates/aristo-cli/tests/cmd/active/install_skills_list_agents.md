@@ -15,4 +15,5 @@ Supported agents:
 
 Default install scope: project-level. Pass --user to install at user level
 (skills available across all projects on this machine).
+
 ```

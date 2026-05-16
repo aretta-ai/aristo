@@ -11,4 +11,5 @@ error: Cannot detect a supported language in this repository.
        Aristo supports: Rust.
        Planned: Python, Go, TypeScript.
        For unsupported languages, see https://aristo.ai/docs/languages
+
 ```

@@ -11,4 +11,5 @@ $ aristo graph --format=svg --out=annotations.svg
 → Rendering DOT graph in memory …
 → Shelling out to `dot -Tsvg` … ok (graphviz [..])
 ok: wrote [..] nodes, [..] edges to annotations.svg
+
 ```

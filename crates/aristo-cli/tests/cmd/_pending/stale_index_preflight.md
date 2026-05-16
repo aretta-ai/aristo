@@ -16,6 +16,7 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
 aristos:balance_no_duplicate_cells (intent)
   status:    verified  (last_verified_at_commit: [..])
 [..]
+
 ```
 
 ## On `aristo graph`
@@ -26,6 +27,7 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
          Run `aristo stamp` to refresh.
 → Rendering DOT graph …
 ok: wrote [..] nodes, [..] edges to graph.svg
+
 ```
 
 ## On `aristo status`
@@ -38,6 +40,7 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
 Aristo SDK v[..]
   Tier:              [..]
 [..]
+
 ```
 
 ## On `aristo doc --check` — does not affect exit code separately from doc-sync result
@@ -48,6 +51,7 @@ $ aristo doc --check
 warning: .aristo/index.toml may be stale relative to source ([..] files newer than indexed).
          Run `aristo stamp` to refresh.
 error: 1 doc artifact out of sync with the index.
+
 ```
 
 ## After `aristo stamp` the warning disappears
@@ -59,4 +63,5 @@ ok: [..] annotations stamped, [..] ids assigned.
 $ aristo show fn balance_non_root
 aristos:balance_no_duplicate_cells (intent)
   status:    verified  …
+
 ```

@@ -11,4 +11,5 @@ $ aristo graph --filter id=aristos:balance_no_duplicate_cells --out=balance.mmd
 → Filtering: subtree rooted at `aristos:balance_no_duplicate_cells`
   • Root + [..] descendants ([..] levels deep)
 ok: wrote [..] nodes, [..] edges to balance.mmd
+
 ```

@@ -22,6 +22,7 @@ $ aristo verify --filter id=aristos:balance_no_duplicate_cells
 ok: 1 annotation verified.
   • aristos:balance_no_duplicate_cells  (status: verified, method: refinement-proof)
     Index entry updated; signature recorded.
+
 ```
 
 ## Subsequent `aristo stamp` re-validates each signature offline
@@ -33,6 +34,7 @@ ok: [..] annotations stamped, 0 ids assigned
   • aristos:edit_page_writes_each_cell_once   verified-outcome: valid ✓
   • aristos:page_type_discriminants_are_format_stable   verified-outcome: valid ✓
 [..]
+
 ```
 
 ## `aristo show` exposes the certificate block
@@ -57,4 +59,5 @@ aristos:balance_no_duplicate_cells  (intent)
 
   Text:
     For all B-tree balance operations, no cells are duplicated…
+
 ```

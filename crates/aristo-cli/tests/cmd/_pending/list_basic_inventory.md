@@ -19,4 +19,5 @@ warning: .aristo/index.toml may be stale relative to source ([..] files newer th
 [..]
 
 47 annotations  (33 intent · 14 assume · 20 server-bound)
+
 ```

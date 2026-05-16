@@ -28,6 +28,7 @@ CRITICAL: 1 orphan verified outcome — DO NOT TRUST
         with shallow clones), see the shallow-clone note below.
 
     Status: orphan
+
 ```
 
 ## `aristo show` for an orphan
@@ -51,6 +52,7 @@ aristos:cell_array_indices_in_bounds  (intent)
      Run `aristo verify --filter id=aristos:cell_array_indices_in_bounds` to
      issue a fresh outcome for current HEAD, or `aristo unbind
      aristos:cell_array_indices_in_bounds` to remove the binding.
+
 ```
 
 ## `aristo verify --check` exits non-zero (exit code 2)
@@ -61,4 +63,5 @@ $ aristo verify --check
 error: 1 orphan verified outcome — refusing to gate verification
   • aristos:cell_array_indices_in_bounds
     Commit [..] is not in this repository's history.
+
 ```

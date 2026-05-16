@@ -22,6 +22,7 @@ $ cat .aristo/index.toml
 schema_version = "[..]"
 generated_by   = "aristo init [..]"
 generated_at   = "[..]"
+
 ```
 
 ## Read commands work on a freshly-initialized project (zero annotations is a valid state)
@@ -37,6 +38,7 @@ Aristo SDK v[..]
   Verified:          0 (n/a)
   Index:             .aristo/index.toml ([..])
 [..]
+
 ```
 
 ## `aristo init` in an already-initialized project is a no-op (idempotent)
@@ -50,4 +52,5 @@ note: .aristo/doc/ already exists.
 note: pre-commit hook already installed.
 note: .github/workflows/aristo.yml already exists.
 ok: nothing to do.
+
 ```

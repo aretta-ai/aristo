@@ -10,6 +10,7 @@ Single-filter and multi-filter (AND-semantics) selection; uses the J2 unified fi
 $ aristo list --filter status=stale
   aristos:edit_page_writes_each_cell_once  intent  verify=full   status=stale       ⚠
 1 match.
+
 ```
 
 ## Multiple filters AND together
@@ -20,4 +21,5 @@ $ aristo list --filter file=core/storage/btree.rs --filter status=verified
   cells_extracted_without_aliasing         intent  verify=full   status=verified
 [..]
 8 matches.
+
 ```

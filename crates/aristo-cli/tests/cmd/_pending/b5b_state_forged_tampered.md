@@ -27,6 +27,7 @@ CRITICAL: 1 forged verified outcome — DO NOT TRUST
         Check `git log -- .aristo/index.toml`.
 
     Status: forged
+
 ```
 
 ## `aristo show` for a forged entry
@@ -47,4 +48,5 @@ aristos:page_type_discriminants_are_format_stable  (intent)
      This is a security signal. Investigate `git log -- .aristo/index.toml`
      for unexpected changes, then run `aristo verify --filter id=aristos:page_type_discriminants_are_format_stable`
      to obtain a fresh outcome.
+
 ```

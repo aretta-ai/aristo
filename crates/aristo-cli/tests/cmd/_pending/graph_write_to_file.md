@@ -10,4 +10,5 @@ $ aristo graph --out=docs/annotations.mmd
 → Reading .aristo/index.toml … ok
 → Rendering Mermaid graph …
 ok: wrote [..] nodes, [..] edges to docs/annotations.mmd
+
 ```

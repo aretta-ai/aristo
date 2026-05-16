@@ -7,4 +7,5 @@ Source: `../aretta-sdk/docs/mockups/11-gap-closures/cli-sessions.md` § "J6 — 
 ```console
 $ aristo lint --fix
 fixed: 2 whitespace issues across 1 file
+
 ```

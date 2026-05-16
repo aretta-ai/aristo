@@ -14,4 +14,5 @@ ok: wrote [..] nodes, [..] edges to annotations.dot
 To render:
   dot -Tsvg annotations.dot -o annotations.svg
   dot -Tpng annotations.dot -o annotations.png
+
 ```

@@ -33,4 +33,5 @@ Index updates:
    use `aristo unbind aristos:<id>` instead to remove the binding entirely.
 
 (no changes written — dry-run)
+
 ```

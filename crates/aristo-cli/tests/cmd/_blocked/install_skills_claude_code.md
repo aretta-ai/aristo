@@ -17,4 +17,5 @@ ok: 4 skills installed for claude-code.
 
 Tip: commit .claude/ to share skills with your team. To install globally
 instead, pass --user (writes to ~/.claude/skills/).
+
 ```

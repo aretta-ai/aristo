@@ -17,4 +17,5 @@ ok: [..] doc artifacts in sync with the index.
 
 $ aristo lint --check --strict
 ok: [..] annotations linted, no findings (info / warn / error).
+
 ```

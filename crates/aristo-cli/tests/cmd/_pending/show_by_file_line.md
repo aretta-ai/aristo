@@ -16,4 +16,5 @@ Annotation covering this line:
     Each cell pushed here is a distinct memory reference:
     _cell_get_raw_region_faster returns non-overlapping (start, len)
     regions, so successive pushes never alias.
+
 ```

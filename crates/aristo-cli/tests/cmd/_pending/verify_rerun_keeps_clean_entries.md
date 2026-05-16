@@ -15,6 +15,7 @@ $ aristo verify
 → Mining assertions via aristo-mine-assertions skill ([..]) … 3 generated
 [..]
 ok: 3 annotations verified (method: test).
+
 ```
 
 ## Without `--rerun`: clean entries are skipped (the default-skip case)
@@ -27,6 +28,7 @@ note: 3 annotations are already in a clean verified/tested state; skipping
       (use `--rerun` to force re-verification).
 
 ok: 0 annotations verified, 3 skipped (already clean).
+
 ```
 
 ## With `--rerun`: same-input clean entries run again, end up clean again
@@ -49,6 +51,7 @@ note: --rerun set — re-verifying 3 entries already in a clean state.
   • commit_atomicity          status: tested
 
 ok: 3 annotations verified (method: test).
+
 ```
 
 ## `--rerun --filter status=verified` re-runs only the previously-clean subset
@@ -62,4 +65,5 @@ note: --rerun set — re-verifying 3 entries already in a clean state.
 → Mining assertions via aristo-mine-assertions skill ([..]) … 3 generated
 [..]
 ok: 3 annotations verified (method: test).
+
 ```

@@ -32,4 +32,5 @@ aristos:rebalance_invariant  (intent)
     commit_hash:      [..]  (HEAD)
     signature:        Ed25519, valid against bundled public key (scheme v[..])
 [..]
+
 ```
