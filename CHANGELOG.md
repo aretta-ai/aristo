@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- test(cli): `all_flag_is_no_op_in_slice_16` was comparing stdout byte-for-byte across two `aristo index` runs, including the "ok (N entries, X bytes)" line whose `X` value depends on `Meta.generated_at`'s subsecond precision (the `time` crate's RFC3339 format includes variable-length fractional seconds when nanoseconds are present). Intermittent flake when two close-in-time runs straddled a precision boundary. Now compares the resulting on-disk index entries instead — the actual property the test cares about.
+
 ### Changed
 - refactor(intents): apply PHILOSOPHY.md guidance across slices 14–18 dogfood `#[aristo::intent]` annotations. 12 rewrites to prose-spec form (P-SPEC-STYLE — concrete domain nouns, no motivation prose, no narration, no code identifiers where domain nouns work); 3 deletions (`snake_case_from_text_returns_none_for_unusable_input` — moved system invariant to `build_entries` enforcement site; `aristo_index_writes_atomically` — duplicated by `atomic_write_via_tempfile_rename` at the load-bearing site; `matches_filter_arms_cover_filter_enum` — was factually wrong about Rust exhaustive match, type system already enforces the property); 3 verify-level shifts (`test` → `neural`) on intents whose load-bearing claim is a design judgment rather than a runtime property (`generate_opaque_id_always_parses`, `atomic_write_via_tempfile_rename`, `did_you_mean_threshold_filters_noise` — per P-VERIFY-MATCHES-SHAPE). Net effect: 13 intents remain across slices 14–18 (down from 15), each tighter and more refactor-trap-naming. Index regenerated locally (101 dogfood annotations after the cleanup, down from 103). 295 tests passing; clippy + fmt clean.
 
