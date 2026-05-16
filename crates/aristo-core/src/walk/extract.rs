@@ -113,7 +113,7 @@ impl<'a> Walker<'a> {
         &mut self,
         attrs: &[syn::Attribute],
         site: &str,
-        item: &S,
+        body_span: S,
         covered_region: CoveredRegion,
     ) {
         for attr in attrs {
@@ -134,7 +134,7 @@ impl<'a> Walker<'a> {
                 site,
                 attr.span().start().line,
                 covered_region,
-                source_slice(self.source, item.span()),
+                source_slice(self.source, body_span.span()),
             ));
         }
     }
@@ -192,8 +192,11 @@ fn make_annotation(
 impl<'ast> Visit<'ast> for Walker<'_> {
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
         let site = format!("fn {}", node.sig.ident);
-        self.process_attrs(&node.attrs, &site, node, CoveredRegion::Function);
-        // Recurse to find statement-form macros inside the body.
+        // Body span = the fn's `{ ... }` block, EXCLUDING the `#[...]`
+        // attribute. Excluding attributes lets text-only edits (re-wording
+        // the intent prose) leave body_hash unchanged — drift detection
+        // cares about CODE drift, not annotation text drift.
+        self.process_attrs(&node.attrs, &site, &node.block, CoveredRegion::Function);
         for stmt in &node.block.stmts {
             self.visit_stmt_with_site(stmt, &site);
         }
@@ -201,35 +204,68 @@ impl<'ast> Visit<'ast> for Walker<'_> {
 
     fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
         let site = format!("struct {}", node.ident);
-        self.process_attrs(&node.attrs, &site, node, CoveredRegion::Type);
+        // Body = the field list. Text-only edits to the annotation don't
+        // shift the field span.
+        self.process_attrs(&node.attrs, &site, &node.fields, CoveredRegion::Type);
     }
 
     fn visit_item_enum(&mut self, node: &'ast syn::ItemEnum) {
         let site = format!("enum {}", node.ident);
-        self.process_attrs(&node.attrs, &site, node, CoveredRegion::Type);
+        self.process_attrs(
+            &node.attrs,
+            &site,
+            node.brace_token.span.span(),
+            CoveredRegion::Type,
+        );
     }
 
     fn visit_item_trait(&mut self, node: &'ast syn::ItemTrait) {
         let site = format!("trait {}", node.ident);
-        self.process_attrs(&node.attrs, &site, node, CoveredRegion::Type);
-        // Recurse for trait method declarations carrying their own intents.
+        self.process_attrs(
+            &node.attrs,
+            &site,
+            node.brace_token.span.span(),
+            CoveredRegion::Type,
+        );
         for item in &node.items {
             if let syn::TraitItem::Fn(method) = item {
                 let method_site = format!("trait {}::{}", node.ident, method.sig.ident);
-                self.process_attrs(&method.attrs, &method_site, method, CoveredRegion::Function);
+                if let Some(default_block) = &method.default {
+                    self.process_attrs(
+                        &method.attrs,
+                        &method_site,
+                        default_block,
+                        CoveredRegion::Function,
+                    );
+                } else {
+                    self.process_attrs(
+                        &method.attrs,
+                        &method_site,
+                        &method.sig,
+                        CoveredRegion::Function,
+                    );
+                }
             }
         }
     }
 
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
         let site = impl_site(node);
-        self.process_attrs(&node.attrs, &site, node, CoveredRegion::ImplMethods);
-        // Recurse for inherent / trait method bodies.
+        self.process_attrs(
+            &node.attrs,
+            &site,
+            node.brace_token.span.span(),
+            CoveredRegion::ImplMethods,
+        );
         for item in &node.items {
             if let syn::ImplItem::Fn(method) = item {
                 let method_site = format!("{}::{}", site, method.sig.ident);
-                self.process_attrs(&method.attrs, &method_site, method, CoveredRegion::Function);
-                // Recurse into the method body for stmt-form macros.
+                self.process_attrs(
+                    &method.attrs,
+                    &method_site,
+                    &method.block,
+                    CoveredRegion::Function,
+                );
                 for stmt in &method.block.stmts {
                     self.visit_stmt_with_site(stmt, &method_site);
                 }
@@ -239,7 +275,24 @@ impl<'ast> Visit<'ast> for Walker<'_> {
 
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
         let site = format!("mod {}", node.ident);
-        self.process_attrs(&node.attrs, &site, node, CoveredRegion::ModuleInlineBody);
+        match &node.content {
+            Some((brace, _)) => {
+                self.process_attrs(
+                    &node.attrs,
+                    &site,
+                    brace.span.span(),
+                    CoveredRegion::ModuleInlineBody,
+                );
+            }
+            None => {
+                self.process_attrs(
+                    &node.attrs,
+                    &site,
+                    &node.ident,
+                    CoveredRegion::ModuleInlineBody,
+                );
+            }
+        }
         if let Some((_, items)) = &node.content {
             for item in items {
                 self.visit_item(item);
@@ -249,7 +302,7 @@ impl<'ast> Visit<'ast> for Walker<'_> {
 
     fn visit_item_type(&mut self, node: &'ast syn::ItemType) {
         let site = format!("type {}", node.ident);
-        self.process_attrs(&node.attrs, &site, node, CoveredRegion::Type);
+        self.process_attrs(&node.attrs, &site, node.ty.as_ref(), CoveredRegion::Type);
     }
 }
 
@@ -873,6 +926,22 @@ mod tests {
         assert_ne!(
             a[0].body_hash, b[0].body_hash,
             "body changed → hash changes"
+        );
+    }
+
+    #[test]
+    fn body_hash_unchanged_when_only_text_changes() {
+        // Text-only edit must NOT flip body_hash — lets `aristo stamp`'s
+        // drift detection distinguish "re-word the intent" (review-cache
+        // invalidate) from "edit the code" (re-verify needed). This test
+        // is the slice-17 contract that depends on the slice-14B body-span
+        // computation excluding the attribute itself.
+        let a = extract(r#"#[aristo::intent("v1")] fn f() -> i32 { 42 }"#);
+        let b = extract(r#"#[aristo::intent("v2")] fn f() -> i32 { 42 }"#);
+        assert_ne!(a[0].text_hash, b[0].text_hash, "text changed");
+        assert_eq!(
+            a[0].body_hash, b[0].body_hash,
+            "body unchanged → hash unchanged"
         );
     }
 }

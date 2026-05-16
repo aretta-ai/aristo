@@ -5,3 +5,4 @@ pub(crate) mod index;
 pub(crate) mod init;
 pub(crate) mod install_skills;
 pub(crate) mod lang;
+pub(crate) mod stamp;

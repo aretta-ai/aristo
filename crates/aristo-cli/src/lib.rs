@@ -96,7 +96,12 @@ enum Commands {
     },
 
     /// Index + ID assignment + drift detection + (Phase 2) B5b classification.
-    Stamp,
+    Stamp {
+        /// CI mode: report whether stamp would change the index, but
+        /// don't write. Exits non-zero if changes are needed.
+        #[arg(long)]
+        check: bool,
+    },
 
     /// Look up an annotation by id, fn / mod / struct name, or file:line.
     Show,
@@ -160,7 +165,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             commands::install_skills::uninstall(agent, user, force)
         }
         Commands::Index { all } => commands::index::run(all),
-        Commands::Stamp => not_yet("aristo stamp", "slice 17"),
+        Commands::Stamp { check } => commands::stamp::run(check),
         Commands::Show => not_yet("aristo show", "slice 18"),
         Commands::List => not_yet("aristo list", "slice 18"),
         Commands::Status => not_yet("aristo status", "slice 19"),
@@ -196,10 +201,10 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Stamp).unwrap_err();
+        let err = dispatch(Commands::Show).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo stamp"), "msg: {msg}");
-        assert!(msg.contains("slice 17"), "msg: {msg}");
+        assert!(msg.contains("aristo show"), "msg: {msg}");
+        assert!(msg.contains("slice 18"), "msg: {msg}");
     }
 
     #[test]
@@ -208,7 +213,6 @@ mod tests {
         // to update the slice pointer. Implemented commands (Init, Lang) are
         // tested elsewhere.
         let variants = [
-            (Commands::Stamp, "slice 17"),
             (Commands::Show, "slice 18"),
             (Commands::List, "slice 18"),
             (Commands::Status, "slice 19"),

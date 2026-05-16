@@ -28,7 +28,7 @@ use crate::{CliError, CliResult, Workspace};
 /// `(id-keyed entries, id → parent ids)` — the two parallel maps
 /// `aristo index` builds in one walk: the first becomes the
 /// `IndexFile.entries`, the second feeds [`detect_cycles`].
-type BuiltEntries = (
+pub(crate) type BuiltEntries = (
     BTreeMap<AnnotationId, IndexEntry>,
     HashMap<AnnotationId, Vec<AnnotationId>>,
 );
@@ -92,7 +92,7 @@ pub(crate) fn run(_all: bool) -> CliResult<()> {
     Ok(())
 }
 
-fn workspace_or_error() -> CliResult<Workspace> {
+pub(crate) fn workspace_or_error() -> CliResult<Workspace> {
     Workspace::find(None).map_err(|e| match e {
         crate::WorkspaceError::NotFound { searched_from } => {
             CliError::NotInWorkspace { searched_from }
@@ -109,7 +109,10 @@ fn workspace_or_error() -> CliResult<Workspace> {
     verify = "test",
     id = "build_entries_assigns_opaque_ids_when_missing"
 )]
-fn build_entries(discovered: &[DiscoveredAnnotation], _root: &Path) -> CliResult<BuiltEntries> {
+pub(crate) fn build_entries(
+    discovered: &[DiscoveredAnnotation],
+    _root: &Path,
+) -> CliResult<BuiltEntries> {
     let mut entries: BTreeMap<AnnotationId, IndexEntry> = BTreeMap::new();
     let mut parents_map: HashMap<AnnotationId, Vec<AnnotationId>> = HashMap::new();
     let mut skipped = 0usize;
@@ -295,7 +298,7 @@ fn parse_verify(raw: &Option<String>, d: &DiscoveredAnnotation) -> CliResult<Ver
     verify = "test",
     id = "atomic_write_via_tempfile_rename"
 )]
-fn atomic_write(target: &Path, content: &str) -> CliResult<()> {
+pub(crate) fn atomic_write(target: &Path, content: &str) -> CliResult<()> {
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(CliError::Io)?;
     }
@@ -305,7 +308,7 @@ fn atomic_write(target: &Path, content: &str) -> CliResult<()> {
     Ok(())
 }
 
-fn now_rfc3339() -> String {
+pub(crate) fn now_rfc3339() -> String {
     use time::format_description::well_known::Rfc3339;
     use time::OffsetDateTime;
     OffsetDateTime::now_utc()
