@@ -1,0 +1,30 @@
+[verify.cache]
+strategy = "local"
+commit_specs = true
+
+[stamp]
+hooks = "pre-commit"
+hash_crate_root = false
+
+[telemetry]
+enabled = false
+
+[lint]
+pre_commit = "check"
+strict = false
+
+[corpus]
+contribute = false
+
+[doc]
+commit_artifacts = true
+position = "before"
+
+[index]
+# Skip all test directories — `tests/` is test scaffolding, not project
+# surface. Annotations in trybuild fixtures (pass + fail), integration
+# tests, and the various `tests/*_command.rs` harnesses are fixtures for
+# exercising the macros / CLI, not claims about Aristo's behavior, and
+# shouldn't appear in the project's annotation index or lint gate.
+# Also skip trycmd's TRYCMD=dump scratch directory.
+exclude = ["**/tests/**", "**/dump/**"]
