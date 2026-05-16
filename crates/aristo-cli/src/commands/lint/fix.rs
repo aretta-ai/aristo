@@ -82,6 +82,16 @@ fn collect_rs_files(root: &Path, opts: &WalkOptions) -> Vec<PathBuf> {
 /// text literal. Returns the rewritten source + total fix count, or
 /// `None` if the file didn't parse (skip it; `aristo lint --check`
 /// surfaces the parse error elsewhere).
+#[aristo::intent(
+    "When proc_macro2 span info is missing (the rare case where \
+     span-locations is disabled), the offending edit is skipped rather \
+     than applied. Corrupting source bytes from a wrong offset is a far \
+     worse failure mode than leaving an annotation unfixed: the user \
+     sees a persistent lint finding and investigates, instead of silent \
+     file damage.",
+    verify = "neural",
+    id = "lint_fix_skips_on_missing_span"
+)]
 fn rewrite_source(source: &str) -> Option<(String, usize)> {
     let file: syn::File = syn::parse_str(source).ok()?;
     let mut visitor = LiteralFinder { hits: Vec::new() };
@@ -224,6 +234,16 @@ impl syn::parse::Parse for FirstLit {
 /// Apply the two whitespace auto-fix rules. Returns `(fixed_text,
 /// fix_count)`. Each rule that actually changed the text counts as one
 /// fix.
+#[aristo::intent(
+    "The count is rule-applications, not anomaly count. An annotation \
+     with five doubled-space runs is one fix, not five; with both rule \
+     classes triggering, the count is at most 2. The spec line \
+     `fixed: N whitespace issues across M files` depends on this — \
+     counting anomalies would inflate N misleadingly and diverge from \
+     the trycmd scenario.",
+    verify = "test",
+    id = "lint_fix_count_is_rule_applications"
+)]
 fn apply_autofix(text: &str) -> (String, usize) {
     let mut work = text.to_string();
     let mut count = 0usize;

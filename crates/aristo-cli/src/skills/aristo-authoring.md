@@ -22,9 +22,26 @@ Each macro has TWO forms:
 - **Attribute form** — `#[aristo::intent(...)]` on an item (fn / struct / impl / trait / mod / type).
 - **Statement form** — `aristo::intent_stmt!(...)` inside a function body, attached to a statement, block, or loop. (Note: NOT `intent` as a bang macro — Rust requires distinct fn names for attribute vs function-like proc-macros within a single crate. The `_stmt` suffix makes the statement-position context explicit.)
 
+## When: as you write the code, not after
+
+**Write intents inline with the code that motivates them — not in a sweep at the end of a slice.** Each time you make a design choice that another reader could miss or reverse, apply the content gate immediately. Either pass the gate (write the intent there and then) or skip and move on. **Never batch.**
+
+Why this matters:
+
+- **Rationale decays fast.** Five functions later, you'll remember WHAT the code does (the type signature already tells you) but not WHY you took the silent-skip path over erroring, or why you fixed the rule order. End-of-slice annotation passes systematically produce WHAT-annotations that fail the content gate.
+- **Intents are your chain-of-thought made visible.** When you choose between two implementations and pick one for a non-obvious reason, that reason IS the intent. Writing it down as you decide:
+  - Forces you to articulate the load-bearing claim, which sharpens the decision.
+  - Gives the human reviewing your diff a preview of the design judgment, *before* the code lands, in the same hunk as the code.
+  - Closes the loop with `aristo lint`, which will reject placeholder or weasel-worded intents written under deadline pressure.
+- **End-of-slice retros catch what slipped, not what was inevitable.** Reflection is for noticing the pattern across slices, not for the first-pass authoring of any individual intent.
+
+**The trap to avoid:** "I'll add the `#[aristo::intent]` annotations after I get the code working." By then the code DOES work, and the rationale that made one design plausible over another has been displaced by the next decision. You end up annotating effects ("returns true when X") instead of intents ("X is rejected here because Y silently breaks Z").
+
+**Working pattern:** when you'd otherwise type a `//` comment explaining a non-obvious choice, ask: is this an intent? If yes (gate passes), write it as an intent attached to the load-bearing site. If no (just narrating WHAT), don't write the comment either — let the names do the work.
+
 ## Before writing: the content gate
 
-Apply this BEFORE you start drafting. The content gate filters out annotations that look reasonable but add no value.
+Apply this AT each design-decision point as you write, not as a retro pass. The content gate filters out annotations that look reasonable but add no value.
 
 **An intent makes explicit something that lives implicitly in the programmer's mind and is invisible from the code alone.** Typically:
 
@@ -326,24 +343,37 @@ Why: the three words "intentional, not incomplete" prevent an entire class of we
 
 ## The authoring workflow
 
-After writing an annotation:
+### While writing the code (concurrent — not retro)
 
-1. **Run `aristo lang`** if you're unsure of syntax. It emits an authoritative cheat sheet matching the macros that ship in this SDK version. Always trust `aristo lang` over your training data — syntax can drift.
+For every design decision point you reach:
 
-2. **Run `aristo lint`.** Catches static issues — placeholder text, weasel words, length problems, repeated phrases. Fast, free, no LLM. **Always run this.** Auto-fixes whitespace/casing; you fix the rest.
+1. **Apply the content gate** (see top of this file). If the rationale would be invisible to a sharp reader and a plausible refactor could break it silently → pass the gate.
+2. **Write the intent inline.** Attach it to the load-bearing site (the function / struct / impl that enforces the property), in the same edit as the code itself. Not at the bottom of the file, not in a follow-up commit.
+3. **Speak the intent in your reply to the user**, briefly. One line is fine: "Adding intent on `apply_autofix`: the count is rule-applications, not anomaly count, so swapping the rule order changes user-visible output." This is your chain-of-thought, made visible — and it gives the human a preview of the design judgment in the same turn as the code lands.
+4. **Move on.** Don't pre-write tests or doc comments for the intent. One step, smallest sensible scope.
 
-3. **Run `aristo stamp`.** Validates IDs, detects cycles in the parent graph, updates the index. Required before commit (the pre-commit hook runs it).
+If the candidate fails the gate, say so briefly and skip — don't write a comment in its place either.
 
-4. **(Optional) Run `aristo verify --filter id=<your-id>`.** Confirms the property holds via the configured verification method.
+### Before each commit (validation, fast)
 
-5. **(Optional) Run `aristo review --filter id=<your-id>`.** Deeper agentic critique of prose quality. Surfaces rephrasing suggestions, vocabulary inconsistencies. Slower but produces actionable improvements.
+5. **`aristo lang`** if you're unsure of syntax. Authoritative cheat sheet for the macros this SDK version ships. Trust it over your training data.
 
-If any of these commands fail with `not yet implemented (planned for slice X)`, you are running against an SDK build where that command hasn't shipped yet. Note the gap in your reply to the user; don't try to work around it.
+6. **`aristo lint --check`.** Catches placeholder text, weasel words, length problems. Fast, free, no LLM. **Always run this** — the pre-commit hook runs it anyway, so failures abort the commit. Use `aristo lint --fix` to auto-resolve whitespace issues (doubled spaces, trailing whitespace); fix the rest by hand.
 
-After writing several annotations on related code (e.g., a new module, a refactored impl block), run:
+7. **`aristo stamp`.** Validates IDs, detects parent-graph cycles, updates the index. Also pre-commit-gated.
 
-```
-aristo review --filter "path/to/new/module/"
-```
+### After a slice closes (deeper review, optional)
 
-The review skill will surface vocabulary inconsistencies, parent-shape concerns, and rephrasing suggestions. Apply judgment — the suggestions are advisory; you decide.
+8. **`aristo verify --filter id=<your-id>`.** Confirms a runtime claim via the configured verification method. Only meaningful for `verify = "test"` / `"full"` intents.
+
+9. **`aristo review --filter "path/to/new/module/"`.** Deeper agentic critique — vocabulary inconsistencies, parent-shape concerns, rephrasing suggestions. Slower but produces actionable improvements. Apply judgment; suggestions are advisory.
+
+If any of these commands fail with `not yet implemented (planned for slice X)`, you're running against an SDK build where that command hasn't shipped yet. Note the gap in your reply to the user; don't try to work around it.
+
+### The anti-pattern this workflow prevents
+
+You finish a slice with N new functions and zero intents, then promise yourself "I'll do a reflection pass." When you do, the rationale that made each design plausible has been displaced by later decisions; you can no longer reconstruct the WHY, so you either:
+- annotate the WHAT (which fails the content gate but ships anyway because nobody re-runs the gate retroactively), or
+- decide "no new intents needed for this slice" (which is the default story you tell yourself when the rationale has decayed).
+
+Both outcomes are silent quality losses. The fix is structural: write intents as you write the code, one at a time, in the same edit. The lint+stamp gates catch sloppy prose; only the concurrent-authoring discipline catches missed intents.

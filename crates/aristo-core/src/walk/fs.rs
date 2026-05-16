@@ -96,6 +96,16 @@ impl WalkOptions {
     /// configured. Public so non-walker code (e.g. `aristo lint --fix`,
     /// which has its own file-iteration loop) can apply the same
     /// filter consistently.
+    #[aristo::intent(
+        "Path components are joined with forward slashes before glob \
+         matching, so the same aristo.toml exclude list works on POSIX \
+         and Windows. A `rel.to_str()` shortcut would feed `\\`-separated \
+         paths into globset on Windows and silently make patterns like \
+         `**/tests/ui/**` never match — failing open, not closed, which \
+         would index files the user thought were excluded.",
+        verify = "neural",
+        id = "walk_excludes_normalize_to_forward_slash"
+    )]
     pub fn excludes_path(&self, rel: &Path) -> bool {
         if self.excludes.is_empty() {
             return false;
