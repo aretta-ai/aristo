@@ -1,7 +1,7 @@
 ---
 name: aristo-authoring
 description: Teaches the coding agent how to write good Aristo annotations and use the Aristo CLI during the daily authoring loop.
-sdk_version: 0.0.4
+sdk_version: {{SDK_VERSION}}
 ---
 
 # Aristo annotation authoring

@@ -14,15 +14,42 @@
 
 pub(crate) mod install;
 
-/// One bundled skill. Content is the raw markdown body (the entire SKILL.md
-/// file, frontmatter + body — agents are expected to handle frontmatter).
+/// One bundled skill. `content` is a TEMPLATE — call
+/// [`Skill::resolved_content`] before writing to disk so placeholders
+/// like `{{SDK_VERSION}}` get substituted.
 pub(crate) struct Skill {
     /// Slug used in install paths, e.g. `aristo-authoring` →
     /// `.claude/skills/aristo-authoring/SKILL.md`. Must be a stable
     /// identifier; renames break installations.
     pub(crate) name: &'static str,
-    /// The full markdown content shipped to disk verbatim.
+    /// The raw markdown template — frontmatter + body. May contain
+    /// placeholders (currently only `{{SDK_VERSION}}`). Direct callers
+    /// should use [`Skill::resolved_content`] unless they specifically
+    /// need the unresolved form (e.g. drift checks against
+    /// `aristo-authoring.md` on disk).
     pub(crate) content: &'static str,
+}
+
+impl Skill {
+    /// Render the skill's template into the form that ships to disk.
+    /// Currently substitutes one placeholder (`{{SDK_VERSION}}`) with
+    /// the binary's compile-time version.
+    #[aristo::intent(
+        "Install paths MUST go through resolved_content, never .content \
+         directly. The template-vs-resolved split exists because skill \
+         text needs values (SDK version, future bundle hash) that are \
+         only available at build time of THIS binary, not at template \
+         authoring time. Writing .content to disk would ship a literal \
+         `{{SDK_VERSION}}` to user-installed SKILL.md files; the install \
+         outcome would look successful but the version pin would be \
+         garbage.",
+        verify = "neural",
+        id = "skill_install_must_use_resolved_content"
+    )]
+    pub(crate) fn resolved_content(&self) -> String {
+        self.content
+            .replace("{{SDK_VERSION}}", env!("CARGO_PKG_VERSION"))
+    }
 }
 
 #[aristo::intent(

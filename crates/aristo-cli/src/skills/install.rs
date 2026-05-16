@@ -51,16 +51,17 @@ pub(crate) fn file_copy_install(target: &Path, skill: &Skill) -> io::Result<Inst
         fs::create_dir_all(parent)?;
     }
 
+    let resolved = skill.resolved_content();
     if target.exists() {
         let existing = fs::read_to_string(target)?;
-        if existing == skill.content {
+        if existing == resolved {
             return Ok(InstallOutcome::Unchanged);
         }
-        fs::write(target, skill.content)?;
+        fs::write(target, &resolved)?;
         return Ok(InstallOutcome::Updated);
     }
 
-    fs::write(target, skill.content)?;
+    fs::write(target, &resolved)?;
     Ok(InstallOutcome::Created)
 }
 
@@ -173,7 +174,7 @@ fn render_agents_md_block(skills: &[&Skill]) -> String {
         buf.push_str("\n## ");
         buf.push_str(s.name);
         buf.push_str("\n\n");
-        buf.push_str(s.content.trim());
+        buf.push_str(s.resolved_content().trim());
         buf.push('\n');
     }
     buf.push('\n');
@@ -204,6 +205,29 @@ mod tests {
             .expect("authoring skill must be bundled")
     }
 
+    // ---- template resolution ----
+
+    #[test]
+    fn installed_skill_has_real_sdk_version_not_placeholder() {
+        // The smoking-gun bug from v0.0.5: skill body shipped with
+        // `sdk_version: 0.0.4` hardcoded, drifting on every release.
+        // Install must resolve `{{SDK_VERSION}}` to the running binary's
+        // version; the placeholder must never reach disk.
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("SKILL.md");
+        file_copy_install(&target, skill()).unwrap();
+        let on_disk = fs::read_to_string(&target).unwrap();
+        assert!(
+            !on_disk.contains("{{SDK_VERSION}}"),
+            "placeholder leaked to installed file"
+        );
+        let expected = format!("sdk_version: {}", env!("CARGO_PKG_VERSION"));
+        assert!(
+            on_disk.contains(&expected),
+            "installed frontmatter missing `{expected}`"
+        );
+    }
+
     // ---- file_copy ----
 
     #[test]
@@ -222,7 +246,10 @@ mod tests {
         fs::write(&target, "tampered").unwrap();
         let r3 = file_copy_install(&target, skill()).unwrap();
         assert_eq!(r3, InstallOutcome::Updated);
-        assert_eq!(fs::read_to_string(&target).unwrap(), skill().content);
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            skill().resolved_content()
+        );
     }
 
     #[test]
