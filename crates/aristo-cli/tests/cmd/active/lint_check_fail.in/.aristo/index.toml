@@ -1,0 +1,13 @@
+[__meta__]
+schema_version = 1
+
+[cache_eviction_pre]
+kind = "intent"
+text = ""
+verify = "test"
+status = "unknown"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/cache.rs"
+site = "fn evict (line 42)"
+covered_region = "function"

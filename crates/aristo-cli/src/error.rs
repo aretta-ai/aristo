@@ -29,6 +29,11 @@ pub enum CliError {
     /// is the user-facing diagnostic (e.g. `aristo lang`'s
     /// "no supported language detected").
     Other { message: String, exit_code: u8 },
+    /// Non-success exit where the command has already printed its own
+    /// human-readable output (e.g. `aristo lint --check` listing
+    /// findings). Lib's top-level wrapper skips the generic
+    /// `error: ...` line for this variant.
+    Silent { exit_code: u8 },
 }
 
 impl fmt::Display for CliError {
@@ -47,7 +52,17 @@ impl fmt::Display for CliError {
             }
             CliError::Io(e) => write!(f, "io: {e}"),
             CliError::Other { message, .. } => write!(f, "{message}"),
+            CliError::Silent { .. } => Ok(()),
         }
+    }
+}
+
+impl CliError {
+    /// True iff the error wants the top-level wrapper to skip its
+    /// generic `error: ...` print (because the command already produced
+    /// its own structured output).
+    pub fn is_silent(&self) -> bool {
+        matches!(self, CliError::Silent { .. })
     }
 }
 
@@ -74,6 +89,7 @@ impl CliError {
             CliError::NotInWorkspace { .. } => 2,
             CliError::Io(_) => 1,
             CliError::Other { exit_code, .. } => *exit_code,
+            CliError::Silent { exit_code } => *exit_code,
         }
     }
 }

@@ -60,12 +60,12 @@ fn defined_but_unimplemented_subcommand_exits_64() {
     // any other still-stubbed variant — `verify`, `doc`, etc.
     Command::cargo_bin("aristo")
         .unwrap()
-        .arg("lint")
+        .arg("verify")
         .assert()
         .failure()
         .code(64)
         .stderr(contains("not yet implemented"))
-        .stderr(contains("slice 20"));
+        .stderr(contains("slice 22"));
 }
 
 #[test]

@@ -133,7 +133,18 @@ enum Commands {
     Status,
 
     /// Static text-quality pass over annotations (rule-based; no LLM).
-    Lint,
+    Lint {
+        /// Read-only mode: exit non-zero on `error` findings (or
+        /// `warn` with `--strict`); never modifies source.
+        #[arg(long)]
+        check: bool,
+        /// Apply auto-fixable rules to source files in place (slice 20 C2).
+        #[arg(long, conflicts_with = "check")]
+        fix: bool,
+        /// Treat `warn` severity as failure too (only meaningful with `--check`).
+        #[arg(long)]
+        strict: bool,
+    },
 
     /// Run verification for every annotation that opted in.
     Verify,
@@ -162,7 +173,9 @@ pub fn run() -> ExitCode {
     match dispatch(cli.command) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("error: {e}");
+            if !e.is_silent() {
+                eprintln!("error: {e}");
+            }
             ExitCode::from(e.exit_code())
         }
     }
@@ -193,7 +206,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         } => commands::show::run(&selector, output_mode(json, toml_out)),
         Commands::List { filters, json } => commands::list::run(&filters, json),
         Commands::Status => commands::status::run(),
-        Commands::Lint => not_yet("aristo lint", "slice 20"),
+        Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
         Commands::Verify => not_yet("aristo verify", "slice 22"),
         Commands::Review => not_yet("aristo review", "slice 27"),
         Commands::Doc => not_yet("aristo doc", "slice 28"),
@@ -235,19 +248,18 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Lint).unwrap_err();
+        let err = dispatch(Commands::Verify).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo lint"), "msg: {msg}");
-        assert!(msg.contains("slice 20"), "msg: {msg}");
+        assert!(msg.contains("aristo verify"), "msg: {msg}");
+        assert!(msg.contains("slice 22"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
         // to update the slice pointer. Implemented commands (Init, Lang,
-        // Index, Stamp, Show, List, Status) are tested elsewhere.
+        // Index, Stamp, Show, List, Status, Lint) are tested elsewhere.
         let variants = [
-            (Commands::Lint, "slice 20"),
             (Commands::Verify, "slice 22"),
             (Commands::Review, "slice 27"),
             (Commands::Doc, "slice 28"),
