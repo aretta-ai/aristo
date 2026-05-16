@@ -148,6 +148,35 @@ The roadmap (`docs/ROADMAP.md`) groups slices into milestones. Each milestone cl
 - **Versions are dense and small.** v0.0.2 → v0.0.3 → ... → v0.0.8 → v0.1.0 (MVP). Don't skip numbers; don't lump multiple milestones into one bump.
 - Mid-milestone hotfixes — a fix landing in milestone E that must ship before E completes — get a patch bump (e.g. v0.0.5.1 while E is heading to v0.0.6). Rare; should be the exception, not the rule.
 
+## §12. Specifications are the truth — never rewrite to match impl
+
+**This rule is non-negotiable.** Caught and added 2026-05-16 after an audit showed ~60% of scenario promotions (slices 10–19) had silently rewritten the pre-written spec to fit Phase-1 implementation reality. The spec disappeared from the repo in the major-rewrite cases; the test suite became a tautology.
+
+The pre-written scenarios in `crates/aristo-cli/tests/cmd/_pending/`, the mockups in `../aretta-sdk/docs/mockups/`, and the decisions in `../aretta-sdk/docs/DECISIONS.md` + `../aretta-sdk/docs/TOOLS.md` are **THE SPEC**. They are the source of truth for what every CLI command does. They are NOT editable to match what the implementation happens to do today.
+
+**Promotion `_pending/` → `active/` is byte-for-byte.** The only allowed alterations are trycmd wildcards (`[..]`, `[EXE]`) for fields that legitimately vary (timestamps, byte counts, file paths). Wildcards are NOT a license to paper over output-format differences.
+
+**When implementation diverges from spec:**
+
+- **DO close the gap in the implementation.**
+- **DO NOT** silently adjust the scenario, mockup, or design doc to match.
+- **DO NOT** ship an adapted "Phase 1 subset" version under the original filename — that mutates the spec out of existence.
+- **DO NOT** delete a `_pending/` scenario because "trycmd can't easily express it" — the spec stays put; if needed, the fixture (`.in/`) does the expressing.
+- **ANY** exception requires explicit human signoff. Raise the conflict; document the agreed change in this CLAUDE.md or the design archive; then update the spec. The sequence is: raise → sign off → amend spec → implement.
+
+**Authorized prior exception:** the `intent!()` → `intent_stmt!()` rename in slice 11 was a Rust E0428 force (function-like and attribute proc-macros can't share a name). User accepted; design archive updated; this remains the *only* such authorized change.
+
+**If a scenario can't be promoted yet** (Phase 2 server dependency, hard architectural blocker), it stays in `_pending/` with its content preserved verbatim. Defer scenarios, never spec content.
+
+**Failure modes this rule prevents:**
+
+- The spec gradually mutates to match each successive impl, ending in nothing being checked.
+- Implementation gaps get hidden as "Phase 1 subset" annotations that nobody comes back to.
+- Future contributors lose the design intent because the only place it was recorded (the active scenarios) was rewritten away.
+- The test suite stops being a fidelity check and becomes "the code does what the code does."
+
+**Operational test:** when about to edit a scenario file, mockup, or design doc to match what the impl produces, STOP. The discipline says fix the impl, not the spec. If the impl can't be fixed in scope, surface the conflict.
+
 ---
 
 ## Definition of Done
