@@ -127,6 +127,45 @@ pub fn walk_directory(root: &Path) -> Result<Vec<DiscoveredAnnotation>, FsWalkEr
     Ok(out)
 }
 
+/// Lightweight walk: collect every `.rs` file path under `root` honoring
+/// the same skip set as [`walk_directory`], but WITHOUT reading or
+/// parsing the files. Used by the J5 freshness preflight, where only
+/// filesystem metadata (mtime) matters and parsing every file would be
+/// wasted work.
+///
+/// Returns absolute paths so callers can stat them directly. Path order
+/// is lexicographic for determinism.
+pub fn walk_for_freshness(root: &Path) -> Result<Vec<PathBuf>, FsWalkError> {
+    if !root.is_dir() {
+        return Err(FsWalkError::BadRoot(root.to_path_buf()));
+    }
+    let mut out = Vec::new();
+    let walker = walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|e| !is_ignored_dir(e));
+    for entry in walker {
+        let entry = entry.map_err(|e| FsWalkError::Io {
+            path: e
+                .path()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| root.to_path_buf()),
+            source: e
+                .into_io_error()
+                .unwrap_or_else(|| std::io::Error::other("walkdir error without underlying io")),
+        })?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if entry.path().extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        out.push(entry.path().to_path_buf());
+    }
+    Ok(out)
+}
+
 fn is_ignored_dir(entry: &walkdir::DirEntry) -> bool {
     if !entry.file_type().is_dir() {
         return false;

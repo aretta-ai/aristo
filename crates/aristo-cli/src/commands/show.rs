@@ -20,6 +20,7 @@ use aristo_core::index::{
 use serde::Serialize;
 
 use crate::commands::index::workspace_or_error;
+use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
 /// How to render a found entry.
@@ -32,6 +33,7 @@ pub(crate) enum OutputMode {
 
 pub(crate) fn run(selector: &str, mode: OutputMode) -> CliResult<()> {
     let ws = workspace_or_error()?;
+    emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
     let parsed = parse_selector(selector);
     match parsed {

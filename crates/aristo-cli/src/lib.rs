@@ -9,6 +9,7 @@
 mod commands;
 mod error;
 mod filter;
+mod preflight;
 mod skills;
 mod workspace;
 
@@ -191,7 +192,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             toml_out,
         } => commands::show::run(&selector, output_mode(json, toml_out)),
         Commands::List { filters, json } => commands::list::run(&filters, json),
-        Commands::Status => not_yet("aristo status", "slice 19"),
+        Commands::Status => commands::status::run(),
         Commands::Lint => not_yet("aristo lint", "slice 20"),
         Commands::Verify => not_yet("aristo verify", "slice 22"),
         Commands::Review => not_yet("aristo review", "slice 27"),
@@ -234,19 +235,18 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Status).unwrap_err();
+        let err = dispatch(Commands::Lint).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo status"), "msg: {msg}");
-        assert!(msg.contains("slice 19"), "msg: {msg}");
+        assert!(msg.contains("aristo lint"), "msg: {msg}");
+        assert!(msg.contains("slice 20"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
         // to update the slice pointer. Implemented commands (Init, Lang,
-        // Index, Stamp, Show, List) are tested elsewhere.
+        // Index, Stamp, Show, List, Status) are tested elsewhere.
         let variants = [
-            (Commands::Status, "slice 19"),
             (Commands::Lint, "slice 20"),
             (Commands::Verify, "slice 22"),
             (Commands::Review, "slice 27"),
