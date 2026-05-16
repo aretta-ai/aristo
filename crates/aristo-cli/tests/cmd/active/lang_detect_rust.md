@@ -15,7 +15,7 @@ Detected language: Rust (from Cargo.toml at [..]/Cargo.toml)
   fn the_thing() { ... }
 
 ## Function-like form (sub-item: before a statement / loop / block)
-  aristo::intent!("text here", verify = "test");
+  aristo::intent_stmt!("text here", verify = "test");
   for item in items { ... }
 
 ## Assume (no verify field; states external invariants you rely on)
