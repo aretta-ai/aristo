@@ -67,6 +67,11 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
     })?;
 
     let summary = merge_status_from_prev(&mut entries, prev_index.as_ref());
+    if !check {
+        // Skip the cascade in --check mode; CI shouldn't mutate the
+        // workspace. The summary still surfaces what would be deleted.
+        cascade_delete_orphan_proofs(&ws, &summary)?;
+    }
     print_summary(&summary);
 
     let index = IndexFile {
@@ -118,6 +123,46 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
             .display()
     );
     warn_on_counterexamples(&index);
+    Ok(())
+}
+
+#[aristo::intent(
+    "When an annotation is removed from source, its `.aristo/proofs/ \
+     <id>.proof` file (if any) is also deleted as part of `aristo \
+     stamp`. The proof is verdict-ABOUT-id; without the id it's an \
+     orphan that would either rot silently or — if the id is ever \
+     re-introduced under the same name — re-attach a stale verdict to \
+     a fresh definition. Skipped in --check mode (CI must not mutate \
+     the workspace); the summary still reports what would be removed.",
+    verify = "test",
+    id = "stamp_cascades_proof_deletion_on_removed_annotations"
+)]
+fn cascade_delete_orphan_proofs(
+    ws: &crate::Workspace,
+    summary: &StampSummary,
+) -> CliResult<()> {
+    let proofs_dir = ws.aristo_dir().join("proofs");
+    if !proofs_dir.is_dir() {
+        return Ok(());
+    }
+    for change in &summary.notable {
+        if !matches!(change.kind, NotableKind::Removed) {
+            continue;
+        }
+        let filename = format!("{}.proof", change.id.as_str().replace(':', "__"));
+        let path = proofs_dir.join(filename);
+        if path.is_file() {
+            fs::remove_file(&path).map_err(|e| CliError::Other {
+                message: format!("removing orphan proof {}: {e}", path.display()),
+                exit_code: 1,
+            })?;
+            eprintln!(
+                "  • {}: also removed orphan proof {}",
+                change.id,
+                path.strip_prefix(&ws.root).unwrap_or(&path).display()
+            );
+        }
+    }
     Ok(())
 }
 

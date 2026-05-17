@@ -208,6 +208,68 @@ fn stamp_check_mode_also_surfaces_counterexamples() {
 }
 
 #[test]
+fn stamp_cascades_proof_deletion_when_annotation_removed() {
+    // GAP-10: when an annotation is removed from source, stamp also
+    // deletes the orphan .aristo/proofs/<id>.proof file. Otherwise the
+    // proof rots silently; if the id is later re-introduced, the stale
+    // verdict re-attaches to a fresh definition.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("doomed", verify = "neural", id = "doomed")] fn d() {}"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+
+    // Plant an orphan-bait proof file at the id-mapped path.
+    let proofs_dir = tmp.path().join(".aristo/proofs");
+    fs::create_dir_all(&proofs_dir).unwrap();
+    fs::write(proofs_dir.join("doomed.proof"), "[verdict]\nfake = true\n").unwrap();
+    assert!(proofs_dir.join("doomed.proof").exists());
+
+    // Remove the annotation from source entirely.
+    write_lib(tmp.path(), "// no annotations\n");
+    aristo_in(tmp.path())
+        .arg("stamp")
+        .assert()
+        .success()
+        .stderr(contains("removed orphan proof"))
+        .stderr(contains("doomed.proof"));
+
+    assert!(
+        !proofs_dir.join("doomed.proof").exists(),
+        "orphan proof must be cascaded-deleted"
+    );
+}
+
+#[test]
+fn stamp_check_does_not_delete_orphan_proofs() {
+    // --check is CI mode; must not mutate the workspace, even to
+    // delete legitimate orphans. The summary still reports them.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("doomed", verify = "neural", id = "doomed")] fn d() {}"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let proofs_dir = tmp.path().join(".aristo/proofs");
+    fs::create_dir_all(&proofs_dir).unwrap();
+    fs::write(proofs_dir.join("doomed.proof"), "[verdict]\nfake = true\n").unwrap();
+
+    write_lib(tmp.path(), "// no annotations\n");
+    aristo_in(tmp.path())
+        .args(["stamp", "--check"])
+        .assert()
+        .failure(); // --check exits non-zero because the index would change
+
+    assert!(
+        proofs_dir.join("doomed.proof").exists(),
+        "--check mode must NOT delete proof files (CI safety)"
+    );
+}
+
+#[test]
 fn stamp_flips_text_drift_to_stale() {
     // GAP-8 strict: text drift on a verdict-bearing entry transitions to
     // Stale, same as body drift. The system can't tell "fixed a typo"
