@@ -408,3 +408,108 @@ fn apply_verdicts_rejects_unparseable_proof() {
         .code(1)
         .stderr(contains("parse:"));
 }
+
+#[test]
+fn apply_verdicts_stamps_code_hash_when_agent_omitted_it() {
+    // Agent-written proof with a Code ground that omits code_text_hash.
+    // The validator accepts (existence + line-range checks pass), then
+    // apply stamps the computed hash into the saved proof file.
+    let tmp = tempfile::tempdir().unwrap();
+    let text_h = workspace_with_one_neural_intent(tmp.path(), "my_intent", "the property holds");
+    let zero_hash = format!("sha256:{}", "0".repeat(64));
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("src/x.rs"), "line1\nline2\nline3\n").unwrap();
+    let proof = format!(
+        r#"[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "{text_h}"
+produced_at_body_hash = "{zero_hash}"
+produced_by = "test@0"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "the property holds"
+
+[[verified.proof.steps]]
+path = "0"
+claim = "by inspection"
+relation_to_parent = "decomposes"
+grounds = [{{ kind = "code", file = "src/x.rs", lines = "1-2", reason = "see literal" }}]
+"#
+    );
+    write_proof(tmp.path(), "my_intent", &proof);
+
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts"])
+        .assert()
+        .success()
+        .stdout(contains("applied: 1/1 verdict(s)"));
+
+    let written = fs::read_to_string(tmp.path().join(".aristo/proofs/my_intent.proof")).unwrap();
+    assert!(
+        written.contains("code_text_hash = \"sha256:"),
+        "expected stamped code_text_hash, got:\n{written}"
+    );
+}
+
+#[test]
+fn apply_verdicts_rewrite_hashes_migrates_proof_with_fabricated_hash() {
+    // Simulates a pre-migration proof file: the agent wrote a wrong
+    // (fabricated) code_text_hash. Without --rewrite-hashes the
+    // validator rejects on staleness. With it, the stamped hash is
+    // cleared, validated, and re-stamped.
+    let tmp = tempfile::tempdir().unwrap();
+    let text_h = workspace_with_one_neural_intent(tmp.path(), "my_intent", "the property holds");
+    let zero_hash = format!("sha256:{}", "0".repeat(64));
+    let fake_hash = format!("sha256:{}", "a".repeat(64));
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("src/x.rs"), "line1\nline2\nline3\n").unwrap();
+    let proof = format!(
+        r#"[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "{text_h}"
+produced_at_body_hash = "{zero_hash}"
+produced_by = "test@0"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "the property holds"
+
+[[verified.proof.steps]]
+path = "0"
+claim = "by inspection"
+relation_to_parent = "decomposes"
+grounds = [{{ kind = "code", file = "src/x.rs", lines = "1-2", code_text_hash = "{fake_hash}", reason = "see literal" }}]
+"#
+    );
+    write_proof(tmp.path(), "my_intent", &proof);
+
+    // Strict default: reject on stale stamped hash.
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(contains("code drifted since verification"));
+
+    // Migration flag: clear + recompute + accept.
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts", "--rewrite-hashes"])
+        .assert()
+        .success()
+        .stdout(contains("applied: 1/1 verdict(s)"));
+
+    let written = fs::read_to_string(tmp.path().join(".aristo/proofs/my_intent.proof")).unwrap();
+    assert!(
+        !written.contains(&fake_hash),
+        "fabricated hash must be replaced post-migration; got:\n{written}"
+    );
+    assert!(
+        written.contains("code_text_hash = \"sha256:"),
+        "expected a stamped (real) code_text_hash post-migration; got:\n{written}"
+    );
+}

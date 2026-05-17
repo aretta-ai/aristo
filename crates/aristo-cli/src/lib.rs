@@ -171,6 +171,15 @@ enum Commands {
         /// new verifications when set.
         #[arg(long = "apply-verdicts")]
         apply_verdicts: bool,
+        /// Migration-only: ignore any agent-stamped ground hashes in the
+        /// `.proof` files and recompute them from the cited file ranges
+        /// and index entries. Use this to migrate proofs written under
+        /// the pre-validator-fills-hashes schema. Without this flag, a
+        /// stamped hash that mismatches the current source is reported
+        /// as staleness and the proof is rejected. Only meaningful with
+        /// `--apply-verdicts`.
+        #[arg(long = "rewrite-hashes", requires = "apply_verdicts")]
+        rewrite_hashes: bool,
     },
 
     /// Agentic prose-improvement pass via the review skill.
@@ -237,7 +246,15 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             check,
             strict,
             apply_verdicts,
-        } => commands::verify::run(&filters, rerun, check, strict, apply_verdicts),
+            rewrite_hashes,
+        } => commands::verify::run(
+            &filters,
+            rerun,
+            check,
+            strict,
+            apply_verdicts,
+            rewrite_hashes,
+        ),
         Commands::Review => not_yet("aristo review", "slice 27"),
         Commands::Doc => not_yet("aristo doc", "slice 28"),
         Commands::Graph => not_yet("aristo graph", "slice 29"),

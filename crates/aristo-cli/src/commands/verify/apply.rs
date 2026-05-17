@@ -11,14 +11,19 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use aristo_core::hash::body_hash;
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Status};
-use aristo_core::proof::{ProofFile, VerdictType};
+use aristo_core::proof::{Ground, ProofFile, VerdictType};
 
 use crate::commands::index::atomic_write;
-use crate::commands::verify::validator::{validate, ValidatorReport};
+use crate::commands::verify::validator::{parse_line_range, slice_lines, validate, ValidatorReport};
 use crate::{CliError, CliResult, Workspace};
 
-pub(crate) fn run_apply_verdicts(ws: &Workspace, index: &IndexFile) -> CliResult<()> {
+pub(crate) fn run_apply_verdicts(
+    ws: &Workspace,
+    index: &IndexFile,
+    rewrite_hashes: bool,
+) -> CliResult<()> {
     let proofs_dir = ws.aristo_dir().join("proofs");
     if !proofs_dir.is_dir() {
         println!("ok: no pending verdict files in .aristo/proofs/.");
@@ -43,18 +48,29 @@ pub(crate) fn run_apply_verdicts(ws: &Workspace, index: &IndexFile) -> CliResult
             message: format!("read {}: {e}", path.display()),
             exit_code: 1,
         })?;
-        let pf = match ProofFile::parse(&raw) {
+        let mut pf = match ProofFile::parse(&raw) {
             Ok(p) => p,
             Err(e) => {
                 parse_errors.push((path.clone(), format!("parse: {e}")));
                 continue;
             }
         };
+        if rewrite_hashes {
+            clear_ground_hashes(&mut pf);
+        }
         let report = validate(&id, &pf, index, &ws.root);
         if !report.is_empty() {
             rejections.push((path, report));
             rejected += 1;
             continue;
+        }
+        // Validator passed → stamp computed hashes back into any None
+        // fields so the on-disk proof carries an anchor for future
+        // staleness checks. Always write back when rewrite_hashes was
+        // set (we just cleared) OR when stamping filled anything in.
+        let stamped = stamp_ground_hashes(&mut pf, index, &ws.root);
+        if stamped > 0 || rewrite_hashes {
+            write_proof_atomic(&path, &pf)?;
         }
         let new_status = derived_status(&pf);
         updates.push((id, new_status));
@@ -78,6 +94,115 @@ pub(crate) fn run_apply_verdicts(ws: &Workspace, index: &IndexFile) -> CliResult
     } else {
         Ok(())
     }
+}
+
+#[aristo::intent(
+    "Migration-only `--rewrite-hashes` clears every stored ground hash \
+     before validation so the staleness check is skipped, then the \
+     post-accept stamping pass repopulates them from current source. \
+     Without this flag, stamped hashes act as freshness anchors and \
+     mismatches are rejected as staleness — the strict default. The \
+     flag is documented as migration-only to discourage routine use; \
+     routine `--apply-verdicts` should rely on the staleness check.",
+    verify = "test",
+    id = "rewrite_hashes_flag_is_migration_only_strict_default"
+)]
+fn clear_ground_hashes(pf: &mut ProofFile) {
+    for_each_step_mut(pf, |step| {
+        for g in step.grounds.iter_mut() {
+            match g {
+                Ground::Intent { at_text_hash, .. } | Ground::Assume { at_text_hash, .. } => {
+                    *at_text_hash = None;
+                }
+                Ground::Code { code_text_hash, .. } => *code_text_hash = None,
+                _ => {}
+            }
+        }
+    });
+}
+
+/// Walk every step in the proof (verified / counterexample trigger /
+/// inconclusive partial) and fill in computed hashes for any Ground
+/// whose hash is currently None. Returns the count of fields stamped.
+fn stamp_ground_hashes(pf: &mut ProofFile, index: &IndexFile, workspace_root: &Path) -> usize {
+    let mut count = 0;
+    for_each_step_mut(pf, |step| {
+        for g in step.grounds.iter_mut() {
+            match g {
+                Ground::Intent { id, at_text_hash, .. }
+                | Ground::Assume { id, at_text_hash, .. }
+                    if at_text_hash.is_none() =>
+                {
+                    if let Some(entry) = index.entries.get(id) {
+                        *at_text_hash = Some(entry_text_hash(entry));
+                        count += 1;
+                    }
+                }
+                Ground::Code {
+                    file,
+                    lines,
+                    code_text_hash,
+                    ..
+                } if code_text_hash.is_none() => {
+                    if let Some(h) = compute_code_hash(file, lines, workspace_root) {
+                        *code_text_hash = Some(h);
+                        count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+    count
+}
+
+fn for_each_step_mut(pf: &mut ProofFile, mut visit: impl FnMut(&mut aristo_core::proof::ProofStep)) {
+    if let Some(v) = pf.verified.as_mut() {
+        for s in v.proof.steps.iter_mut() {
+            visit(s);
+        }
+    }
+    if let Some(c) = pf.counterexample.as_mut() {
+        for s in c.violation.trigger_steps.iter_mut() {
+            visit(s);
+        }
+    }
+    if let Some(i) = pf.inconclusive.as_mut() {
+        if let Some(p) = i.partial_proof.as_mut() {
+            for s in p.steps.iter_mut() {
+                visit(s);
+            }
+        }
+    }
+}
+
+fn entry_text_hash(entry: &IndexEntry) -> aristo_core::index::Sha256 {
+    match entry {
+        IndexEntry::Intent(e) => e.text_hash.clone(),
+        IndexEntry::Assume(e) => e.text_hash.clone(),
+    }
+}
+
+fn compute_code_hash(
+    file: &str,
+    lines: &str,
+    workspace_root: &Path,
+) -> Option<aristo_core::index::Sha256> {
+    let path = workspace_root.join(file);
+    let source = fs::read_to_string(&path).ok()?;
+    let (lo, hi) = parse_line_range(lines)?;
+    if hi > source.lines().count() {
+        return None;
+    }
+    Some(body_hash(&slice_lines(&source, lo, hi)))
+}
+
+fn write_proof_atomic(path: &Path, pf: &ProofFile) -> CliResult<()> {
+    let toml_text = pf.to_toml().map_err(|e| CliError::Other {
+        message: format!("serializing {}: {e}", path.display()),
+        exit_code: 1,
+    })?;
+    atomic_write(path, &toml_text)
 }
 
 fn collect_proof_files(dir: &Path) -> CliResult<Vec<PathBuf>> {

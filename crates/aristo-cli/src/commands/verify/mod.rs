@@ -32,6 +32,7 @@ pub(crate) fn run(
     check: bool,
     strict: bool,
     apply_verdicts: bool,
+    rewrite_hashes: bool,
 ) -> CliResult<()> {
     let _ = (check, strict); // wired for forward-compat; no behavior yet (see module doc)
     let ws = workspace_or_error()?;
@@ -39,7 +40,7 @@ pub(crate) fn run(
     let index = read_index(&ws.index_path())?;
 
     if apply_verdicts {
-        return apply::run_apply_verdicts(&ws, &index);
+        return apply::run_apply_verdicts(&ws, &index, rewrite_hashes);
     }
 
     let filters = parse_filters(filter_strings)?;
