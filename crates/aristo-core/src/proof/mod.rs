@@ -50,15 +50,12 @@ pub struct ProofFile {
 }
 
 #[aristo::intent(
-    "Proof step structure is a TREE addressed by dotted paths (\"0\", \
-     \"0.0\", \"0.1.2\"), not a recursive Rust struct. The flat list \
-     + path-string encoding is deliberate: TOML cannot represent \
-     recursive heterogeneous structures cleanly, and the path \
-     addressing lets the validator, the promotion flow, and future \
-     diff tooling reference any node by stable string. A refactor to \
-     a recursive enum would serialize as nested arrays-of-tables that \
-     are unreadable by humans and break path-based promotion \
-     (`aristo promote-step --path 0.1.2`).",
+    "Proof steps are a flat list indexed by dotted-path strings \
+     (\"0\", \"0.0\", \"0.1.2\"), not a recursive Rust struct. TOML \
+     doesn't serialize recursive heterogeneous structures cleanly, \
+     and the path encoding lets the validator and the promotion \
+     flow reference any node by stable string. A recursive-enum \
+     refactor breaks both.",
     verify = "neural",
     id = "proof_tree_uses_path_addressed_flat_list"
 )]

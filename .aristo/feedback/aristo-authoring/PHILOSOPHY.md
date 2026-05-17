@@ -105,6 +105,8 @@ Pick the `verify` level based on the *verifiability shape of the load-bearing cl
 
 Over-marking design-philosophy intents as `"test"` is dishonest — no test will ever be derived, so it pollutes the verification pipeline with permanently-unverifiable entries. Under-marking testable invariants as `"neural"` wastes the testing pipeline's stronger signal.
 
+**Verify-level re-check after writing the test.** When intent and test land in the same commit, the intent is usually written *first* (per concurrent-authoring discipline) and defaults to `"neural"` because the test doesn't exist yet at intent-write time. After the test is written, re-read the most-recently-added intent at that site: if the test fires on the intent's load-bearing claim, shift to `"test"`. Skipping this re-check is the dominant cause of under-marking — round 3 caught 4 such cases in slices 19–23.
+
 P-WHY-AS-INVARIANT and P-VERIFY-MATCHES-SHAPE are coupled: any intent whose body relies on "why" content to be load-bearing is probably a `"neural"` intent, not a `"test"` intent.
 
 Cases: [generate-opaque-id-panic](./cases/2026-05-15-generate-opaque-id-panic.md), [atomic-write-tempfile](./cases/2026-05-15-atomic-write-tempfile.md), [did-you-mean-threshold](./cases/2026-05-15-did-you-mean-threshold.md), [bundled-skills-stable-set](./cases/2026-05-16-bundled-skills-stable-set.md), [install-skills-scope-symmetry](./cases/2026-05-16-install-skills-scope-symmetry.md).

@@ -95,13 +95,13 @@ impl Workspace {
     /// `aristo.toml` validation in a future slice) should read + parse
     /// directly.
     #[aristo::intent(
-        "Malformed or missing aristo.toml degrades to defaults rather \
-         than erroring — read commands stay functional with project \
-         defaults even when the user's config has a typo. Commands that \
-         need to surface parse errors (e.g. a future `aristo config \
-         check`) must read+parse directly. A refactor that propagates \
-         errors here would make every reader (`show`, `list`, `status`, \
-         `lint`) break the moment the user mistypes a key.",
+        "Malformed or missing aristo.toml degrades to \
+         ConfigFile::default() rather than erroring. Reader commands \
+         stay functional with project defaults when the user's config \
+         has a typo. A refactor that propagates errors here would \
+         break every reader (show / list / status / lint) at first \
+         typo. Commands that need parse errors surfaced must read and \
+         parse directly.",
         verify = "neural",
         id = "workspace_load_config_degrades_to_default"
     )]

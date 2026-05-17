@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.5"
-generated_at = "2026-05-17T02:40:43.353582Z"
+generated_at = "2026-05-17T03:13:07.996053Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -67,7 +67,7 @@ status = "unknown"
 text_hash = "sha256:e263b091886cb4c609e53a9967e731cb3c967aa28163a64f90b6d5f93c48d577"
 body_hash = "sha256:cd90679da5a4b2be67dab24d0af844740a795916a5d7634477e3a204e2b0aaf4"
 file = "crates/aristo-cli/src/skills/mod.rs"
-site = "fn bundled (line 55)"
+site = "fn bundled (line 53)"
 covered_region = "function"
 
 [detect_cycles_returns_first_cycle_only]
@@ -213,10 +213,21 @@ file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn merge_status_from_prev (line 165)"
 covered_region = "function"
 
+[pending_neural_file_is_sdk_to_agent_request_not_a_result]
+kind = "intent"
+text = "The pending file is a REQUEST from the SDK to the in-agent skill, not a result. The skill reads it, dispatches per-entry verification work, and writes proofs to `.aristo/proofs/<id>.proof` for the SDK to validate via `--apply-verdicts`. A refactor that has the SDK auto-read its own pending file (e.g., to call an LLM directly) would conflate the CLI with the agent and break the design split: the CLI never makes LLM calls; the agent never bypasses the SDK validator."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:5d04f4f2136735e523ef1b12a43f0f5862be2ff7542cb69416271144b3c8259c"
+body_hash = "sha256:0a64adcfb7cd5cabb22bc832f493b32f94f62fc242f29dc12f1d8290ef0eee5f"
+file = "crates/aristo-cli/src/commands/verify/pending.rs"
+site = "fn write_pending_neural (line 40)"
+covered_region = "function"
+
 [proof_file_id_uses_colon_underscore_underscore]
 kind = "intent"
 text = "Filename ↔ AnnotationId mapping uses `:` → `__` substitution (same convention as .aristo/doc/<id-safe>.md per TOOLS.md §I1). A refactor that picks a different scheme (e.g., URL-encoding) would break every previously-written `.proof` file on disk — proof files are tracked in git, so any mapping change is a migration, not a free refactor."
-verify = "neural"
+verify = "test"
 status = "unknown"
 text_hash = "sha256:a3d155c4d0593856df81728cb65861745e7e2fc6bd6793140f68b5ac13bfcc81"
 body_hash = "sha256:0f38c0bf82565d752728d897d99e035df1d13f74415bf0267040c5b8d42cc3e0"
@@ -226,10 +237,10 @@ covered_region = "function"
 
 [proof_tree_uses_path_addressed_flat_list]
 kind = "intent"
-text = 'Proof step structure is a TREE addressed by dotted paths ("0", "0.0", "0.1.2"), not a recursive Rust struct. The flat list + path-string encoding is deliberate: TOML cannot represent recursive heterogeneous structures cleanly, and the path addressing lets the validator, the promotion flow, and future diff tooling reference any node by stable string. A refactor to a recursive enum would serialize as nested arrays-of-tables that are unreadable by humans and break path-based promotion (`aristo promote-step --path 0.1.2`).'
+text = """Proof steps are a flat list indexed by dotted-path strings ("0", "0.0", "0.1.2"), not a recursive Rust struct. TOML doesn't serialize recursive heterogeneous structures cleanly, and the path encoding lets the validator and the promotion flow reference any node by stable string. A recursive-enum refactor breaks both."""
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:9611c338cffb73d2fb3f779c5c7df225f7b422e3fa51ad0b04ac1009e38a0370"
+text_hash = "sha256:34665d5e9ea9d0d6ed14624f188d81d86113dbd37aa81ee5607fb8041a58c31b"
 body_hash = "sha256:93dd12abbe5a32f893c6d90b30ca8f69fdbbd15bb3b3dfe86e53715c212435ec"
 file = "crates/aristo-core/src/proof/mod.rs"
 site = "impl ProofFile (line 52)"
@@ -248,10 +259,10 @@ covered_region = "impl_methods"
 
 [skill_install_must_use_resolved_content]
 kind = "intent"
-text = "Install paths MUST go through resolved_content, never .content directly. The template-vs-resolved split exists because skill text needs values (SDK version, future bundle hash) that are only available at build time of THIS binary, not at template authoring time. Writing .content to disk would ship a literal `{{SDK_VERSION}}` to user-installed SKILL.md files; the install outcome would look successful but the version pin would be garbage."
+text = "Install paths MUST call resolved_content, never read .content directly. The template needs the build-time SDK version; writing .content to disk would ship a literal `{{SDK_VERSION}}` placeholder to user-installed SKILL.md files. The install outcome would look successful but the version pin would be garbage — silent staleness on every release."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:3ce9db08ebc5a023f2a12a80b726a7d380ad1857ef40a91b0c7272ae6a7db10f"
+text_hash = "sha256:cc345a0700f01d353bae50330bb9a76be9cb77846a8458a6c332c9bf7156f96f"
 body_hash = "sha256:f6104c6122ae199639c907b793a9879dbecc23e3cb70f83a9f209f03e304dfa6"
 file = "crates/aristo-cli/src/skills/mod.rs"
 site = "impl Skill::resolved_content (line 37)"
@@ -293,7 +304,7 @@ covered_region = "function"
 [validator_collects_all_failures_not_short_circuit]
 kind = "intent"
 text = "The validator collects EVERY failure into one report rather than short-circuiting on the first. The user (or in-agent repair loop) needs the complete list to fix in one pass; short-circuiting forces N round-trips for N failures, which doesn't compose with the bounded-attempts budget (the verifier would burn its budget fixing failures one at a time)."
-verify = "neural"
+verify = "test"
 status = "unknown"
 text_hash = "sha256:502291027cc91bf24997687e74f287add73c16bde5ca53f9156a7edcfa943499"
 body_hash = "sha256:c681060a09dc4e21e2404da0c40280cd24a63b289326431c1f3c70235b25e19b"
@@ -304,7 +315,7 @@ covered_region = "function"
 [validator_rejects_grounding_in_refuted_or_docs_only]
 kind = "intent"
 text = "Cited intent/assume grounds are rejected when (a) the id is dangling, (b) the cited entry is verify=false (docs-only — not load-bearing for a proof), or (c) the cited entry is Status::Counterexample (refuted — building on it would launder a refuted claim back into Verified). A refactor that downgrades any of these to warnings would let proofs ground in claims the project doesn't actually believe."
-verify = "neural"
+verify = "test"
 status = "unknown"
 text_hash = "sha256:fd1944bcfc73a6cae241491abada3de4faa78dee1ab195615bd8737f4ac7ef1d"
 body_hash = "sha256:399e2f8c035fac38504a2875aafada4c09464b764893ae75a63e6a2a78fd9890"
@@ -320,7 +331,7 @@ status = "unknown"
 text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 180)"
+site = "fn resolve_verify_level (line 207)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -331,18 +342,18 @@ status = "unknown"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 192)"
+site = "fn resolve_verify_level (line 219)"
 covered_region = "function"
 
 [verify_skips_clean_entries_unless_rerun]
 kind = "intent"
-text = "Entries with Status in {Verified, Tested, Neural} are skipped by default. --rerun overrides for post-key-rotation sweeps. A refactor that re-runs verification unconditionally would make every CI run pay the LLM / cargo-test cost even when nothing drifted — the default-skip-clean policy is the load-bearing contract that keeps the daily-loop cost bounded."
-verify = "neural"
+text = "Entries with Status in {Verified, Tested, Neural} are skipped unless --rerun is passed. The skip policy bounds daily-loop cost; --rerun is for post-key-rotation sweeps where prior outcomes are no longer trustworthy. Re-running unconditionally would burn cost on every CI run."
+verify = "test"
 status = "unknown"
-text_hash = "sha256:dae1e0e130961b9b77849e9d895baea8a7c966a9036d438917feceee2f629984"
+text_hash = "sha256:84579fc7f301ae086229adbd69c14998a030e4e49346d43225ad8ab2baf8e5f4"
 body_hash = "sha256:e8ca34f9ae5d74715ab3c60a66e1ebdecccd7c58c580752bf87d01ca5001f760"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn is_clean_verified (line 217)"
+site = "fn is_clean_verified (line 244)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]
@@ -369,10 +380,10 @@ covered_region = "function"
 
 [workspace_load_config_degrades_to_default]
 kind = "intent"
-text = "Malformed or missing aristo.toml degrades to defaults rather than erroring — read commands stay functional with project defaults even when the user's config has a typo. Commands that need to surface parse errors (e.g. a future `aristo config check`) must read+parse directly. A refactor that propagates errors here would make every reader (`show`, `list`, `status`, `lint`) break the moment the user mistypes a key."
+text = "Malformed or missing aristo.toml degrades to ConfigFile::default() rather than erroring. Reader commands stay functional with project defaults when the user's config has a typo. A refactor that propagates errors here would break every reader (show / list / status / lint) at first typo. Commands that need parse errors surfaced must read and parse directly."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:88c73feecf06f23439bec77968fe26348905bc91e353b82fbc9444efe4ddd0ef"
+text_hash = "sha256:7dea8fbc1b236a0e3295c3d981ab61891cd213a335288052488a6aae09f0ef61"
 body_hash = "sha256:77bd66ccd1707698327bed561db8685eba167255e2cce8bc338e15ba23f912e9"
 file = "crates/aristo-cli/src/workspace.rs"
 site = "impl Workspace::load_config (line 97)"

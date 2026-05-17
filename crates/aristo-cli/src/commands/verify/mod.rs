@@ -61,14 +61,11 @@ pub(crate) fn run(
         match resolve_verify_level(entry, &cfg) {
             VerifyLevel::Bool(false) => {
                 aristo::intent_stmt!(
-                    "The verify=false arm invokes no skill, runs no \
-                     test, writes no signed outcome — it is the \
-                     intentional opt-out path, not a stub awaiting \
-                     implementation. A contributor who 'completes' this \
-                     arm by adding a skill call defeats the design: \
-                     the entire purpose of verify=false is to keep an \
-                     annotation as documentation without paying any \
-                     verification cost.",
+                    "Invokes no skill, runs no test, writes no signed \
+                     outcome. This is intentional, not incomplete — \
+                     verify=false means documentation only. A \
+                     contributor 'completing' this arm by adding a \
+                     skill call defeats the opt-out semantic.",
                     verify = "neural",
                     id = "verify_false_arm_is_intentional_skip"
                 );
@@ -245,13 +242,12 @@ fn resolve_verify_level(entry: &IndexEntry, cfg: &ConfigFile) -> VerifyLevel {
 }
 
 #[aristo::intent(
-    "Entries with Status in {Verified, Tested, Neural} are skipped by \
-     default. --rerun overrides for post-key-rotation sweeps. A \
-     refactor that re-runs verification unconditionally would make \
-     every CI run pay the LLM / cargo-test cost even when nothing \
-     drifted — the default-skip-clean policy is the load-bearing \
-     contract that keeps the daily-loop cost bounded.",
-    verify = "neural",
+    "Entries with Status in {Verified, Tested, Neural} are skipped \
+     unless --rerun is passed. The skip policy bounds daily-loop cost; \
+     --rerun is for post-key-rotation sweeps where prior outcomes are \
+     no longer trustworthy. Re-running unconditionally would burn cost \
+     on every CI run.",
+    verify = "test",
     id = "verify_skips_clean_entries_unless_rerun"
 )]
 fn is_clean_verified(entry: &IndexEntry) -> bool {

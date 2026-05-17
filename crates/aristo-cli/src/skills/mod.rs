@@ -35,14 +35,12 @@ impl Skill {
     /// Currently substitutes one placeholder (`{{SDK_VERSION}}`) with
     /// the binary's compile-time version.
     #[aristo::intent(
-        "Install paths MUST go through resolved_content, never .content \
-         directly. The template-vs-resolved split exists because skill \
-         text needs values (SDK version, future bundle hash) that are \
-         only available at build time of THIS binary, not at template \
-         authoring time. Writing .content to disk would ship a literal \
-         `{{SDK_VERSION}}` to user-installed SKILL.md files; the install \
+        "Install paths MUST call resolved_content, never read .content \
+         directly. The template needs the build-time SDK version; \
+         writing .content to disk would ship a literal `{{SDK_VERSION}}` \
+         placeholder to user-installed SKILL.md files. The install \
          outcome would look successful but the version pin would be \
-         garbage.",
+         garbage — silent staleness on every release.",
         verify = "neural",
         id = "skill_install_must_use_resolved_content"
     )]

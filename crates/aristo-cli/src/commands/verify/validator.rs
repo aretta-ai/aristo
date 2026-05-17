@@ -75,7 +75,7 @@ pub(crate) struct ValidationFailure {
      forces N round-trips for N failures, which doesn't compose with \
      the bounded-attempts budget (the verifier would burn its budget \
      fixing failures one at a time).",
-    verify = "neural",
+    verify = "test",
     id = "validator_collects_all_failures_not_short_circuit"
 )]
 pub(crate) fn validate(
@@ -418,7 +418,7 @@ fn check_one_ground(
      claim back into Verified). A refactor that downgrades any of \
      these to warnings would let proofs ground in claims the project \
      doesn't actually believe.",
-    verify = "neural",
+    verify = "test",
     id = "validator_rejects_grounding_in_refuted_or_docs_only"
 )]
 fn check_index_ground(
