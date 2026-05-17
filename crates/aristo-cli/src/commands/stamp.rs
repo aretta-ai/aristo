@@ -214,7 +214,6 @@ struct NotableChange {
 #[derive(Debug)]
 enum NotableKind {
     BodyDrifted { old_status: Status },
-    TextChangedBodyHeld,
     Removed,
 }
 
@@ -253,18 +252,29 @@ fn merge_status_from_prev(
             // Pure unchanged — preserve prior status outright.
             set_status(new_entry, prev_status);
             summary.unchanged_count += 1;
-        } else if body_changed {
-            summary.body_changed_count += 1;
-            // Body drift: any prior verdict (positive OR negative) is now stale.
-            // Counterexample → Stale matches the Status enum docstring's
-            // promise; the prior implementation only handled the positive
-            // arms (Verified/Tested/Neural) and silently kept counterexamples.
+        } else {
+            // GAP-1 + GAP-8 (strict policy): any verdict-bearing prior status,
+            // body OR text drift, transitions to Stale. Includes Inconclusive —
+            // a queued-suggestions verdict against text the agent never saw is
+            // a stale verdict. Counterexample → Stale matches the Status enum
+            // docstring's promise (the prior implementation handled only the
+            // positive arms). Text-drift treated as semantic-rewrite by default
+            // (strict) rather than prose-level: the system has no way to tell
+            // "fixed a typo" from "narrowed the claim to exclude the failure
+            // case"; safer to force re-verify and let the user explicitly opt
+            // back in via --rerun on no-op text edits.
+            if body_changed {
+                summary.body_changed_count += 1;
+            } else {
+                summary.text_changed_count += 1;
+            }
             let next = match prev_status {
                 Status::Verified
                 | Status::Tested
                 | Status::Neural
-                | Status::Counterexample => Status::Stale,
-                other => other, // other prior states (Unknown, Stale, Orphan, etc.) carry through
+                | Status::Counterexample
+                | Status::Inconclusive => Status::Stale,
+                other => other, // Unknown, Stale, Orphan, etc. carry through
             };
             set_status(new_entry, next);
             if matches!(
@@ -273,6 +283,7 @@ fn merge_status_from_prev(
                     | Status::Tested
                     | Status::Neural
                     | Status::Counterexample
+                    | Status::Inconclusive
             ) {
                 summary.notable.push(NotableChange {
                     id: id.clone(),
@@ -281,16 +292,6 @@ fn merge_status_from_prev(
                     },
                 });
             }
-        } else {
-            // text changed, body held — preserve status (re-review concern,
-            // not re-verify), surface a notable line so the user knows the
-            // review cache should be invalidated.
-            set_status(new_entry, prev_status);
-            summary.text_changed_count += 1;
-            summary.notable.push(NotableChange {
-                id: id.clone(),
-                kind: NotableKind::TextChangedBodyHeld,
-            });
         }
         let _ = new_status;
     }
@@ -340,12 +341,6 @@ fn print_summary(s: &StampSummary) {
             NotableKind::BodyDrifted { old_status } => {
                 println!(
                     "  • {}: body changed — status was {old_status:?}, now Stale",
-                    change.id
-                );
-            }
-            NotableKind::TextChangedBodyHeld => {
-                println!(
-                    "  • {}: text changed, body unchanged — status held; review cache invalidated",
                     change.id
                 );
             }

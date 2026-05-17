@@ -208,7 +208,12 @@ fn stamp_check_mode_also_surfaces_counterexamples() {
 }
 
 #[test]
-fn stamp_flips_text_changed_body_held_preserves_status() {
+fn stamp_flips_text_drift_to_stale() {
+    // GAP-8 strict: text drift on a verdict-bearing entry transitions to
+    // Stale, same as body drift. The system can't tell "fixed a typo"
+    // from "narrowed the claim to exclude the failure case"; safer to
+    // force re-verify and let the user explicitly opt back in via
+    // --rerun on no-op text edits.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     write_lib(
@@ -228,14 +233,14 @@ fn stamp_flips_text_changed_body_held_preserves_status() {
         .assert()
         .success()
         .stdout(contains("text-changed: 1"))
-        .stdout(contains("review cache invalidated"));
+        .stdout(contains("now Stale"));
 
     let idx = read_index(tmp.path());
     if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx, "a") {
         assert_eq!(
             e.status,
-            aristo_core::index::Status::Tested,
-            "text-only edit holds status — review cache, not verify, is the affected layer"
+            aristo_core::index::Status::Stale,
+            "text drift on a verified entry transitions to Stale (GAP-8 strict)"
         );
         assert_eq!(e.text, "v2");
     }
