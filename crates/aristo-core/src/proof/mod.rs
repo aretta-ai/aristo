@@ -228,14 +228,20 @@ pub enum RelationKind {
 pub enum Ground {
     Intent {
         id: AnnotationId,
-        at_text_hash: Sha256,
+        /// Validator-stamped after first validation; agents do not compute it.
+        /// Absent on agent-written proofs; populated on the rewritten proof
+        /// after `aristo verify --apply-verdicts` succeeds. Re-validations
+        /// compare the stamp against the current index to detect drift.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at_text_hash: Option<Sha256>,
         relation: GroundRelation,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
     Assume {
         id: AnnotationId,
-        at_text_hash: Sha256,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at_text_hash: Option<Sha256>,
         relation: GroundRelation,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
@@ -244,7 +250,9 @@ pub enum Ground {
         file: String,
         /// Line range as "<start>-<end>" or "<line>" for a single line.
         lines: String,
-        code_text_hash: Sha256,
+        /// Validator-stamped after first validation. See `Intent.at_text_hash`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code_text_hash: Option<Sha256>,
         reason: String,
     },
     PriorStep {
@@ -362,7 +370,7 @@ mod tests {
                         grounds: vec![Ground::Code {
                             file: "src/x.rs".to_string(),
                             lines: "10-20".to_string(),
-                            code_text_hash: sample_hash("code"),
+                            code_text_hash: Some(sample_hash("code")),
                             reason: "constructive proof".to_string(),
                         }],
                         subgoal_paths: vec![],
@@ -421,7 +429,7 @@ mod tests {
     fn intent_ground_serializes_with_kind_tag() {
         let g = Ground::Intent {
             id: sample_intent_id("foo"),
-            at_text_hash: sample_hash("t"),
+            at_text_hash: Some(sample_hash("t")),
             relation: GroundRelation::Instantiates,
             reason: Some("because".to_string()),
         };
@@ -435,20 +443,20 @@ mod tests {
         for g in [
             Ground::Intent {
                 id: sample_intent_id("foo"),
-                at_text_hash: sample_hash("t"),
+                at_text_hash: Some(sample_hash("t")),
                 relation: GroundRelation::Composes,
                 reason: None,
             },
             Ground::Assume {
                 id: sample_intent_id("os_zero_pages"),
-                at_text_hash: sample_hash("t"),
+                at_text_hash: Some(sample_hash("t")),
                 relation: GroundRelation::ExcludesCounterexample,
                 reason: Some("rules out stale data".to_string()),
             },
             Ground::Code {
                 file: "src/x.rs".to_string(),
                 lines: "1-5".to_string(),
-                code_text_hash: sample_hash("c"),
+                code_text_hash: Some(sample_hash("c")),
                 reason: "see comment".to_string(),
             },
             Ground::PriorStep {
@@ -463,6 +471,40 @@ mod tests {
             let r: InlineHolder = toml::from_str(&s).unwrap();
             assert_eq!(g, r.g);
         }
+    }
+
+    #[test]
+    fn ground_omits_hash_when_none_and_round_trips() {
+        // Agents write proofs without hash fields; the validator stamps
+        // them on accept. The serialization must drop the absent field
+        // entirely (not emit `at_text_hash = ""` or a null token).
+        let g = Ground::Intent {
+            id: sample_intent_id("foo"),
+            at_text_hash: None,
+            relation: GroundRelation::Instantiates,
+            reason: Some("agent-written".to_string()),
+        };
+        let s = toml::to_string(&InlineHolder { g: g.clone() }).unwrap();
+        assert!(
+            !s.contains("at_text_hash"),
+            "absent at_text_hash must not serialize; got:\n{s}"
+        );
+        let r: InlineHolder = toml::from_str(&s).unwrap();
+        assert_eq!(g, r.g);
+
+        let g = Ground::Code {
+            file: "src/x.rs".to_string(),
+            lines: "1-5".to_string(),
+            code_text_hash: None,
+            reason: "see fn body".to_string(),
+        };
+        let s = toml::to_string(&InlineHolder { g: g.clone() }).unwrap();
+        assert!(
+            !s.contains("code_text_hash"),
+            "absent code_text_hash must not serialize; got:\n{s}"
+        );
+        let r: InlineHolder = toml::from_str(&s).unwrap();
+        assert_eq!(g, r.g);
     }
 
     #[test]
