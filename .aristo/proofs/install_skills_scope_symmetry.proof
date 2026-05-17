@@ -1,31 +1,78 @@
 [verdict]
-type = "counterexample"
+type = "verified"
 method = "neural"
-produced_at_text_hash = "sha256:ad05f93613435d2796b6d6fbd24c1167839a4ddf2792a598f494971fd82e2bde"
+produced_at_text_hash = "sha256:1d1aaa192a0920902c986e87c579c9161c8d233122f42fb3f6dc5aead05f480e"
 produced_at_body_hash = "sha256:0695dc5b7c603c91dcecd76618843841af36bdb355f78f88ec03dcc4d01b9014"
 produced_by = "aristo-neural-verifier@v0.0.5"
-attempts = 1
+attempts = 2
 property_kind = "invariant"
 
-[counterexample.violation]
-description = "User-scope install suppresses the trailing two-line 'Tip: commit … --user (writes to …)' block that project-scope install prints. The output differs by more than just the target path: project-scope ends with `ok:` line + blank line + 2 tip lines; user-scope ends with the `ok:` line only."
-violated_step_path = "0"
+[verified.proof]
+conclusion = "The narrowed claim holds. The per-skill install progression (the `  • Wrote/Updated/Unchanged/Created: <display>` lines) is emitted by scope-agnostic helpers (`install_file_copy_agent`, `install_agents_md_agent`) whose only scope-varying input is `root`, which flows into `display` via `relative_display(root, &target)` — i.e. the per-line difference is exactly the on-disk target path the intent permits. The `ok: N skill(s) installed for <slug>.` success line is byte-identical across scopes: `count`, the plural rule, and `slug = agent.slug()` are all independent of `user`. The post-success tip is asymmetric exactly as described: `print_install_tip` returns immediately when `user` is true and, when `user` is false, prints a `--user` hint for file-copy agents; for AGENTS.md agents (Codex/OpenCode) it returns in both scopes, which is consistent with — not in violation of — the permitted asymmetry. No branch in `install` adds the project-scope tip to user scope."
 
-[[counterexample.violation.trigger_steps]]
+[[verified.proof.steps]]
 path = "0"
-claim = "Running `aristo install-skills --agent claude-code` (project) and `aristo install-skills --agent claude-code --user` (user) produces outputs that differ by 3 lines (blank + 2 tip lines), not just the target path."
+claim = "Per-skill install progression depends on `user` only via `root`, so the printed `  • …: <display>` lines differ across scopes only in the relative path shown — the wording is scope-independent."
 relation_to_parent = "decomposes"
 
-[[counterexample.violation.trigger_steps.grounds]]
+[[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
-lines = "272-285"
-code_text_hash = "sha256:4151759e86557d96388ff097d0b87c94b1997895e4e65839187f9a4ee03910ca"
-reason = "print_install_tip(agent, user) starts with `if user { return; }`. Project scope prints a blank line plus `Tip: commit {dir} ...` and `instead, pass --user (writes to {user_dir}).`. User scope emits zero output from this helper."
+lines = "185-197"
+code_text_hash = "sha256:c3245ac2b8fae0e806bdff86c455af5b27547734b9f00773f455f13f369b1870"
+reason = "`install_file_copy_agent` prints exactly `  • Wrote: {display}` / `  • Updated: {display}` / `  • Unchanged: {display}`; it takes `(agent, root)` and no scope flag. The only scope-varying value in any printed line is `display = relative_display(root, &target)`."
 
-[[counterexample.violation.trigger_steps.grounds]]
+[[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
-lines = "108-117"
-code_text_hash = "sha256:d610a69f9089a8853264d6beb66c075d4c86eff757c2070090a0c33f715d6df4"
-reason = "fn install unconditionally calls print_install_tip(agent, user) after the success summary. Same call site, different behavior keyed on user — divergent terminal output."
+lines = "199-214"
+code_text_hash = "sha256:192533559587db79212f7f8a3ae65d447fa80921fc4a7fc6f44a5c580c0703c4"
+reason = "`install_agents_md_agent` prints `  • Created: {display}` / `  • Updated: {display} (block replaced; user content preserved)` / `  • Unchanged: {display}`; it takes `(agent, root)` and no scope flag. Same scope-varying value is `display`, derived from `root`."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/install_skills.rs"
+lines = "96-113"
+code_text_hash = "sha256:96579a6cb66ee022edcf8b3c583632d92ba7a4f64d93f312e106316f2c1fa5b5"
+reason = "`install` computes `root = scope_root(user)?` once and dispatches to the helpers by `agent` alone; the match arm chosen does not depend on `user`. So the only path by which `user` reaches the progression lines is through `root → target → display`, i.e. the on-disk target path."
+
+[[verified.proof.steps]]
+path = "1"
+claim = "The `ok: N skill(s) installed for <slug>.` success line is byte-identical across scopes."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/install_skills.rs"
+lines = "115-121"
+code_text_hash = "sha256:f2c95b97980979a547efd60c964261de42436330cf1fe8caf11576dae331c37a"
+reason = "The println uses `count = skills::bundled().len()`, a count-only plural rule, and `slug = agent.slug()`. None of these read `user`; the format-string literal contains no scope-conditional substring. The line is therefore byte-identical at project scope and user scope for the same agent."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/install_skills.rs"
+lines = "43-51"
+code_text_hash = "sha256:2709eb46136a946b9ae925bdcbaac40261263a03d7dbb44b7bd48690c476b322"
+reason = "`Agent::slug` is a pure function of the Agent enum; it has no scope parameter and cannot produce a scope-dependent slug."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "The post-success scope tip is asymmetric exactly as the narrowed intent permits: user scope prints nothing; project scope prints a `--user` hint for file-copy agents and (consistently) nothing for AGENTS.md agents. No path adds the project-scope tip to user scope."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/install_skills.rs"
+lines = "279-292"
+code_text_hash = "sha256:4151759e86557d96388ff097d0b87c94b1997895e4e65839187f9a4ee03910ca"
+reason = "`print_install_tip(agent, user)` begins with `if user { return; }`, so under `--user` it prints nothing for every agent. When `user` is false, it returns silently for `Codex | OpenCode` and otherwise prints the two `Tip: commit {dir} … pass --user (writes to {user_dir}).` lines. There is no branch that prints when `user` is true, so no refactor here adds the project-scope tip to user scope; and the only project-scope tip emitted points the user at `--user`, matching the intent's description."
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "0"
+reason = "The progression is scope-symmetric modulo path."
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "1"
+reason = "The success-summary line is byte-identical across scopes."

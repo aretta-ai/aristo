@@ -2,56 +2,81 @@
 type = "verified"
 method = "neural"
 produced_at_text_hash = "sha256:5d04f4f2136735e523ef1b12a43f0f5862be2ff7542cb69416271144b3c8259c"
-produced_at_body_hash = "sha256:0a64adcfb7cd5cabb22bc832f493b32f94f62fc242f29dc12f1d8290ef0eee5f"
+produced_at_body_hash = "sha256:fd56edcc8978747c8de43b29609b1010e2514c8c02e37704898191e2d1e77087"
 produced_by = "aristo-neural-verifier@v0.0.5"
-attempts = 1
+attempts = 2
 property_kind = "invariant"
 
 [verified.proof]
-conclusion = "The pending-neural.toml file is written by the SDK as a one-way request to the in-agent skill: the CLI never reads it back to perform LLM work, and the only path that mutates index status from a neural verdict is --apply-verdicts, which mechanically validates skill-produced .aristo/proofs/<id>.proof files."
+conclusion = "`.aristo/pending-neural.toml` is an SDK→agent request: the SDK writes it during `aristo verify` and never reads it back; the in-agent skill consumes it, writes per-id `.aristo/proofs/<id>.proof`, and the SDK's `aristo verify --apply-verdicts` then mechanically validates those proofs without making any LLM call."
 
 [[verified.proof.steps]]
 path = "0"
-claim = "The CLI writes pending-neural.toml as a request and does not read it back to perform verification work itself."
+claim = "The SDK's `verify` orchestrator only writes `.aristo/pending-neural.toml` (via `write_pending_neural`); no SDK code path reads it back to drive verification."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "82-92"
+code_text_hash = "sha256:2a752881780151c03436eec32fad255bfb3998e70c322a4d8719792251bfaaf3"
+reason = "Neural-method entries are pushed into `pending_neural` and then passed to `pending::write_pending_neural`; the function returns and the orchestrator emits a summary. There is no subsequent read of the file."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
 file = "crates/aristo-cli/src/commands/verify/pending.rs"
-lines = "40-84"
-code_text_hash = "sha256:328654bd33dbaffd6dd30a729232e30665a67a483bd7c8c38c0a3a57ea3f99dd"
-reason = "write_pending_neural only serializes PendingEntry rows and atomic-writes them; no reciprocal read_pending_neural exists."
+lines = "65-107"
+code_text_hash = "sha256:409b01679bb3513d4c14a974ad39ad42857b59bcfbcb1e6addc2c5612156e008"
+reason = '`write_pending_neural` serializes a `PendingFile` and atomically writes it to `ws.aristo_dir().join("pending-neural.toml")`. The function only writes; no read or LLM dispatch happens here.'
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/pending.rs"
+lines = "1-14"
+code_text_hash = "sha256:fe827611506f73edc374dfd7b8c77e312a86d0ad384f9a9bec0de745c1cae51f"
+reason = "The module doc states the file is the REQUEST, not the result, and is transient — the skill is expected to consume/clear it, and the next `aristo verify` rewrites it from scratch."
 
 [[verified.proof.steps]]
 path = "1"
-claim = "The only status-mutating path for neural verdicts is --apply-verdicts, which reads skill-produced .proof files and gates them through the mechanical validator before any index update."
+claim = "The in-agent skill `aristo-neural-verify` is the consumer that reads `.aristo/pending-neural.toml`, dispatches per-entry verification, and writes `.aristo/proofs/<id>.proof`."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/skills/aristo-neural-verify.md"
+lines = "1-20"
+code_text_hash = "sha256:e69202de7c92e4486c1f1fc5454e137f03881bd21106fe0df8da3f546e45a183"
+reason = "Skill frontmatter description: 'Verifies aristo intent annotations whose verify = neural. Reads .aristo/pending-neural.toml, spawns one subagent per entry to produce a structured proof, writes proofs to .aristo/proofs/<id>.proof, and invokes aristo verify --apply-verdicts so the SDK mechanical validator gates the status change.'"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/skills/mod.rs"
+lines = "120-128"
+code_text_hash = "sha256:a07790988c2d47c2119ba66a118a25946f108bb3494f88cb0160107e2f8e483d"
+reason = "The bundled-skills self-check asserts the skill body references `.aristo/pending-neural.toml`, pinning the consumer-of-pending role to the agent skill rather than the SDK."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "`aristo verify --apply-verdicts` is the SDK's reply path: it reads `.aristo/proofs/*.proof` (not the pending file) and validates them mechanically, with no LLM call."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-lines = "21-45"
-code_text_hash = "sha256:d96a66f3050eaf4f0b0cc2641ac026a96f2d2c3ef63bdaee1cc5fe80f6b523c2"
-reason = "run_apply_verdicts reads .aristo/proofs/ files, parses them, calls validate(..); rejections do NOT update the index — only accepted proofs proceed to apply_status_updates."
-
-[[verified.proof.steps]]
-path = "2"
-claim = "Both failure modes the intent calls out (CLI auto-reading pending file → LLM call; agent bypassing validator) are absent: no LLM client is invoked in the verify command tree, and no path writes status without traversing validate(..)."
-relation_to_parent = "composes"
-
-[[verified.proof.steps.grounds]]
-kind = "prior-step"
-path = "0"
-reason = "CLI doesn't auto-read pending file."
-
-[[verified.proof.steps.grounds]]
-kind = "prior-step"
-path = "1"
-reason = "All status writes traverse validate()."
+lines = "1-9"
+code_text_hash = "sha256:48741ef3299d430f46312b47ab08069810a610b9b2778c26958878c5ce8154c5"
+reason = "Module doc: consume every .aristo/proofs/<id>.proof file, validate via the mechanical validator, and (on pass) flip the index entry's status... No LLM in this path — the rejection guarantees are mechanical (see validator.rs)."
 
 [[verified.proof.steps.grounds]]
 kind = "code"
-file = "crates/aristo-cli/src/commands/verify/pending.rs"
-lines = "40-84"
-code_text_hash = "sha256:328654bd33dbaffd6dd30a729232e30665a67a483bd7c8c38c0a3a57ea3f99dd"
-reason = "write_pending_neural uses only aristo_core, serde, toml, std::fs, atomic_write — no HTTP/LLM client imports."
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+lines = "22-78"
+code_text_hash = "sha256:02c6a09c79b059d8d0c3cc75f1a36bf62df7d0c882c672b0829d545376a0ce9b"
+reason = "`run_apply_verdicts` iterates `proofs_dir = ws.aristo_dir().join(proofs)`, parses each `.proof`, runs `validate(...)`, and stages status updates. The pending file path is never opened in this function."
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "validator_computes_ground_hashes_agent_only_cites"
+at_text_hash = "sha256:855aeda86c47cda2afe448302fcdfb56f10498d88592db59e8749e739bfd5137"
+relation = "instantiates"
+reason = "The validator is the source of mechanical truth — it computes ground hashes from agent citations rather than trusting agent-supplied hashes; combined with apply.rs reading proofs directly, this is the SDK→agent contract: agent produces .proof, SDK validates without judgement calls."

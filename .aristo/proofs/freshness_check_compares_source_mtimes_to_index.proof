@@ -1,0 +1,89 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:09d2ad507c99cc53030b84a6afe01fcdb166398487f647307b68220977115bba"
+produced_at_body_hash = "sha256:e59504874955e9346e0de98702b228e802367af105dd99e0e94bdc6c26ff49e5"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "freshness_check recomputes its FreshnessReport from scratch on every invocation: it performs fresh filesystem stats and a fresh walk each call, holds no inter-call cache, and returns a freshly constructed report — there is no caching or incremental tracking between calls."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "Every invocation of freshness_check performs the full recomputation (metadata read of the index, config load, source walk, per-file mtime comparison) with no values reused from a prior call, and the FreshnessReport is constructed anew."
+relation_to_parent = "decomposes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+    "0.2",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "composition"
+reason = "Splits the no-caching claim into (a) the function body itself holds no inter-call state, (b) the inputs it consults (index metadata, config, source walk, per-file mtimes) are all re-fetched on each call, and (c) the FreshnessReport is freshly constructed on every return path."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "The freshness_check function body holds no inter-call state: no static, no OnceCell/lazy_static, no Mutex, no field on Workspace that memoizes prior results, no module-level cache."
+relation_to_parent = "excludes-counterexample"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/preflight.rs"
+lines = "39-76"
+code_text_hash = "sha256:ace4cfec13be404ef65e4fc4820c0ffb8bdcccf5dde7cb891f88e62b24f6e984"
+reason = "The function takes only &Workspace and uses only local `let` bindings (index_path, index_meta, index_mtime, opts, sources, stale_count). There is no `static` declaration, no `OnceCell`, no `lazy_static`, no `Mutex`, no `RefCell`, and no `&mut` parameter. The Workspace passed in is borrowed read-only; the function neither reads from nor writes to any cache field."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/preflight.rs"
+lines = "1-37"
+code_text_hash = "sha256:211b7ce339a642629f561ae36dc1cdf371db4b730924a7276f381c40071afd15"
+reason = "The file's module-level items are: doc comment, two `use` statements, the FreshnessReport struct (two plain data fields: stale_count, index_missing — no interior mutability), and the is_stale impl. No module-level mutable state of any kind exists for the function to consult."
+
+[[verified.proof.steps]]
+path = "0.1"
+claim = "Every input freshness_check consults is re-fetched on each call rather than reused from a prior invocation: the index mtime via fs::metadata, the workspace config via ws.load_config(), the source list via walk_for_freshness_with, and per-source mtimes via fs::metadata."
+relation_to_parent = "excludes-counterexample"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/preflight.rs"
+lines = "47-54"
+code_text_hash = "sha256:02fe9c431fe4df3f151f0af47a26132db226bc12290ac4c0cb22a70f49214984"
+reason = "`ws.index_path()` is recomputed each call; `fs::metadata(&index_path)` performs a fresh syscall each call; `index_meta.modified()` is read from that fresh metadata. None of these values are captured from a prior call."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/preflight.rs"
+lines = "60-61"
+code_text_hash = "sha256:0eb589459becfc1f97fa1316af0ef19d16936561296c215fcf8c9bd904f1a63f"
+reason = "`ws.load_config().index` re-reads/parses the workspace config each call (the call returns a fresh value, not a cached handle the caller stores), and `walk_for_freshness_with(&ws.root, &opts)` walks the filesystem each call rather than reading a precomputed source list."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/preflight.rs"
+lines = "62-70"
+code_text_hash = "sha256:8ee7410d3020ba126c681f12a699f1caf5261037733b8671de33c2fde14e12fd"
+reason = "Inside the filter, `fs::metadata(p).and_then(|m| m.modified())` is invoked per source path on every call — per-file mtimes are not memoized across invocations."
+
+[[verified.proof.steps]]
+path = "0.2"
+claim = "Every return path constructs a brand-new FreshnessReport literal; no prior report is reused or mutated and returned."
+relation_to_parent = "excludes-counterexample"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/preflight.rs"
+lines = "48-53"
+code_text_hash = "sha256:e14d06f8455b78e3483b629908ac6fbc501ed11ec73a5e5c2ac498ce4a181386"
+reason = "The early return on missing index constructs a fresh `FreshnessReport { stale_count: 0, index_missing: true }` literal."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/preflight.rs"
+lines = "72-75"
+code_text_hash = "sha256:cb770245df5178a19d4c3e3e4d4025effab225b2b9c821ca116c3593cc27fad4"
+reason = "The success return constructs a fresh `FreshnessReport { stale_count, index_missing: false }` literal where `stale_count` is computed locally from the just-walked sources. No cached `FreshnessReport` is ever read or returned."
