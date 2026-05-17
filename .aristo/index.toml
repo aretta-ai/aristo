@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.5"
-generated_at = "2026-05-17T04:06:03.997623Z"
+generated_at = "2026-05-17T04:32:51.124078Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -290,6 +290,17 @@ file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn run (line 38)"
 covered_region = "function"
 
+[stmt_form_intents_use_open_visit_descent_not_whitelist]
+kind = "intent"
+text = "stmt-form intents are discovered via syn::Visit's full descent (visit_block + default traversal of every Expr variant), NOT a hand-rolled whitelist of expression kinds. A whitelist silently drops macros nested inside any unenumerated context — match arms, closures, unsafe blocks, async blocks, try blocks, let initializers — and the failure mode is invisible (the intent doesn't appear in `aristo list`, can't be cited as a ground in a proof, and skips the freshness check). The Visit-based descent is open by default; new syn::Expr variants get visited automatically."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:1be10f580efbb4857173d91ded4f73ee87ea18e2193d3d2b841b8126a64f575d"
+body_hash = "sha256:8d016c0d239b1b208de4b9e03439a7e1a6be933f6ba991fd95e1537cb3876a42"
+file = "crates/aristo-core/src/walk/extract.rs"
+site = "impl Visit for Walker::visit_stmt_macro (line 220)"
+covered_region = "function"
+
 [text_hash_normalizes_whitespace]
 kind = "intent"
 text = "Whitespace differences in annotation text — leading, trailing, or runs collapsed to one space — do not change the text hash. Reformatting prose is not drift."
@@ -366,6 +377,17 @@ body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc1
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
 site = "fn resolve_verify_level (line 220)"
 covered_region = "function"
+
+[verify_false_arm_is_intentional_skip]
+kind = "intent"
+text = "Invokes no skill, runs no test, writes no signed outcome. This is intentional, not incomplete — verify=false means documentation only. A contributor 'completing' this arm by adding a skill call defeats the opt-out semantic."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
+body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+site = "fn run (line 64)"
+covered_region = "statement"
 
 [verify_skips_clean_entries_unless_rerun]
 kind = "intent"

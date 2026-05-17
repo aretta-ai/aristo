@@ -110,3 +110,27 @@ Over-marking design-philosophy intents as `"test"` is dishonest — no test will
 P-WHY-AS-INVARIANT and P-VERIFY-MATCHES-SHAPE are coupled: any intent whose body relies on "why" content to be load-bearing is probably a `"neural"` intent, not a `"test"` intent.
 
 Cases: [generate-opaque-id-panic](./cases/2026-05-15-generate-opaque-id-panic.md), [atomic-write-tempfile](./cases/2026-05-15-atomic-write-tempfile.md), [did-you-mean-threshold](./cases/2026-05-15-did-you-mean-threshold.md), [bundled-skills-stable-set](./cases/2026-05-16-bundled-skills-stable-set.md), [install-skills-scope-symmetry](./cases/2026-05-16-install-skills-scope-symmetry.md).
+
+---
+
+## P-ROOT-CAUSED-BUG-IS-A-SPEC-CASE — encode subtle, surprising bugs as checkable intents
+
+A bug that took non-trivial debugging to root-cause is high-signal: the reason it was missed in the first place is usually that the underlying spec / case was subtle, implicit, or open-ended. The fix patches *one instance*; the intent locks in the *invariant the bug just demonstrated must hold*. Without it, a plausible future refactor regresses to the same failure mode and the same debugging spend pays out twice.
+
+The intent goes on the load-bearing site of the fix — the function, branch, or design choice that the bug taught us cannot be casually altered. Its body should name the failure mode in the language a reviewer would use, and where applicable name the refactor that re-introduces the bug (this overlaps with P-NAME-THE-REFACTOR-TRAP). Pair it with a regression test that asserts the new behavior, so `verify="test"` is the natural level.
+
+When to invoke this principle:
+
+- The bug took meaningful debugging time (not a one-grep find).
+- The user pair-debugged with you.
+- The fix is more than a typo or a missing import — there's a *design lesson* in the post-mortem.
+- The fix changes a default, swaps a fragile mechanism for a robust one, or expands a case-list — any of which can silently re-narrow in a future cleanup.
+
+When NOT to invoke it:
+
+- Surface-level bugs: typo, off-by-one inside an existing-and-tested function, a misnamed variable. The fix and its test are sufficient; an intent here is noise.
+- Bugs whose fix is self-evidently the right behavior from the function signature alone (P-CHECK-TYPE-SYSTEM-FIRST applies).
+
+The intent is the durable artifact; the test is the mechanical guard. The two together convert what would otherwise be tribal-knowledge ("oh yeah, we hit that years ago") into a checkable invariant.
+
+Cases: [stmt-form-visit-descent](./cases/2026-05-16-stmt-form-visit-descent.md) (whitelist-of-Expr-variants dropped `intent_stmt!` inside `match` arms; root cause was the open-ended Expr enum vs. a closed hand-rolled list).
