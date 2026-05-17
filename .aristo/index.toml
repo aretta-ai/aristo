@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.5"
-generated_at = "2026-05-17T04:32:51.124078Z"
+generated_at = "2026-05-17T06:57:01.998881Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -208,9 +208,9 @@ text = "Status after stamp reflects the current code, not any prior version. Bod
 verify = "test"
 status = "unknown"
 text_hash = "sha256:a0ac0dfb85cc50c166523567c4bfd7d2cc183ecc395958d41da9aa6e244a2528"
-body_hash = "sha256:17bee7dc38c692db4235d44a5d29d9583404b151580d474682bb7b72aa208270"
+body_hash = "sha256:dc1bb7bd2fc7ba2a3af65b1f2e694687a510fde59d1584d41d684dd0057540bc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn merge_status_from_prev (line 165)"
+site = "fn merge_status_from_prev (line 221)"
 covered_region = "function"
 
 [pending_neural_file_is_sdk_to_agent_request_not_a_result]
@@ -285,9 +285,20 @@ text = "When `--check` is set, `aristo stamp` never writes the index. CI relies 
 verify = "test"
 status = "unknown"
 text_hash = "sha256:46c84821843266195127e5ae086761da1c7aaefddb116c6ba041da7c7aa993e0"
-body_hash = "sha256:ce35509c9e6f5bd79a607f836d9a16ca66aa05a31b7dbeadcecc764bc62b93ca"
+body_hash = "sha256:c90edf19c9a78c82abbbbec7a19c68ecb6ee48ecab3725a59fa2f1457a750706"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn run (line 38)"
+covered_region = "function"
+
+[stamp_surfaces_counterexamples_loudly]
+kind = "intent"
+text = "Every `aristo stamp` run that finds a Counterexample-status entry emits a loud, unmissable warning enumerating each id, file, and site. There is no `aristo accept-counterexample` to silence this; a counterexample is a definite refutation and stays visible until either the code is fixed (→ body drift → Status::Stale → re-verify) or the intent text is changed to exclude the counterexample case. Treating counterexamples as quiet 'just a status' would let a refuted invariant sit in the index unnoticed and erode the trust calibration of `aristo status`."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:9943c7d2092400e64549441f7d63887f9bb599db3a9b1a62fd1a4bf5129f64d4"
+body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
+file = "crates/aristo-cli/src/commands/stamp.rs"
+site = "fn warn_on_counterexamples (line 124)"
 covered_region = "function"
 
 [stmt_form_intents_use_open_visit_descent_not_whitelist]

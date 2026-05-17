@@ -121,6 +121,93 @@ fn stamp_flips_verified_to_stale_on_body_change() {
 }
 
 #[test]
+fn stamp_flips_counterexample_to_stale_on_body_change() {
+    // GAP-1 fix: the Status enum docstring promises body-drift → Stale for
+    // Counterexample too, but the prior stamp.rs match arm only handled
+    // Verified/Tested/Neural. Counterexample sat unchanged.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 1 }"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    force_status(
+        tmp.path(),
+        "a",
+        aristo_core::index::Status::Counterexample,
+    );
+
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 99 }"#,
+    );
+    aristo_in(tmp.path())
+        .arg("stamp")
+        .assert()
+        .success()
+        .stdout(contains("body-drifted: 1"))
+        .stdout(contains("now Stale"));
+
+    let idx = read_index(tmp.path());
+    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx, "a") {
+        assert_eq!(e.status, aristo_core::index::Status::Stale);
+    }
+}
+
+#[test]
+fn stamp_warns_loudly_on_counterexample_entries() {
+    // Per the design: counterexamples are loud, never silenceable. There is
+    // no `aristo accept-counterexample` command — every stamp run must
+    // re-surface them. The warning goes to stderr (CI-visible, distinct
+    // from the regular per-id summary).
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("a refuted claim", verify = "neural", id = "refuted_one")] fn x() {}"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    force_status(
+        tmp.path(),
+        "refuted_one",
+        aristo_core::index::Status::Counterexample,
+    );
+
+    // Re-run stamp: source unchanged, status is sticky Counterexample.
+    aristo_in(tmp.path())
+        .arg("stamp")
+        .assert()
+        .success()
+        .stderr(contains("refuted by counterexample"))
+        .stderr(contains("refuted_one"));
+}
+
+#[test]
+fn stamp_check_mode_also_surfaces_counterexamples() {
+    // The warning fires even when --check makes no writes; CI gates use
+    // --check and must still see refutations.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("a refuted claim", verify = "neural", id = "refuted_two")] fn x() {}"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    force_status(
+        tmp.path(),
+        "refuted_two",
+        aristo_core::index::Status::Counterexample,
+    );
+
+    aristo_in(tmp.path())
+        .args(["stamp", "--check"])
+        .assert()
+        .success()
+        .stderr(contains("refuted by counterexample"));
+}
+
+#[test]
 fn stamp_flips_text_changed_body_held_preserves_status() {
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();

@@ -95,6 +95,7 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
         if entries_unchanged {
             println!();
             println!("ok: index is up to date (no rewrite needed).");
+            warn_on_counterexamples(&index);
             return Ok(());
         }
         println!();
@@ -116,7 +117,62 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
             .unwrap_or(&ws.index_path())
             .display()
     );
+    warn_on_counterexamples(&index);
     Ok(())
+}
+
+#[aristo::intent(
+    "Every `aristo stamp` run that finds a Counterexample-status entry \
+     emits a loud, unmissable warning enumerating each id, file, and \
+     site. There is no `aristo accept-counterexample` to silence this; \
+     a counterexample is a definite refutation and stays visible until \
+     either the code is fixed (→ body drift → Status::Stale → re-verify) \
+     or the intent text is changed to exclude the counterexample case. \
+     Treating counterexamples as quiet 'just a status' would let a \
+     refuted invariant sit in the index unnoticed and erode the trust \
+     calibration of `aristo status`.",
+    verify = "test",
+    id = "stamp_surfaces_counterexamples_loudly"
+)]
+fn warn_on_counterexamples(index: &IndexFile) {
+    let counterexamples: Vec<(&AnnotationId, &IndexEntry)> = index
+        .entries
+        .iter()
+        .filter(|(_, e)| entry_status(e) == Status::Counterexample)
+        .collect();
+    if counterexamples.is_empty() {
+        return;
+    }
+    eprintln!();
+    eprintln!(
+        "⚠  {} annotation(s) refuted by counterexample — verdicts stand until \
+         code or intent text changes:",
+        counterexamples.len()
+    );
+    for (id, entry) in counterexamples {
+        let (file, site) = entry_location(entry);
+        eprintln!("    {id}");
+        eprintln!("      at {file}:{site}");
+    }
+    eprintln!();
+    eprintln!(
+        "    Inspect: aristo show <id>     |     Re-verify after fixing: \
+         aristo verify --rerun --filter id=<id>"
+    );
+}
+
+fn entry_status(entry: &IndexEntry) -> Status {
+    match entry {
+        IndexEntry::Intent(e) => e.status,
+        IndexEntry::Assume(e) => e.status,
+    }
+}
+
+fn entry_location(entry: &IndexEntry) -> (&str, &str) {
+    match entry {
+        IndexEntry::Intent(e) => (&e.file, &e.site),
+        IndexEntry::Assume(e) => (&e.file, &e.site),
+    }
 }
 
 fn read_existing_index(path: &std::path::Path) -> CliResult<Option<IndexFile>> {
@@ -199,15 +255,24 @@ fn merge_status_from_prev(
             summary.unchanged_count += 1;
         } else if body_changed {
             summary.body_changed_count += 1;
-            // Body drift: previously verified states become Stale.
+            // Body drift: any prior verdict (positive OR negative) is now stale.
+            // Counterexample → Stale matches the Status enum docstring's
+            // promise; the prior implementation only handled the positive
+            // arms (Verified/Tested/Neural) and silently kept counterexamples.
             let next = match prev_status {
-                Status::Verified | Status::Tested | Status::Neural => Status::Stale,
+                Status::Verified
+                | Status::Tested
+                | Status::Neural
+                | Status::Counterexample => Status::Stale,
                 other => other, // other prior states (Unknown, Stale, Orphan, etc.) carry through
             };
             set_status(new_entry, next);
             if matches!(
                 prev_status,
-                Status::Verified | Status::Tested | Status::Neural
+                Status::Verified
+                    | Status::Tested
+                    | Status::Neural
+                    | Status::Counterexample
             ) {
                 summary.notable.push(NotableChange {
                     id: id.clone(),
