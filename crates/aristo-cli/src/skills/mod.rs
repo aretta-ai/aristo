@@ -132,6 +132,14 @@ mod tests {
             body.contains("do NOT inline it as a discovered ground"),
             "skill body must encode the strict-on-discovered-assumptions rule"
         );
+        assert!(
+            body.contains("DO NOT write hash fields"),
+            "skill body must instruct the agent to omit hash fields (SDK stamps them)"
+        );
+        assert!(
+            body.contains("Cited id discipline"),
+            "skill body must encode the cited-id-discipline rule (open #2 fix)"
+        );
     }
 
     #[test]
