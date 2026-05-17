@@ -165,6 +165,12 @@ enum Commands {
         /// Treat warn-severity verification outcomes as failure too.
         #[arg(long)]
         strict: bool,
+        /// Apply pending verdict files in `.aristo/proofs/` to the index.
+        /// Reads every `<id>.proof`, runs the mechanical validator, and
+        /// (if it passes) flips the entry's status. Skips dispatch of
+        /// new verifications when set.
+        #[arg(long = "apply-verdicts")]
+        apply_verdicts: bool,
     },
 
     /// Agentic prose-improvement pass via the review skill.
@@ -230,7 +236,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             rerun,
             check,
             strict,
-        } => commands::verify::run(&filters, rerun, check, strict),
+            apply_verdicts,
+        } => commands::verify::run(&filters, rerun, check, strict, apply_verdicts),
         Commands::Review => not_yet("aristo review", "slice 27"),
         Commands::Doc => not_yet("aristo doc", "slice 28"),
         Commands::Graph => not_yet("aristo graph", "slice 29"),

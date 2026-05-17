@@ -22,16 +22,25 @@ use crate::filter::Filter;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
+pub(crate) mod apply;
+pub(crate) mod validator;
+
 pub(crate) fn run(
     filter_strings: &[String],
     rerun: bool,
     check: bool,
     strict: bool,
+    apply_verdicts: bool,
 ) -> CliResult<()> {
     let _ = (check, strict); // wired for forward-compat; no behavior yet (see module doc)
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
+
+    if apply_verdicts {
+        return apply::run_apply_verdicts(&ws, &index);
+    }
+
     let filters = parse_filters(filter_strings)?;
     let cfg = ws.load_config();
 
