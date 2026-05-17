@@ -14,9 +14,11 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use aristo_core::hash::body_hash;
+use aristo_core::hash::{body_hash, text_hash};
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Sha256, Status, VerifyLevel};
-use aristo_core::proof::{Gap, Ground, Proof, ProofFile, ProofStep, VerdictBody, Violation};
+use aristo_core::proof::{
+    Gap, Ground, InconclusiveBody, Proof, ProofFile, ProofStep, VerdictBody, Violation,
+};
 
 /// Maximum repair attempts the validator accepts. A verdict with
 /// `attempts > MAX_REPAIR_ATTEMPTS` is rejected even if structurally
@@ -130,6 +132,7 @@ pub(crate) fn validate(
         }
         VerdictBody::Inconclusive(i) => {
             check_gap(&mut r, &i.gap);
+            check_inconclusive_suggestions_not_yet_addressed(&mut r, i, index);
             if let Some(p) = &i.partial_proof {
                 check_proof_tree(&mut r, "inconclusive.partial_proof", &p.steps);
                 check_all_grounds(
@@ -284,6 +287,60 @@ fn check_gap(r: &mut ValidatorReport, g: &Gap) {
              is no better than 'I don't know'"
                 .into(),
         );
+    }
+}
+
+#[aristo::intent(
+    "An inconclusive verdict is stale once any of its suggested \
+     annotations is present in the current index (text-hash match). \
+     Either the user adopted the suggestion (good — re-run to see if \
+     the gap closes) or the agent missed an existing entry that would \
+     have closed the gap (good — re-run with the entry available as a \
+     ground). Both paths converge on 'this verdict is no longer the \
+     best answer; re-verify'. Without this check, adopting a suggestion \
+     never moves the entry back to pending — the user adds the assume \
+     the agent asked for, and aristo verify silently skips it forever.",
+    verify = "test",
+    id = "validator_rejects_inconclusive_when_suggestion_is_in_index"
+)]
+fn check_inconclusive_suggestions_not_yet_addressed(
+    r: &mut ValidatorReport,
+    body: &InconclusiveBody,
+    index: &IndexFile,
+) {
+    // Pre-compute text_hash for every existing entry once.
+    let existing_text_hashes: std::collections::HashSet<&Sha256> = index
+        .entries
+        .values()
+        .map(|e| match e {
+            IndexEntry::Intent(x) => &x.text_hash,
+            IndexEntry::Assume(x) => &x.text_hash,
+        })
+        .collect();
+    for (idx, suggestion) in body.gap.suggested_annotations.iter().enumerate() {
+        let sug_hash = text_hash(&suggestion.suggested_text);
+        if existing_text_hashes.contains(&sug_hash) {
+            r.push(
+                format!("inconclusive.gap.suggested_annotations[{idx}]"),
+                format!(
+                    "a matching annotation now exists in the index — the suggested \
+                     `{:?}` (\"{}\") is present, so this inconclusive verdict is \
+                     stale; re-run verification to see if the gap closes",
+                    suggestion.kind,
+                    truncate(&suggestion.suggested_text, 60)
+                ),
+            );
+        }
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let mut t: String = s.chars().take(max).collect();
+        t.push('…');
+        t
     }
 }
 
@@ -978,6 +1035,89 @@ mod tests {
             .failures
             .iter()
             .any(|f| f.detail.contains("MUST suggest at least one annotation")));
+    }
+
+    #[test]
+    fn rejects_inconclusive_when_suggestion_present_in_index() {
+        // GAP-7 fix: inconclusive verdicts go stale once any suggested
+        // annotation is in the index (text-hash match). User adopted
+        // suggestion or agent missed an existing entry — either way,
+        // re-verify.
+        let suggestion_text = "OS rename(2) is atomic on same-filesystem moves";
+        // Index has BOTH the focal entry AND a sibling whose text matches
+        // a suggestion in the inconclusive proof below.
+        let mut idx = index_with_one_intent("focal", "the property holds", Status::Unknown);
+        let zero = sample_hash("zero");
+        idx.entries.insert(
+            sample_id("os_rename_is_atomic"),
+            IndexEntry::Assume(aristo_core::index::AssumeEntry {
+                text: suggestion_text.to_string(),
+                status: Status::Unknown,
+                text_hash: text_hash(suggestion_text),
+                body_hash: zero,
+                file: "src/x.rs".into(),
+                site: "fn atomic_write (line 1)".into(),
+                covered_region: aristo_core::index::CoveredRegion::Function,
+                linked: None,
+                parent: None,
+            }),
+        );
+        let mut pf = minimal_verified("the property holds", "body");
+        pf.verified = None;
+        pf.inconclusive = Some(aristo_core::proof::InconclusiveBody {
+            partial_proof: None,
+            gap: Gap {
+                description: "atomicity guarantee not citable".into(),
+                unfilled_path: "0".into(),
+                suggested_annotations: vec![aristo_core::proof::SuggestedAnnotation {
+                    kind: aristo_core::index::AnnotationKind::Assume,
+                    suggested_text: suggestion_text.to_string(),
+                    at_site: "fn atomic_write (line 1)".into(),
+                    rationale: "needed to close the atomicity branch".into(),
+                    would_close_path: None,
+                }],
+            },
+        });
+        pf.verdict.r#type = VerdictType::Inconclusive;
+        let report = validate(&sample_id("focal"), &pf, &idx, Path::new("/"));
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|f| f.detail.contains("matching annotation now exists")),
+            "expected suggestion-in-index rejection; got: {}",
+            report.render()
+        );
+    }
+
+    #[test]
+    fn accepts_inconclusive_when_no_suggestion_is_in_index() {
+        // Inverse of the above: with no text-matching entry, the
+        // inconclusive verdict stands.
+        let idx = index_with_one_intent("focal", "the property holds", Status::Unknown);
+        let mut pf = minimal_verified("the property holds", "body");
+        pf.verified = None;
+        pf.inconclusive = Some(aristo_core::proof::InconclusiveBody {
+            partial_proof: None,
+            gap: Gap {
+                description: "stuck".into(),
+                unfilled_path: "0".into(),
+                suggested_annotations: vec![aristo_core::proof::SuggestedAnnotation {
+                    kind: aristo_core::index::AnnotationKind::Assume,
+                    suggested_text: "some unique text the index doesn't have".into(),
+                    at_site: "fn x (line 1)".into(),
+                    rationale: "would close gap".into(),
+                    would_close_path: None,
+                }],
+            },
+        });
+        pf.verdict.r#type = VerdictType::Inconclusive;
+        let report = validate(&sample_id("focal"), &pf, &idx, Path::new("/"));
+        assert!(
+            report.is_empty(),
+            "no matching suggestion → inconclusive verdict stands; got: {}",
+            report.render()
+        );
     }
 
     #[test]
