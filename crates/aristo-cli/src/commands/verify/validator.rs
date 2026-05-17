@@ -370,6 +370,20 @@ fn check_all_grounds(
     }
 }
 
+#[aristo::intent(
+    "Validator computes ground hashes from the agent's citations \
+     (file+lines for code grounds, id-lookup-in-index for intent/ \
+     assume grounds); the agent is not required to write them. The \
+     stored hash, when present, is the validator's stamp from a prior \
+     successful validation and is checked here for staleness — \
+     mismatch means the cited source/intent drifted since the proof \
+     was last accepted. Pushing hash computation out of the LLM's \
+     job kills the dominant fabrication failure mode without weakening \
+     the freshness guarantee: every accepted proof carries a hash \
+     anchor, computed mechanically.",
+    verify = "test",
+    id = "validator_computes_ground_hashes_agent_only_cites"
+)]
 fn check_one_ground(
     r: &mut ValidatorReport,
     location: &str,
@@ -386,7 +400,7 @@ fn check_one_ground(
         | Ground::Assume {
             id, at_text_hash, ..
         } => {
-            check_index_ground(r, location, id, at_text_hash, g, index);
+            check_index_ground(r, location, id, at_text_hash.as_ref(), g, index);
         }
         Ground::Code {
             file,
@@ -394,7 +408,14 @@ fn check_one_ground(
             code_text_hash,
             ..
         } => {
-            check_code_ground(r, location, file, lines, code_text_hash, workspace_root);
+            check_code_ground(
+                r,
+                location,
+                file,
+                lines,
+                code_text_hash.as_ref(),
+                workspace_root,
+            );
         }
         Ground::PriorStep { path, .. } => {
             check_prior_step_ground(r, location, owning_path, path, step_paths);
@@ -425,7 +446,7 @@ fn check_index_ground(
     r: &mut ValidatorReport,
     location: &str,
     id: &AnnotationId,
-    at_text_hash: &Sha256,
+    at_text_hash: Option<&Sha256>,
     g: &Ground,
     index: &IndexFile,
 ) {
@@ -437,15 +458,17 @@ fn check_index_ground(
         return;
     };
     let (cur_text_hash, _) = entry_hashes(entry);
-    if at_text_hash != &cur_text_hash {
-        r.push(
-            location.into(),
-            format!(
-                "at_text_hash for cited `{id}` differs from current; cited entry's \
-                 text changed since verification — re-check whether the new wording \
-                 still supports this step"
-            ),
-        );
+    if let Some(stamped) = at_text_hash {
+        if stamped != &cur_text_hash {
+            r.push(
+                location.into(),
+                format!(
+                    "at_text_hash for cited `{id}` differs from current; cited entry's \
+                     text changed since verification — re-check whether the new wording \
+                     still supports this step"
+                ),
+            );
+        }
     }
     // For Intent grounds: ensure the cited entry isn't refuted or docs-only.
     if matches!(g, Ground::Intent { .. }) {
@@ -475,7 +498,7 @@ fn check_code_ground(
     location: &str,
     file: &str,
     lines: &str,
-    code_text_hash: &Sha256,
+    code_text_hash: Option<&Sha256>,
     workspace_root: &Path,
 ) {
     let path = workspace_root.join(file);
@@ -501,23 +524,33 @@ fn check_code_ground(
         );
         return;
     }
-    // Hash the slice and compare. We hash the substring `lines[lo-1..=hi-1]` joined with '\n'.
-    let slice: String = source
+    // Only verify a stamped hash; absent hash means agent-written, will be
+    // stamped on accept by the apply step.
+    if let Some(stamped) = code_text_hash {
+        let slice = slice_lines(&source, lo, hi);
+        let actual = body_hash(&slice);
+        if &actual != stamped {
+            r.push(
+                location.into(),
+                format!(
+                    "code_text_hash for `{file}:{lines}` differs from current file content; \
+                     the cited code drifted since verification"
+                ),
+            );
+        }
+    }
+}
+
+/// Slice 1-indexed inclusive `[lo, hi]` from `source` and join with `\n`.
+/// Used by both the validator (re-hash for staleness) and apply (compute
+/// stamp). Kept in one place so the two routes never disagree.
+pub(crate) fn slice_lines(source: &str, lo: usize, hi: usize) -> String {
+    source
         .lines()
         .skip(lo - 1)
         .take(hi - lo + 1)
         .collect::<Vec<_>>()
-        .join("\n");
-    let actual = body_hash(&slice);
-    if &actual != code_text_hash {
-        r.push(
-            location.into(),
-            format!(
-                "code_text_hash for `{file}:{lines}` differs from current file content; \
-                 the cited code drifted since verification"
-            ),
-        );
-    }
+        .join("\n")
 }
 
 fn check_prior_step_ground(
@@ -573,7 +606,7 @@ fn entry_status(entry: &IndexEntry) -> Status {
     }
 }
 
-fn parse_line_range(s: &str) -> Option<(usize, usize)> {
+pub(crate) fn parse_line_range(s: &str) -> Option<(usize, usize)> {
     match s.split_once('-') {
         Some((a, b)) => {
             let lo: usize = a.parse().ok()?;
@@ -741,7 +774,7 @@ mod tests {
         let mut pf = minimal_verified("the property", "body");
         pf.verified.as_mut().unwrap().proof.steps[0].grounds = vec![Ground::Intent {
             id: sample_id("nonexistent"),
-            at_text_hash: sample_hash("x"),
+            at_text_hash: Some(sample_hash("x")),
             relation: GroundRelation::Instantiates,
             reason: None,
         }];
@@ -775,7 +808,7 @@ mod tests {
         let mut pf = minimal_verified("focal text", "focal body");
         pf.verified.as_mut().unwrap().proof.steps[0].grounds = vec![Ground::Intent {
             id: sample_id("ground"),
-            at_text_hash: text_hash("STALE TEXT"),
+            at_text_hash: Some(text_hash("STALE TEXT")),
             relation: GroundRelation::Instantiates,
             reason: None,
         }];
@@ -808,7 +841,7 @@ mod tests {
         let mut pf = minimal_verified("focal text", "focal body");
         pf.verified.as_mut().unwrap().proof.steps[0].grounds = vec![Ground::Intent {
             id: sample_id("ground"),
-            at_text_hash: text_hash("current text"),
+            at_text_hash: Some(text_hash("current text")),
             relation: GroundRelation::Instantiates,
             reason: None,
         }];
@@ -817,6 +850,67 @@ mod tests {
             .failures
             .iter()
             .any(|f| f.detail.contains("status=counterexample")));
+    }
+
+    #[test]
+    fn intent_ground_with_absent_hash_passes_when_id_resolves() {
+        // Agent-written proofs omit at_text_hash; validator stamps it on
+        // accept. The check_index_ground existence + status checks must
+        // still apply, but the hash comparison is skipped.
+        let idx = index_with_one_intent("ground", "current text", Status::Unknown);
+        let mut idx = idx;
+        idx.entries.insert(
+            sample_id("focal"),
+            IndexEntry::Intent(IntentEntry {
+                text: "focal text".into(),
+                verify: VerifyLevel::Method(VerifyMethod::Neural),
+                status: Status::Unknown,
+                text_hash: text_hash("focal text"),
+                body_hash: sample_hash("focal body"),
+                file: "src/x.rs".into(),
+                site: "fn focal (line 1)".into(),
+                covered_region: aristo_core::index::CoveredRegion::Function,
+                binding: aristo_core::index::BindingState::Local,
+                parent: None,
+            }),
+        );
+        let mut pf = minimal_verified("focal text", "focal body");
+        pf.verified.as_mut().unwrap().proof.steps[0].grounds = vec![Ground::Intent {
+            id: sample_id("ground"),
+            at_text_hash: None,
+            relation: GroundRelation::Instantiates,
+            reason: None,
+        }];
+        let report = validate(&sample_id("focal"), &pf, &idx, Path::new("/"));
+        assert!(
+            report.is_empty(),
+            "absent at_text_hash should pass; got: {}",
+            report.render()
+        );
+    }
+
+    #[test]
+    fn code_ground_with_absent_hash_passes_when_file_and_lines_resolve() {
+        // Mirror of the intent-side test: an agent-written Code ground
+        // without code_text_hash should pass as long as the file exists
+        // and the line range is in bounds.
+        let idx = index_with_one_intent("foo", "the property", Status::Unknown);
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(tmp.path().join("src/x.rs"), "line1\nline2\nline3\n").unwrap();
+        let mut pf = minimal_verified("the property", "body");
+        pf.verified.as_mut().unwrap().proof.steps[0].grounds = vec![Ground::Code {
+            file: "src/x.rs".into(),
+            lines: "1-2".into(),
+            code_text_hash: None,
+            reason: "see header".into(),
+        }];
+        let report = validate(&sample_id("foo"), &pf, &idx, tmp.path());
+        assert!(
+            report.is_empty(),
+            "absent code_text_hash should pass; got: {}",
+            report.render()
+        );
     }
 
     #[test]
