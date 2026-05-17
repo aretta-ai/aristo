@@ -50,12 +50,15 @@ validator will then check structurally.
 
 ## Intent under verification
 
-id:        {{id}}
-text:      """{{text}}"""
-file:      {{file}}
-site:      {{site}}
-text_hash: {{text_hash}}
-body_hash: {{body_hash}}
+id:              {{id}}
+text:            """{{text}}"""
+file:            {{file}}
+site:            {{site}}
+text_hash:       {{text_hash}}
+body_hash:       {{body_hash}}
+prior_attempts:  {{prior_attempts}}  # 0 on first try; carried over from any
+                                     # previous rejected proof for this id.
+                                     # Use as `attempts = prior_attempts + 1`.
 
 ## Current index (for grounding lookups)
 
@@ -89,7 +92,7 @@ method = "neural"
 produced_at_text_hash = "{{text_hash}}"  # copy verbatim from prompt
 produced_at_body_hash = "{{body_hash}}"  # copy verbatim from prompt
 produced_by = "aristo-neural-verifier@v0.0.5"
-attempts = 1
+attempts = {{prior_attempts}} + 1  # use the integer literal — e.g., prior_attempts=2 → write `attempts = 3`
 property_kind = "invariant"  # or postcondition | precondition | equivalence | safety | progress
 
 # Then exactly ONE of [verified] / [counterexample] / [inconclusive]:
@@ -141,7 +144,11 @@ proposed_promotion = false        # set true if THIS step's claim is reusable
    state concretely, not vaguely "could happen".
 9. For inconclusive: gap.unfilled_path must name the path of the step
    you couldn't discharge. gap.suggested_annotations MUST have ≥1 entry.
-10. attempts = 1 always (you're a single-shot subagent; you don't loop).
+10. `attempts` MUST equal `prior_attempts + 1` from the prompt above (you're
+    a single-shot subagent; the SDK tracks repair budget across re-spawns
+    via the existing .proof file on disk). When `prior_attempts = 0` (first
+    try), write `attempts = 1`. The SDK refuses to dispatch beyond the
+    K-bounded budget; you don't have to check it yourself.
 
 Output only the TOML. Nothing else.
 ```

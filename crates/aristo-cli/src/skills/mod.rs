@@ -140,6 +140,11 @@ mod tests {
             body.contains("Cited id discipline"),
             "skill body must encode the cited-id-discipline rule (open #2 fix)"
         );
+        assert!(
+            body.contains("prior_attempts + 1") || body.contains("prior_attempts}} + 1"),
+            "skill body must teach the agent to compute attempts as prior_attempts + 1 \
+             (GAP-9: repair budget accumulates across re-spawns)"
+        );
     }
 
     #[test]

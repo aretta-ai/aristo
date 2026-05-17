@@ -626,3 +626,127 @@ fn terminal_status_without_proof_file_forces_reverify() {
         .success()
         .stdout(contains("1 entry pending neural verification"));
 }
+
+// ─── GAP-9: attempts persistence across re-spawns ─────────────────────
+
+#[test]
+fn pending_carries_prior_attempts_from_existing_proof() {
+    // A rejected proof for an entry leaves attempts=2 (say) on disk.
+    // Next `aristo verify` must include `prior_attempts = 2` so the
+    // skill's next subagent writes attempts=3, not attempts=1.
+    let tmp = tempfile::tempdir().unwrap();
+    let text_h = workspace_with_one_neural_intent(tmp.path(), "my_intent", "the property");
+    let zero_hash = format!("sha256:{}", "0".repeat(64));
+    // Write a proof with attempts=2 that will validate at hash-check
+    // (focal hashes correct) but never gets accepted because we want
+    // it to coexist with the verify-list-time check.
+    let proof = format!(
+        r#"[verdict]
+type = "inconclusive"
+method = "neural"
+produced_at_text_hash = "{text_h}"
+produced_at_body_hash = "{zero_hash}"
+produced_by = "test@0"
+attempts = 2
+property_kind = "invariant"
+
+[inconclusive.gap]
+description = "stuck"
+unfilled_path = "0"
+[[inconclusive.gap.suggested_annotations]]
+kind = "assume"
+suggested_text = "something not in the index"
+at_site = "fn x (line 1)"
+rationale = "would close gap"
+"#
+    );
+    write_proof(tmp.path(), "my_intent", &proof);
+    // Apply once to flip status to Inconclusive.
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts"])
+        .assert()
+        .success();
+
+    // Now corrupt the proof so the validator-at-list-time check
+    // rejects it (forcing re-pending), but the prior attempts read
+    // still works.
+    let path = tmp.path().join(".aristo/proofs/my_intent.proof");
+    let raw = fs::read_to_string(&path).unwrap();
+    // Replace produced_at_text_hash with garbage → validator rejects on
+    // focal-text-hash mismatch at list time.
+    let stale = format!("sha256:{}", "f".repeat(64));
+    let raw = raw.replace(&text_h, &stale);
+    fs::write(&path, raw).unwrap();
+
+    aristo_in(tmp.path())
+        .arg("verify")
+        .assert()
+        .success();
+    let pending = fs::read_to_string(tmp.path().join(".aristo/pending-neural.toml")).unwrap();
+    assert!(
+        pending.contains("prior_attempts = 2"),
+        "pending file must carry prior_attempts; got:\n{pending}"
+    );
+}
+
+#[test]
+fn pending_skips_and_warns_when_budget_exhausted() {
+    // attempts=3 on the existing proof = budget exhausted. Next verify
+    // must NOT include this id in pending (no point re-spawning to hit
+    // attempts=4 which the validator would reject anyway) AND must warn
+    // the user loudly on stderr.
+    let tmp = tempfile::tempdir().unwrap();
+    let text_h = workspace_with_one_neural_intent(tmp.path(), "stuck_intent", "the property");
+    let zero_hash = format!("sha256:{}", "0".repeat(64));
+    let proof = format!(
+        r#"[verdict]
+type = "inconclusive"
+method = "neural"
+produced_at_text_hash = "{text_h}"
+produced_at_body_hash = "{zero_hash}"
+produced_by = "test@0"
+attempts = 3
+property_kind = "invariant"
+
+[inconclusive.gap]
+description = "stuck"
+unfilled_path = "0"
+[[inconclusive.gap.suggested_annotations]]
+kind = "assume"
+suggested_text = "something not in the index"
+at_site = "fn x (line 1)"
+rationale = "would close gap"
+"#
+    );
+    write_proof(tmp.path(), "stuck_intent", &proof);
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts"])
+        .assert()
+        .success();
+
+    // Corrupt the produced_at_text_hash → validator at list time rejects
+    // → entry would re-pend, except prior_attempts=3 is at budget cap so
+    // the SDK excludes it and warns instead.
+    let path = tmp.path().join(".aristo/proofs/stuck_intent.proof");
+    let raw = fs::read_to_string(&path).unwrap();
+    let stale = format!("sha256:{}", "f".repeat(64));
+    let raw = raw.replace(&text_h, &stale);
+    fs::write(&path, raw).unwrap();
+
+    aristo_in(tmp.path())
+        .arg("verify")
+        .assert()
+        .success()
+        .stderr(contains("exhausted the repair budget"))
+        .stderr(contains("stuck_intent"));
+
+    // Pending file must NOT include the budget-exhausted entry.
+    let pending_path = tmp.path().join(".aristo/pending-neural.toml");
+    if pending_path.exists() {
+        let pending = fs::read_to_string(&pending_path).unwrap();
+        assert!(
+            !pending.contains("stuck_intent"),
+            "budget-exhausted entry must be excluded from pending; got:\n{pending}"
+        );
+    }
+}

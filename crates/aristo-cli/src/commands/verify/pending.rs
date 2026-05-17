@@ -16,9 +16,11 @@
 use std::fs;
 
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Sha256};
+use aristo_core::proof::ProofFile;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::index::atomic_write;
+use crate::commands::verify::validator::MAX_REPAIR_ATTEMPTS;
 use crate::{CliError, CliResult, Workspace};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,6 +37,17 @@ pub(crate) struct PendingEntry {
     pub site: String,
     pub text_hash: Sha256,
     pub body_hash: Sha256,
+    /// Carried-over attempts count from a prior rejected `.proof` file
+    /// for this id, if any. The skill orchestrator instructs subagents
+    /// to emit `attempts = prior_attempts + 1`, so the validator's
+    /// K-bounded repair budget actually accumulates across re-spawns
+    /// rather than resetting to 1 every run.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub prior_attempts: u32,
+}
+
+fn is_zero_u32(n: &u32) -> bool {
+    *n == 0
 }
 
 #[aristo::intent(
@@ -55,10 +68,16 @@ pub(crate) fn write_pending_neural(
     ids: &[&AnnotationId],
 ) -> CliResult<()> {
     let mut entries = Vec::with_capacity(ids.len());
+    let mut budget_exhausted: Vec<&AnnotationId> = Vec::new();
     for id in ids {
         let Some(entry) = index.entries.get(*id) else {
             continue;
         };
+        let prior_attempts = read_prior_attempts(ws, id);
+        if prior_attempts >= MAX_REPAIR_ATTEMPTS {
+            budget_exhausted.push(id);
+            continue;
+        }
         entries.push(PendingEntry {
             id: id.as_str().to_string(),
             text: entry_text(entry).to_string(),
@@ -66,7 +85,11 @@ pub(crate) fn write_pending_neural(
             site: entry_site(entry).to_string(),
             text_hash: entry_text_hash(entry).clone(),
             body_hash: entry_body_hash(entry).clone(),
+            prior_attempts,
         });
+    }
+    if !budget_exhausted.is_empty() {
+        warn_budget_exhausted(&budget_exhausted);
     }
     let pf = PendingFile {
         schema_version: 1,
@@ -81,6 +104,53 @@ pub(crate) fn write_pending_neural(
         fs::create_dir_all(parent)?;
     }
     atomic_write(&path, &toml_text)
+}
+
+#[aristo::intent(
+    "Prior attempts for an id come from the existing `.aristo/proofs/ \
+     <id>.proof` file (if any), parsed once to extract verdict.attempts. \
+     Carrying this across re-spawns activates the K-bounded repair \
+     budget that would otherwise be dead code: each fresh subagent \
+     invocation writing attempts=1 means a hard-to-verify intent can \
+     re-spawn indefinitely without ever hitting the cap. Reading from \
+     the rejected proof on disk is the only persistence channel \
+     available — the SDK doesn't track per-entry attempt history \
+     elsewhere.",
+    verify = "test",
+    id = "pending_carries_prior_attempts_from_existing_proof"
+)]
+fn read_prior_attempts(ws: &Workspace, id: &AnnotationId) -> u32 {
+    let filename = format!("{}.proof", id.as_str().replace(':', "__"));
+    let path = ws.aristo_dir().join("proofs").join(filename);
+    if !path.is_file() {
+        return 0;
+    }
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return 0;
+    };
+    let Ok(pf) = ProofFile::parse(&raw) else {
+        return 0;
+    };
+    pf.verdict.attempts
+}
+
+fn warn_budget_exhausted(ids: &[&AnnotationId]) {
+    eprintln!();
+    eprintln!(
+        "⚠  {} annotation(s) have exhausted the repair budget ({} attempts) and \
+         will not be re-dispatched until you intervene:",
+        ids.len(),
+        MAX_REPAIR_ATTEMPTS
+    );
+    for id in ids {
+        eprintln!("    {id}");
+    }
+    eprintln!();
+    eprintln!(
+        "    The proof file on disk records why each attempt failed. Either fix \
+         the underlying issue and `aristo verify --rerun --filter id=<id>`, or \
+         delete `.aristo/proofs/<id>.proof` to start the budget fresh."
+    );
 }
 
 fn entry_text(e: &IndexEntry) -> &str {
