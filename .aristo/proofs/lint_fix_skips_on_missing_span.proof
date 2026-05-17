@@ -1,0 +1,47 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:a6d04f311e94cacdb07fc1c2e32ceabb08fecef88804e5668f0bec070d89786a"
+produced_at_body_hash = "sha256:0fe867b0f02074e85e25b16ecebcb6870a7b737d55c38ce6a035eb59599ada75"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "rewrite_source never applies an edit when proc_macro2 span info is missing for either endpoint of a literal's span; the offending edit is skipped via continue, leaving source bytes unchanged and the annotation unfixed."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "The match arm in rewrite_source only binds (start, end) when both byte_offset(span.start()) and byte_offset(span.end()) return Some and the ordering invariant s <= e <= source.len() holds; every other case falls through to continue, skipping the edit for this literal."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/lint/fix.rs"
+lines = "109-116"
+code_text_hash = "sha256:872add734aeb36b26ddee733c2a53d4b16c0a4a5f8d232713392e24692ce1f9f"
+reason = "match on (offsets.byte_offset(span.start()), offsets.byte_offset(span.end())); the catch-all _ => continue covers (None, _), (_, None), and any pair violating s <= e <= source.len()."
+
+[[verified.proof.steps]]
+path = "1"
+claim = "LineOffsets::byte_offset returns None precisely when proc_macro2 span info is missing: lc.line == 0 (proc-macro2's sentinel when span-locations is disabled) returns None immediately."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/lint/fix.rs"
+lines = "341-367"
+code_text_hash = "sha256:c28090f74e27a527cb21364e1cd2e24bd83f4cd5e71297da44a5ec5d34a32e0b"
+reason = "byte_offset: explicit `if lc.line == 0 { return None }` for the proc-macro2 missing-span sentinel, plus get(line_idx)? for out-of-range lines."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "Skipping the edit at the match site cannot corrupt source bytes: the only mutation site is the replace_range loop, and when the match falls through no Edit is appended — so no replace_range call uses bogus offsets, and the worst case is a persistent lint finding."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/lint/fix.rs"
+lines = "85-137"
+code_text_hash = "sha256:86de054e7f7b196fe9a82541085cba74e61188b99864f84ed652e308532bbcd2"
+reason = "rewrite_source body: edits.push(...) only after the successful arm; the later loop replace_range is the sole writer of out."

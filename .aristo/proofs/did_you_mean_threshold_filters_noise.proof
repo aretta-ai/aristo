@@ -1,0 +1,24 @@
+[verdict]
+type = "inconclusive"
+method = "neural"
+produced_at_text_hash = "sha256:83deaa81889acf09c9fb6383c823ac8363bc91277a16be89294ac106f979da5e"
+produced_at_body_hash = "sha256:cc2281617efc9e3c91c3a6da65da3072d3f3b19e9110d3b3a710746ebda12ddf"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[inconclusive.gap]
+description = "The intent claims the threshold (raw.len() / 3).max(1) is 'tuned' to suppress unrelated ids without hiding real typos. This is a subjective tuning claim with no falsifiable property attached: there is no stated bound (e.g. 'queries of length L surface ids within distance D'), no test fixture pinning the noise-vs-typo balance, and no companion assume about the user-typo distribution the threshold targets. The code implements (raw.len()/3).max(1) plus a .take(3) cap, but the function body alone cannot witness 'tuned correctly'."
+unfilled_path = "0"
+
+[[inconclusive.gap.suggested_annotations]]
+kind = "assume"
+suggested_text = "Users typo ~1 character per 3-4 typed; one third of the query length is the empirically chosen upper bound that catches single transpositions/omissions in short ids without admitting unrelated 6+ char ids as neighbors."
+at_site = "fn did_you_mean (crates/aristo-cli/src/commands/show.rs:251)"
+rationale = "Converts the subjective 'tuned' claim into a citeable external assumption about typo distribution."
+
+[[inconclusive.gap.suggested_annotations]]
+kind = "intent"
+suggested_text = "did_you_mean returns at most 3 suggestions for any query: the .take(3) cap is the load-bearing upper bound. max_dist >= 1 for any non-empty query, witnessed by the .max(1) call."
+at_site = "fn did_you_mean (crates/aristo-cli/src/commands/show.rs:251)"
+rationale = "Splits the intent into locally verifiable claims (≤3 results, distance ≥1) — the remaining 'tuned' rationale stays in the parent intent."

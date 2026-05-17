@@ -1,0 +1,52 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:8c78075691a5d6635a2438199e8d9355f2ca83e21d62902954ff350d62ba6d53"
+produced_at_body_hash = "sha256:02e8d00de9d2692ee062267f4c81fa7f5000f977a89bb0f34b25489dea39ee9b"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "generate_opaque_id always returns an AnnotationId in the aret_ opaque namespace with ~40 bits of entropy; if OS randomness fails, the function panics rather than emitting a low-entropy id."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "On RNG failure the function panics; no id is ever returned. .expect() on Err panics, aborting before bytes is used."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/id.rs"
+lines = "65-85"
+code_text_hash = "sha256:54f014ca12ddb4f73400091cc9e58dc6995db6658b017df8b7cf39fadc972a56"
+reason = 'getrandom::getrandom(&mut bytes).expect("OS RNG failed; aborting rather than emitting a low-entropy id") — .expect() on Err panics.'
+
+[[verified.proof.steps]]
+path = "1"
+claim = "Every byte from getrandom maps to a char in OPAQUE_ALPHABET (31 lowercase-alphanumeric chars) via idx = byte % 31, producing an 8-char body inside the [a-z0-9]+ charset accepted by parse_annotation_id."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/id.rs"
+lines = "31-31"
+code_text_hash = "sha256:652c5b67b4c2b9ff6e7e3080266ce833846ac7157fe7166b20cb706a770d8519"
+reason = "OPAQUE_ALPHABET = abcdefghjkmnpqrstuvwxyz23456789 — 31 bytes, all ASCII alphanumeric. Loop runs OPAQUE_BODY_LEN=8 times → body length exactly 8."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "aret_<8 alphanumeric chars> is accepted by AnnotationId::parse as an opaque id (prefix + body length in [4,64] + ASCII alphanumeric body — all three hold)."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "1"
+reason = "Established body is 8 chars and every char is ASCII alphanumeric."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/index/strings.rs"
+lines = "344-379"
+code_text_hash = "sha256:4e616d74f92294aba69d021ac97a7796ad93b4a34100ad01279ad81aacac31bf"
+reason = "parse_annotation_id: after stripping aret_, checks body length in [4,64] and is_ascii_alphanumeric. The .expect on line 84 therefore never fires."

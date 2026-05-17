@@ -1,0 +1,50 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:af819b3494ec96075257f6031a8f675684038d12d3b03b942aa8a8f2f120c10d"
+produced_at_body_hash = "sha256:dffca370d6ae3939c7e60f67f3326cb40a130fa00820742e61803d4143854ff9"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "detect_cycles returns at most one CycleError per invocation: the first cycle found by DFS over parent.keys() is wrapped and returned via return Err(...), immediately terminating the outer for-loop; the Ok(()) path runs only when no cycle is found."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "When dfs returns Some(cycle), detect_cycles immediately returns Err(CycleError { path: cycle }) without iterating further start nodes."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/cycle.rs"
+lines = "64-72"
+code_text_hash = "sha256:156e2d3dd23d97880faf71e72bb7de9b090bdd3d7415c0dd63db767fe1547e0c"
+reason = "for-loop over parents.keys() contains `if let Some(cycle) = dfs(...) { return Err(...) }` — the return exits on first hit; no accumulator."
+
+[[verified.proof.steps]]
+path = "1"
+claim = "dfs returns Some(...) the moment it detects the first back-edge, and the Some bubbles up through recursive callers unchanged."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/cycle.rs"
+lines = "75-108"
+code_text_hash = "sha256:09441f34223d14bff351b8994a1b9f3c39090644f93c51956e9456c565374bcc"
+reason = "dfs short-circuits on first back-edge; recursive call propagates Some without merging or continuing"
+
+[[verified.proof.steps]]
+path = "2"
+claim = "The function's only Ok(()) path is reached when the loop completes without dfs returning Some; therefore zero cycles (Ok) or exactly one cycle (Err), never a collection."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "0"
+reason = "first cycle short-circuits outer loop"
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "1"
+reason = "dfs itself does not enumerate beyond the first back-edge"

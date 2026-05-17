@@ -1,0 +1,57 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:34665d5e9ea9d0d6ed14624f188d81d86113dbd37aa81ee5607fb8041a58c31b"
+produced_at_body_hash = "sha256:93dd12abbe5a32f893c6d90b30ca8f69fdbbd15bb3b3dfe86e53715c212435ec"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "ProofFile represents the proof tree as a flat Vec<ProofStep>, where each step is addressed by a dotted-path string field (path: String) and references children via subgoal_paths: Vec<String>. The Rust types do not encode recursion via a nested enum or recursive struct."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "ProofStep encodes its tree address as a dotted-path String, not by being a recursive struct that owns its subgoals."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/proof/mod.rs"
+lines = "192-209"
+code_text_hash = "sha256:0e8bb50740625af66194f5cd322312dff9f73e2b29a906bca6d0516443e7cc81"
+reason = """ProofStep declares pub path: String with doc 'Tree address. Root is "0"...' — dotted-path encoding, no recursive field owning child ProofSteps."""
+
+[[verified.proof.steps]]
+path = "1"
+claim = "The Proof container holds steps as a flat Vec<ProofStep>, so the document's steps are a single homogeneous list rather than a recursively nested heterogeneous tree."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/proof/mod.rs"
+lines = "183-190"
+code_text_hash = "sha256:937accb5628e1926b607c0054279b7e0df61eaad7a68a517f569719074296a56"
+reason = "pub struct Proof { pub conclusion: String, pub steps: Vec<ProofStep> } — steps is a flat Vec, not a recursive enum."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "Parent→child relationships are expressed via subgoal_paths: Vec<String>, so referencing any node is by stable string id rather than by traversing owned children."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "0"
+reason = "path field is a string id."
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "1"
+reason = "steps is a flat list keyed by path."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/proof/mod.rs"
+lines = "192-209"
+code_text_hash = "sha256:0e8bb50740625af66194f5cd322312dff9f73e2b29a906bca6d0516443e7cc81"
+reason = "ProofStep declares pub subgoal_paths: Vec<String> — children referenced by path string, not by ownership."

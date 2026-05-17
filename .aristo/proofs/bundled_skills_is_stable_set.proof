@@ -1,0 +1,24 @@
+[verdict]
+type = "inconclusive"
+method = "neural"
+produced_at_text_hash = "sha256:e263b091886cb4c609e53a9967e731cb3c967aa28163a64f90b6d5f93c48d577"
+produced_at_body_hash = "sha256:cd90679da5a4b2be67dab24d0af844740a795916a5d7634477e3a204e2b0aaf4"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[inconclusive.gap]
+description = "The intent has two factual sub-claims: (1) the skill name field is used as the install path segment on disk, (2) external agents (Claude Code / Cursor / Antigravity / Codex / OpenCode) match installed skills by exact name. Sub-claim (1) is observable in this codebase. Sub-claim (2), however, is a fact about external agent runtimes (how Claude Code resolves .claude/skills/<name>/SKILL.md, how AGENTS.md anchors are resolved by Codex/OpenCode). That behavior is not encoded anywhere in the workspace; without an assume annotation pinning the agent-side contract, the 'breaking change' conclusion cannot be mechanically verified."
+unfilled_path = "0.1"
+
+[[inconclusive.gap.suggested_annotations]]
+kind = "assume"
+suggested_text = "Each supported agent runtime (Claude Code, Cursor, Antigravity, Codex, OpenCode) resolves an installed skill by exact-string match on the name field — file-copy backends key the install path on s.name, and AGENTS.md section-injection anchors the injected section on s.name. Therefore once a name is shipped, changing it leaves users with an orphan install under the old name that the agent still resolves, while new installs land at the new name — a silent fork."
+at_site = "fn bundled (crates/aristo-cli/src/skills/mod.rs:53)"
+rationale = "Pins the external-agent matching contract that 'breaking change' depends on. With this assume plus existing code grounds for path/lookup using s.name, the breaking-change conclusion decomposes cleanly."
+
+[[inconclusive.gap.suggested_annotations]]
+kind = "intent"
+suggested_text = "The install path segment for each skill is s.name verbatim — no normalization, no aliasing, no compat shims. A rename of Skill::name therefore writes to a different on-disk path than any prior install, leaving the old path orphaned under the user's agent config directory."
+at_site = "fn file_copy_install (crates/aristo-cli/src/skills/install.rs:49)"
+rationale = "Promotes the load-bearing line into a verifiable invariant so the 'no aliasing / no compat shim' half of the breaking-change claim has a code-side anchor."

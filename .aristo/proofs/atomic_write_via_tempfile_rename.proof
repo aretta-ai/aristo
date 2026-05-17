@@ -1,0 +1,24 @@
+[verdict]
+type = "inconclusive"
+method = "neural"
+produced_at_text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
+produced_at_body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[inconclusive.gap]
+description = "The intent makes two distinct claims, neither of which can be discharged from this function alone. Claim A (atomicity-under-crash) rests on the OS-level guarantee that rename(2) is atomic on a same-directory move and that an unfinished fs::write only ever leaves bytes at tmp, never at target — both external (OS/filesystem) guarantees, not properties of THIS code, that should be captured as an assume annotation per verify_assumes_are_documentation_only_by_design. Claim B (concurrent-invocation surfacing) is partially supported: the tmp suffix is fixed (deterministic from target via with_extension), so two concurrent invocations clash on the same tmp path. But the 'we surface loudly' half is NOT supported by this code — fs::write truncates without O_EXCL, and fs::rename succeeds either way. Whether a clash surfaces an error depends on interleaving, not on a deterministic guard at this site. Without (1) an assume codifying rename atomicity, and (2) either a guard at this site or an existing intent documenting the workspace-level lock that makes 'surfaces loudly' true, this proof cannot be closed."
+unfilled_path = "0"
+
+[[inconclusive.gap.suggested_annotations]]
+kind = "assume"
+suggested_text = "On POSIX-compliant filesystems, rename(2) between two paths in the same directory (and therefore same filesystem) is atomic with respect to concurrent observers and crash: at any instant the destination path resolves either to its prior inode or to the source's inode, never to a partial state. Windows MoveFileExW with MOVEFILE_REPLACE_EXISTING provides the equivalent guarantee on NTFS. std::fs::rename is a thin wrapper over these."
+at_site = "fn atomic_write (crates/aristo-cli/src/commands/index.rs:293)"
+rationale = "The atomicity-under-crash half of the intent rests entirely on this OS guarantee. Per verify_assumes_are_documentation_only_by_design, external filesystem invariants must be captured as assume entries so a proof can cite them as grounds."
+
+[[inconclusive.gap.suggested_annotations]]
+kind = "intent"
+suggested_text = "Concurrent invocations of atomic_write against the same target use the same fixed tmp suffix and therefore the same tmp path. The 'surface loudly' guarantee is NOT provided by this function in isolation — fs::write truncates without exclusivity. Clean clash detection requires either an outer process-level workspace lock, or replacing fs::write with OpenOptions::new().create_new(true).write(true) so a concurrent second writer hits EEXIST deterministically."
+at_site = "fn atomic_write (crates/aristo-cli/src/commands/index.rs:293)"
+rationale = "Either the parent intent should be narrowed to the atomicity-on-crash claim only, or a sibling guarantee at the call-site / OpenOptions level must be added and cited."

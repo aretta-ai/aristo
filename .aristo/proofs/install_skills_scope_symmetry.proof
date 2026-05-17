@@ -1,0 +1,31 @@
+[verdict]
+type = "counterexample"
+method = "neural"
+produced_at_text_hash = "sha256:ad05f93613435d2796b6d6fbd24c1167839a4ddf2792a598f494971fd82e2bde"
+produced_at_body_hash = "sha256:0695dc5b7c603c91dcecd76618843841af36bdb355f78f88ec03dcc4d01b9014"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[counterexample.violation]
+description = "User-scope install suppresses the trailing two-line 'Tip: commit … --user (writes to …)' block that project-scope install prints. The output differs by more than just the target path: project-scope ends with `ok:` line + blank line + 2 tip lines; user-scope ends with the `ok:` line only."
+violated_step_path = "0"
+
+[[counterexample.violation.trigger_steps]]
+path = "0"
+claim = "Running `aristo install-skills --agent claude-code` (project) and `aristo install-skills --agent claude-code --user` (user) produces outputs that differ by 3 lines (blank + 2 tip lines), not just the target path."
+relation_to_parent = "decomposes"
+
+[[counterexample.violation.trigger_steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/install_skills.rs"
+lines = "272-285"
+code_text_hash = "sha256:4151759e86557d96388ff097d0b87c94b1997895e4e65839187f9a4ee03910ca"
+reason = "print_install_tip(agent, user) starts with `if user { return; }`. Project scope prints a blank line plus `Tip: commit {dir} ...` and `instead, pass --user (writes to {user_dir}).`. User scope emits zero output from this helper."
+
+[[counterexample.violation.trigger_steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/install_skills.rs"
+lines = "108-117"
+code_text_hash = "sha256:d610a69f9089a8853264d6beb66c075d4c86eff757c2070090a0c33f715d6df4"
+reason = "fn install unconditionally calls print_install_tip(agent, user) after the success summary. Same call site, different behavior keyed on user — divergent terminal output."

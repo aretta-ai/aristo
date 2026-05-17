@@ -1,0 +1,54 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:cc345a0700f01d353bae50330bb9a76be9cb77846a8458a6c332c9bf7156f96f"
+produced_at_body_hash = "sha256:f6104c6122ae199639c907b793a9879dbecc23e3cb70f83a9f209f03e304dfa6"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "Both install backends in skills/install.rs (file_copy_install and render_agents_md_block used by agents_md_install) write skill.resolved_content() to disk; the only .content reads in the skills module are inside #[cfg(test)] assertions. The {{SDK_VERSION}} placeholder cannot reach an installed SKILL.md."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "Skill::resolved_content returns self.content with {{SDK_VERSION}} replaced by env!(CARGO_PKG_VERSION) — the placeholder-substituting renderer the intent requires install paths to call."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/skills/mod.rs"
+lines = "47-50"
+code_text_hash = "sha256:e81626dcba069939a1804f0b983767f17c3ef169d7f6f51236cc0a93af5df365"
+reason = 'fn resolved_content body: self.content.replace("{{SDK_VERSION}}", env!("CARGO_PKG_VERSION"))'
+
+[[verified.proof.steps]]
+path = "1"
+claim = "file_copy_install computes let resolved = skill.resolved_content() and uses resolved for the existence-comparison and both fs::write calls — the raw skill.content field is never read."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/skills/install.rs"
+lines = "49-65"
+code_text_hash = "sha256:0933cf0520b6efbc08dddd9e74053437ea1834cee34e719373234762da117247"
+reason = "fn file_copy_install body uses resolved variable throughout."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "render_agents_md_block (called by agents_md_install) pushes s.resolved_content().trim() for each skill — no raw .content read."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/skills/install.rs"
+lines = "169-184"
+code_text_hash = "sha256:4ec866c04501ef1cdab76a85a2b5adbdcd6dda2275e0620d0e168c645ff8043f"
+reason = "render_agents_md_block uses s.resolved_content() in the body assembly."
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "file_copy_install_idempotent"
+at_text_hash = "sha256:9d55a360851940c42db8f6e63a069feac1129fe8a8d44ff5e377a771b671b61e"
+relation = "composes"
+reason = "Sibling intent confirms file_copy_install is the load-bearing site for the file-copy backend."

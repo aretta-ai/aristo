@@ -1,0 +1,50 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
+produced_at_body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
+produced_by = "aristo-neural-verifier@v0.0.5"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "resolve_verify_level maps VerifyLevel::Bool(true) to VerifyLevel::Method(cfg.verify.default_method) when Some, and to VerifyLevel::Method(VerifyMethod::Test) when None — exactly matching the intent's deferral-then-fallback claim."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "The Bool(true) arm of resolve_verify_level reads cfg.verify.default_method and returns VerifyLevel::Method(m) on Some(m), VerifyLevel::Method(VerifyMethod::Test) on None."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "230-242"
+code_text_hash = "sha256:784b895ad29bddce32273b2e8c43786c8be2a45f5d91bd93bfb13d21d516eb65"
+reason = "Match arm: VerifyLevel::Bool(true) => match cfg.verify.default_method { Some(m) => VerifyLevel::Method(m), None => VerifyLevel::Method(VerifyMethod::Test) }"
+
+[[verified.proof.steps]]
+path = "1"
+claim = "cfg.verify.default_method is a project-level config field of type Option<VerifyMethod>, so None is the legitimate 'absent' state and Some(m) is the project's chosen method."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/config/mod.rs"
+lines = "69-75"
+code_text_hash = "sha256:d216894a7997da7c5341de000fcb4d1f13e5ba2aa7600d135deb75b25c4dd80d"
+reason = "VerifyConfig::default_method is Option<VerifyMethod>; doc explicitly states 'None means use the per-tier default (free → test, paid → full)'."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "Any refactor that hard-codes either side would change the resolved VerifyLevel for every annotation written as verify = true, silently overriding project policy."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "0"
+reason = "These two arms are the sole path from Bool(true) to a concrete VerifyLevel::Method."
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
+path = "1"
+reason = "default_method IS the project-policy field."
