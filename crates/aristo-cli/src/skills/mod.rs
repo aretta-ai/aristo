@@ -89,7 +89,12 @@ const AUTHORING: Skill = Skill {
     content: AUTHORING_BODY,
 };
 
-const BUNDLED: &[Skill] = &[AUTHORING];
+const NEURAL_VERIFY: Skill = Skill {
+    name: "aristo-neural-verify",
+    content: include_str!("aristo-neural-verify.md"),
+};
+
+const BUNDLED: &[Skill] = &[AUTHORING, NEURAL_VERIFY];
 
 #[cfg(test)]
 mod tests {
@@ -108,8 +113,27 @@ mod tests {
     fn future_skill_names_not_yet_bundled() {
         // Sentinels: these skills land in their consuming slices.
         assert!(find("aristo-mine-assertions").is_none()); // slice 24
-        assert!(find("aristo-neural-verify").is_none()); // slice 23
         assert!(find("aristo-review-skill").is_none()); // slice 27
+    }
+
+    #[test]
+    fn neural_verify_skill_is_bundled() {
+        let s = find("aristo-neural-verify").expect("aristo-neural-verify must be bundled");
+        // The skill body must teach the validator's hard contract; spot-check
+        // a couple of load-bearing lines.
+        let body = s.resolved_content();
+        assert!(
+            body.contains("`.aristo/pending-neural.toml`"),
+            "skill body must reference the pending-request file the SDK writes"
+        );
+        assert!(
+            body.contains("aristo verify --apply-verdicts"),
+            "skill body must teach the agent to call the SDK validator after producing proofs"
+        );
+        assert!(
+            body.contains("do NOT inline it as a discovered ground"),
+            "skill body must encode the strict-on-discovered-assumptions rule"
+        );
     }
 
     #[test]

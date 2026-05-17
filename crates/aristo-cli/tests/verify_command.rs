@@ -73,17 +73,26 @@ fn verify_false_intent_is_counted_as_skipped_documentation_only() {
 }
 
 #[test]
-fn verify_neural_intent_returns_not_implemented_with_slice_23() {
+fn verify_neural_intent_writes_pending_request_file() {
     let tmp = tempfile::tempdir().unwrap();
     workspace_with_one_intent_at(tmp.path(), "verify = \"neural\"");
 
     aristo_in(tmp.path())
         .arg("verify")
         .assert()
-        .failure()
-        .code(64)
-        .stderr(contains("not yet implemented"))
-        .stderr(contains("slice 23"));
+        .success()
+        .stdout(contains("1 entry pending neural verification"))
+        .stdout(contains("/aristo-neural-verify"));
+
+    let pending = fs::read_to_string(tmp.path().join(".aristo/pending-neural.toml")).unwrap();
+    assert!(
+        pending.contains("id = \"my_intent\""),
+        "pending file must list the entry; got:\n{pending}"
+    );
+    assert!(
+        pending.contains("text_hash"),
+        "pending file must include text_hash for the subagent to copy"
+    );
 }
 
 #[test]

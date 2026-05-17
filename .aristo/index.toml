@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.5"
-generated_at = "2026-05-17T02:23:25.595259Z"
+generated_at = "2026-05-17T02:40:43.353582Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -213,6 +213,17 @@ file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn merge_status_from_prev (line 165)"
 covered_region = "function"
 
+[proof_file_id_uses_colon_underscore_underscore]
+kind = "intent"
+text = "Filename ↔ AnnotationId mapping uses `:` → `__` substitution (same convention as .aristo/doc/<id-safe>.md per TOOLS.md §I1). A refactor that picks a different scheme (e.g., URL-encoding) would break every previously-written `.proof` file on disk — proof files are tracked in git, so any mapping change is a migration, not a free refactor."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:a3d155c4d0593856df81728cb65861745e7e2fc6bd6793140f68b5ac13bfcc81"
+body_hash = "sha256:0f38c0bf82565d752728d897d99e035df1d13f74415bf0267040c5b8d42cc3e0"
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+site = "fn id_from_filename (line 103)"
+covered_region = "function"
+
 [proof_tree_uses_path_addressed_flat_list]
 kind = "intent"
 text = 'Proof step structure is a TREE addressed by dotted paths ("0", "0.0", "0.1.2"), not a recursive Rust struct. The flat list + path-string encoding is deliberate: TOML cannot represent recursive heterogeneous structures cleanly, and the path addressing lets the validator, the promotion flow, and future diff tooling reference any node by stable string. A refactor to a recursive enum would serialize as nested arrays-of-tables that are unreadable by humans and break path-based promotion (`aristo promote-step --path 0.1.2`).'
@@ -279,6 +290,28 @@ file = "crates/aristo-cli/src/commands/install_skills.rs"
 site = "fn uninstall (line 120)"
 covered_region = "function"
 
+[validator_collects_all_failures_not_short_circuit]
+kind = "intent"
+text = "The validator collects EVERY failure into one report rather than short-circuiting on the first. The user (or in-agent repair loop) needs the complete list to fix in one pass; short-circuiting forces N round-trips for N failures, which doesn't compose with the bounded-attempts budget (the verifier would burn its budget fixing failures one at a time)."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:502291027cc91bf24997687e74f287add73c16bde5ca53f9156a7edcfa943499"
+body_hash = "sha256:c681060a09dc4e21e2404da0c40280cd24a63b289326431c1f3c70235b25e19b"
+file = "crates/aristo-cli/src/commands/verify/validator.rs"
+site = "fn validate (line 71)"
+covered_region = "function"
+
+[validator_rejects_grounding_in_refuted_or_docs_only]
+kind = "intent"
+text = "Cited intent/assume grounds are rejected when (a) the id is dangling, (b) the cited entry is verify=false (docs-only — not load-bearing for a proof), or (c) the cited entry is Status::Counterexample (refuted — building on it would launder a refuted claim back into Verified). A refactor that downgrades any of these to warnings would let proofs ground in claims the project doesn't actually believe."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:fd1944bcfc73a6cae241491abada3de4faa78dee1ab195615bd8737f4ac7ef1d"
+body_hash = "sha256:399e2f8c035fac38504a2875aafada4c09464b764893ae75a63e6a2a78fd9890"
+file = "crates/aristo-cli/src/commands/verify/validator.rs"
+site = "fn check_index_ground (line 413)"
+covered_region = "function"
+
 [verify_assumes_are_documentation_only_by_design]
 kind = "intent"
 text = "`assume` entries have no `verify` field by design — they describe external trust (OS guarantees, library invariants, environment contracts), not properties of THIS code, so there is no internal method that could verify them. They resolve to Bool(false) here (the same arm as opt-out intents) so the dispatcher's single skip-without-skill path handles both. A refactor that tries to verify assumes would either invent a verification semantic the design rejects or fail trying."
@@ -286,8 +319,8 @@ verify = "neural"
 status = "unknown"
 text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
-file = "crates/aristo-cli/src/commands/verify.rs"
-site = "fn resolve_verify_level (line 171)"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+site = "fn resolve_verify_level (line 180)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -297,8 +330,8 @@ verify = "neural"
 status = "unknown"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
-file = "crates/aristo-cli/src/commands/verify.rs"
-site = "fn resolve_verify_level (line 183)"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+site = "fn resolve_verify_level (line 192)"
 covered_region = "function"
 
 [verify_skips_clean_entries_unless_rerun]
@@ -308,8 +341,8 @@ verify = "neural"
 status = "unknown"
 text_hash = "sha256:dae1e0e130961b9b77849e9d895baea8a7c966a9036d438917feceee2f629984"
 body_hash = "sha256:e8ca34f9ae5d74715ab3c60a66e1ebdecccd7c58c580752bf87d01ca5001f760"
-file = "crates/aristo-cli/src/commands/verify.rs"
-site = "fn is_clean_verified (line 208)"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+site = "fn is_clean_verified (line 217)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]

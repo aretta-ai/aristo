@@ -23,6 +23,7 @@ use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
 pub(crate) mod apply;
+pub(crate) mod pending;
 pub(crate) mod validator;
 
 pub(crate) fn run(
@@ -45,6 +46,10 @@ pub(crate) fn run(
     let cfg = ws.load_config();
 
     let mut stats = Stats::default();
+    let mut pending_neural: Vec<&AnnotationId> = Vec::new();
+    let mut pending_test: usize = 0;
+    let mut pending_full: usize = 0;
+
     for (id, entry) in index.entries.iter() {
         if !matches_all(id, entry, &filters) {
             continue;
@@ -73,27 +78,35 @@ pub(crate) fn run(
                 unreachable!("resolve_verify_level returns Method(..) for Bool(true)")
             }
             VerifyLevel::Method(VerifyMethod::Neural) => {
-                return Err(CliError::NotImplemented {
-                    what: "aristo verify (verify=\"neural\")",
-                    slice: "slice 23",
-                });
+                pending_neural.push(id);
             }
-            VerifyLevel::Method(VerifyMethod::Test) => {
-                return Err(CliError::NotImplemented {
-                    what: "aristo verify (verify=\"test\")",
-                    slice: "slice 24",
-                });
-            }
-            VerifyLevel::Method(VerifyMethod::Full) => {
-                return Err(CliError::NotImplemented {
-                    what: "aristo verify (verify=\"full\")",
-                    slice: "slice 26",
-                });
-            }
+            VerifyLevel::Method(VerifyMethod::Test) => pending_test += 1,
+            VerifyLevel::Method(VerifyMethod::Full) => pending_full += 1,
         }
     }
 
-    emit_summary(&stats);
+    if !pending_neural.is_empty() {
+        pending::write_pending_neural(&ws, &index, &pending_neural)?;
+    }
+
+    emit_summary(&stats, pending_neural.len(), pending_test, pending_full);
+
+    // Slice 23 ships neural via the in-agent skill route; test (slice 24)
+    // and full (slice 26) are still not implemented. If the user has
+    // entries needing those methods, surface a NotImplemented at the end
+    // (after reporting what HAS been done for neural / false / clean).
+    if pending_test > 0 {
+        return Err(CliError::NotImplemented {
+            what: "aristo verify (verify=\"test\")",
+            slice: "slice 24",
+        });
+    }
+    if pending_full > 0 {
+        return Err(CliError::NotImplemented {
+            what: "aristo verify (verify=\"full\")",
+            slice: "slice 26",
+        });
+    }
     Ok(())
 }
 
@@ -107,15 +120,32 @@ struct Stats {
     skipped_clean: usize,
 }
 
-fn emit_summary(stats: &Stats) {
-    // Single-line summary: keeps the trycmd `[..]` scenarios matchable
-    // and the daily-loop output unobtrusive. When slice 25 unblocks
-    // verify_false_skipped.md the multi-line per-entry format returns
-    // (that spec asserts per-id bullet lines); slice 22 stays terse.
+fn emit_summary(stats: &Stats, pending_neural: usize, pending_test: usize, pending_full: usize) {
     println!(
         "ok: 0 annotations verified, {} skipped (documentation only).",
         stats.skipped_doc_only + stats.skipped_clean
     );
+    if pending_neural > 0 {
+        let word = if pending_neural == 1 {
+            "entry"
+        } else {
+            "entries"
+        };
+        println!(
+            "→ {pending_neural} {word} pending neural verification — wrote .aristo/pending-neural.toml."
+        );
+        println!(
+            "  In Claude Code (or another agent with the aristo-neural-verify skill installed), run:"
+        );
+        println!("    /aristo-neural-verify");
+        println!(
+            "  to produce verdicts for each pending entry. The skill writes .aristo/proofs/<id>.proof"
+        );
+        println!(
+            "  files; run `aristo verify --apply-verdicts` to validate and apply them to the index."
+        );
+    }
+    let _ = (pending_test, pending_full); // surfaced by the NotImplemented error after this fn
 }
 
 fn parse_filters(filter_strings: &[String]) -> CliResult<Vec<Filter>> {
