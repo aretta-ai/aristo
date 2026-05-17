@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.5"
-generated_at = "2026-05-17T06:57:01.998881Z"
+generated_at = "2026-05-17T07:04:06.290601Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -30,7 +30,7 @@ covered_region = "function"
 kind = "intent"
 text = "A crash mid-write leaves either the prior file or the new file at the target — never a partial one. The temp file's suffix is fixed, not randomized, so two concurrent invocations clash on the temp file — intentional, since running two indexers against one workspace is a user error we surface loudly."
 verify = "neural"
-status = "unknown"
+status = "inconclusive"
 text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
@@ -63,7 +63,7 @@ covered_region = "function"
 kind = "intent"
 text = "Skill names in this set are part of the public install surface. Renaming or removing one is a breaking change — users on the old name have it on disk under that path; agents match by exact name."
 verify = "neural"
-status = "unknown"
+status = "inconclusive"
 text_hash = "sha256:e263b091886cb4c609e53a9967e731cb3c967aa28163a64f90b6d5f93c48d577"
 body_hash = "sha256:cd90679da5a4b2be67dab24d0af844740a795916a5d7634477e3a204e2b0aaf4"
 file = "crates/aristo-cli/src/skills/mod.rs"
@@ -85,7 +85,7 @@ covered_region = "function"
 kind = "intent"
 text = 'The Levenshtein threshold is tuned to suppress unrelated ids: too loose floods the user with noise, too tight hides real typos. Both regressions silently erode trust in the "did you mean" signal until it gets ignored.'
 verify = "neural"
-status = "unknown"
+status = "inconclusive"
 text_hash = "sha256:83deaa81889acf09c9fb6383c823ac8363bc91277a16be89294ac106f979da5e"
 body_hash = "sha256:cc2281617efc9e3c91c3a6da65da3072d3f3b19e9110d3b3a710746ebda12ddf"
 file = "crates/aristo-cli/src/commands/show.rs"
@@ -375,7 +375,7 @@ status = "unknown"
 text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 208)"
+site = "fn resolve_verify_level (line 212)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -386,7 +386,7 @@ status = "neural"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 220)"
+site = "fn resolve_verify_level (line 224)"
 covered_region = "function"
 
 [verify_false_arm_is_intentional_skip]
@@ -397,18 +397,18 @@ status = "unknown"
 text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
 body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run (line 64)"
+site = "fn run (line 68)"
 covered_region = "statement"
 
-[verify_skips_clean_entries_unless_rerun]
+[verify_skip_consults_validator_not_just_status]
 kind = "intent"
-text = "Entries with Status in {Verified, Tested, Neural} are skipped unless --rerun is passed. The skip policy bounds daily-loop cost; --rerun is for post-key-rotation sweeps where prior outcomes are no longer trustworthy. Re-running unconditionally would burn cost on every CI run."
+text = "An entry is skipped iff (1) its status is in the terminal set {Verified, Tested, Neural, Counterexample, Inconclusive} AND (2) its on-disk .proof file still passes the mechanical validator against the current index + source. The validator is the source of truth for 'still applicable'; the status flag is a cache. Reading only the flag would miss ground drift in existing proofs (cited code rewritten, cited intent's text changed) — invisible until the next --apply-verdicts cycle. Re-running the validator at list time is bounded by the count of terminal entries, which is the workload we are trying to skip."
 verify = "test"
 status = "unknown"
-text_hash = "sha256:84579fc7f301ae086229adbd69c14998a030e4e49346d43225ad8ab2baf8e5f4"
-body_hash = "sha256:e8ca34f9ae5d74715ab3c60a66e1ebdecccd7c58c580752bf87d01ca5001f760"
+text_hash = "sha256:ec349c62caa14bf353768509d1662e6ec68dc8d5d703d542e698ca3c5fb1089f"
+body_hash = "sha256:92a9f4dcd35a81ce63e0cd198bee192b970574abf1a2282d7fc7dd2b693f163c"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn is_clean_verified (line 245)"
+site = "fn skip_because_proof_still_holds (line 249)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]

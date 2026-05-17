@@ -13,13 +13,17 @@
 //! reserved for warn-severity outcomes (no warnings yet — slice 22 has
 //! only skip / not-implemented arms).
 
+use std::path::PathBuf;
+
 use aristo_core::config::ConfigFile;
-use aristo_core::index::{AnnotationId, IndexEntry, Status, VerifyLevel, VerifyMethod};
+use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Status, VerifyLevel, VerifyMethod};
+use aristo_core::proof::ProofFile;
 
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::read_index;
 use crate::filter::Filter;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
+use crate::workspace::Workspace;
 use crate::{CliError, CliResult};
 
 pub(crate) mod apply;
@@ -55,7 +59,7 @@ pub(crate) fn run(
         if !matches_all(id, entry, &filters) {
             continue;
         }
-        if !rerun && is_clean_verified(entry) {
+        if !rerun && skip_because_proof_still_holds(id, entry, &ws, &index) {
             stats.skipped_clean += 1;
             continue;
         }
@@ -243,19 +247,56 @@ fn resolve_verify_level(entry: &IndexEntry, cfg: &ConfigFile) -> VerifyLevel {
 }
 
 #[aristo::intent(
-    "Entries with Status in {Verified, Tested, Neural} are skipped \
-     unless --rerun is passed. The skip policy bounds daily-loop cost; \
-     --rerun is for post-key-rotation sweeps where prior outcomes are \
-     no longer trustworthy. Re-running unconditionally would burn cost \
-     on every CI run.",
+    "An entry is skipped iff (1) its status is in the terminal set \
+     {Verified, Tested, Neural, Counterexample, Inconclusive} AND \
+     (2) its on-disk .proof file still passes the mechanical \
+     validator against the current index + source. The validator \
+     is the source of truth for 'still applicable'; the status flag \
+     is a cache. Reading only the flag would miss ground drift in \
+     existing proofs (cited code rewritten, cited intent's text \
+     changed) — invisible until the next --apply-verdicts cycle. \
+     Re-running the validator at list time is bounded by the count \
+     of terminal entries, which is the workload we are trying to skip.",
     verify = "test",
-    id = "verify_skips_clean_entries_unless_rerun"
+    id = "verify_skip_consults_validator_not_just_status"
 )]
-fn is_clean_verified(entry: &IndexEntry) -> bool {
+fn skip_because_proof_still_holds(
+    id: &AnnotationId,
+    entry: &IndexEntry,
+    ws: &Workspace,
+    index: &IndexFile,
+) -> bool {
+    if !is_terminal_status(status_of(entry)) {
+        return false;
+    }
+    let path = proof_path_for(ws, id);
+    if !path.is_file() {
+        // Terminal status but no proof file → inconsistency. Force re-verify.
+        return false;
+    }
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(pf) = ProofFile::parse(&raw) else {
+        return false;
+    };
+    validator::validate(id, &pf, index, &ws.root).is_empty()
+}
+
+fn is_terminal_status(s: Status) -> bool {
     matches!(
-        status_of(entry),
-        Status::Verified | Status::Tested | Status::Neural
+        s,
+        Status::Verified
+            | Status::Tested
+            | Status::Neural
+            | Status::Counterexample
+            | Status::Inconclusive
     )
+}
+
+fn proof_path_for(ws: &Workspace, id: &AnnotationId) -> PathBuf {
+    let filename = format!("{}.proof", id.as_str().replace(':', "__"));
+    ws.aristo_dir().join("proofs").join(filename)
 }
 
 #[cfg(test)]
@@ -311,18 +352,26 @@ mod tests {
     }
 
     #[test]
-    fn clean_verified_statuses_are_skipped_by_default() {
-        for s in [Status::Verified, Status::Tested, Status::Neural] {
-            let (_, entry) = intent("foo", VerifyLevel::Bool(true), s);
+    fn terminal_statuses_include_counterexample_and_inconclusive() {
+        // Both terminal verdict statuses must be in the terminal set —
+        // otherwise the skip logic re-runs them every verify cycle
+        // (GAPs 2 and 3 of the proof-lifecycle audit).
+        for s in [
+            Status::Verified,
+            Status::Tested,
+            Status::Neural,
+            Status::Counterexample,
+            Status::Inconclusive,
+        ] {
             assert!(
-                is_clean_verified(&entry),
-                "{s:?} should be considered clean-verified"
+                is_terminal_status(s),
+                "{s:?} must be considered terminal-clean"
             );
         }
     }
 
     #[test]
-    fn unknown_and_stale_are_not_clean_verified() {
+    fn non_terminal_statuses_force_reverify() {
         for s in [
             Status::Unknown,
             Status::Stale,
@@ -330,10 +379,9 @@ mod tests {
             Status::Forged,
             Status::PendingDeepen,
         ] {
-            let (_, entry) = intent("foo", VerifyLevel::Bool(true), s);
             assert!(
-                !is_clean_verified(&entry),
-                "{s:?} should NOT be considered clean-verified"
+                !is_terminal_status(s),
+                "{s:?} must NOT be terminal-clean — needs (re-)verify"
             );
         }
     }

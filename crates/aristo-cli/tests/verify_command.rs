@@ -513,3 +513,116 @@ grounds = [{{ kind = "code", file = "src/x.rs", lines = "1-2", code_text_hash = 
         "expected a stamped (real) code_text_hash post-migration; got:\n{written}"
     );
 }
+
+// ─── validator-at-list-time (skip logic consults validator) ────────────
+
+#[test]
+fn entry_with_valid_proof_is_skipped_on_subsequent_verify() {
+    // After --apply-verdicts flips status to Neural AND stamps hashes
+    // into the proof, the next `aristo verify` should consider this
+    // entry done and not re-add it to pending.
+    let tmp = tempfile::tempdir().unwrap();
+    let text_h = workspace_with_one_neural_intent(tmp.path(), "my_intent", "the property holds");
+    let zero_hash = format!("sha256:{}", "0".repeat(64));
+    let proof = format!(
+        r#"[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "{text_h}"
+produced_at_body_hash = "{zero_hash}"
+produced_by = "test@0"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "the property holds"
+
+[[verified.proof.steps]]
+path = "0"
+claim = "trivially"
+relation_to_parent = "decomposes"
+grounds = [{{ kind = "composition", reason = "single-step proof" }}]
+"#
+    );
+    write_proof(tmp.path(), "my_intent", &proof);
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts"])
+        .assert()
+        .success();
+
+    // Next plain `verify` should skip — proof on disk + validator passes.
+    aristo_in(tmp.path())
+        .arg("verify")
+        .assert()
+        .success();
+
+    assert!(
+        !tmp.path().join(".aristo/pending-neural.toml").exists(),
+        "no pending file should be written when nothing's pending"
+    );
+}
+
+#[test]
+fn counterexample_status_with_passing_proof_is_skipped() {
+    // GAP-2: Counterexample used to be excluded from the terminal-clean
+    // set, so it re-ran every verify cycle. The new skip logic should
+    // treat it as terminal AS LONG AS the proof on disk still validates.
+    let tmp = tempfile::tempdir().unwrap();
+    let text_h = workspace_with_one_neural_intent(tmp.path(), "my_intent", "the property holds");
+    let zero_hash = format!("sha256:{}", "0".repeat(64));
+    let proof = format!(
+        r#"[verdict]
+type = "counterexample"
+method = "neural"
+produced_at_text_hash = "{text_h}"
+produced_at_body_hash = "{zero_hash}"
+produced_by = "test@0"
+attempts = 1
+property_kind = "invariant"
+
+[counterexample.violation]
+description = "the property fails when input is empty"
+violated_step_path = "0"
+
+[[counterexample.violation.trigger_steps]]
+path = "0"
+claim = "empty input bypasses the check"
+relation_to_parent = "decomposes"
+grounds = [{{ kind = "composition", reason = "by inspection of source" }}]
+"#
+    );
+    write_proof(tmp.path(), "my_intent", &proof);
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts"])
+        .assert()
+        .success();
+
+    // status is now Counterexample. Next verify should NOT re-add to pending.
+    aristo_in(tmp.path())
+        .arg("verify")
+        .assert()
+        .success();
+    assert!(
+        !tmp.path().join(".aristo/pending-neural.toml").exists(),
+        "counterexample with valid proof must not be re-pended (GAP-2 fix)"
+    );
+}
+
+#[test]
+fn terminal_status_without_proof_file_forces_reverify() {
+    // Inconsistency case: index says terminal but no proof exists on disk.
+    // The skip logic conservatively forces re-verification.
+    let tmp = tempfile::tempdir().unwrap();
+    workspace_with_one_neural_intent(tmp.path(), "my_intent", "the property holds");
+    // Manually flip status to Neural in the index without writing a proof.
+    let idx_path = tmp.path().join(".aristo/index.toml");
+    let idx = fs::read_to_string(&idx_path).unwrap();
+    let idx = idx.replace("status = \"unknown\"", "status = \"neural\"");
+    fs::write(&idx_path, idx).unwrap();
+
+    aristo_in(tmp.path())
+        .arg("verify")
+        .assert()
+        .success()
+        .stdout(contains("1 entry pending neural verification"));
+}
