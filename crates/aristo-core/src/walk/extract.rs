@@ -98,6 +98,13 @@ pub fn extract_from_source(source: &str) -> Result<Vec<ExtractedAnnotation>, Ext
 struct Walker<'a> {
     source: &'a str,
     found: Vec<ExtractedAnnotation>,
+    /// Site label active for any `intent_stmt!` / `assume_stmt!` invocation
+    /// discovered during a `visit_block` descent. Set when entering an
+    /// item-level fn / impl-method / trait default method; restored on
+    /// exit. `None` means we're outside any fn body — stmt-form macros
+    /// at module top-level (which would be a user error anyway) are
+    /// silently dropped.
+    current_site: Option<String>,
 }
 
 impl<'a> Walker<'a> {
@@ -105,7 +112,18 @@ impl<'a> Walker<'a> {
         Self {
             source,
             found: Vec::new(),
+            current_site: None,
         }
+    }
+
+    /// Run `f` with `current_site` temporarily set to `site`. Used when
+    /// entering a fn body so nested stmt-macros (even inside match arms,
+    /// closures, unsafe blocks, etc.) attribute correctly.
+    fn with_site<R>(&mut self, site: String, f: impl FnOnce(&mut Self) -> R) -> R {
+        let prev = self.current_site.replace(site);
+        let r = f(self);
+        self.current_site = prev;
+        r
     }
 
     fn process_attrs<S: Spanned>(
@@ -196,9 +214,31 @@ impl<'ast> Visit<'ast> for Walker<'_> {
         // the intent prose) leave body_hash unchanged — drift detection
         // cares about CODE drift, not annotation text drift.
         self.process_attrs(&node.attrs, &site, &node.block, CoveredRegion::Function);
-        for stmt in &node.block.stmts {
-            self.visit_stmt_with_site(stmt, &site);
+        self.with_site(site, |this| syn::visit::visit_block(this, &node.block));
+    }
+
+    #[aristo::intent(
+        "stmt-form intents are discovered via syn::Visit's full descent \
+         (visit_block + default traversal of every Expr variant), NOT a \
+         hand-rolled whitelist of expression kinds. A whitelist silently \
+         drops macros nested inside any unenumerated context — match \
+         arms, closures, unsafe blocks, async blocks, try blocks, let \
+         initializers — and the failure mode is invisible (the intent \
+         doesn't appear in `aristo list`, can't be cited as a ground in \
+         a proof, and skips the freshness check). The Visit-based \
+         descent is open by default; new syn::Expr variants get visited \
+         automatically.",
+        verify = "test",
+        id = "stmt_form_intents_use_open_visit_descent_not_whitelist"
+    )]
+    fn visit_stmt_macro(&mut self, node: &'ast syn::StmtMacro) {
+        if let Some(site) = self.current_site.clone() {
+            self.process_stmt_macro(node, &site);
         }
+        // Continue default traversal so nested macros (e.g., a macro
+        // invocation whose body contains another stmt-macro) are also
+        // visited.
+        syn::visit::visit_stmt_macro(self, node);
     }
 
     fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
@@ -265,9 +305,9 @@ impl<'ast> Visit<'ast> for Walker<'_> {
                     &method.block,
                     CoveredRegion::Function,
                 );
-                for stmt in &method.block.stmts {
-                    self.visit_stmt_with_site(stmt, &method_site);
-                }
+                self.with_site(method_site, |this| {
+                    syn::visit::visit_block(this, &method.block)
+                });
             }
         }
     }
@@ -305,49 +345,6 @@ impl<'ast> Visit<'ast> for Walker<'_> {
     }
 }
 
-impl Walker<'_> {
-    /// Recurse into a statement, attributing any nested annotations to
-    /// `enclosing_site`. Necessary because `Visit::visit_stmt` doesn't carry
-    /// site context.
-    fn visit_stmt_with_site(&mut self, stmt: &syn::Stmt, enclosing_site: &str) {
-        match stmt {
-            syn::Stmt::Macro(m) => self.process_stmt_macro(m, enclosing_site),
-            syn::Stmt::Expr(syn::Expr::Block(b), _) => {
-                for s in &b.block.stmts {
-                    self.visit_stmt_with_site(s, enclosing_site);
-                }
-            }
-            syn::Stmt::Expr(syn::Expr::ForLoop(f), _) => {
-                for s in &f.body.stmts {
-                    self.visit_stmt_with_site(s, enclosing_site);
-                }
-            }
-            syn::Stmt::Expr(syn::Expr::While(w), _) => {
-                for s in &w.body.stmts {
-                    self.visit_stmt_with_site(s, enclosing_site);
-                }
-            }
-            syn::Stmt::Expr(syn::Expr::Loop(l), _) => {
-                for s in &l.body.stmts {
-                    self.visit_stmt_with_site(s, enclosing_site);
-                }
-            }
-            syn::Stmt::Expr(syn::Expr::If(if_expr), _) => {
-                for s in &if_expr.then_branch.stmts {
-                    self.visit_stmt_with_site(s, enclosing_site);
-                }
-                if let Some((_, else_expr)) = &if_expr.else_branch {
-                    if let syn::Expr::Block(b) = else_expr.as_ref() {
-                        for s in &b.block.stmts {
-                            self.visit_stmt_with_site(s, enclosing_site);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
 
 /// Match `#[aristo::intent(...)]` / `#[aristo::assume(...)]` (also bare
 /// `intent` / `assume` for the `use aristo::intent;` user style). Returns
@@ -798,6 +795,84 @@ mod tests {
         let ann = extract(src);
         assert_eq!(ann.len(), 1);
         assert_eq!(ann[0].kind, AnnotationKind::Intent);
+    }
+
+    // ─── regression: stmt-form descent into all expression kinds ─────────
+    // The previous extractor manually whitelisted Block/ForLoop/While/Loop/If.
+    // Anything else (Match, Closure, Unsafe, Async, TryBlock, let-initializers
+    // containing blocks) silently dropped nested stmt-form intents. The fix
+    // uses syn::Visit's open descent. These tests lock the bug closed.
+
+    #[test]
+    fn extracts_intent_stmt_inside_match_arm() {
+        // The original bug: aristo::intent_stmt! inside a `match` arm body
+        // was dropped because Stmt::Expr(Expr::Match, _) wasn't in the
+        // expression whitelist.
+        let src = r#"
+            fn dispatch(x: u8) -> u8 {
+                match x {
+                    0 => {
+                        aristo::intent_stmt!("zero is the identity", verify = "test");
+                        0
+                    }
+                    n => n + 1,
+                }
+            }
+        "#;
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1, "match-arm intent_stmt must be indexed");
+        assert_eq!(ann[0].kind, AnnotationKind::Intent);
+        assert_eq!(ann[0].site, "fn dispatch");
+    }
+
+    #[test]
+    fn extracts_intent_stmt_inside_closure() {
+        let src = r#"
+            fn build() -> impl Fn() {
+                || {
+                    aristo::intent_stmt!("the closure runs on every tick");
+                }
+            }
+        "#;
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1, "closure-body intent_stmt must be indexed");
+        assert_eq!(ann[0].site, "fn build");
+    }
+
+    #[test]
+    fn extracts_intent_stmt_inside_unsafe_block() {
+        let src = r#"
+            fn raw() {
+                unsafe {
+                    aristo::intent_stmt!("the raw pointer is non-null at this point");
+                }
+            }
+        "#;
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1, "unsafe-block intent_stmt must be indexed");
+        assert_eq!(ann[0].site, "fn raw");
+    }
+
+    #[test]
+    fn extracts_intent_stmt_inside_nested_match_in_let_else() {
+        // Exercise multi-level nesting: let-else whose else-branch
+        // contains a match whose arm body contains the intent.
+        let src = r#"
+            fn nested(x: Option<u8>) -> u8 {
+                let Some(v) = x else {
+                    match 0 {
+                        n => {
+                            aristo::intent_stmt!("the fallback path returns zero");
+                            return n;
+                        }
+                    }
+                };
+                v
+            }
+        "#;
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1, "deeply nested intent_stmt must be indexed");
+        assert_eq!(ann[0].site, "fn nested");
     }
 
     // ─── argument parsing edge cases ─────────────────────────────────────
