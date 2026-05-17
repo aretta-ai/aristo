@@ -41,9 +41,19 @@ pub enum Status {
     /// Verification produced a counterexample — the property does NOT
     /// hold under the cited code/text version. Terminal state: stays
     /// Counterexample until either `body_hash` drifts (→ Stale) or the
-    /// user explicitly accepts via a future `aristo accept-counterexample`
-    /// flow. Loud, never silenceable.
+    /// intent text is rewritten to exclude the refuted case. There is
+    /// NO accept-counterexample flow; counterexamples are loud and
+    /// surface on every `aristo stamp` until the user fixes them.
     Counterexample,
+    /// Verification was inconclusive — the verifier could not discharge
+    /// the proof's gap and queued one or more suggested annotations the
+    /// user could add to close it. Distinct from Unknown (which means
+    /// "never attempted") so the skip logic can tell "we tried and got
+    /// stuck" from "we haven't tried yet." Stays Inconclusive until
+    /// either the source drifts (→ Stale via the body-drift rule), the
+    /// user adopts a queued suggestion (→ re-verify), or the user
+    /// explicitly re-runs with `--rerun`.
+    Inconclusive,
 }
 
 /// `verify` field value. Mixed-type per design (G1):

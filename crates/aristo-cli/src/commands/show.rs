@@ -602,6 +602,7 @@ pub(crate) fn status_label(status: Status) -> &'static str {
         Status::Unknown => "unknown",
         Status::PendingDeepen => "pending-deepen",
         Status::Counterexample => "counterexample",
+        Status::Inconclusive => "inconclusive",
     }
 }
 

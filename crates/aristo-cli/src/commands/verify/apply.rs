@@ -245,7 +245,7 @@ fn derived_status(pf: &ProofFile) -> Status {
     match pf.verdict.r#type {
         VerdictType::Verified => Status::Neural, // slice 23 only flips to Neural
         VerdictType::Counterexample => Status::Counterexample,
-        VerdictType::Inconclusive => Status::Unknown, // partial info, not a status change
+        VerdictType::Inconclusive => Status::Inconclusive,
     }
 }
 
@@ -350,7 +350,7 @@ mod tests {
         );
         assert_eq!(
             derived_status(&pf_with(VerdictType::Inconclusive)),
-            Status::Unknown
+            Status::Inconclusive
         );
     }
 }
