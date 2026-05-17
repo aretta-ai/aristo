@@ -329,6 +329,60 @@ Why: the "sorting or hashing the result would silently break" phrase speaks the 
 
 Why: the three words "intentional, not incomplete" prevent an entire class of well-intentioned regressions where a reader sees the function "looking incomplete" and tries to extend it. Shifted verify to `"neural"` because the claim is the design intent, not a runtime invariant.
 
+## After a bug is root-caused — encode the lesson as an intent
+
+A bug that took non-trivial debugging to track down is a high-signal trigger to write a new intent. The reason it was missed in the first place is usually that the underlying spec / case was implicit or open-ended; the fix patches *one instance* but the intent locks in the *invariant the bug just demonstrated must hold*.
+
+**When to invoke this trigger:**
+
+- Debugging took meaningful time (not a one-grep find).
+- The user pair-debugged with you.
+- The fix is more than a typo or import — there's a design lesson in the post-mortem (a default flipped, a fragile mechanism replaced, a case-list expanded).
+
+**When to skip:**
+
+- Surface bugs: typos, off-by-one inside an already-tested function, misnamed variable. The fix + its test are enough; an intent here is noise.
+- The new behavior is obvious from the signature (P-CHECK-TYPE-SYSTEM-FIRST applies).
+
+The intent goes on the load-bearing site of the fix (the function, branch, or design choice the bug taught us cannot be casually altered). Its body should:
+
+1. State the invariant directly (P-SPEC-STYLE).
+2. Name the failure mode in the language a reviewer would use.
+3. Name the refactor that re-introduces the bug, when applicable (P-NAME-THE-REFACTOR-TRAP overlaps strongly here).
+
+Pair the intent with a regression test that asserts the new behavior — that makes `verify = "test"` the natural level. Both the intent (durable design artifact) and the test (mechanical guard) are needed: the test catches the regression, the intent prevents a "let me simplify this" refactor from removing the test along with the guard.
+
+### Worked example
+
+After a dogfood run, one proof rejected with `cited id not found in current index`. Debugging:
+1. `aristo show <id>` → not found.
+2. grep source → the intent exists, declared via `aristo::intent_stmt!` inside a `match` arm.
+3. Read the walker: discovered a hand-rolled whitelist of `syn::Expr` variants (Block, ForLoop, While, Loop, If) that silently dropped `Match`, `Closure`, `Unsafe`, etc.
+
+Fix: replaced the whitelist with `syn::Visit`'s open descent. Then — per this trigger — added:
+
+```rust
+#[aristo::intent(
+    "stmt-form intents are discovered via syn::Visit's full descent \
+     (visit_block + default traversal of every Expr variant), NOT a \
+     hand-rolled whitelist of expression kinds. A whitelist silently \
+     drops macros nested inside any unenumerated context — match \
+     arms, closures, unsafe blocks, async blocks, try blocks, let \
+     initializers — and the failure mode is invisible (the intent \
+     doesn't appear in `aristo list`, can't be cited as a ground in \
+     a proof, and skips the freshness check). The Visit-based \
+     descent is open by default; new syn::Expr variants get visited \
+     automatically.",
+    verify = "test",
+    id = "stmt_form_intents_use_open_visit_descent_not_whitelist"
+)]
+fn visit_stmt_macro(&mut self, node: &'ast syn::StmtMacro) { ... }
+```
+
+Plus four regression tests (`extracts_intent_stmt_inside_match_arm`, `..._inside_closure`, `..._inside_unsafe_block`, `..._inside_nested_match_in_let_else`).
+
+Without the intent, a future "let's simplify this Visit override" cleanup could shrink the descent back to a narrow set and the bug returns silently. Without the tests, the intent's claim drifts from the code. Together: durable lesson + mechanical guard.
+
 ## Anti-patterns — what NOT to do
 
 - ❌ **Don't restate what the type system already enforces.** Rust's exhaustive `match` on a closed enum cannot silently omit an arm — the compiler errors. Don't write intents claiming "a missing arm would silently fail" — that's factually wrong about Rust and adds zero value.
