@@ -38,6 +38,12 @@ pub enum Status {
     /// Sig is valid but commit ancestry could not be confirmed because the
     /// outcome's commit falls outside a shallow checkout's window (B5b).
     PendingDeepen,
+    /// Verification produced a counterexample — the property does NOT
+    /// hold under the cited code/text version. Terminal state: stays
+    /// Counterexample until either `body_hash` drifts (→ Stale) or the
+    /// user explicitly accepts via a future `aristo accept-counterexample`
+    /// flow. Loud, never silenceable.
+    Counterexample,
 }
 
 /// `verify` field value. Mixed-type per design (G1):

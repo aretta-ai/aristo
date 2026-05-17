@@ -357,6 +357,13 @@
           "enum": [
             "pending-deepen"
           ]
+        },
+        {
+          "description": "Verification produced a counterexample — the property does NOT hold under the cited code/text version. Terminal state: stays Counterexample until either `body_hash` drifts (→ Stale) or the user explicitly accepts via a future `aristo accept-counterexample` flow. Loud, never silenceable.",
+          "type": "string",
+          "enum": [
+            "counterexample"
+          ]
         }
       ]
     },
