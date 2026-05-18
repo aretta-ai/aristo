@@ -93,14 +93,14 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "aristo"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "aristo-macros",
 ]
 
 [[package]]
 name = "aristo-cli"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "aristo",
  "aristo-core",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "aristo-core"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "aristo",
  "getrandom 0.2.17",
@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "aristo-macros"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "aristo",
  "proc-macro2",
