@@ -1,30 +1,8 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T22:02:55.469184Z"
+generated_at = "2026-05-18T20:37:47.245003Z"
 source_root = "."
-
-[abort_requires_explicit_confirmation]
-kind = "intent"
-text = "Abort prompts on stdin unless `--yes` is given. The default-no posture matches every other destructive aristo command (no `aristo stamp --force` without explicit opt-in). A refactor that defaulted to yes would silently drop a session's audit trail on any typo'd subcommand."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:c7c867d42b99914f9b1c61e5649e244373c0e3f7358f016309e28507a29aa41d"
-body_hash = "sha256:dc730086d1e84ba2e29e5c3b98bd62664ed3211ed22853d594e8d2ecf6d29f9f"
-file = "crates/aristo-cli/src/commands/session/exit.rs"
-site = "fn confirm_abort (line 122)"
-covered_region = "function"
-
-[active_pointer_read_trims_whitespace]
-kind = "intent"
-text = "`.active` is the single source of truth for 'is there an active session?'. Reading it is the first step of every SDK pre-check. Whitespace-trim the contents so a stray trailing newline (from an editor or a shell `echo`) doesn't break id lookup. A refactor that used the contents verbatim would silently treat an edited pointer as no-such-session."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:57c2d70759060bfca953500e1e7af6e7e3f3968b0c454807b2557f239e049117"
-body_hash = "sha256:048cc31364b00e1c9edbc0e72d8cbec420874d13ce354b1ea3b38a08f5019b89"
-file = "crates/aristo-cli/src/session/storage.rs"
-site = "fn read_active_pointer (line 109)"
-covered_region = "function"
 
 [agents_md_install_preserves_outside_markers]
 kind = "intent"
@@ -56,7 +34,7 @@ status = "neural"
 text_hash = "sha256:a159b79648667c153c9917813799f8a7f6465885707e3c17a94b6f0907e8fd4b"
 body_hash = "sha256:21bc2fdeaea0cb6c238f46e8f71331e03d021715d7398a99da007d19ed980ba8"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-site = "fn run_apply_verdicts (line 84)"
+site = "fn run_apply_verdicts (line 82)"
 covered_region = "statement"
 
 [atomic_write_via_tempfile_rename]
@@ -67,29 +45,40 @@ status = "inconclusive"
 text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
-site = "fn atomic_write (line 294)"
+site = "fn atomic_write (line 293)"
 covered_region = "function"
 
-[backlog_append_is_read_modify_write_via_atomic]
+[badge_stdout_mode_keeps_svg_uncorrupted]
 kind = "intent"
-text = "Appending to the backlog is read-modify-write: read the existing file, push the new entry, atomic-write the result. The `pending` bucket NEVER silently drops — every deferred item must land in this file. A refactor that used `OpenOptions::append` would lose atomicity (the backlog is TOML, not line-delimited; an interrupted append produces a non-parseable file)."
+text = "When `--out` is omitted, the SVG goes to stdout and ALL progress / advisory output goes to stderr — never to stdout. A regression that emitted a progress line to stdout in this mode would corrupt the SVG, breaking any consumer that pipes `aristo badge > foo.svg`. The freshness-preflight advisory already lives on stderr; the badge command MUST inherit that discipline for the no-`--out` path."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:ab3c79d6b6f1af4d2587e3585fa10a8e6d600ed4cfe726ea8a8b42131a48881b"
-body_hash = "sha256:97f1627ebaaf5afc1c179fa259426ea80cfb62de62e7e975e898285a0d0fbe44"
-file = "crates/aristo-cli/src/session/backlog.rs"
-site = "fn append_entry (line 99)"
+text_hash = "sha256:868914242eaad1867dfe8dd165b5d1ac77f0fae296e06a9fbff8ae1243328cce"
+body_hash = "sha256:37376e36592e756c2e047a9cdf99783694ebe30000980d8ef577a685e881d636"
+file = "crates/aristo-cli/src/commands/badge.rs"
+site = "fn write_to_stdout (line 100)"
 covered_region = "function"
 
-[backlog_writes_are_atomic_via_tempfile_rename]
+[badge_svg_text_width_uses_seven_px_heuristic]
 kind = "intent"
-text = "Backlog writes go through `atomic_write` (temp-file + rename) so a concurrent reader cannot observe a partially-serialized file. The backlog is the only durable record of deferred items between sessions; a partial write that deserialize-fails would look like 'no backlog' to a reader and silently drop user-deferred items — the exact failure mode the substrate exists to prevent."
+text = "SVG text width is approximated as 7px per character in the badge body and 10px padding on each end. This deviates slightly from shields.io's per-glyph metrics table (DejaVu Sans), but the trycmd scenarios match the SVG with byte-level wildcards (the spec only pins `<svg ...>` ↔ `</svg>` framing, not exact pixel dimensions). A regression that broke the 7px/10px convention without updating downstream consumers (rendering pipelines that pin widths) would produce misaligned text rendering at the edges."
 verify = "neural"
-status = "neural"
-text_hash = "sha256:ec6cfe5ca6cb32a394252526dccec1fe1dc6b48fdbe6703359b3ac707a662df0"
-body_hash = "sha256:f48ed768d54677c37cb8de8327949ed46b7005237e73a842dd45faf9b40be643"
-file = "crates/aristo-cli/src/session/backlog.rs"
-site = "fn write (line 79)"
+status = "unknown"
+text_hash = "sha256:f5243d15f6f113dd5610a8c8405e5ba5472ccf26983af71c76e2422d4216a65f"
+body_hash = "sha256:9dd4bb29b536548046a004607a00db8c49e0e69ce9c4a31b4ae228d9281433e4"
+file = "crates/aristo-cli/src/commands/badge.rs"
+site = "fn render_flat (line 196)"
+covered_region = "function"
+
+[badge_verification_rate_counts_only_terminal_clean_intents]
+kind = "intent"
+text = "`verification-rate` counts only intents (not assumes — assumes are external invariants, never internally verified per A5) and only terminal-clean statuses (Verified / Tested / Neural). Including Unknown / Stale / Counterexample / Orphan / Forged / PendingDeepen / Inconclusive would inflate the badge's headline number with non-verified annotations, defeating the public-trust signal the badge exists to broadcast."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:d9acd5595fafabd8927cfbe243159010c610e72f84590d787f70163b4f6e5069"
+body_hash = "sha256:12c760ffa255c45f18973ecf9cbd3a62f69a883521dcf4126fc2fd7255d9c040"
+file = "crates/aristo-cli/src/commands/badge.rs"
+site = "fn is_verified_state (line 168)"
 covered_region = "function"
 
 [body_hash_is_verbatim]
@@ -111,7 +100,7 @@ status = "unknown"
 text_hash = "sha256:6cb86fd27bdf5161b150d5d06437183caf0091c7dca492ce7e8ad8a68ba0d31d"
 body_hash = "sha256:08a59064ddd2845c867d55c711553d64af148390de40a71655bf924e1b75221d"
 file = "crates/aristo-cli/src/commands/index.rs"
-site = "fn build_entries (line 107)"
+site = "fn build_entries (line 106)"
 covered_region = "function"
 
 [bundled_skills_is_stable_set]
@@ -123,17 +112,6 @@ text_hash = "sha256:e263b091886cb4c609e53a9967e731cb3c967aa28163a64f90b6d5f93c48
 body_hash = "sha256:cd90679da5a4b2be67dab24d0af844740a795916a5d7634477e3a204e2b0aaf4"
 file = "crates/aristo-cli/src/skills/mod.rs"
 site = "fn bundled (line 53)"
-covered_region = "function"
-
-[clear_active_pointer_is_idempotent_and_load_bearing_for_exit]
-kind = "intent"
-text = "Clearing `.active` is the last step of every session-exit flow (strict exit, defer-undecided exit, and abort all clear it). A refactor that left `.active` pointing at a closed session would break every subsequent pre-check — the SDK would think a session is in flight that the user already exited. Idempotent (missing file is fine) so re-running an exit handler doesn't error."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:100148decb0b5b2bc352b9a9e154beeb1425bfba264599d38e581494672719f6"
-body_hash = "sha256:dafa100aaff6cc25482d70286e7799f5d87c480a3b00d38efb62d1488009fa72"
-file = "crates/aristo-cli/src/session/storage.rs"
-site = "fn clear_active_pointer (line 141)"
 covered_region = "function"
 
 [critique_apply_is_summary_only_in_v0]
@@ -155,18 +133,7 @@ status = "unknown"
 text_hash = "sha256:f5defe6df7297bcbb267680533d140fc7a1e915bffdf6b386135abba6027fe80"
 body_hash = "sha256:0c4f00d1aaa63c1456415f9d1ab3818abd8f6484580a0c7315dfe1865f8c5ba9"
 file = "crates/aristo-cli/src/commands/critique/validator.rs"
-site = "fn stamp_derived (line 130)"
-covered_region = "function"
-
-[critique_on_accept_stamps_disposition_in_critique_file]
-kind = "intent"
-text = "Accepting a critique finding stamps `disposition = accepted` into the corresponding finding inside `.aristo/critiques/<id>.critique`. Future `aristo critique --apply-findings` runs hide closed findings by default (the loop is closed: a reviewed finding doesn't re-surface). A refactor that updated the substrate's session state without touching the .critique file would leave the finding visible to every subsequent apply run as if no review had happened."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:69c6b0bc002a1f440dec892ddaa80995f6d92d3f205276a3bc491ad67edbe799"
-body_hash = "sha256:f22788475022a6c72fca19d0d2f8b4e2d5180e2c1ebce90b773eba433c420eb4"
-file = "crates/aristo-cli/src/commands/critique/session_kind.rs"
-site = "impl SessionKind for CritiqueReviewSession::on_accept (line 48)"
+site = "fn stamp_derived (line 126)"
 covered_region = "function"
 
 [critique_queue_entries_are_self_contained]
@@ -186,9 +153,9 @@ text = "`aristo critique` requires an explicit `--filter` (id or file). Default 
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:c2fc45fff111078b8adba8b37b554eedb85cf2bc5338c40cb597a5de1eec4d5e"
-body_hash = "sha256:f6d21a4ff2907342b72fc957f27732a05785f19c9fd60273b5d6ff3d3bb1cce6"
+body_hash = "sha256:324394b7f7eaacf7199999b72ab0f28870d032200f86875ce95b18f0ea30b454"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
-site = "fn run (line 30)"
+site = "fn run (line 29)"
 covered_region = "function"
 
 [critique_sibling_embedding_capped_at_five_per_parent]
@@ -208,9 +175,9 @@ text = "The critique validator gates writes on schema integrity: enum values for
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:99cfdad751e9510f74daf9939cf6eeb9b6334fbd3e4965b8132837345be55f78"
-body_hash = "sha256:e230347d683970d990deaff4ce08b7b23c12d8a3a459046cc5bdfd91b6d5d774"
+body_hash = "sha256:451d5cdd9129c53f3e86a1d72a5f1f7e972d6bbb6cd6a1951d35b9fc29b441fc"
 file = "crates/aristo-cli/src/commands/critique/validator.rs"
-site = "fn validate (line 52)"
+site = "fn validate (line 50)"
 covered_region = "function"
 
 [detect_cycles_returns_first_cycle_only]
@@ -235,26 +202,70 @@ file = "crates/aristo-cli/src/commands/show.rs"
 site = "fn did_you_mean (line 251)"
 covered_region = "function"
 
-[drain_returns_items_then_deletes_file]
+[doc_check_never_writes]
 kind = "intent"
-text = "Draining the backlog atomically removes the file after returning its contents — once the caller has the items, the file is gone. The pattern matches `aristo verify --apply-verdicts`: read all, mutate, the artifact is consumed. A refactor that read without deleting would surface the same backlog items every session start, creating zombie-deferral. A refactor that deleted before returning would lose data if the caller crashed mid-handle — read-then-delete keeps the items in memory while the file is gone."
+text = "`aristo doc --check` is a CI gate: it MUST NOT write to `.aristo/doc/` under any circumstance — its job is to detect drift so CI can block a merge that has stale doc artifacts. A regression that wrote during --check would silently fix the thing CI was supposed to catch."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:a974c9c20933604965c9316944b526620748bcfa9d19fe68fe5855a0a4bfd012"
-body_hash = "sha256:37166b0a910ce2f88d4db5086bfb9b317012e00e36c9ea4156001e5802f86bcb"
-file = "crates/aristo-cli/src/session/backlog.rs"
-site = "fn drain (line 126)"
+text_hash = "sha256:3cc6b6f80a32940876df91ee31516838f3bb73131119acede26e9cd0b04597df"
+body_hash = "sha256:af31a2d522c9ebf06ca6949061f29db7a3b547da3db61bc3b863b445cd546d8d"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn run_check (line 52)"
 covered_region = "function"
 
-[every_mutating_command_calls_ensure_no_active_session]
+[doc_include_status_block_records_state_with_staleness_disclaimer]
 kind = "intent"
-text = "Every mutating aristo command MUST call `ensure_no_active_session` before touching shared state (index, proof/critique files, source). This is Layer 1 of three (hook + skill-body discipline are the other two). Layer 1 is the only one that's mechanically enforceable — the hook is advisory and the skill body is documentation. A refactor that bypasses the guard for any mutating command re-introduces the slop-drift failure mode the substrate exists to prevent: artifacts get committed without the user noticing they bypassed review."
+text = "The `--include-status` block is a blockquote that records the status at MD-generation time. The icon + label are stable; dropping the `(this state is current as of …)` disclaimer would mislead readers into thinking the embedded status is live, which it isn't — it goes stale the moment source code changes. The disclaimer is what keeps the doc artifact honest."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:71ad1c64d3a3927a38112afd48f8b8cf38fac66e8eba8f0d148ea18618f2d195"
-body_hash = "sha256:29cb1080aec78d799e1c0428d04fcb8c45c879b30d4d2d8ba9ef643d50c7151b"
-file = "crates/aristo-cli/src/session/guard.rs"
-site = "fn ensure_no_active_session (line 24)"
+text_hash = "sha256:075cd098dafb817c34ce4f5559c0786a81c1b965011cb577d473ced64829be16"
+body_hash = "sha256:e7fe552006cfe040fe3a48c390cc08e6d90e0cb652f163105839c8954327a3f8"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn status_block_for_intent (line 271)"
+covered_region = "function"
+
+[doc_output_shape_pivots_on_empty_doc_dir_not_per_run_counts]
+kind = "intent"
+text = "`aristo doc` output shape differs by first-run-vs-incremental: first run (empty .aristo/doc/) prints per-file `• Wrote:` lines, a `(N files written, 0 unchanged)` count, and the `Next steps` onboarding footer; subsequent runs (any pre-existing file) print `• Updated:`/`• Unchanged:` lines and a compressed `ok: doc artifacts updated. (M written, N unchanged)` summary with no onboarding footer. The pivot is whether the doc dir was empty before the run, not whether any file was unchanged this time — a regression that switched to the count-based check would emit onboarding footers on every run that happens to write all files (e.g. a schema upgrade that touches every MD)."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:fa73ff92a6db515d1f783b1048c98f313712568308b8e33055b5598d997b6382"
+body_hash = "sha256:e44f81d271f2800f57b9d9ca0473c16bb2879ee3c4ac8aeaa7a77b51cb72f94d"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn run_per_annotation (line 115)"
+covered_region = "function"
+
+[doc_per_annotation_filename_uses_id_safe]
+kind = "intent"
+text = "`aristo doc` writes each annotation to .aristo/doc/<id-safe>.md where `<id-safe>` substitutes `:` with `__`. Same convention as `.proof` and `.critique` files so users have one mental model for id↔filename mapping across the SDK. A regression that picks a different escape (or uses the raw id with `:`) would create platform-specific filename failures (`:` is illegal on Windows / macOS HFS+) AND silently break the slice-30 proc-macro that reads these files via `include_str!`."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:37800ee178014cabf7dd805bf35e78affb3fec3fb1fa57d30648c66e9f386fe4"
+body_hash = "sha256:e44f81d271f2800f57b9d9ca0473c16bb2879ee3c4ac8aeaa7a77b51cb72f94d"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn run_per_annotation (line 103)"
+covered_region = "function"
+
+[doc_per_annotation_md_shape_locked_by_samples_mockup]
+kind = "intent"
+text = 'Per-annotation markdown structure is locked by the I1 `samples.md` mockup: header line (`**Aristo verified intent — \`<id>\`**` for intents, `**Aristo assumption — \`<id>\`**` for assumes), blank line, body text verbatim, blank line, `<sub>` metadata line, blank line, `---`. The metadata line composes verify-level + server-bound marker + parent link with ` · ` separators. A regression that drops the trailing `---` would break readers that include this MD with `include_str!` between other doc blocks — the separator is what isolates this annotation from surrounding rustdoc.'
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:b026ae240228658551323bfa60a7771cd828e85ded7764602fa8e83122de2de6"
+body_hash = "sha256:e672f6d1e657cc61436a108c729512cd0d0fa285a1cd31b4e3e7e48ea0f50a43"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn render_annotation_md (line 230)"
+covered_region = "function"
+
+[doc_summary_writes_summary_only]
+kind = "intent"
+text = "`aristo doc --summary` writes the crate-root `_summary.md` ONLY — it does not also run the per-annotation pass. Combining both is `aristo doc --include-graph` (slice 29). A regression that made `--summary` imply per-annotation writes would surprise users who opted into the cheap summary-only flow for CI gates."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:63bcb80f0391a30b7523d2444a3c6585e93967a39eebc30a0c30d00afc528eb7"
+body_hash = "sha256:cf0d617f7cde85b1a6457b91b241582d5dd0c8910d83092f04f781e99a4bf6b7"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn run_summary (line 352)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]
@@ -323,17 +334,6 @@ file = "crates/aristo-cli/src/commands/init.rs"
 site = "fn run (line 66)"
 covered_region = "function"
 
-[install_claude_hook_is_idempotent]
-kind = "intent"
-text = "Installing the session hook is idempotent — running install twice leaves the settings.json with exactly one `aristo session active --hook-format` entry, not two. We find existing entries by command substring and replace in place. A refactor that appends unconditionally would compound on every reinstall."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:076e69c8cd762de41df257ac030e4680137eb79fa3e4a8ad548c727e510c973f"
-body_hash = "sha256:9ddf3fdd46a5c4d2681082fff2b6b656c389e7ef5c3da8464c42df8562ee5c28"
-file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn install_claude_hook (line 77)"
-covered_region = "function"
-
 [install_skills_scope_symmetry]
 kind = "intent"
 text = "The per-skill install progression and the `ok: N skill(s) installed for <slug>.` success line are identical at project scope and user scope, modulo the on-disk target path. The post-success scope-tip line legitimately differs: project scope prints a hint pointing at `--user`; user scope prints nothing (the user already chose the broader scope, so the cross-scope hint would be noise). A refactor that changes the install progression or success-summary wording for only one scope would break the symmetric core; a refactor that adds the project-scope tip to user scope would re-introduce the noise the asymmetry exists to avoid."
@@ -343,17 +343,6 @@ text_hash = "sha256:1d1aaa192a0920902c986e87c579c9161c8d233122f42fb3f6dc5aead05f
 body_hash = "sha256:0695dc5b7c603c91dcecd76618843841af36bdb355f78f88ec03dcc4d01b9014"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
 site = "fn install (line 64)"
-covered_region = "function"
-
-[item_ref_separator_is_hash_not_colon]
-kind = "intent"
-text = "ItemRef uses `#` as the id↔index separator rather than `:` because annotation ids in this project can legitimately contain `:` (e.g. `aristos:foo`). A refactor that switches to `:` would silently break ref parsing the moment any session touched an `aristos:`-namespaced id; `#` is safe because it's a reserved character in annotation ids by design."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:2cfbc03f7d9245e6d8840c673224152c20a57faf0b97f0813d6c04fa0b82981d"
-body_hash = "sha256:964ff1897ff18e9a8d5e056540cf97baf2d5a9073fa9320bcfb253e89f275e14"
-file = "crates/aristo-cli/src/session/types.rs"
-site = "impl ItemRef::new (line 66)"
 covered_region = "function"
 
 [lang_cheat_sheet_matches_macros]
@@ -397,7 +386,7 @@ status = "unknown"
 text_hash = "sha256:a0ac0dfb85cc50c166523567c4bfd7d2cc183ecc395958d41da9aa6e244a2528"
 body_hash = "sha256:0ad71651760b091640468ba31f1cea494e3dd98388b1617a7ebc7682da274e58"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn merge_status_from_prev (line 267)"
+site = "fn merge_status_from_prev (line 265)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
@@ -407,7 +396,7 @@ status = "unknown"
 text_hash = "sha256:b02ac66b7365bd0090a01041e2699941d36b272e58cd78cd16d2b41e901106fb"
 body_hash = "sha256:30dc8167f7f4966465c74eeff32c2233c2b7772a62f00de7d7f6ded2cc9fa265"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
-site = "fn pop_next (line 150)"
+site = "fn pop_next (line 145)"
 covered_region = "function"
 
 [pending_backs_up_existing_proof_on_rerun]
@@ -451,7 +440,7 @@ status = "neural"
 text_hash = "sha256:cb34810dee70f2d7a8c4be45ab2b0cec9cd76cc6fff55a6d58bcff37f01a01ab"
 body_hash = "sha256:30dc8167f7f4966465c74eeff32c2233c2b7772a62f00de7d7f6ded2cc9fa265"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
-site = "fn pop_next (line 128)"
+site = "fn pop_next (line 123)"
 covered_region = "function"
 
 [posix_rename_is_atomic_on_local_filesystem]
@@ -461,7 +450,7 @@ status = "unknown"
 text_hash = "sha256:1352ccdb307e21ed758a042333198b50f2b0d334f50ff2e9ac305d584fdcca96"
 body_hash = "sha256:30dc8167f7f4966465c74eeff32c2233c2b7772a62f00de7d7f6ded2cc9fa265"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
-site = "fn pop_next (line 142)"
+site = "fn pop_next (line 137)"
 covered_region = "function"
 
 [proof_file_id_uses_colon_underscore_underscore]
@@ -472,7 +461,7 @@ status = "unknown"
 text_hash = "sha256:a3d155c4d0593856df81728cb65861745e7e2fc6bd6793140f68b5ac13bfcc81"
 body_hash = "sha256:0f38c0bf82565d752728d897d99e035df1d13f74415bf0267040c5b8d42cc3e0"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-site = "fn id_from_filename (line 267)"
+site = "fn id_from_filename (line 260)"
 covered_region = "function"
 
 [proof_tree_uses_path_addressed_flat_list]
@@ -494,7 +483,7 @@ status = "unknown"
 text_hash = "sha256:a88536476d35af7d102c46f75f5063bfcfff95f9296d63581696430605711da1"
 body_hash = "sha256:a87b60bb81f2978ff446877a67e1d9b52cae837a1201c30915878cec30bcf860"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
-site = "fn enqueue (line 111)"
+site = "fn enqueue (line 102)"
 covered_region = "function"
 
 [reap_stale_claims_recovers_crashed_workers]
@@ -505,18 +494,7 @@ status = "unknown"
 text_hash = "sha256:93444cf22dc55133ddbde9cb1782cde0b1250152bdc4d61d345f15234890814e"
 body_hash = "sha256:3bd1d325354f3b22e32aa9d42d04f2655b6563f1a9969f7f8d6e399c3f260d06"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
-site = "fn reap_stale_claims (line 253)"
-covered_region = "function"
-
-[rejection_log_append_relies_on_posix_write_atomicity]
-kind = "intent"
-text = 'Rejection-log writes use `OpenOptions::append(true).create(true)` plus a single `write_all` of the JSON line + `\n`. No locking is needed because (a) the file is per-workspace and gitignored, so no cross-team writers; (b) writes are line-sized and POSIX guarantees write atomicity for buffers ≤ PIPE_BUF (4 KiB on Linux/macOS, well above any single JSON rejection record). A refactor that read-modify-wrote the whole file would lose this property and need explicit locking.'
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:20e4756aa8d5b9ead620259ae8afa78bbc243f0b1b4feb6cd70d7c2037b3d783"
-body_hash = "sha256:206388ab6efda13eb666e3176bf1119237d3f2ee8553d89227749c5e79a579f3"
-file = "crates/aristo-cli/src/session/rejections.rs"
-site = "fn append (line 47)"
+site = "fn reap_stale_claims (line 244)"
 covered_region = "function"
 
 [requeue_moves_claimed_back_to_pending]
@@ -527,7 +505,7 @@ status = "unknown"
 text_hash = "sha256:89b3688be7f8cfc39cc31503feabc7ecc3043351f5d22af073672c2bb5c8e151"
 body_hash = "sha256:9fb80092b5a1510522e1bfa26f5991ee2e282186e5ec5ba6100392a3e5d39876"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
-site = "fn requeue (line 227)"
+site = "fn requeue (line 222)"
 covered_region = "function"
 
 [rewrite_hashes_flag_is_migration_only_strict_default]
@@ -538,51 +516,7 @@ status = "unknown"
 text_hash = "sha256:db4a42a4c2aa63e816ff743443caf38fd9387ff2f12199c9cbc4252d6449ba93"
 body_hash = "sha256:a375f28c18cbc1eeb7062793e71b92c2e40265d1c9b02841b40ed095101ec271"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-site = "fn clear_ground_hashes (line 129)"
-covered_region = "function"
-
-[session_active_is_noop_outside_workspace]
-kind = "intent"
-text = "`aristo session active` is wired into Claude Code's UserPromptSubmit hook (Layer 2). The hook fires on EVERY prompt across EVERY project, not just aristo workspaces. So `active` must exit 0 with empty stdout when run outside an aristo workspace — a hard error would block every prompt in any non-aristo project the user opens. The interactive form (no `--hook-format`) follows the same rule for symmetry: an active session can only exist within a workspace anyway, so no-workspace and no-session are observationally identical at the CLI surface."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:49db7b8093b9a759da49aee4b53b3b7331a1a9925be0eefb57e13a22b5f5d1d9"
-body_hash = "sha256:82f934ae08215a99c0ecf03dad6b3ca7b682a9314ead7fcec5e6925ac0921fe6"
-file = "crates/aristo-cli/src/commands/session/active.rs"
-site = "fn run (line 13)"
-covered_region = "function"
-
-[session_close_uses_atomic_rename_active_to_closed]
-kind = "intent"
-text = "Closing a session is an atomic file move from active/ to closed/. A reader that sees the file is gone from active/ MUST find it in closed/ (or .active was cleared first — see `[[clear_active_pointer]]`). A refactor that copied + deleted instead of renaming would introduce a window where the session exists in both directories (stale-read risk) or in neither (lost audit trail)."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:1abaac120a4f9ce88ac2ee353cf09015c0b744aa43ccb7706f09e6fc809fe2f1"
-body_hash = "sha256:a5eaa1eee5b382caf535c15778772d5f66e238afae6fad0b274cef2c5b03b674"
-file = "crates/aristo-cli/src/session/storage.rs"
-site = "fn move_to_closed (line 90)"
-covered_region = "function"
-
-[session_id_timestamp_prefix_is_load_bearing_for_ordering]
-kind = "intent"
-text = "Session ids start with a sortable UTC timestamp (YYYYMMDDTHHMMSSZ) so `ls .aristo/sessions/active/` and `aristo session list` order chronologically without an index. A refactor that put random bytes first would break `aristo session list`'s expected newest-last ordering and would force a per-session sort on every read."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:a9e67de7876d61c0cd76360da2c2dc3dee09d1b5404049b28165add214e2e91a"
-body_hash = "sha256:5af7dea1eb222efbf9529d4f0b7a5b18223117644d4e79bc6ea97e825bdf80b3"
-file = "crates/aristo-cli/src/session/id_gen.rs"
-site = "fn mint_session_id (line 27)"
-covered_region = "function"
-
-[session_writes_are_atomic_via_tempfile_rename]
-kind = "intent"
-text = "Session writes go through `atomic_write` (temp-file + rename) so a concurrent reader cannot observe a partially-serialized session file. The session TOML is the single source of truth for in-flight state; a half-written file would deserialize-error and look like 'session is gone' from the reader's perspective. A refactor that used `fs::write` directly would re-introduce the partial-read window between open and close."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:95804e77cd60e3e9f9e85c8ed36b780a48ba2a9ff899f18db45fa5750b00e68b"
-body_hash = "sha256:126d6ddb944e78ef6646bb39fdd4bd739b6d4d5086642cfba691a755a726d409"
-file = "crates/aristo-cli/src/session/storage.rs"
-site = "fn write_active_session (line 53)"
+site = "fn clear_ground_hashes (line 127)"
 covered_region = "function"
 
 [sha256_from_bytes_is_canonical_form]
@@ -615,7 +549,7 @@ status = "unknown"
 text_hash = "sha256:d03b32ef9843b1113f8100e2416538a428fddb56edd67b4fba971f58041b5b65"
 body_hash = "sha256:f4b85e3430910f576b56f53491d48206f8710025adb6edfa42a1ba24beab271e"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn cascade_delete_orphan_proofs (line 134)"
+site = "fn cascade_delete_orphan_proofs (line 129)"
 covered_region = "function"
 
 [stamp_check_never_writes]
@@ -624,20 +558,9 @@ text = "When `--check` is set, `aristo stamp` never writes the index. CI relies 
 verify = "test"
 status = "unknown"
 text_hash = "sha256:46c84821843266195127e5ae086761da1c7aaefddb116c6ba041da7c7aa993e0"
-body_hash = "sha256:85580bce2249ffb2c3574085d539b0b8d6a6fc555d624bf82fe36f019ae017bb"
+body_hash = "sha256:d16f752c5570a1367029db6662955c0082f57e52e098ac52013a42f5b5a1ac72"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn run (line 38)"
-covered_region = "function"
-
-[stamp_disposition_uses_atomic_write]
-kind = "intent"
-text = "Stamping a disposition mutates the on-disk .critique file via atomic_write (temp + rename). The .critique file is the audit trail of every triage decision against this critique; a non-atomic write would deserialize-fail on partial state and look to `--apply-findings` like the critique has vanished."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:30eb056875cb3bcb56333422b25cced7c40228af68962f9e8b7bc085af80ee7d"
-body_hash = "sha256:32898249d7da4ca2fc8ef6c7eefe4cf6d97eccd2ee9af467e3d19be9a9c1933a"
-file = "crates/aristo-cli/src/commands/critique/session_kind.rs"
-site = "fn stamp_disposition (line 197)"
 covered_region = "function"
 
 [stamp_surfaces_counterexamples_loudly]
@@ -648,7 +571,7 @@ status = "unknown"
 text_hash = "sha256:9943c7d2092400e64549441f7d63887f9bb599db3a9b1a62fd1a4bf5129f64d4"
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn warn_on_counterexamples (line 171)"
+site = "fn warn_on_counterexamples (line 169)"
 covered_region = "function"
 
 [stmt_form_intents_use_open_visit_descent_not_whitelist]
@@ -670,14 +593,14 @@ status = "unknown"
 text_hash = "sha256:9070413f2bc853a6b1d84aecbdf624efd53463b136e25e22f66773dc520e4109"
 body_hash = "sha256:473b1b6fa7c3d8170b943a0a5d8b0f2fb007e5e71b8864017fe8c016535874b6"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
-site = "fn submit_done (line 209)"
+site = "fn submit_done (line 204)"
 covered_region = "function"
 
 [submit_findings_is_only_write_path_for_critiques]
 kind = "intent"
 text = "`aristo critique --submit-findings` is the SINGLE creation path for `.aristo/critiques/<id>.critique` files (subagents have no Write-tool access — critique workers have Bash only). On accept, prints `accepted: sha256:<hex>` to stdout for the orchestrator's integrity check. Validation gates schema enums + focal-id-in-index + text staleness anchor + per-finding rationale presence; any failure short-circuits before write_proof_atomic. Same shape as submit-verdict, different payload schema."
 verify = "neural"
-status = "neural"
+status = "unknown"
 text_hash = "sha256:2e2274c6035c3e2ce4e30951db71b59bd04abe6fac1d64c09dd19c0d0a4d1ba0"
 body_hash = "sha256:32dc975d18fbefea3b073dfa3e03d87a922593a5b6af1828e754a7afdb084a57"
 file = "crates/aristo-cli/src/commands/critique/submit.rs"
@@ -710,7 +633,7 @@ covered_region = "function"
 kind = "intent"
 text = "`aristo verify --submit-verdict` is the SINGLE *creation* path for `.aristo/proofs/<id>.proof` files (subagents have no Write-tool access). `--apply-verdicts` may re-write an existing proof in-place to stamp computed ground hashes, but only after running the same `validate()` schema gate. A refactor that added a third writer bypassing `validate()` would let unvalidated proofs land — defeating the schema gate that catches invalid enum variants, child-as-prior-step, and out-of-range line citations."
 verify = "neural"
-status = "neural"
+status = "stale"
 text_hash = "sha256:083cd7c4b6f469bf5f11525a98cbf3f0340b6571b7b316e69dfcde63d136ee69"
 body_hash = "sha256:476ab3733a15987f3ad0df829be69e009ac0afca3146a3a15bc875e645ad4367"
 file = "crates/aristo-cli/src/commands/verify/submit.rs"
@@ -726,17 +649,6 @@ text_hash = "sha256:7717120c90424afc455cff8eae52437ccb9d84aa7110a399dc4d2a5510a4
 body_hash = "sha256:c43a47e440a0b9c5f80b91a72ad95933e5e060cc7b1d4c5ddfd921a8b7c3f6ae"
 file = "crates/aristo-core/src/hash.rs"
 site = "fn text_hash (line 25)"
-covered_region = "function"
-
-[uninstall_claude_hook_preserves_other_hooks]
-kind = "intent"
-text = "Uninstall removes ONLY aristo's session hook entry from UserPromptSubmit; any other hooks the user configured are preserved. After removal, if UserPromptSubmit becomes empty we leave the empty array in place rather than removing it — the user may have intentional structure around the key. Idempotent: uninstalling-when-not-installed is a no-op return."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:62b31bfd4d0cb67341bd81bcf9603086275b0caea658c35172d8bd5f3529294b"
-body_hash = "sha256:ab583f8aa4520372d7727088a30648d5bfbc23040b738dc3f43a7ce7f29e3634"
-file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn uninstall_claude_hook (line 125)"
 covered_region = "function"
 
 [uninstall_skills_reverses_install]
@@ -802,7 +714,7 @@ status = "neural"
 text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 305)"
+site = "fn resolve_verify_level (line 291)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -813,7 +725,7 @@ status = "neural"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 317)"
+site = "fn resolve_verify_level (line 303)"
 covered_region = "function"
 
 [verify_false_arm_is_intentional_skip]
@@ -824,7 +736,7 @@ status = "neural"
 text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
 body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run (line 110)"
+site = "fn run (line 96)"
 covered_region = "statement"
 
 [verify_migrates_legacy_pending_neural_toml_to_queue]
@@ -846,7 +758,7 @@ status = "neural"
 text_hash = "sha256:0da73449029c5ac290374f71589048e283bb0c913c998a23d1c344347f81978e"
 body_hash = "sha256:74a7875b3adf5c47c7af8c22f122f1298f0e82ba013e1528b398ef9fa5944145"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run_pop_next (line 163)"
+site = "fn run_pop_next (line 149)"
 covered_region = "function"
 
 [verify_queue_status_is_non_destructive_peek]
@@ -857,7 +769,7 @@ status = "unknown"
 text_hash = "sha256:c1d5e4f08bfc2116718b94c7334dfdffdcf7981731e2e20d067e5dc617cdc608"
 body_hash = "sha256:96de1a2fc087ab877a852c94a7abb823017bad3e2c12318f4ea51e808c24a791"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run_queue_status (line 189)"
+site = "fn run_queue_status (line 175)"
 covered_region = "function"
 
 [verify_skip_consults_validator_not_just_status]
@@ -868,7 +780,7 @@ status = "unknown"
 text_hash = "sha256:ec349c62caa14bf353768509d1662e6ec68dc8d5d703d542e698ca3c5fb1089f"
 body_hash = "sha256:92a9f4dcd35a81ce63e0cd198bee192b970574abf1a2282d7fc7dd2b693f163c"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn skip_because_proof_still_holds (line 342)"
+site = "fn skip_because_proof_still_holds (line 328)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]
@@ -901,5 +813,5 @@ status = "neural"
 text_hash = "sha256:7dea8fbc1b236a0e3295c3d981ab61891cd213a335288052488a6aae09f0ef61"
 body_hash = "sha256:77bd66ccd1707698327bed561db8685eba167255e2cce8bc338e15ba23f912e9"
 file = "crates/aristo-cli/src/workspace.rs"
-site = "impl Workspace::load_config (line 130)"
+site = "impl Workspace::load_config (line 97)"
 covered_region = "function"

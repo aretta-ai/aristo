@@ -267,13 +267,37 @@ enum Commands {
     },
 
     /// Generate per-annotation markdown to .aristo/doc/.
-    Doc,
+    Doc {
+        /// Write only the crate-root summary (`_summary.md`); skip the
+        /// per-annotation pass.
+        #[arg(long)]
+        summary: bool,
+        /// Bake current B5b verification status into rendered MD. Status
+        /// is a build-time fact and will go stale as code evolves; the
+        /// default omits it so doc artifacts stay reproducible on a
+        /// clean checkout.
+        #[arg(long = "include-status")]
+        include_status: bool,
+        /// CI mode: recompute expected per-annotation MD from the index,
+        /// compare against `.aristo/doc/`, exit non-zero on drift. Never
+        /// writes.
+        #[arg(long)]
+        check: bool,
+    },
 
     /// Generate the annotation graph (Mermaid / DOT / SVG).
     Graph,
 
     /// Generate a shareable SVG verification badge for README / docs.
-    Badge,
+    Badge {
+        /// Write SVG to this path (relative to workspace root, or absolute).
+        /// Default: stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Badge style. Mirrors shields.io's three default forms.
+        #[arg(long, default_value = "flat")]
+        style: String,
+    },
 
     /// Atomic project-wide rename of an annotation id.
     Rename,
@@ -456,9 +480,20 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             id,
             json,
         ),
-        Commands::Doc => not_yet("aristo doc", "slice 28"),
+        Commands::Doc {
+            summary,
+            include_status,
+            check,
+        } => commands::doc::run(summary, include_status, check),
         Commands::Graph => not_yet("aristo graph", "slice 29"),
-        Commands::Badge => not_yet("aristo badge", "slice 31"),
+        Commands::Badge { out, style } => {
+            let style =
+                commands::badge::Style::parse(&style).map_err(|message| CliError::Other {
+                    message,
+                    exit_code: 2,
+                })?;
+            commands::badge::run(out, style)
+        }
         Commands::Rename => not_yet("aristo rename", "slice 32"),
         Commands::Session { action } => commands::session::run(action),
     }
@@ -496,22 +531,25 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Doc).unwrap_err();
+        let err = dispatch(Commands::Graph).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo doc"), "msg: {msg}");
-        assert!(msg.contains("slice 28"), "msg: {msg}");
+        assert!(msg.contains("aristo graph"), "msg: {msg}");
+        assert!(msg.contains("slice 29"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
         // to update the slice pointer. Implemented commands (Init, Lang,
-        // Index, Stamp, Show, List, Status, Lint, Verify, Critique) are
-        // tested elsewhere.
+        // Index, Stamp, Show, List, Status, Lint, Verify, Critique, Doc)
+        // are tested elsewhere. `Doc` with no flags still returns
+        // NotImplemented during slice 28's incremental build-out (only
+        // `--summary` ships in the first slice-28 commit); that variant
+        // is exercised by `binary_smoke::defined_but_unimplemented_subcommand_exits_64`
+        // for now and migrates here once `aristo doc` (no flags) is
+        // fully implemented.
         let variants = [
-            (Commands::Doc, "slice 28"),
             (Commands::Graph, "slice 29"),
-            (Commands::Badge, "slice 31"),
             (Commands::Rename, "slice 32"),
         ];
         for (cmd, expected_slice) in variants {

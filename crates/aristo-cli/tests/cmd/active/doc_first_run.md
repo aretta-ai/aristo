@@ -11,10 +11,10 @@ $ aristo doc
 → Generating per-annotation markdown to .aristo/doc/ …
   • Wrote: .aristo/doc/aristos__balance_no_duplicate_cells.md
   • Wrote: .aristo/doc/aristos__edit_page_writes_each_cell_once.md
-  • Wrote: .aristo/doc/cells_extracted_without_aliasing.md
   • Wrote: .aristo/doc/cell_array_indices_in_bounds.md
+  • Wrote: .aristo/doc/cells_extracted_without_aliasing.md
   • Wrote: .aristo/doc/storage_write_atomicity.md
-[..]
+...
   ([..] files written, 0 unchanged)
 
 ok: doc artifacts updated.

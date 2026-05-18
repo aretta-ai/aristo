@@ -1,0 +1,62 @@
+[__meta__]
+schema_version = 1
+
+["aristos:balance_no_duplicate_cells"]
+kind = "intent"
+text = "For all B-tree balance operations, no cells are duplicated."
+verify = "full"
+status = "verified"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "core/storage/btree.rs"
+site = "fn balance_non_root (line 3010)"
+covered_region = "function"
+linked = "arta_op4q3z9NbV"
+verified_outcome = "v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+last_verified_at_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+["aristos:edit_page_writes_each_cell_once"]
+kind = "intent"
+text = "Each cell is written exactly once during edit_page."
+verify = "full"
+status = "verified"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "core/storage/btree.rs"
+site = "fn edit_page (line 2100)"
+covered_region = "function"
+linked = "arta_AAAAAAAAAAAA"
+verified_outcome = "v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+last_verified_at_commit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+[cell_array_indices_in_bounds]
+kind = "intent"
+text = "All cell-array index reads stay in bounds for the page."
+verify = "test"
+status = "tested"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "core/storage/btree.rs"
+site = "fn cell_at (line 4002)"
+covered_region = "function"
+
+[cells_extracted_without_aliasing]
+kind = "intent"
+text = "Cells extracted from a page have no aliasing with the source slab."
+verify = "full"
+status = "verified"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "core/storage/btree.rs"
+site = "fn extract_cells (line 5101)"
+covered_region = "function"
+
+[storage_write_atomicity]
+kind = "assume"
+text = "Storage layer atomicity: writes complete fully or not at all."
+status = "unknown"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "core/storage/mod.rs"
+site = "mod storage (line 1)"
+covered_region = "module_inline_body"

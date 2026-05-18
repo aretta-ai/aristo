@@ -90,9 +90,9 @@ Originally five slices (22–26). Slices 24, 25, 26 (`verify="test"` and `verify
 
 | Slice | Deliverable | Notes |
 |---|---|---|
-| **28** | `aristo doc` | **[Assigned to session B — see `SESSION-B-START-CONTEXT.md` at repo root.]** Per-annotation markdown to `.aristo/doc/<id-safe>.md` (`<id-safe>` replaces `:` with `__`); incremental writes; `--include-status` (B5b status bake-in); `--summary` (project-level `_summary.md`); `--check` CI gate. Promotes 5 of 6 `doc_*.md`. |
+| **28** | `aristo doc` | ✅ **Shipped via session B (5 sub-commits).** Per-annotation markdown to `.aristo/doc/<id-safe>.md` (`<id-safe>` replaces `:` with `__`); incremental writes; `--include-status` (B5b status bake-in); `--summary` (project-level `_summary.md`); `--check` CI gate. Promoted 5 of 6 `doc_*.md`. |
 | **29** | `aristo graph` | Mermaid (default stdout); DOT; SVG (via `dot` binary; friendly missing-binary error with platform install hints); J2 `--filter`; `--exclude-assumes`; `--include-status`; `--depth`; `--include-orphans`; `--out`. Promotes all 11 `graph_*.md`. The `--include-graph` from doc lands here too via slice composition. |
-| **30** | `aristo_doc` cargo feature in `aristo-macros` | Proc-macro injects `#[doc = include_str!("...")]` from `.aristo/doc/` when feature enabled. Cargo-fixture imperative test. |
+| **30** | `aristo_doc` cargo feature in `aristo-macros` | ✅ **Shipped via session B (commit `73c95c7`).** Proc-macro injects `#[doc = include_str!("...")]` from `.aristo/doc/` when feature enabled. Off by default; explicit `id = "..."` required when feature on (the macro can't predict stamp's id assignment). Cargo-fixture imperative tests in `tests/aristo_doc_imperative.rs`. |
 
 ## Milestone H — Auxiliary + audit → v0.1.0 (MVP)
 
@@ -100,7 +100,7 @@ Goal: feature-complete MVP. After this milestone the SDK is shippable as the fir
 
 | Slice | Deliverable | Notes |
 |---|---|---|
-| **31** | `aristo badge` | **[Assigned to session B — see `SESSION-B-START-CONTEXT.md` at repo root.]** Reads index, computes metrics (`aristos-count`, `verification-rate`); SVG output; `--out` or stdout; `--style={flat,flat-square,for-the-badge}`. **Offline-only — `--strict` is server-side and remains deferred to Phase 2.** Promotes `stale_preflight_on_badge.md`, badge portion of `lifecycle_ship_with_doc_and_graph.md`. |
+| **31** | `aristo badge` | ✅ **Shipped via session B (commit `d917cd5`).** Reads index, computes metrics (`aristos-count`, `verification-rate`); SVG output; `--out` or stdout; `--style={flat,flat-square,for-the-badge}`. **Offline-only — `--strict` is server-side and remains deferred to Phase 2.** Tier-scoring follow-up (slice **31.5**) is in flight on `session-B-docs` per `docs/decisions/badge-tier-scheme.md` (Aspirant / Apprentice / Adept / Ascendent + hidden Areté tier; numeric formula + cutoffs deferred to a follow-up DECIDED block). |
 | **32** | `aristo rename` | Atomic across src + spec + index; `--dry-run`; cross-namespace rejection (per K1); readable→opaque rejection. Warns but allows on dirty tree. Promotes all `rename_*.md`. |
 | **33** | `aristo verify --audit-only` (offline shell) | Reports counts across `verified` / `stale` / `orphan` / `pending-deepen` / `forged`. On a free-tier-only project with no `verified_outcome` entries, reports all-zeros — useful so downstream consumers' CI scripts don't break when they pull a free-tier crate. Composes with `--check`. The `--strict` cross-check against `aretta.dev/registry/` remains deferred to Phase 2. Promotes `verify_audit_only.md`, `verify_audit_only_check.md`. |
 | **34** | CI gate composite scenario | Promotes `lifecycle_ci_gates.md`. Mostly integration verification — the per-command `--check` modes wired uniformly across slices 17/20/22/28 should already compose; this slice asserts that they do, end-to-end. |
