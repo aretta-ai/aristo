@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T20:29:04.896866Z"
+generated_at = "2026-05-18T20:37:39.022127Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -310,6 +310,17 @@ text_hash = "sha256:0522fae6676189ff629bf6295ecc0cc883b20f8a4c3303fbcb6723d487d7
 body_hash = "sha256:ec3e41b43d8ba9c1dafb159ec3cbdc042bb160339567a4ac8512407d1adb0cad"
 file = "crates/aristo-cli/src/commands/init.rs"
 site = "fn run (line 66)"
+covered_region = "function"
+
+[install_claude_hook_is_idempotent]
+kind = "intent"
+text = "Installing the session hook is idempotent — running install twice leaves the settings.json with exactly one `aristo session active --hook-format` entry, not two. We find existing entries by command substring and replace in place. A refactor that appends unconditionally would compound on every reinstall."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:076e69c8cd762de41df257ac030e4680137eb79fa3e4a8ad548c727e510c973f"
+body_hash = "sha256:ff76296ab40eb45b11a13536d62c8ae6f8f38025ed489719eb5be243d5f3e965"
+file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
+site = "fn install_claude_hook (line 63)"
 covered_region = "function"
 
 [install_skills_scope_symmetry]
@@ -682,6 +693,17 @@ text_hash = "sha256:7717120c90424afc455cff8eae52437ccb9d84aa7110a399dc4d2a5510a4
 body_hash = "sha256:c43a47e440a0b9c5f80b91a72ad95933e5e060cc7b1d4c5ddfd921a8b7c3f6ae"
 file = "crates/aristo-core/src/hash.rs"
 site = "fn text_hash (line 25)"
+covered_region = "function"
+
+[uninstall_claude_hook_preserves_other_hooks]
+kind = "intent"
+text = "Uninstall removes ONLY aristo's session hook entry from UserPromptSubmit; any other hooks the user configured are preserved. After removal, if UserPromptSubmit becomes empty we leave the empty array in place rather than removing it — the user may have intentional structure around the key. Idempotent: uninstalling-when-not-installed is a no-op return."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:62b31bfd4d0cb67341bd81bcf9603086275b0caea658c35172d8bd5f3529294b"
+body_hash = "sha256:1edf9430c90b52c98c064cd36cfe0d625e111ca46ce1d814d5cf8b66e9a177c4"
+file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
+site = "fn uninstall_claude_hook (line 111)"
 covered_region = "function"
 
 [uninstall_skills_reverses_install]

@@ -79,6 +79,36 @@ pub struct Finding {
     /// pattern without proposing exact replacement text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_text: Option<String>,
+    /// User's triage decision once the finding has been reviewed via
+    /// `aristo session decide`. Absent until the review session
+    /// records a verdict. See `docs/decisions/review-sessions.md`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<Disposition>,
+    /// Optional free-text reason captured with the disposition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disposition_note: Option<String>,
+    /// RFC3339 timestamp the disposition was stamped. Absent when
+    /// disposition is absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed_at: Option<String>,
+}
+
+/// User's triage decision on a finding. Set by the
+/// `CritiqueReviewSession::on_*` callbacks invoked from
+/// `aristo session decide`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Disposition {
+    /// User agrees; will act (or has acted) on the finding.
+    Accepted,
+    /// User disagrees; finding is wrong, not applicable, or fired
+    /// against intent. Future critique runs route matching findings
+    /// to the auto-rejected menu instead of the main flow.
+    Rejected,
+    /// User has seen the finding and explicitly parked it. Different
+    /// from "absent" (which means "not yet looked at"). Deferred
+    /// findings also live on the per-kind backlog until reviewed.
+    Deferred,
 }
 
 /// Critique finding category. v0 locks five values; additions require a
@@ -152,12 +182,18 @@ mod tests {
                         severity: Severity::StrongSuggest,
                         rationale: "double-negation".into(),
                         suggested_text: Some("For every B-tree balance ...".into()),
+                        disposition: None,
+                        disposition_note: None,
+                        closed_at: None,
                     },
                     Finding {
                         category: Category::Vocabulary,
                         severity: Severity::Info,
                         rationale: "sibling drift".into(),
                         suggested_text: None,
+                        disposition: Some(Disposition::Accepted),
+                        disposition_note: Some("will tighten in follow-up".into()),
+                        closed_at: Some("2026-05-18T13:05:00Z".into()),
                     },
                 ],
             },
@@ -174,6 +210,9 @@ mod tests {
             severity: Severity::Suggest,
             rationale: "x".into(),
             suggested_text: None,
+            disposition: None,
+            disposition_note: None,
+            closed_at: None,
         })
         .unwrap();
         assert!(s.contains("category = \"parent-shape\""), "got: {s}");

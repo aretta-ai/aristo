@@ -23,6 +23,7 @@ use crate::{CliError, CliResult};
 
 pub(crate) mod apply;
 pub(crate) mod pending;
+pub(crate) mod session_kind;
 pub(crate) mod submit;
 pub(crate) mod validator;
 

@@ -39,6 +39,7 @@
 pub mod backlog;
 pub mod guard;
 pub mod id_gen;
+pub mod kind;
 pub mod rejections;
 pub mod storage;
 pub mod types;

@@ -14,14 +14,11 @@ fn aristo_in(dir: &Path) -> Command {
 
 fn workspace_with_active_session(dir: &Path) {
     aristo_in(dir).arg("init").assert().success();
+    // Use a kind with no registered SessionKind so `decide` exercises
+    // the substrate-only path (this suite is about guard wiring, not
+    // per-kind dispatch — that has its own session_kind unit tests).
     aristo_in(dir)
-        .args([
-            "session",
-            "start",
-            "critique-review",
-            "--subject",
-            "src/foo.rs",
-        ])
+        .args(["session", "start", "test-review", "--subject", "src/foo.rs"])
         .assert()
         .success();
 }

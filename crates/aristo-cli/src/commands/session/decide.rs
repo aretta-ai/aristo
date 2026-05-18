@@ -7,6 +7,7 @@
 //! rejection-log / backlog entry with a NULL per-kind payload.
 
 use crate::session::backlog::BacklogEntry;
+use crate::session::kind::kind_for;
 use crate::session::rejections::RejectionEntry;
 use crate::session::types::{Item, ItemRef, ItemStatus, Session};
 use crate::session::{backlog, rejections, storage};
@@ -29,46 +30,61 @@ pub(crate) fn run(item_ref_str: &str, bucket: BucketArg, note: Option<String>) -
     let new_status = item_status_from_bucket(bucket);
     let now = now_rfc3339();
 
+    // Look up the per-kind handler. Unknown kinds get substrate-only
+    // treatment (no per-kind callbacks fire, fingerprint and data are
+    // null) — handy for tests and for future kinds before their impl
+    // lands.
+    let kind = kind_for(&session.kind);
+    let note_opt = note.as_deref();
+
+    // Per-kind side effects FIRST. If they fail (e.g. .critique
+    // missing for a critique-review session), we want to refuse
+    // before mutating substrate state so the user can retry.
+    let (fingerprint, backlog_data) = match (new_status, kind.as_ref()) {
+        (ItemStatus::Accepted, Some(k)) => {
+            k.on_accept(&item_ref, note_opt, &ws)?;
+            (serde_json::Value::Null, serde_json::Value::Null)
+        }
+        (ItemStatus::Rejected, Some(k)) => {
+            let fp = k.on_reject(&item_ref, note_opt, &ws)?;
+            (fp, serde_json::Value::Null)
+        }
+        (ItemStatus::Pending, Some(k)) => {
+            let data = k.on_pending(&item_ref, note_opt, &ws)?;
+            (serde_json::Value::Null, data)
+        }
+        (_, None) => (serde_json::Value::Null, serde_json::Value::Null),
+        (ItemStatus::Open, _) => unreachable!("BucketArg cannot map to Open"),
+    };
+
     update_or_insert_item(&mut session, &item_ref, new_status, note.clone(), &now);
     storage::write_active_session(&ws, &session)?;
 
-    // Substrate-only side effects. Per-kind effects (e.g. mutating
-    // the .critique file on accept) plug in via SessionKind in step 5.
-    match new_status {
-        ItemStatus::Rejected => {
-            rejections::append(
-                &ws,
-                &RejectionEntry {
-                    ts: now.clone(),
-                    kind: session.kind.clone(),
-                    item_ref: item_ref.clone(),
-                    note: note.clone(),
-                    // Empty fingerprint until per-kind step 5 supplies one.
-                    // `matches_prior_rejection` for any kind that hasn't
-                    // landed yet will see no prior rejections (vacuous
-                    // truth on empty fingerprints).
-                    fingerprint: serde_json::Value::Null,
-                },
-            )?;
-        }
-        ItemStatus::Pending => {
-            backlog::append_entry(
-                &ws,
-                &session.kind,
-                BacklogEntry {
-                    item_ref: item_ref.clone(),
-                    deferred_at: now.clone(),
-                    deferred_from_session: session.id.clone(),
-                    note: note.clone(),
-                    data: serde_json::Value::Null,
-                },
-            )?;
-        }
-        ItemStatus::Accepted => {
-            // No substrate-level side effect. Per-kind on_accept lands
-            // in step 5 (e.g. mutates .critique[i].disposition).
-        }
-        ItemStatus::Open => unreachable!("BucketArg cannot map to Open"),
+    // Substrate-level records.
+    if matches!(new_status, ItemStatus::Rejected) {
+        rejections::append(
+            &ws,
+            &RejectionEntry {
+                ts: now.clone(),
+                kind: session.kind.clone(),
+                item_ref: item_ref.clone(),
+                note: note.clone(),
+                fingerprint,
+            },
+        )?;
+    }
+    if matches!(new_status, ItemStatus::Pending) {
+        backlog::append_entry(
+            &ws,
+            &session.kind,
+            BacklogEntry {
+                item_ref: item_ref.clone(),
+                deferred_at: now.clone(),
+                deferred_from_session: session.id.clone(),
+                note: note.clone(),
+                data: backlog_data,
+            },
+        )?;
     }
 
     println!("ok: {item_ref} → {bucket:?}");

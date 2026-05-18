@@ -54,13 +54,7 @@ fn start_creates_session_and_active_prints_id() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args([
-            "session",
-            "start",
-            "critique-review",
-            "--subject",
-            "src/foo.rs",
-        ])
+        .args(["session", "start", "test-review", "--subject", "src/foo.rs"])
         .assert()
         .success()
         .stdout(contains("ok: started session"));
@@ -80,7 +74,7 @@ fn start_refuses_when_session_already_active() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -95,7 +89,7 @@ fn decide_records_buckets_and_status_reflects_counts() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     for (item, bucket) in [
@@ -123,7 +117,7 @@ fn redecide_is_idempotent_and_replaces_prior_bucket() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -151,7 +145,7 @@ fn exit_strict_refuses_when_items_open() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     // Manually create an open item by editing the session file —
@@ -171,7 +165,7 @@ fn exit_defer_undecided_moves_open_items_to_backlog_and_closes() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     seed_open_item(tmp.path(), "open#0");
@@ -188,9 +182,7 @@ fn exit_defer_undecided_moves_open_items_to_backlog_and_closes() {
         .success()
         .stdout(predicates::str::is_empty());
     // Backlog file should exist with 2 items.
-    let backlog = tmp
-        .path()
-        .join(".aristo/sessions/backlog/critique-review.toml");
+    let backlog = tmp.path().join(".aristo/sessions/backlog/test-review.toml");
     assert!(backlog.exists(), "backlog file should be written");
     let body = std::fs::read_to_string(&backlog).unwrap();
     assert!(body.contains("open#0"));
@@ -202,7 +194,7 @@ fn exit_strict_succeeds_when_all_items_decided() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -223,7 +215,7 @@ fn abort_with_yes_drops_session_without_prompt() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -243,7 +235,7 @@ fn rejected_decision_appends_to_rejection_log() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -263,7 +255,7 @@ fn rejected_decision_appends_to_rejection_log() {
     assert!(log.exists(), "rejections.log should be written");
     let body = std::fs::read_to_string(&log).unwrap();
     assert!(body.contains("\"item_ref\":\"foo#0\""));
-    assert!(body.contains("\"kind\":\"critique-review\""));
+    assert!(body.contains("\"kind\":\"test-review\""));
     assert!(body.contains("intentionally narrative"));
 }
 
@@ -272,7 +264,7 @@ fn hook_format_emits_system_reminder_block_when_active() {
     let tmp = tempfile::tempdir().unwrap();
     init_workspace(tmp.path());
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "x"])
+        .args(["session", "start", "test-review", "--subject", "x"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -301,7 +293,7 @@ fn list_shows_active_and_closed_sessions() {
     init_workspace(tmp.path());
     // Close one session.
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "first"])
+        .args(["session", "start", "test-review", "--subject", "first"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -310,7 +302,7 @@ fn list_shows_active_and_closed_sessions() {
         .success();
     // Start another and leave it open.
     aristo_in(tmp.path())
-        .args(["session", "start", "critique-review", "--subject", "second"])
+        .args(["session", "start", "test-review", "--subject", "second"])
         .assert()
         .success();
     aristo_in(tmp.path())
@@ -318,7 +310,7 @@ fn list_shows_active_and_closed_sessions() {
         .assert()
         .success()
         .stdout(contains("subject=second"))
-        .stdout(contains("kind=critique-review"));
+        .stdout(contains("kind=test-review"));
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────
