@@ -49,9 +49,12 @@ fn parse_filters(filter_strings: &[String]) -> CliResult<Vec<Filter>> {
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
         Filter::Id(want) => id.as_str() == want,
-        Filter::File(want) => match entry {
-            IndexEntry::Intent(e) => e.file == *want,
-            IndexEntry::Assume(e) => e.file == *want,
+        Filter::File { path, .. } => match entry {
+            // list ignores the optional line_range (slice 27.7 added it
+            // for critique scope; list's "show me everything in this
+            // file" semantic doesn't change).
+            IndexEntry::Intent(e) => e.file == *path,
+            IndexEntry::Assume(e) => e.file == *path,
         },
         Filter::Parent(want) => match parent_of(entry) {
             Some(link) => link.iter().any(|p| p.as_str() == want),

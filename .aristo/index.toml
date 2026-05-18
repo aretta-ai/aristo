@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T23:38:29.562891Z"
+generated_at = "2026-05-18T23:42:30.96871Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -180,6 +180,17 @@ file = "crates/aristo-cli/src/session/storage.rs"
 site = "fn clear_active_pointer (line 141)"
 covered_region = "function"
 
+[critique_all_flag_requires_confirmation_or_yes]
+kind = "intent"
+text = "`aristo critique --all` requires explicit confirmation via `--yes` (or interactive Y/N — interactive is parked for v2; v1 requires `--yes` on the command line). The cost-gate fires AFTER the matched set is computed so the count and dollar estimate match what the user is actually about to pay for. A refactor that proceeds without `--yes` would let an agent (or a script) accidentally enqueue hundreds of LLM calls in one bash invocation — the gate exists because critique is the most expensive aristo operation per token spent."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:87b254306718e308a695b5b66558c8ca80dc9e28cbf5629544e7b2a5e4ed4b5d"
+body_hash = "sha256:9f54785949cb6e6028d71c0fe7bbc4edbf1790b96b5cc4a6d940c513fb6ca9ad"
+file = "crates/aristo-cli/src/commands/critique/mod.rs"
+site = "fn format_all_confirmation (line 253)"
+covered_region = "function"
+
 [critique_apply_stamps_cache_on_success]
 kind = "intent"
 text = "`aristo critique --apply-findings` stamps `last_critiqued_at_text_hash` + `last_critique_finding_count` on each accepted critique's IntentEntry in the same operation that validates the .critique file. The cache and the on-disk .critique MUST be updated together: a writer that stamps before validate or skips the stamp leaves readers seeing stale-cache + fresh-file divergence (the cache claims a critique is current when the file says otherwise, or vice versa). Idempotent: re-running on an unchanged .critique re-writes the same values. AssumeEntry is skipped (the cache fields are IntentEntry-only by design — assumes are documentation-only annotations per A5 and don't have the same cache lifecycle as verifiable intents)."
@@ -230,7 +241,7 @@ text = "`aristo critique` requires an explicit `--filter` (id or file). Default 
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:c2fc45fff111078b8adba8b37b554eedb85cf2bc5338c40cb597a5de1eec4d5e"
-body_hash = "sha256:fd0f689e94b90fae8cb7203903ed5b7d1785a4fa41719d71210571d4274b83ec"
+body_hash = "sha256:a43dc59455226f12761bf00728cd8d23a45f6ac1638ac5bbf7e23a8ae21c4df4"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
 site = "fn run (line 30)"
 covered_region = "function"
@@ -254,7 +265,7 @@ status = "unknown"
 text_hash = "sha256:69093923520528f8073dbb349408b7dd147b700f64067b61887e6779a226db8f"
 body_hash = "sha256:e52b7d0a967aee592c885d6c269837712e19c8a1073340b1f1c5d4509a4d94b7"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
-site = "fn critique_is_current (line 276)"
+site = "fn critique_is_current (line 336)"
 covered_region = "function"
 
 [critique_staged_filter_intersects_with_explicit_filter]
@@ -265,7 +276,7 @@ status = "unknown"
 text_hash = "sha256:cce4ec8895ba175ad4e5b711ca5928008099f518093b3560147c7522112527cc"
 body_hash = "sha256:8f8e22fec83c5d4862e13c534b4652d3c7b4b17c88adab4abcac6cf0df4e2239"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
-site = "fn staged_files_or_error (line 233)"
+site = "fn staged_files_or_error (line 293)"
 covered_region = "function"
 
 [critique_validator_checks_schema_and_focal_id_in_index]

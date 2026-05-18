@@ -250,3 +250,102 @@ fn all_with_yes_enqueues_every_verifiable_intent() {
     let ids = queue_ids(repo);
     assert_eq!(ids, vec!["ann_in_a", "ann_in_b"]);
 }
+
+/// Make a single-file project with two annotations on different lines.
+/// Returns (tempdir, line_of_first, line_of_second).
+fn make_two_annotation_one_file_project() -> (tempfile::TempDir, u32, u32) {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+
+    git_with_path(repo)
+        .args(["init", "--quiet"])
+        .assert()
+        .success();
+    git_with_path(repo)
+        .args(["config", "user.email", "test@aretta.dev"])
+        .assert()
+        .success();
+    git_with_path(repo)
+        .args(["config", "user.name", "Test"])
+        .assert()
+        .success();
+    git_with_path(repo)
+        .args(["config", "commit.gpgsign", "false"])
+        .assert()
+        .success();
+
+    std::fs::write(
+        repo.join("Cargo.toml"),
+        r#"[package]
+name = "range-test"
+version = "0.0.0"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir(repo.join("src")).unwrap();
+    // Two annotations in src/lib.rs:
+    //   line 1: top_ann
+    //   line 5: bottom_ann
+    let source = "\
+#[aristo::intent(\"top\", verify = \"neural\", id = \"top_ann\")]
+pub fn top() {}
+
+// filler
+#[aristo::intent(\"bottom\", verify = \"neural\", id = \"bottom_ann\")]
+pub fn bottom() {}
+";
+    std::fs::write(repo.join("src/lib.rs"), source).unwrap();
+
+    aristo_in(repo).arg("init").assert().success();
+    aristo_in(repo).arg("stamp").assert().success();
+
+    (tmp, 1, 5)
+}
+
+#[test]
+fn line_range_filter_matches_only_in_range_annotations() {
+    let (tmp, top_line, bottom_line) = make_two_annotation_one_file_project();
+    let repo = tmp.path();
+
+    // Range that includes top but not bottom.
+    let range = format!("file=src/lib.rs:{}-{}", top_line, top_line);
+    aristo_in(repo)
+        .args(["critique", "--filter", &range])
+        .assert()
+        .success();
+    assert_eq!(queue_ids(repo), vec!["top_ann"]);
+
+    // Range that includes bottom but not top.
+    drain_queue(repo);
+    let range = format!("file=src/lib.rs:{}-{}", bottom_line, bottom_line);
+    aristo_in(repo)
+        .args(["critique", "--filter", &range])
+        .assert()
+        .success();
+    assert_eq!(queue_ids(repo), vec!["bottom_ann"]);
+
+    // Range that spans both → enqueues both.
+    drain_queue(repo);
+    let range = format!("file=src/lib.rs:{}-{}", top_line, bottom_line);
+    aristo_in(repo)
+        .args(["critique", "--filter", &range])
+        .assert()
+        .success();
+    let mut ids = queue_ids(repo);
+    ids.sort();
+    assert_eq!(ids, vec!["bottom_ann", "top_ann"]);
+}
+
+#[test]
+fn line_range_filter_with_no_matches_is_zero_exit_zero() {
+    let (tmp, _, _) = make_two_annotation_one_file_project();
+    let repo = tmp.path();
+
+    aristo_in(repo)
+        .args(["critique", "--filter", "file=src/lib.rs:100-200"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("0 annotations matched"));
+    assert!(queue_ids(repo).is_empty());
+}

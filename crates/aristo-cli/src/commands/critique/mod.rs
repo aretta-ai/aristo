@@ -220,13 +220,42 @@ fn matches_all(id: &AnnotationId, entry: &IndexEntry, filters: &[Filter]) -> boo
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
         Filter::Id(want) => id.as_str() == want,
-        Filter::File(want) => file_of(entry) == want,
+        Filter::File { path, line_range } => {
+            if file_of(entry) != path {
+                return false;
+            }
+            match line_range {
+                None => true,
+                Some((lo, hi)) => match site_line(entry) {
+                    Some(line) => line >= *lo && line <= *hi,
+                    None => false,
+                },
+            }
+        }
         Filter::Parent(want) => match parent_ids(entry) {
             Some(ids) => ids.iter().any(|p| p.as_str() == want),
             None => false,
         },
         Filter::Status(want) => crate::commands::show::status_label(status_of(entry)) == want,
     }
+}
+
+/// Parse the annotation's site-line number out of the stamped `site`
+/// string. Format is `"<site_text> (line N)"` (see commands/index.rs's
+/// IntentEntry construction). Returns `None` when the suffix doesn't
+/// match — keeps the line-range filter strict (an unparseable site
+/// excludes the entry rather than letting it through silently).
+fn site_line(entry: &IndexEntry) -> Option<u32> {
+    let site = match entry {
+        IndexEntry::Intent(e) => &e.site,
+        IndexEntry::Assume(e) => &e.site,
+    };
+    // The suffix is exactly " (line <N>)" — find the last "(line " and
+    // parse the number before the trailing `)`.
+    let open = site.rfind("(line ")?;
+    let after_open = &site[open + "(line ".len()..];
+    let close = after_open.rfind(')')?;
+    after_open[..close].trim().parse().ok()
 }
 
 fn file_of(entry: &IndexEntry) -> &str {
