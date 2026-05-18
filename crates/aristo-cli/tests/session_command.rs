@@ -18,13 +18,29 @@ fn init_workspace(dir: &Path) {
 }
 
 #[test]
-fn errors_outside_a_workspace() {
+fn active_outside_workspace_is_silent_noop() {
+    // `aristo session active` is wired into Claude Code's
+    // UserPromptSubmit hook, which fires in every project (not just
+    // aristo workspaces). It MUST exit 0 with empty stdout outside a
+    // workspace — otherwise installing the hook would block every
+    // prompt in every non-aristo project. See intent
+    // session_active_is_noop_outside_workspace.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path())
         .args(["session", "active"])
         .assert()
-        .failure()
-        .stderr(contains("not inside an Aristo workspace"));
+        .success()
+        .stdout(predicates::str::is_empty());
+}
+
+#[test]
+fn active_hook_format_outside_workspace_is_silent_noop() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path())
+        .args(["session", "active", "--hook-format"])
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
 }
 
 #[test]

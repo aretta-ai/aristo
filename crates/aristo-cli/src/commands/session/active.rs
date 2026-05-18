@@ -5,13 +5,37 @@
 //! `UserPromptSubmit` Claude Code hook injects every turn — see
 //! design doc D2 layer 2.
 
-use crate::CliResult;
+use crate::workspace::Workspace;
+use crate::{CliError, CliResult};
 
-use super::{load_active, workspace_or_error};
+use super::load_active;
 
+#[aristo::intent(
+    "`aristo session active` is wired into Claude Code's \
+     UserPromptSubmit hook (Layer 2). The hook fires on EVERY prompt \
+     across EVERY project, not just aristo workspaces. So `active` \
+     must exit 0 with empty stdout when run outside an aristo \
+     workspace — a hard error would block every prompt in any \
+     non-aristo project the user opens. The interactive form (no \
+     `--hook-format`) follows the same rule for symmetry: an active \
+     session can only exist within a workspace anyway, so no-workspace \
+     and no-session are observationally identical at the CLI surface.",
+    verify = "neural",
+    id = "session_active_is_noop_outside_workspace"
+)]
 pub(crate) fn run(hook_format: bool) -> CliResult<()> {
-    let ws = workspace_or_error()?;
-    let session = load_active(&ws)?;
+    // No workspace → no session possible → empty stdout, exit 0.
+    // Hook-friendly: works in any directory.
+    let Ok(ws) = Workspace::find(None) else {
+        return Ok(());
+    };
+    // Distinguish a real I/O error (which we still want to surface)
+    // from "no active session" (which we don't).
+    let session = match load_active(&ws) {
+        Ok(s) => s,
+        Err(CliError::NotInWorkspace { .. }) => return Ok(()),
+        Err(e) => return Err(e),
+    };
 
     if hook_format {
         emit_hook_block(session.as_ref());

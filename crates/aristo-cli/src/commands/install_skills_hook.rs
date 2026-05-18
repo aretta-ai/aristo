@@ -23,10 +23,24 @@ use serde_json::{Map, Value};
 
 use crate::{CliError, CliResult};
 
-/// Marker substring uniquely identifying the aristo session hook.
-/// Uninstall finds and removes any `UserPromptSubmit` entry whose
-/// command contains this string.
-const HOOK_COMMAND: &str = "aristo session active --hook-format";
+/// The actual command written into settings.json. The trailing
+/// `|| true` is load-bearing: if the user installs the hook before
+/// updating their on-PATH `aristo` to a version that knows
+/// `session`, the hook would otherwise exit non-zero and Claude
+/// Code would BLOCK every prompt with an "unrecognized subcommand"
+/// error. The `|| true` makes the fallback exit 0, so the hook
+/// silently injects nothing instead of breaking the user's workflow.
+/// stderr is suppressed so the prompt UI stays clean — the SDK's
+/// Layer 1 pre-check is the real enforcement; Layer 2 (this hook)
+/// is purely cosmetic reminder injection.
+const HOOK_COMMAND: &str = "aristo session active --hook-format 2>/dev/null || true";
+
+/// Marker substring inside [`HOOK_COMMAND`] uniquely identifying
+/// the aristo session hook. Uninstall finds and removes any
+/// `UserPromptSubmit` entry whose command contains this string.
+/// Kept narrow (just the subcommand triple) so changes to flags or
+/// shell fallback wrapping don't break uninstall's matching logic.
+const HOOK_MARKER: &str = "aristo session active --hook-format";
 
 /// Settings file path under `<root>/.claude/`.
 fn settings_path(root: &Path) -> std::path::PathBuf {
@@ -100,7 +114,7 @@ pub fn install_claude_hook(root: &Path) -> CliResult<bool> {
 
     let already_present = prompt_submit_array
         .iter()
-        .any(|entry| entry_mentions_hook(entry, HOOK_COMMAND));
+        .any(|entry| entry_mentions_hook(entry, HOOK_MARKER));
     if !already_present {
         prompt_submit_array.push(aristo_hook_entry());
     }
@@ -142,7 +156,7 @@ pub fn uninstall_claude_hook(root: &Path) -> CliResult<bool> {
         return Ok(false);
     };
     let before = arr.len();
-    arr.retain(|entry| !entry_mentions_hook(entry, HOOK_COMMAND));
+    arr.retain(|entry| !entry_mentions_hook(entry, HOOK_MARKER));
     let removed = arr.len() < before;
     if removed {
         write_settings(&path, &value)?;
@@ -203,6 +217,27 @@ mod tests {
         assert!(inserted);
         let body = std::fs::read_to_string(settings_path(tmp.path())).unwrap();
         assert!(body.contains(HOOK_COMMAND), "body: {body}");
+    }
+
+    #[test]
+    fn hook_command_uses_tolerant_shell_fallback() {
+        // Regression guard: the hook MUST exit 0 even when aristo is
+        // missing or doesn't recognize `session` — otherwise installing
+        // the hook before updating PATH-resident aristo would block
+        // every prompt in every project. The `|| true` suffix is the
+        // load-bearing piece.
+        assert!(
+            HOOK_COMMAND.contains("|| true"),
+            "HOOK_COMMAND must fall back gracefully when aristo errors"
+        );
+        assert!(
+            HOOK_COMMAND.contains("2>/dev/null"),
+            "HOOK_COMMAND must suppress stderr so prompt UI stays clean"
+        );
+        assert!(
+            HOOK_COMMAND.contains(HOOK_MARKER),
+            "HOOK_COMMAND must contain HOOK_MARKER so uninstall can find it"
+        );
     }
 
     #[test]
