@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:52:08.932796Z"
+generated_at = "2026-05-18T18:56:15.190102Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -188,7 +188,18 @@ status = "unknown"
 text_hash = "sha256:075cd098dafb817c34ce4f5559c0786a81c1b965011cb577d473ced64829be16"
 body_hash = "sha256:e7fe552006cfe040fe3a48c390cc08e6d90e0cb652f163105839c8954327a3f8"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn status_block_for_intent (line 225)"
+site = "fn status_block_for_intent (line 271)"
+covered_region = "function"
+
+[doc_output_shape_pivots_on_empty_doc_dir_not_per_run_counts]
+kind = "intent"
+text = "`aristo doc` output shape differs by first-run-vs-incremental: first run (empty .aristo/doc/) prints per-file `• Wrote:` lines, a `(N files written, 0 unchanged)` count, and the `Next steps` onboarding footer; subsequent runs (any pre-existing file) print `• Updated:`/`• Unchanged:` lines and a compressed `ok: doc artifacts updated. (M written, N unchanged)` summary with no onboarding footer. The pivot is whether the doc dir was empty before the run, not whether any file was unchanged this time — a regression that switched to the count-based check would emit onboarding footers on every run that happens to write all files (e.g. a schema upgrade that touches every MD)."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:fa73ff92a6db515d1f783b1048c98f313712568308b8e33055b5598d997b6382"
+body_hash = "sha256:e44f81d271f2800f57b9d9ca0473c16bb2879ee3c4ac8aeaa7a77b51cb72f94d"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn run_per_annotation (line 115)"
 covered_region = "function"
 
 [doc_per_annotation_filename_uses_id_safe]
@@ -197,7 +208,7 @@ text = "`aristo doc` writes each annotation to .aristo/doc/<id-safe>.md where `<
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:37800ee178014cabf7dd805bf35e78affb3fec3fb1fa57d30648c66e9f386fe4"
-body_hash = "sha256:5ab8e342c00c1ba578af08659d5c8dddc79e88250608a92305cc6a9a160f062f"
+body_hash = "sha256:e44f81d271f2800f57b9d9ca0473c16bb2879ee3c4ac8aeaa7a77b51cb72f94d"
 file = "crates/aristo-cli/src/commands/doc.rs"
 site = "fn run_per_annotation (line 103)"
 covered_region = "function"
@@ -210,7 +221,7 @@ status = "unknown"
 text_hash = "sha256:b026ae240228658551323bfa60a7771cd828e85ded7764602fa8e83122de2de6"
 body_hash = "sha256:e672f6d1e657cc61436a108c729512cd0d0fa285a1cd31b4e3e7e48ea0f50a43"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn render_annotation_md (line 184)"
+site = "fn render_annotation_md (line 230)"
 covered_region = "function"
 
 [doc_summary_writes_summary_only]
@@ -221,7 +232,7 @@ status = "unknown"
 text_hash = "sha256:63bcb80f0391a30b7523d2444a3c6585e93967a39eebc30a0c30d00afc528eb7"
 body_hash = "sha256:cf0d617f7cde85b1a6457b91b241582d5dd0c8910d83092f04f781e99a4bf6b7"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_summary (line 306)"
+site = "fn run_summary (line 352)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]

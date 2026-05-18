@@ -112,8 +112,27 @@ fn run_check(ws: &Workspace, index: &IndexFile, include_status: bool) -> CliResu
     verify = "neural",
     id = "doc_per_annotation_filename_uses_id_safe"
 )]
+#[aristo::intent(
+    "`aristo doc` output shape differs by first-run-vs-incremental: \
+     first run (empty .aristo/doc/) prints per-file `• Wrote:` lines, \
+     a `(N files written, 0 unchanged)` count, and the `Next steps` \
+     onboarding footer; subsequent runs (any pre-existing file) print \
+     `• Updated:`/`• Unchanged:` lines and a compressed \
+     `ok: doc artifacts updated. (M written, N unchanged)` summary \
+     with no onboarding footer. The pivot is whether the doc dir was \
+     empty before the run, not whether any file was unchanged this \
+     time — a regression that switched to the count-based check \
+     would emit onboarding footers on every run that happens to \
+     write all files (e.g. a schema upgrade that touches every MD).",
+    verify = "neural",
+    id = "doc_output_shape_pivots_on_empty_doc_dir_not_per_run_counts"
+)]
 fn run_per_annotation(ws: &Workspace, index: &IndexFile, include_status: bool) -> CliResult<()> {
     let doc_dir = ws.root.join(".aristo").join("doc");
+    let is_first_run = doc_dir
+        .read_dir()
+        .map(|mut d| d.next().is_none())
+        .unwrap_or(true);
     fs::create_dir_all(&doc_dir).map_err(CliError::Io)?;
 
     let counts = Counts::from(index);
@@ -124,42 +143,67 @@ fn run_per_annotation(ws: &Workspace, index: &IndexFile, include_status: bool) -
             counts.total,
         );
         println!("→ Including current B5b verification status in rendered docs.");
-    } else {
+        println!("→ Generating per-annotation markdown to .aristo/doc/ …");
+    } else if is_first_run {
         println!(
             "→ Reading .aristo/index.toml … ok ({} annotations: {} intent, {} assume)",
             counts.total, counts.intent, counts.assume,
         );
+        println!("→ Generating per-annotation markdown to .aristo/doc/ …");
+    } else {
+        println!(
+            "→ Reading .aristo/index.toml … ok ({} annotations)",
+            counts.total,
+        );
+        println!("→ Generating per-annotation markdown …");
     }
-    println!("→ Generating per-annotation markdown to .aristo/doc/ …");
 
-    let mut written = 0usize;
-    let mut unchanged = 0usize;
+    let mut new_count = 0usize;
+    let mut updated_count = 0usize;
+    let mut unchanged_count = 0usize;
     for (id, entry) in &index.entries {
         let path = doc_dir.join(format!("{}.md", id_safe(id)));
+        let already_exists = path.exists();
         let rendered = render_annotation_md(id, entry, include_status);
         if file_unchanged(&path, &rendered) {
-            unchanged += 1;
+            unchanged_count += 1;
             continue;
         }
         fs::write(&path, &rendered).map_err(CliError::Io)?;
-        if !include_status {
+        if include_status {
+            // include-status mode: silent per-file (compressed output)
+        } else if !already_exists {
             println!("  • Wrote: .aristo/doc/{}.md", id_safe(id));
+            new_count += 1;
+        } else {
+            println!(
+                "  • Updated: .aristo/doc/{}.md  (text changed)",
+                id_safe(id)
+            );
+            updated_count += 1;
         }
-        written += 1;
     }
+    let written = new_count + updated_count;
+
     if include_status {
-        println!("  ({written} files written, including status blocks)");
-    } else {
-        println!("  ({written} files written, {unchanged} unchanged)");
+        // include-status: also count writes that came from the silent branch
+        let total_writes = index.entries.len() - unchanged_count;
+        println!("  ({total_writes} files written, including status blocks)");
+    } else if is_first_run {
+        println!("  ({written} files written, {unchanged_count} unchanged)");
+    } else if unchanged_count > 0 {
+        println!("  • Unchanged: {unchanged_count} files");
     }
     println!();
-    println!("ok: doc artifacts updated.");
-    println!();
     if include_status {
+        println!("ok: doc artifacts updated.");
+        println!();
         println!("ℹ Status is a build-time fact and will become stale as code evolves.");
         println!("   Re-run `aristo doc --include-status` to refresh, or omit `--include-status`");
         println!("   for purely static rendering.");
-    } else {
+    } else if is_first_run {
+        println!("ok: doc artifacts updated.");
+        println!();
         println!("Next steps:");
         println!("  • Enable the `aristo_doc` cargo feature in your Cargo.toml:");
         println!("        [features]");
@@ -167,6 +211,8 @@ fn run_per_annotation(ws: &Workspace, index: &IndexFile, include_status: bool) -
         println!("  • Or run `cargo doc --features aristo_doc` to render docs with annotations.");
         println!("  • Optional: add `#[doc = include_str!(\".aristo/doc/_summary.md\")]`");
         println!("    above your crate's `//!` doc to render the project-level summary.");
+    } else {
+        println!("ok: doc artifacts updated. ({written} written, {unchanged_count} unchanged)");
     }
     Ok(())
 }
