@@ -54,7 +54,18 @@ pub(crate) fn run(
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
 
+    // Reads (pop_next, queue_status) bypass the session guard;
+    // workers must keep functioning so an open critique-review
+    // doesn't strand an in-flight verify dispatch. Writes block.
+    if pop_next {
+        return run_pop_next(&ws);
+    }
+    if queue_status {
+        return run_queue_status(&ws);
+    }
+
     if submit_verdict {
+        crate::session::guard::ensure_no_active_session(&ws, "aristo verify --submit-verdict")?;
         // clap's `requires = ...` ensures id/json are Some here; the
         // .expect() documents the invariant rather than introducing a
         // user-facing error mode that can't actually trigger.
@@ -63,17 +74,15 @@ pub(crate) fn run(
         return submit::run_submit_verdict(&ws, &index, &id_str, &json_str);
     }
 
-    if pop_next {
-        return run_pop_next(&ws);
-    }
-
-    if queue_status {
-        return run_queue_status(&ws);
-    }
-
     if apply_verdicts {
+        crate::session::guard::ensure_no_active_session(&ws, "aristo verify --apply-verdicts")?;
         return apply::run_apply_verdicts(&ws, &index, rewrite_hashes);
     }
+
+    // The dispatch path (enqueuing new work for workers) is also a
+    // mutation — it writes pending entries that downstream apply will
+    // commit to the index.
+    crate::session::guard::ensure_no_active_session(&ws, "aristo verify")?;
 
     // Migrate any legacy single-file pending queue before this run produces
     // new work. Idempotent.

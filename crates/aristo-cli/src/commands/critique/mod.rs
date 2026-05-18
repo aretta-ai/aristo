@@ -48,21 +48,25 @@ pub(crate) fn run(
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
 
+    // Reads (pop_next, queue_status) bypass the session guard;
+    // workers must keep functioning so an open session of any kind
+    // doesn't strand in-flight critique dispatch. Writes block.
+    if pop_next {
+        return run_pop_next(&ws);
+    }
+    if queue_status {
+        return run_queue_status(&ws);
+    }
+
     if submit_findings {
+        crate::session::guard::ensure_no_active_session(&ws, "aristo critique --submit-findings")?;
         let id_str = id.expect("--id is required with --submit-findings (enforced by clap)");
         let json_str = json.expect("--json is required with --submit-findings (enforced by clap)");
         return submit::run_submit_findings(&ws, &index, &id_str, &json_str);
     }
 
-    if pop_next {
-        return run_pop_next(&ws);
-    }
-
-    if queue_status {
-        return run_queue_status(&ws);
-    }
-
     if apply_findings {
+        crate::session::guard::ensure_no_active_session(&ws, "aristo critique --apply-findings")?;
         return apply::run_apply_findings(&ws);
     }
 
@@ -79,6 +83,8 @@ pub(crate) fn run(
             exit_code: 2,
         });
     }
+
+    crate::session::guard::ensure_no_active_session(&ws, "aristo critique")?;
 
     let filters = parse_filters(filter_strings)?;
     let mut targets: Vec<&AnnotationId> = Vec::new();

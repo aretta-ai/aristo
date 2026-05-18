@@ -1,8 +1,19 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:51:03.287527Z"
+generated_at = "2026-05-18T19:14:24.036166Z"
 source_root = "."
+
+[abort_requires_explicit_confirmation]
+kind = "intent"
+text = "Abort prompts on stdin unless `--yes` is given. The default-no posture matches every other destructive aristo command (no `aristo stamp --force` without explicit opt-in). A refactor that defaulted to yes would silently drop a session's audit trail on any typo'd subcommand."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:c7c867d42b99914f9b1c61e5649e244373c0e3f7358f016309e28507a29aa41d"
+body_hash = "sha256:dc730086d1e84ba2e29e5c3b98bd62664ed3211ed22853d594e8d2ecf6d29f9f"
+file = "crates/aristo-cli/src/commands/session/exit.rs"
+site = "fn confirm_abort (line 122)"
+covered_region = "function"
 
 [active_pointer_read_trims_whitespace]
 kind = "intent"
@@ -221,7 +232,7 @@ status = "unknown"
 text_hash = "sha256:a974c9c20933604965c9316944b526620748bcfa9d19fe68fe5855a0a4bfd012"
 body_hash = "sha256:37166b0a910ce2f88d4db5086bfb9b317012e00e36c9ea4156001e5802f86bcb"
 file = "crates/aristo-cli/src/session/backlog.rs"
-site = "fn drain (line 122)"
+site = "fn drain (line 126)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]
@@ -309,7 +320,7 @@ status = "unknown"
 text_hash = "sha256:2cfbc03f7d9245e6d8840c673224152c20a57faf0b97f0813d6c04fa0b82981d"
 body_hash = "sha256:964ff1897ff18e9a8d5e056540cf97baf2d5a9073fa9320bcfb253e89f275e14"
 file = "crates/aristo-cli/src/session/types.rs"
-site = "impl ItemRef::new (line 56)"
+site = "impl ItemRef::new (line 66)"
 covered_region = "function"
 
 [lang_cheat_sheet_matches_macros]
@@ -506,6 +517,17 @@ text_hash = "sha256:1abaac120a4f9ce88ac2ee353cf09015c0b744aa43ccb7706f09e6fc809f
 body_hash = "sha256:a5eaa1eee5b382caf535c15778772d5f66e238afae6fad0b274cef2c5b03b674"
 file = "crates/aristo-cli/src/session/storage.rs"
 site = "fn move_to_closed (line 90)"
+covered_region = "function"
+
+[session_id_timestamp_prefix_is_load_bearing_for_ordering]
+kind = "intent"
+text = "Session ids start with a sortable UTC timestamp (YYYYMMDDTHHMMSSZ) so `ls .aristo/sessions/active/` and `aristo session list` order chronologically without an index. A refactor that put random bytes first would break `aristo session list`'s expected newest-last ordering and would force a per-session sort on every read."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:a9e67de7876d61c0cd76360da2c2dc3dee09d1b5404049b28165add214e2e91a"
+body_hash = "sha256:5af7dea1eb222efbf9529d4f0b7a5b18223117644d4e79bc6ea97e825bdf80b3"
+file = "crates/aristo-cli/src/session/id_gen.rs"
+site = "fn mint_session_id (line 27)"
 covered_region = "function"
 
 [session_writes_are_atomic_via_tempfile_rename]

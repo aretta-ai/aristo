@@ -30,6 +30,7 @@ use rules::Severity;
 pub(crate) fn run(check: bool, fix: bool, strict: bool) -> CliResult<()> {
     if fix {
         let ws = workspace_or_error()?;
+        crate::session::guard::ensure_no_active_session(&ws, "aristo lint --fix")?;
         let (issues, files) = self::fix::run_fix(&ws)?;
         println!(
             "fixed: {issues} whitespace {issue_word} across {files} {file_word}",

@@ -36,6 +36,7 @@ pub(crate) type BuiltEntries = (
 pub(crate) fn run(_all: bool) -> CliResult<()> {
     // _all is a slice-17+ flag (mtime cache); accepted as no-op for now.
     let ws = workspace_or_error()?;
+    crate::session::guard::ensure_no_active_session(&ws, "aristo index")?;
 
     println!("→ Walking source from {} …", ws.root.display());
     let walk_opts = walk_options_from_workspace(&ws)?;

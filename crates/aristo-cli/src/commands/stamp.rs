@@ -45,6 +45,11 @@ use crate::{CliError, CliResult};
 )]
 pub(crate) fn run(check: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
+    // `--check` is read-only (no writes), so it bypasses the
+    // session guard. Mutating runs refuse while a session is active.
+    if !check {
+        crate::session::guard::ensure_no_active_session(&ws, "aristo stamp")?;
+    }
 
     // Snapshot the previous index BEFORE writing — needed for status drift.
     let prev_index = read_existing_index(&ws.index_path())?;
