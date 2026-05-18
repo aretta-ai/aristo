@@ -6,6 +6,8 @@ The roadmap is organized into **8 milestones (A–H)**, totalling **30 numbered 
 
 **MVP = end of milestone H = v0.1.0.**
 
+**Scope adjustment 2026-05-17:** slices 24, 25, 26 (`verify="test"` and `verify="full"` paths) were originally part of milestone E. They are deferred to post-MVP pending a tight design pass on the specification schema + injection mechanism (which are coupled and need the open questions in `docs/deferred/verify-test-design.md` settled first). Milestone E ships with slices 22 + 23 only and tags v0.0.6. MVP is 27 slices instead of 30 (slices 27–35, minus the 3 deferred).
+
 ## How this roadmap relates to `CLAUDE.md`
 
 `CLAUDE.md` is the source of truth for **how we work** (commit size, semantic messages, test-first, full-check gating, plan-driven, annotation discipline, release cadence). This roadmap is the source of truth for **what we build, in what order**. Don't duplicate rules between them — when they disagree, `CLAUDE.md` wins.
@@ -67,17 +69,16 @@ Goal: the daily authoring loop becomes safe — drift surfaces, lint enforces, h
 | **20** | `aristo lint` | Built-in rules per mockup 07: `empty_text`, `text_too_long`, `weasel_words`, whitespace, anti-pattern phrases. `--check` (read-only, non-zero on findings) and `--fix` (autofixable rules; restages files). `--strict` also fails on `warn`. Promotes `lint_check_fail.md`, `lint_fix_restages.md`. |
 | **21** | Pre-commit hook implementation | `aristo init` writes the real bash hook (Linux/macOS only — Windows users get a docs note for v0.1.0). Hook runs `aristo stamp` + `aristo lint --check` per `[lint] pre_commit` default. Un-`#[ignore]`s `tests/pre_commit_hook.rs`. Aristo's own `.git/hooks/pre-commit` now runs Aristo on Aristo. |
 
-## Milestone E — Verify pipeline → v0.0.6
+## Milestone E — Verify pipeline (neural only) → v0.0.6
 
-Goal: end-to-end verification on the free tier. Heavy dogfooding — every new verify-path slice runs against Aristo's own annotations as a ground-truth eval set.
+Goal: end-to-end verification on the free tier for `verify="neural"` annotations. Heavy dogfooding — slice 23 ran against Aristo's own annotations as a ground-truth eval set, surfaced 11 lifecycle gaps post-shipment, and led to a follow-up hardening milestone that closed 8 of them.
+
+Originally five slices (22–26). Slices 24, 25, 26 (`verify="test"` and `verify="full"`) are deferred to post-MVP — see "Deferred — post-MVP (with design blockers)" below. Milestone E now ships with just 22 + 23 and tags as v0.0.6.
 
 | Slice | Deliverable | Notes |
 |---|---|---|
 | **22** | `aristo verify` dispatcher + `verify=false` path | Top-level command, J2 `--filter` reuse from slice 18, `--rerun` flag, `--check` / `--strict`, per-entry pipeline skeleton, `vlvl=false → noop` arm. Promotes `verify_false_skipped.md`, `verify_filter_rerun.md`. |
-| **23** | `verify="neural"` free path | Bundles `aristo-neural-verify` skill manifest; invokes it via host agent's standard skill mechanism; status-only update. Promotes `verify_neural_free.md`. |
-| **24** | `verify="test"` free path (sans cargo feature) | Bundles `aristo-mine-assertions` skill manifest; invokes it; writes `.aristo/specs/<id>.spec`; parses results; updates status. Skips actual cargo-test injection (slice 25 closes that loop). Promotes `verify_test_free_full_pipeline.md`, `verify_default_skips_clean_entries.md`, `verify_rerun_keeps_clean_entries.md`. |
-| **25** | `aristo_verify` cargo feature in `aristo-macros` | Proc-macro reads `.aristo/specs/<id>.spec` and injects assertions into the function body when feature enabled. Cargo-fixture imperative test. Closes the verify=test loop end-to-end. |
-| **26** | J4 free-tier `verify="full"` downgrade | One-line note + routes to test path. Source `verify="full"` preserved unchanged for the day the user upgrades. Promotes `verify_free_tier_downgrade.md`. |
+| **23** | `verify="neural"` free path | Bundles `aristo-neural-verify` skill manifest; invokes it via host agent's standard skill mechanism; status-only update. Promotes `verify_neural_free.md`. **Post-shipment hardening** (2026-05-17) closed 8 lifecycle gaps in a follow-up arc: validator-fills-hashes, Status::Inconclusive variant, validator-at-list-time skip logic, suggestion-vs-index check, strict text-drift policy, attempts persistence, stamp cascade-on-removal, loud Counterexample warning. |
 
 ## Milestone F — Review → v0.0.7
 
@@ -106,6 +107,18 @@ Goal: feature-complete MVP. After this milestone the SDK is shippable as the fir
 | **35** | v0.1.0 release prep | README polish; crates.io metadata (description, keywords, categories, repository, license, documentation links); `cargo publish --dry-run` for each crate (`aristo-core`, `aristo-macros`, `aristo-cli`, `aristo`); workspace version bump; `git tag v0.1.0`. |
 
 ---
+
+## Deferred — post-MVP (with design blockers)
+
+These slices were originally scoped into milestone E but are deferred until the prerequisite design work settles. Background, research, surveyed options, and the open questions that must be answered before implementation can start: **`docs/deferred/verify-test-design.md`**.
+
+| Slice | Deliverable | Blocker |
+|---|---|---|
+| ~~24~~ | `verify="test"` free path | Specification schema and injection mechanism are coupled; four open design questions must be answered before implementation (macro behavior on missing spec, injection-point enum scope, mining-skill failure surface, anchor flexibility). |
+| ~~25~~ | `aristo_verify` cargo feature in `aristo-macros` | Blocked on 24 (this is the injection half). |
+| ~~26~~ | J4 free-tier `verify="full"` downgrade | Blocked on 24 (routes to the test path). |
+
+When this work is picked back up, the steps in order are: settle the open questions → write the concepts doc (`annotations vs specifications` vocabulary lock) → write the lifecycle diagram (mermaid viewer section 5) → promote a new slice into this roadmap → implement.
 
 ## Decided (recorded for posterity)
 

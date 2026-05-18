@@ -93,20 +93,23 @@ pub(crate) fn run(
 
     emit_summary(&stats, pending_neural.len(), pending_test, pending_full);
 
-    // Slice 23 ships neural via the in-agent skill route; test (slice 24)
-    // and full (slice 26) are still not implemented. If the user has
-    // entries needing those methods, surface a NotImplemented at the end
-    // (after reporting what HAS been done for neural / false / clean).
+    // Slice 23 ships neural via the in-agent skill route. test and full
+    // were originally milestone E slices 24/26 but are deferred to post-MVP
+    // pending the spec-schema + injection-mechanism design (see
+    // docs/deferred/verify-test-design.md). If the user has entries needing
+    // those methods, surface a NotImplemented at the end with the deferred-
+    // design pointer so the message is actionable rather than blocking-on-
+    // a-slice-number-that-isn't-coming.
     if pending_test > 0 {
         return Err(CliError::NotImplemented {
             what: "aristo verify (verify=\"test\")",
-            slice: "slice 24",
+            slice: "post-MVP (see docs/deferred/verify-test-design.md)",
         });
     }
     if pending_full > 0 {
         return Err(CliError::NotImplemented {
             what: "aristo verify (verify=\"full\")",
-            slice: "slice 26",
+            slice: "post-MVP (depends on verify=\"test\"; see docs/deferred/verify-test-design.md)",
         });
     }
     Ok(())

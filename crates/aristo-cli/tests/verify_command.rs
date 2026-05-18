@@ -96,7 +96,7 @@ fn verify_neural_intent_writes_pending_request_file() {
 }
 
 #[test]
-fn verify_test_intent_returns_not_implemented_with_slice_24() {
+fn verify_test_intent_returns_not_implemented_pointing_to_deferred_design() {
     let tmp = tempfile::tempdir().unwrap();
     workspace_with_one_intent_at(tmp.path(), "verify = \"test\"");
 
@@ -106,11 +106,12 @@ fn verify_test_intent_returns_not_implemented_with_slice_24() {
         .failure()
         .code(64)
         .stderr(contains("not yet implemented"))
-        .stderr(contains("slice 24"));
+        .stderr(contains("post-MVP"))
+        .stderr(contains("verify-test-design.md"));
 }
 
 #[test]
-fn verify_full_intent_returns_not_implemented_with_slice_26() {
+fn verify_full_intent_returns_not_implemented_pointing_to_deferred_design() {
     let tmp = tempfile::tempdir().unwrap();
     workspace_with_one_intent_at(tmp.path(), "verify = \"full\"");
 
@@ -120,7 +121,7 @@ fn verify_full_intent_returns_not_implemented_with_slice_26() {
         .failure()
         .code(64)
         .stderr(contains("not yet implemented"))
-        .stderr(contains("slice 26"));
+        .stderr(contains("post-MVP"));
 }
 
 #[test]
