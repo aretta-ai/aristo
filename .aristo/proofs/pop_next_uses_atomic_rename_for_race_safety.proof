@@ -1,0 +1,64 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:cb34810dee70f2d7a8c4be45ab2b0cec9cd76cc6fff55a6d58bcff37f01a01ab"
+produced_at_body_hash = "sha256:30dc8167f7f4966465c74eeff32c2233c2b7772a62f00de7d7f6ded2cc9fa265"
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "pop_next claims one pending entry via POSIX rename atomically; on race-loss (ENOENT) it continues the iteration; it returns Ok(None) only when a freshly-listed pending/ directory contained zero file entries, otherwise it re-lists."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "pop_next implements the four behavioral claims of the intent: (a) atomic claim by fs::rename(pending/<id>.toml -> claimed/<id>.toml); (b) ENOENT on rename means another worker won — try the next entry; (c) Ok(None) is returned only when a fresh listing of pending/ yields no file entries; (d) a non-empty listing where every entry lost the race triggers a re-list, not None."
+relation_to_parent = "decomposes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+    "0.2",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/pipeline/queue.rs"
+lines = "153-202"
+code_text_hash = "sha256:6fd839f0a75b353024ff9e7a77b2d10e4dfc2c60bd1631e24e18cb17e9cf86cb"
+reason = "Full body of pop_next: outer loop re-lists pending/, inner for-loop iterates entries, each entry attempts fs::rename to claim; ENOENT continues, success returns ClaimedTask. The saw_any flag distinguishes drained-queue (Ok(None)) from all-races-lost (continue outer loop)."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "The claim step is atomic: fs::rename(src, dst) is invoked exactly once per pending entry; on Ok the function returns the claimed task; on ENOENT it continues to the next entry without retrying the same source path."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/pipeline/queue.rs"
+lines = "181-193"
+code_text_hash = "sha256:c323d18d74d33bf59dd1d7ecbccaa4b949fe46f73cf42fbc7aa15c0b5791a27c"
+reason = "match fs::rename(&src, &dst) has three arms: Ok(()) reads dst and returns Some(ClaimedTask); Err with ErrorKind::NotFound `continue`s the for-loop (line 191); any other Err propagates. No retry against the same src — moving to the next iterator entry preserves the loser-tries-another semantics."
+
+[[verified.proof.steps]]
+path = "0.1"
+claim = "Ok(None) is returned only when a fresh listing of pending/ yields zero file entries — never as a short-circuit when at least one entry was seen but all were claimed by other workers."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/pipeline/queue.rs"
+lines = "160-201"
+code_text_hash = "sha256:c369e76597d007222f00c068eaa384c9a92e7cff1daa65aeca7cfd318c03e519"
+reason = "saw_any is initialized false at the top of each outer-loop iteration (line 166) and flipped to true only when a regular file is observed in pending/ (line 176). The `if !saw_any { return Ok(None); }` guard at line 195 fires only when the freshly-read iterator contained no file entries. If saw_any was true but no rename succeeded, control falls through the if and the outer `loop` (line 160) re-iterates, re-listing pending/, per the comment at lines 198-200."
+
+[[verified.proof.steps]]
+path = "0.2"
+claim = "Early-return Ok(None) on a missing pending/ directory is consistent with the freshness invariant: a missing directory is structurally an empty queue, not a race-loss state, so it cannot misreport drained under concurrent load."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/pipeline/queue.rs"
+lines = "153-165"
+code_text_hash = "sha256:d8d29c7d785fb5e4954997c35754f0753abb2af25d1358a60f999a6089591f4e"
+reason = "Two None-returning early-exits exist before the loop: !pending.is_dir() (line 156) and fs::read_dir NotFound (line 163). Both correspond to no queue having ever been created or the parent removed wholesale — not a per-entry race where another worker grabbed our specific candidate. ensure_dirs() at line 159 between them recreates the directories before iteration, so the read_dir NotFound path is only reachable if the directory is destroyed between ensure_dirs and read_dir — vanishingly rare and indistinguishable from drained."

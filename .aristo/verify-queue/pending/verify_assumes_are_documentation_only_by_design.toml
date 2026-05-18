@@ -1,7 +1,0 @@
-id = "verify_assumes_are_documentation_only_by_design"
-text = "`assume` entries have no `verify` field by design — they describe external trust (OS guarantees, library invariants, environment contracts), not properties of THIS code, so there is no internal method that could verify them. They resolve to Bool(false) here (the same arm as opt-out intents) so the dispatcher's single skip-without-skill path handles both. A refactor that tries to verify assumes would either invent a verification semantic the design rejects or fail trying."
-file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 267)"
-text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
-body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
-prior_attempts = 1

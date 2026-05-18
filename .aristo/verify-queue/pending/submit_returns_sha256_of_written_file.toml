@@ -1,7 +1,0 @@
-id = "submit_returns_sha256_of_written_file"
-text = "On accept, the SDK prints `accepted: sha256:<hex>` to stdout where <hex> is the sha256 of the on-disk TOML body. The orchestrator can compare this against body_hash(text_returned_by_subagent) for a cheap integrity check: SDK is the sole writer, so a mismatch means the subagent's reported text diverged from what hit disk (corrupted cache, fabricated response). The hash anchors the write-acknowledgement so the orchestrator does not have to re-read the file just to validate the subagent's word."
-file = "crates/aristo-cli/src/commands/verify/submit.rs"
-site = "fn run_submit_verdict (line 62)"
-text_hash = "sha256:1cd3494cdce2019142ec33788c70f98216ec0896cceb8b63b7343b1fd8487f84"
-body_hash = "sha256:476ab3733a15987f3ad0df829be69e009ac0afca3146a3a15bc875e645ad4367"
-prior_attempts = 1

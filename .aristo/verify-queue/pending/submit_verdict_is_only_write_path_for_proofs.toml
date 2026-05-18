@@ -1,7 +1,0 @@
-id = "submit_verdict_is_only_write_path_for_proofs"
-text = "`aristo verify --submit-verdict` is the SINGLE write path for `.aristo/proofs/<id>.proof` files. Subagents have no Write-tool access to the proofs directory; this command is the only way a verdict reaches disk. A refactor that adds a second writer (e.g., direct file writes from the skill orchestrator, or a 'fast-path' that skips validation) would let unvalidated proofs land — defeating the schema gate that catches the failure modes the post-hoc --apply-verdicts validator was previously the only guard against (invalid enum variants, child-as-prior-step, out-of-range line citations)."
-file = "crates/aristo-cli/src/commands/verify/submit.rs"
-site = "fn run_submit_verdict (line 36)"
-text_hash = "sha256:aeb403650a57ce9b32dcdf5c7ce1d212cb3fe93d5f8af01f0f5826d53a3ddd96"
-body_hash = "sha256:476ab3733a15987f3ad0df829be69e009ac0afca3146a3a15bc875e645ad4367"
-prior_attempts = 1

@@ -1,0 +1,72 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
+produced_at_body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 2
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "resolve_verify_level dispatches the Bool(true) case through cfg.verify.default_method, with VerifyMethod::Test as the fallback when the project did not set one — matching the intent verbatim and avoiding any hard-coded override of the author's deferral."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "When the IndexEntry's verify field is Bool(true), resolve_verify_level returns VerifyLevel::Method(cfg.verify.default_method) when Some, and VerifyLevel::Method(VerifyMethod::Test) when None — both branches go through the project-default channel, neither side is hard-coded."
+relation_to_parent = "decomposes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "314-326"
+code_text_hash = "sha256:2b01704581321f22e12d1b3b470816047856447ef79be9326cd494e004212848"
+reason = "The function body matches the intent claim: Bool(true) branches into `match cfg.verify.default_method { Some(m) => VerifyLevel::Method(m), None => VerifyLevel::Method(VerifyMethod::Test) }`. The Some-arm forwards the project default; the None-arm falls back to the free-tier default `Test`. No hard-coded shortcut bypasses cfg.verify.default_method, and the `// free-tier default` comment on line 322 documents the fallback rationale."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/config/mod.rs"
+lines = "67-77"
+code_text_hash = "sha256:fa2d81f4af4fb3c2359361ae1648b1182b3ed27efb581275cb4d01797be3fb75"
+reason = "VerifyConfig.default_method is `Option<VerifyMethod>` with serde default; the doc comment explicitly states `None` means use the per-tier default (free -> `test`, paid -> `full` per G1). This is the project configuration channel the intent refers to as `[verify].default_method`, confirming the Some/None dispatch in resolve_verify_level is the wired-up project-policy lookup."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "When `cfg.verify.default_method = Some(m)`, the function returns `VerifyLevel::Method(m)` — the project default is honored verbatim with no override."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "320-321"
+code_text_hash = "sha256:0d4d896f59daf407e789adf389508fad0b17969b7dcac4584b5e8bf829db2e5a"
+reason = "The Some(m) arm directly constructs `VerifyLevel::Method(m)` from the project default, with no transformation, gating, or method-class downgrade. A unit test at lines 406-414 confirms: with `cfg.verify.default_method = Some(VerifyMethod::Full)`, the function returns `VerifyLevel::Method(VerifyMethod::Full)`."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "405-414"
+code_text_hash = "sha256:79bbb518e19361b3ddbf217d2743ed4be3803a664e78f2c2a3f8a609fc80e8e4"
+reason = "Unit test `bool_true_resolves_to_project_default_method_when_set` asserts exactly the Some-arm behavior: a Bool(true) intent + cfg.default_method=Some(Full) resolves to Method(Full). This is a mechanical confirmation of the Some-arm pass-through."
+
+[[verified.proof.steps]]
+path = "0.1"
+claim = "When `cfg.verify.default_method = None`, the function falls back to `VerifyLevel::Method(VerifyMethod::Test)` — the free-tier default — and not some other hard-coded method."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "322-322"
+code_text_hash = "sha256:6ddacfcfc31f05d0cf9cdff973d28dc482f2e84fcf8c20745fcb3d6c89538b51"
+reason = "The None arm constructs `VerifyLevel::Method(VerifyMethod::Test)` with an inline `// free-tier default` comment. `Test` is the documented free-tier default per G1; the fallback is encoded once here and not duplicated elsewhere in the dispatcher. The unit test `bool_true_falls_back_to_test_when_no_project_default` (lines 416-424) asserts: with a default ConfigFile (default_method=None), Bool(true) resolves to Method(Test)."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/config/mod.rs"
+lines = "70-74"
+code_text_hash = "sha256:51d4f197a45cdd10da0ed60b72d07a9eb623ca58c56483359dd3e468c78ffb06"
+reason = "VerifyConfig.default_method's doc comment specifies `None means use the per-tier default (free -> test, paid -> full per G1)`. The fallback constant `VerifyMethod::Test` in the resolver matches the documented free-tier default, confirming the resolver did not pick an arbitrary hard-coded method."

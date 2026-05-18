@@ -1,6 +1,0 @@
-id = "verify_pop_next_prints_task_or_empty_exit_zero"
-text = "`aristo verify --pop-next` is the worker-facing API: it atomically claims one pending task from `.aristo/verify-queue/pending/`, prints the task body (TOML) to stdout, and exits 0. When the queue is genuinely drained, it prints nothing and still exits 0 — the caller distinguishes 'drained' from 'task body' by checking whether stdout is empty. A refactor that printed a sentinel string (e.g., 'empty') on a drained queue would collide with any task content; a refactor that exited non-zero would force every worker to special-case the happy path. Print-or-empty is the contract."
-file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run_pop_next (line 144)"
-text_hash = "sha256:0da73449029c5ac290374f71589048e283bb0c913c998a23d1c344347f81978e"
-body_hash = "sha256:74a7875b3adf5c47c7af8c22f122f1298f0e82ba013e1528b398ef9fa5944145"

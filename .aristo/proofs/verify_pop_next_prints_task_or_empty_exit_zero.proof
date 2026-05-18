@@ -1,0 +1,30 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:0da73449029c5ac290374f71589048e283bb0c913c998a23d1c344347f81978e"
+produced_at_body_hash = "sha256:74a7875b3adf5c47c7af8c22f122f1298f0e82ba013e1528b398ef9fa5944145"
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "run_pop_next satisfies the print-or-empty contract: on Some(task) it prints task.content verbatim to stdout and returns Ok(()) (exit 0); on None it prints nothing and returns Ok(()) (exit 0). The underlying pop_next call provides the atomic-claim guarantee."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "run_pop_next prints the task body to stdout and exits 0 when the queue yields a task, and prints nothing and exits 0 when the queue is drained — implementing the print-or-empty contract atop pipeline::queue::pop_next."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "162-173"
+code_text_hash = "sha256:d19ae2281b24c1ae7f1be225d5a9f4d700329d3149801483af2dade3b9e60490"
+reason = 'Function body: matches pop_next(&qdir)? against Some(task)/None. On Some, executes print!("{}", task.content) — formatted-print without a trailing newline, emitting the task body verbatim to stdout — then returns Ok(()). On None, returns Ok(()) with no print at all. The ? operator only propagates I/O errors from pop_next itself (which surface as non-zero exit via CliResult); on the happy path the function returns Ok(()), which the CLI translates to exit 0. There is no sentinel string and no explicit non-zero exit path on drained-queue.'
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "pop_next_uses_atomic_rename_for_race_safety"
+at_text_hash = "sha256:cb34810dee70f2d7a8c4be45ab2b0cec9cd76cc6fff55a6d58bcff37f01a01ab"
+relation = "composes"
+reason = "pop_next is the atomic-claim primitive: it returns Some(ClaimedTask) for a successfully-claimed entry or Ok(None) only when pending/ is genuinely empty. run_pop_next is the thin CLI wrapper that surfaces that two-state outcome as the print-or-empty stdout contract, so the atomicity claim composes directly into the CLI-level contract this intent describes."

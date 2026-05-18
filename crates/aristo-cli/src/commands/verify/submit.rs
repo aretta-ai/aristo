@@ -34,16 +34,15 @@ use crate::pipeline::queue::{self, QueueDir};
 use crate::{CliError, CliResult, Workspace};
 
 #[aristo::intent(
-    "`aristo verify --submit-verdict` is the SINGLE write path for \
-     `.aristo/proofs/<id>.proof` files. Subagents have no Write-tool \
-     access to the proofs directory; this command is the only way a \
-     verdict reaches disk. A refactor that adds a second writer (e.g., \
-     direct file writes from the skill orchestrator, or a 'fast-path' \
-     that skips validation) would let unvalidated proofs land — \
-     defeating the schema gate that catches the failure modes the \
-     post-hoc --apply-verdicts validator was previously the only \
-     guard against (invalid enum variants, child-as-prior-step, \
-     out-of-range line citations).",
+    "`aristo verify --submit-verdict` is the SINGLE *creation* path \
+     for `.aristo/proofs/<id>.proof` files (subagents have no \
+     Write-tool access). `--apply-verdicts` may re-write an existing \
+     proof in-place to stamp computed ground hashes, but only after \
+     running the same `validate()` schema gate. A refactor that added \
+     a third writer bypassing `validate()` would let unvalidated \
+     proofs land — defeating the schema gate that catches invalid \
+     enum variants, child-as-prior-step, and out-of-range line \
+     citations.",
     verify = "neural",
     id = "submit_verdict_is_only_write_path_for_proofs"
 )]

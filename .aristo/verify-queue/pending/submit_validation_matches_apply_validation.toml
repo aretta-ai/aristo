@@ -1,7 +1,0 @@
-id = "submit_validation_matches_apply_validation"
-text = "Submit-time validation runs the EXACT SAME `validate()` function as `--apply-verdicts`. Schema rules, ground resolution, and hash-staleness checks must not diverge between the write gate and the apply gate. A verdict the validator accepts at submit MUST be a verdict the validator would accept at apply (modulo intervening index/source drift). A divergence — even subtly different rules in the two paths — would let proofs land that later fail apply, wasting the subagent's repair budget on unfixable schema mismatches."
-file = "crates/aristo-cli/src/commands/verify/submit.rs"
-site = "fn run_submit_verdict (line 50)"
-text_hash = "sha256:c4506ca7cf8649dadb6b0b178ec20fb2430647c39e732a81835580b548e8ddea"
-body_hash = "sha256:476ab3733a15987f3ad0df829be69e009ac0afca3146a3a15bc875e645ad4367"
-prior_attempts = 1
