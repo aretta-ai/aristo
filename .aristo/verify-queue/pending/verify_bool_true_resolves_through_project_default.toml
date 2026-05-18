@@ -1,0 +1,7 @@
+id = "verify_bool_true_resolves_through_project_default"
+text = """Bool(true) resolves through the project's [verify].default_method and falls back to the free-tier default ("test") when absent. A refactor that hard-codes either side would silently change verification depth for every annotation that opted into the project default — those are precisely the entries where the author deferred to project policy, so a silent override defeats the deferral."""
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+site = "fn resolve_verify_level (line 279)"
+text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
+body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
+prior_attempts = 1

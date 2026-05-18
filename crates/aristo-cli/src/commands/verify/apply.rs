@@ -79,18 +79,34 @@ pub(crate) fn run_apply_verdicts(
 
     if !updates.is_empty() {
         apply_status_updates(ws, index, &updates)?;
-        // Cleanup pass: for each successfully-applied id, remove the prior-
-        // attempt backup (if any) since the new verdict has landed; and
-        // prune the entry from .aristo/pending-neural.toml so the next
-        // /aristo-neural-verify run doesn't try to re-process already-
-        // landed verdicts.
+        aristo::intent_stmt!(
+            "After `--apply-verdicts` accepts a proof, sweep any straggler \
+             queue state for that id: (a) delete the .proof.bak from the \
+             prior attempt, (b) clear the claimed/<id>.toml (no-op if the \
+             worker already cleared it via submit-verdict), (c) clear any \
+             pending/<id>.toml that survived an out-of-band submit (rare; \
+             happens if a user manually wrote a .proof file without going \
+             through the queue pop/submit cycle). Belt-and-suspenders: \
+             the submit-verdict path is the primary clear, this is the \
+             safety net for replay and out-of-band-submit cases.",
+            verify = "neural",
+            id = "apply_sweeps_queue_stragglers_after_accept"
+        );
+        let qdir = crate::pipeline::queue::QueueDir::for_pipeline(
+            ws,
+            crate::commands::verify::pending::PIPELINE_NAME,
+        );
         for (id, _) in &updates {
             let bak = crate::commands::verify::pending::proof_bak_path_for(ws, id);
             if bak.is_file() {
                 let _ = std::fs::remove_file(&bak);
             }
+            crate::pipeline::queue::submit_done(&qdir, id)?;
+            let pending_path = qdir.pending_path(id);
+            if pending_path.is_file() {
+                let _ = std::fs::remove_file(&pending_path);
+            }
         }
-        prune_pending(ws, &updates)?;
     }
 
     print_summary(accepted, rejected, parse_errors.len());
@@ -288,41 +304,6 @@ fn set_status(entry: &mut IndexEntry, status: Status) {
         IndexEntry::Intent(e) => e.status = status,
         IndexEntry::Assume(e) => e.status = status,
     }
-}
-
-#[aristo::intent(
-    "After --apply-verdicts succeeds for an entry, remove that entry from \
-     .aristo/pending-neural.toml so the next /aristo-neural-verify run \
-     does not re-process already-landed verdicts. If pruning empties \
-     the file, delete the file. Without this, the pending list \
-     accumulates stale entries that have been processed; the skill \
-     would re-spawn subagents against work that's done.",
-    verify = "test",
-    id = "apply_prunes_pending_for_landed_verdicts"
-)]
-fn prune_pending(ws: &Workspace, applied: &[(AnnotationId, Status)]) -> CliResult<()> {
-    let path = ws.aristo_dir().join("pending-neural.toml");
-    if !path.is_file() {
-        return Ok(());
-    }
-    let Ok(raw) = std::fs::read_to_string(&path) else {
-        return Ok(());
-    };
-    let Ok(mut pf) = toml::from_str::<crate::commands::verify::pending::PendingFile>(&raw) else {
-        return Ok(());
-    };
-    let applied_ids: std::collections::HashSet<String> =
-        applied.iter().map(|(id, _)| id.as_str().to_string()).collect();
-    pf.pending.retain(|e| !applied_ids.contains(&e.id));
-    if pf.pending.is_empty() {
-        let _ = std::fs::remove_file(&path);
-        return Ok(());
-    }
-    let toml_text = toml::to_string_pretty(&pf).map_err(|e| CliError::Other {
-        message: format!("re-serializing pending-neural.toml: {e}"),
-        exit_code: 1,
-    })?;
-    atomic_write(&path, &toml_text)
 }
 
 fn print_summary(accepted: usize, rejected: usize, parse_errors: usize) {

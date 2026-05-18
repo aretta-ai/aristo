@@ -22,6 +22,7 @@ use aristo_core::proof::ProofFile;
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::read_index;
 use crate::filter::Filter;
+use crate::pipeline;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::workspace::Workspace;
 use crate::{CliError, CliResult};
@@ -39,6 +40,7 @@ pub(crate) fn run(
     apply_verdicts: bool,
     rewrite_hashes: bool,
     submit_verdict: bool,
+    pop_next: bool,
     id: Option<String>,
     json: Option<String>,
 ) -> CliResult<()> {
@@ -56,9 +58,17 @@ pub(crate) fn run(
         return submit::run_submit_verdict(&ws, &index, &id_str, &json_str);
     }
 
+    if pop_next {
+        return run_pop_next(&ws);
+    }
+
     if apply_verdicts {
         return apply::run_apply_verdicts(&ws, &index, rewrite_hashes);
     }
+
+    // Migrate any legacy single-file pending queue before this run produces
+    // new work. Idempotent.
+    pending::migrate_legacy_pending_if_present(&ws)?;
 
     let filters = parse_filters(filter_strings)?;
     let cfg = ws.load_config();
@@ -100,9 +110,12 @@ pub(crate) fn run(
         }
     }
 
-    if !pending_neural.is_empty() {
-        pending::write_pending_neural(&ws, &index, &pending_neural)?;
-    }
+    let enqueued = if !pending_neural.is_empty() {
+        pending::enqueue_pending(&ws, &index, &pending_neural)?
+    } else {
+        0
+    };
+    let _ = enqueued; // count surfaced via emit_summary below
 
     emit_summary(&stats, pending_neural.len(), pending_test, pending_full);
 
@@ -128,6 +141,32 @@ pub(crate) fn run(
     Ok(())
 }
 
+#[aristo::intent(
+    "`aristo verify --pop-next` is the worker-facing API: it atomically \
+     claims one pending task from `.aristo/verify-queue/pending/`, prints \
+     the task body (TOML) to stdout, and exits 0. When the queue is \
+     genuinely drained, it prints nothing and still exits 0 — the caller \
+     distinguishes 'drained' from 'task body' by checking whether stdout \
+     is empty. A refactor that printed a sentinel string (e.g., 'empty') \
+     on a drained queue would collide with any task content; a refactor \
+     that exited non-zero would force every worker to special-case the \
+     happy path. Print-or-empty is the contract.",
+    verify = "neural",
+    id = "verify_pop_next_prints_task_or_empty_exit_zero"
+)]
+fn run_pop_next(ws: &Workspace) -> CliResult<()> {
+    let qdir = pipeline::queue::QueueDir::for_pipeline(ws, pending::PIPELINE_NAME);
+    match pipeline::queue::pop_next(&qdir)? {
+        Some(task) => {
+            // stdout: the task body verbatim. Workers parse this as TOML
+            // (matching the VerifyTask schema).
+            print!("{}", task.content);
+            Ok(())
+        }
+        None => Ok(()),
+    }
+}
+
 #[derive(Default, Debug)]
 struct Stats {
     /// Annotations with `verify = false`: documentation only, skipped
@@ -150,7 +189,7 @@ fn emit_summary(stats: &Stats, pending_neural: usize, pending_test: usize, pendi
             "entries"
         };
         println!(
-            "→ {pending_neural} {word} pending neural verification — wrote .aristo/pending-neural.toml."
+            "→ {pending_neural} {word} pending neural verification — enqueued under .aristo/verify-queue/pending/."
         );
         println!(
             "  In Claude Code (or another agent with the aristo-neural-verify skill installed), run:"

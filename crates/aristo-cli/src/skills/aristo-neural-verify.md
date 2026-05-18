@@ -8,71 +8,81 @@ sdk_version: {{SDK_VERSION}}
 
 When the user invokes this skill (typically by typing `/aristo-neural-verify`, but also when they ask to "verify the neural intents" or "run aristo verify"), follow this orchestration exactly. The Aristo SDK has already done the dispatch + validator work; **your job is to produce verdicts the SDK validates and writes, NOT to update the index or proofs directory directly.**
 
-## Step 1 — read the pending request
+## Step 1 — check the queue
 
-The SDK wrote `.aristo/pending-neural.toml` listing every annotation needing neural verification. It has the form:
+The SDK enqueued each annotation needing neural verification as a separate task file at `.aristo/verify-queue/pending/<id>.toml`. Workers atomically pop one task at a time via `aristo verify --pop-next`.
 
-```toml
-schema_version = 1
+Run a quick check:
 
-[[pending]]
-id = "balance_no_duplicate_cells"
-text = "Balance never duplicates cells across rebalance operations."
-file = "src/btree.rs"
-site = "fn balance_non_root (line 142)"
-text_hash = "sha256:..."
-body_hash = "sha256:..."
-
-[[pending]]
-id = "..."
-...
+```bash
+ls .aristo/verify-queue/pending/ 2>/dev/null | wc -l
 ```
 
-If the file doesn't exist OR `pending = []`, report "no pending neural verifications" and stop. Do not invent work.
+If empty (or the directory doesn't exist), report "no pending neural verifications" and stop. Do not invent work.
 
-If the file lists entries, proceed to step 2.
+If there are pending tasks, proceed to step 2.
 
 ## Step 2 — read the current index
 
-Before spawning any subagent, read `.aristo/index.toml` once and keep it loaded. Subagents will need to look up cited intent / assume ids in it — they **must not** make up ids or recall them from memory. The index is the single source of truth for which annotations exist.
+Before spawning any worker, read `.aristo/index.toml` once and keep it loaded. Workers will need to look up cited intent / assume ids in it — they **must not** make up ids or recall them from memory. The index is the single source of truth for which annotations exist.
 
-Pass the full index content into every subagent prompt so it can grep through it without an extra file read.
+Pass the full index content into every worker prompt so it can grep through it without an extra file read.
 
-## Step 3 — spawn ONE subagent per entry (parallel where possible)
+## Step 3 — spawn N parallel workers (pop-loop pattern)
 
-For each `pending` entry, spawn a fresh `Agent` subagent (use the `general-purpose` subagent_type) **with only `Bash` and `Read` tools allowed** — no `Write`. The subagent runs in its own context window, isolating its judgment from the other entries' verdicts. **Subagents cannot create `.proof` files directly**; the SDK is the sole writer via `aristo verify --submit-verdict`.
+Spawn up to **N=2** fresh `Agent` workers (use the `general-purpose` subagent_type) in parallel. Each worker loops on `aristo verify --pop-next` until the queue is drained. Workers race-safely on the queue: POSIX rename atomicity guarantees two workers calling `--pop-next` on the same task cannot both succeed.
+
+Each worker gets **`Bash` and `Read` tools only** — no `Write`. **Workers cannot create `.proof` files directly**; the SDK is the sole writer via `aristo verify --submit-verdict`.
 
 Use a prompt structured exactly like this:
 
 ```
-You are verifying ONE aristo intent annotation. Construct a JSON-
-serialized verdict and submit it to the Aristo SDK via the CLI; the
-SDK will validate the schema, write the .proof file on accept, and
-return a sha256 anchor. You do NOT write any files yourself. You do
-NOT modify any source files.
+You are a verify-pipeline WORKER. You loop on
+`aristo verify --pop-next` to atomically claim one queued task at a
+time, verify the focal annotation, and submit the verdict via
+`aristo verify --submit-verdict`. The SDK is the sole writer of
+`.proof` files — you do NOT write any files yourself. You do NOT
+modify any source files.
 
-## Intent under verification
+## Worker loop
 
-id:              {{id}}
-text:            """{{text}}"""
-file:            {{file}}
-site:            {{site}}
-text_hash:       {{text_hash}}
-body_hash:       {{body_hash}}
-prior_attempts:  {{prior_attempts}}  # 0 on first try; carried over from any
-                                     # previous rejected proof for this id.
-                                     # Use as `attempts = prior_attempts + 1`.
+```bash
+while true; do
+  task=$(aristo verify --pop-next)
+  if [ -z "$task" ]; then
+    break        # queue drained — exit cleanly
+  fi
+  # parse $task (TOML), do the verification work, submit the verdict.
+  # See "Per-task work" below for the per-iteration steps.
+done
+```
+
+The task body printed by `--pop-next` is TOML in this shape:
+
+```toml
+id = "balance_no_duplicate_cells"
+text = "Balance never duplicates cells..."
+file = "src/btree.rs"
+site = "fn balance_non_root (line 142)"
+text_hash = "sha256:..."
+body_hash = "sha256:..."
+prior_attempts = 0   # may be omitted when zero
+```
+
+Other workers may be running concurrently against the same queue;
+POSIX rename atomicity guarantees you and they will never receive
+the same task.
 
 ## Current index (for grounding lookups)
 
 The full content of `.aristo/index.toml` is at that path. Read it
-ONCE before citing any intent or assume ground. Any intent or assume
-`id` you cite MUST appear verbatim in that file.
+ONCE at startup before processing any task. Any intent or assume
+`id` you cite as a ground MUST appear verbatim in that file.
 
-## Your task
+## Per-task work
 
-Read the source file `{{file}}`, focus on `{{site}}` and surrounding
-code. Decide whether the intent's claim holds:
+For each claimed task, read the source file `<file>` at the popped
+task's `file:site`, then decide whether the intent's claim holds:
 
 - **verified**: the claim holds. Provide an informal proof tree.
 - **counterexample**: the claim does NOT hold. Provide a concrete
@@ -90,8 +100,8 @@ names are `snake_case`; enum variants are `kebab-case`. Top-level:
   "verdict": {
     "type": "verified",                         // or "counterexample" or "inconclusive"
     "method": "neural",
-    "produced_at_text_hash": "{{text_hash}}",   // copy verbatim from prompt
-    "produced_at_body_hash": "{{body_hash}}",   // copy verbatim from prompt
+    "produced_at_text_hash": "<text_hash from popped task>",   // copy verbatim
+    "produced_at_body_hash": "<body_hash from popped task>",   // copy verbatim
     "produced_by": "aristo-neural-verifier@v0.0.6",
     "attempts": <prior_attempts + 1>,           // integer literal — e.g. prior_attempts=2 → 3
     "property_kind": "invariant"                // or postcondition | precondition | equivalence | safety | progress
@@ -175,56 +185,63 @@ Inconclusive form:
 
 Invoke the SDK to validate and write the proof. Wrap the JSON in
 SINGLE quotes (JSON only uses double quotes internally, so the wrap is
-safe):
+safe). The `<id>` is the `id` field from the popped task body:
 
-aristo verify --submit-verdict --id {{id}} --json '<JSON-FROM-ABOVE>'
+aristo verify --submit-verdict --id <id> --json '<JSON-FROM-ABOVE>'
 
 On success: stdout contains `accepted: sha256:<64-hex>`. The SDK has
-written `.aristo/proofs/{{id_with_colons_to_underscores}}.proof` and
-stamped any computed hashes. Capture the sha256 line.
+written `.aristo/proofs/<id-with-colons-to-underscores>.proof`, stamped
+the computed hashes, AND removed the task from the queue's `claimed/`
+directory. Capture the sha256 line for the orchestrator report.
 
 On failure: stderr contains a structured `verdict rejected (N check(s)
 failed):` block listing each failure with location + detail, OR a
 `--json: parse error: ...` if the JSON itself is malformed. Read the
 errors, FIX the JSON, and re-invoke the same command. You may retry up
-to TWO times inline (so at most three total submit calls in one
-subagent run). If still failing after the third try, give up and
-return the last failure verbatim — the orchestrator will report it as
-rejected.
+to TWO times inline (so at most three total submit calls per task). If
+still failing after the third try, give up on this task and continue
+the loop with the next `--pop-next` — the task you just failed will
+stay in `claimed/` and be reaped (returned to `pending/`) by a later
+run; record the failure in your accumulating per-task summary.
 
 ## Return to the orchestrator
 
-After a successful submit, do ONE Read of the on-disk proof file at
-`.aristo/proofs/{{id_with_colons_to_underscores}}.proof` to capture
-the SDK's TOML form (with computed hashes stamped). Return EXACTLY:
+When your worker loop exits (queue drained), return a summary of all
+tasks you processed during this run. One block per task, separated by
+`===`:
 
-accepted: sha256:<the hex from submit stdout>
+```
+accepted: <id>  sha256:<hex>
 ---
-<the TOML content from the file, verbatim>
-
-No commentary before or after. The two parts are separated by a single
-line containing exactly `---`. The orchestrator computes
-sha256(TOML-content) and compares with the reported hash for an
-integrity check; mismatch is treated as failure.
-
-If you exhausted retries without a successful submit, return EXACTLY:
-
-rejected: <one-line summary>
+<TOML content from .aristo/proofs/<id-with-colons-to-underscores>.proof, verbatim>
+===
+accepted: <id-2>  sha256:<hex>
 ---
-<the full stderr output from the final failed submit attempt>
+<TOML content>
+===
+rejected: <id-3>  <one-line summary>
+---
+<full stderr from the final failed submit attempt for this task>
 ```
 
-When the subagent returns, capture its output. The first line tells
-you the outcome (`accepted:` vs `rejected:`); the body below `---` is
-either the canonical TOML or the failure stderr.
+For each accepted task, do ONE `Read` of the on-disk proof file to
+capture the SDK's stamped TOML form. For rejected tasks, include the
+stderr verbatim so the orchestrator can show it to the user.
 
-## Step 4 — verify the acknowledgement
+If your worker drained the queue without processing anything (the
+queue was already empty when you started), return just:
 
-For each subagent's returned text:
+```
+worker exited: queue drained on entry
+```
+
+## Step 4 — verify each worker's report
+
+For each worker's returned text, split on `===` to get per-task blocks. For each block:
 
 1. Split on the first line containing exactly `---`. Header line first; body after.
-2. If the header starts with `rejected:` — record as a rejection with the body as the failure detail; skip steps 4.3–4.5 for this entry.
-3. If the header starts with `accepted: sha256:<hex>` — extract `<hex>`.
+2. If the header starts with `rejected:` — record as a rejection with the body as the failure detail; skip 4.3–4.5 for this task.
+3. If the header starts with `accepted: <id>  sha256:<hex>` — extract `<id>` and `<hex>`.
 4. Compute the sha256 of the body (the canonical TOML). Many environments have `shasum -a 256` or `sha256sum`; an Aristo binary helper exists at `aristo show --json sha256 <stdin>` if needed. The simplest is `printf '%s' "$body" | shasum -a 256`.
 5. Compare. Match → record as accepted; keep the body in memory for step 7 (avoids a re-Read). Mismatch → record as rejected with detail "subagent reported sha256 does not match returned TOML (subagent cache corrupted or fabricated); on-disk file is still the SDK's write, but the returned text cannot be trusted".
 

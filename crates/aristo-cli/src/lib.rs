@@ -9,6 +9,7 @@
 mod commands;
 mod error;
 mod filter;
+mod pipeline;
 mod preflight;
 mod skills;
 mod workspace;
@@ -200,6 +201,13 @@ enum Commands {
         /// that gets written on accept.
         #[arg(long = "json", requires = "submit_verdict")]
         json: Option<String>,
+        /// Worker-facing API: atomically claim one task from the
+        /// pending queue and print its TOML body to stdout. Empty
+        /// stdout means the queue is drained (still exits 0). Used by
+        /// the in-agent neural-verify skill in a loop:
+        /// `while task=$(aristo verify --pop-next); [ -n "$task" ]; do ...`
+        #[arg(long = "pop-next", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
+        pop_next: bool,
     },
 
     /// Agentic prose-improvement pass via the critique skill.
@@ -274,6 +282,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             submit_verdict,
             id,
             json,
+            pop_next,
         } => commands::verify::run(
             &filters,
             rerun,
@@ -282,6 +291,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             apply_verdicts,
             rewrite_hashes,
             submit_verdict,
+            pop_next,
             id,
             json,
         ),

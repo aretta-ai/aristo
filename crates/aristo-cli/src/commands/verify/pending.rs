@@ -1,17 +1,14 @@
-//! Pending-neural-verification request file at `.aristo/pending-neural.toml`.
+//! Verify pipeline's per-entry task production.
 //!
-//! When `aristo verify` encounters `verify="neural"` entries needing
-//! work, it writes this file as the contract with the in-agent
-//! `aristo-neural-verify` skill. The skill reads it, dispatches one
-//! subagent per entry to produce a verdict, writes the verdicts as
-//! `.aristo/proofs/<id>.proof`, and calls `aristo verify --apply-verdicts`
-//! to validate + apply.
+//! `aristo verify` (without `--apply-verdicts` / `--submit-verdict` /
+//! `--pop-next`) iterates the index, decides which entries need neural
+//! verification, and writes one task file per id under
+//! `.aristo/verify-queue/pending/<id>.toml` via [`pipeline::queue::enqueue`].
 //!
-//! The file is transient: it's the request, not the result. The skill
-//! is expected to delete or truncate it after a successful run; the
-//! SDK does not require this for correctness (the next `aristo verify`
-//! invocation rewrites it from scratch) but it keeps the workspace
-//! tidy.
+//! Workers (subagents spawned by `aristo-neural-verify`) call
+//! `aristo verify --pop-next` to atomically claim one task at a time.
+//! See [`crate::pipeline::queue`] for the directory layout + race-safety
+//! guarantees.
 
 use std::fs;
 
@@ -19,18 +16,17 @@ use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Sha256};
 use aristo_core::proof::ProofFile;
 use serde::{Deserialize, Serialize};
 
-use crate::commands::index::atomic_write;
 use crate::commands::verify::validator::MAX_REPAIR_ATTEMPTS;
+use crate::pipeline::queue::{self, QueueDir};
 use crate::{CliError, CliResult, Workspace};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct PendingFile {
-    pub schema_version: u32,
-    pub pending: Vec<PendingEntry>,
-}
+/// The verify pipeline's name in `.aristo/<pipeline>-queue/`. Used by
+/// every per-pipeline call site so a typo here doesn't fragment the queue
+/// across siblings.
+pub(crate) const PIPELINE_NAME: &str = "verify";
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct PendingEntry {
+pub(crate) struct VerifyTask {
     pub id: String,
     pub text: String,
     pub file: String,
@@ -51,24 +47,27 @@ fn is_zero_u32(n: &u32) -> bool {
 }
 
 #[aristo::intent(
-    "The pending file is a REQUEST from the SDK to the in-agent skill, \
-     not a result. The skill reads it, dispatches per-entry verification \
-     work, and writes proofs to `.aristo/proofs/<id>.proof` for the SDK \
-     to validate via `--apply-verdicts`. A refactor that has the SDK \
-     auto-read its own pending file (e.g., to call an LLM directly) \
-     would conflate the CLI with the agent and break the design split: \
-     the CLI never makes LLM calls; the agent never bypasses the SDK \
-     validator.",
+    "Each pending verify task is a REQUEST from the SDK to the in-agent \
+     skill, enqueued at `.aristo/verify-queue/pending/<id>.toml`. Workers \
+     pop one at a time via `aristo verify --pop-next`. The SDK never reads \
+     these task files back as verdicts — verdicts arrive via \
+     `aristo verify --submit-verdict` and land at `.aristo/proofs/<id>.proof` \
+     after the mechanical validator gates them. A refactor that has the \
+     SDK auto-process its own queue (e.g., to call an LLM directly) would \
+     conflate the CLI with the agent and break the design split: the CLI \
+     never makes LLM calls; the agent never bypasses the SDK validator.",
     verify = "neural",
     id = "pending_neural_file_is_sdk_to_agent_request_not_a_result"
 )]
-pub(crate) fn write_pending_neural(
+pub(crate) fn enqueue_pending(
     ws: &Workspace,
     index: &IndexFile,
     ids: &[&AnnotationId],
-) -> CliResult<()> {
-    let mut entries = Vec::with_capacity(ids.len());
+) -> CliResult<usize> {
+    let qdir = QueueDir::for_pipeline(ws, PIPELINE_NAME);
+    qdir.ensure_dirs()?;
     let mut budget_exhausted: Vec<&AnnotationId> = Vec::new();
+    let mut enqueued = 0usize;
     for id in ids {
         let Some(entry) = index.entries.get(*id) else {
             continue;
@@ -83,7 +82,7 @@ pub(crate) fn write_pending_neural(
         // Overwrites any pre-existing .bak — the system tracks only the
         // most-recent prior attempt, not full history.
         backup_existing_proof(ws, id);
-        entries.push(PendingEntry {
+        let task = VerifyTask {
             id: id.as_str().to_string(),
             text: entry_text(entry).to_string(),
             file: entry_file(entry).to_string(),
@@ -91,28 +90,77 @@ pub(crate) fn write_pending_neural(
             text_hash: entry_text_hash(entry).clone(),
             body_hash: entry_body_hash(entry).clone(),
             prior_attempts,
-        });
+        };
+        let task_toml = toml::to_string_pretty(&task).map_err(|e| CliError::Other {
+            message: format!("serializing verify-queue task {}: {e}", id.as_str()),
+            exit_code: 1,
+        })?;
+        queue::enqueue(&qdir, id, &task_toml)?;
+        enqueued += 1;
     }
     if !budget_exhausted.is_empty() {
         warn_budget_exhausted(&budget_exhausted);
     }
-    let pf = PendingFile {
-        schema_version: 1,
-        pending: entries,
-    };
-    let toml_text = toml::to_string_pretty(&pf).map_err(|e| CliError::Other {
-        message: format!("serializing pending-neural.toml: {e}"),
-        exit_code: 1,
-    })?;
-    let path = ws.aristo_dir().join("pending-neural.toml");
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    atomic_write(&path, &toml_text)
+    Ok(enqueued)
 }
 
 #[aristo::intent(
-    "Prior attempts for an id come from the existing `.aristo/proofs/ \
+    "If a legacy `.aristo/pending-neural.toml` (single-file format from \
+     v0.0.6) is present, expand each entry into per-id queue files under \
+     `.aristo/verify-queue/pending/` and delete the legacy file. Runs at \
+     the start of every `aristo verify` invocation. Idempotent: a second \
+     run with no legacy file is a no-op. Single-pass migration — there \
+     is no compat shim that re-reads the legacy format on subsequent \
+     runs.",
+    verify = "test",
+    id = "verify_migrates_legacy_pending_neural_toml_to_queue"
+)]
+pub(crate) fn migrate_legacy_pending_if_present(ws: &Workspace) -> CliResult<()> {
+    let legacy_path = ws.aristo_dir().join("pending-neural.toml");
+    if !legacy_path.is_file() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&legacy_path)?;
+    #[derive(Deserialize)]
+    struct LegacyFile {
+        #[allow(dead_code)]
+        schema_version: u32,
+        pending: Vec<VerifyTask>,
+    }
+    let parsed: LegacyFile = match toml::from_str(&raw) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "warning: legacy {} failed to parse ({e}); deleting it. \
+                 Run `aristo verify` again to re-populate the new queue.",
+                legacy_path.display()
+            );
+            let _ = fs::remove_file(&legacy_path);
+            return Ok(());
+        }
+    };
+    let qdir = QueueDir::for_pipeline(ws, PIPELINE_NAME);
+    qdir.ensure_dirs()?;
+    for task in parsed.pending {
+        let Ok(id) = AnnotationId::parse(&task.id) else {
+            continue;
+        };
+        let task_toml = toml::to_string_pretty(&task).map_err(|e| CliError::Other {
+            message: format!("re-serializing migrated task {}: {e}", task.id),
+            exit_code: 1,
+        })?;
+        queue::enqueue(&qdir, &id, &task_toml)?;
+    }
+    let _ = fs::remove_file(&legacy_path);
+    eprintln!(
+        "note: migrated legacy `.aristo/pending-neural.toml` to \
+         `.aristo/verify-queue/pending/` (one task per file)."
+    );
+    Ok(())
+}
+
+#[aristo::intent(
+    "Prior attempts for an id come from the existing `.aristo/proofs/\
      <id>.proof` file (if any), parsed once to extract verdict.attempts. \
      Carrying this across re-spawns activates the K-bounded repair \
      budget that would otherwise be dead code: each fresh subagent \
@@ -150,8 +198,8 @@ pub(crate) fn proof_bak_path_for(ws: &Workspace, id: &AnnotationId) -> std::path
 }
 
 #[aristo::intent(
-    "When `aristo verify` re-pends an entry that already has a .proof on \
-     disk, move the existing proof to <id>.proof.bak before the next \
+    "When `aristo verify` re-enqueues an entry that already has a .proof \
+     on disk, move the existing proof to <id>.proof.bak before the next \
      attempt overwrites it. Single-deep backup — overwrites any prior \
      .bak. Lets the user diff a rejected re-attempt against the prior \
      verdict. The .bak is auto-deleted on successful --apply-verdicts.",

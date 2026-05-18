@@ -1,0 +1,6 @@
+id = "apply_sweeps_queue_stragglers_after_accept"
+text = "After `--apply-verdicts` accepts a proof, sweep any straggler queue state for that id: (a) delete the .proof.bak from the prior attempt, (b) clear the claimed/<id>.toml (no-op if the worker already cleared it via submit-verdict), (c) clear any pending/<id>.toml that survived an out-of-band submit (rare; happens if a user manually wrote a .proof file without going through the queue pop/submit cycle). Belt-and-suspenders: the submit-verdict path is the primary clear, this is the safety net for replay and out-of-band-submit cases."
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+site = "fn run_apply_verdicts (line 82)"
+text_hash = "sha256:a159b79648667c153c9917813799f8a7f6465885707e3c17a94b6f0907e8fd4b"
+body_hash = "sha256:21bc2fdeaea0cb6c238f46e8f71331e03d021715d7398a99da007d19ed980ba8"

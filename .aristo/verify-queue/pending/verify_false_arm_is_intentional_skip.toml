@@ -1,0 +1,7 @@
+id = "verify_false_arm_is_intentional_skip"
+text = "Invokes no skill, runs no test, writes no signed outcome. This is intentional, not incomplete — verify=false means documentation only. A contributor 'completing' this arm by adding a skill call defeats the opt-out semantic."
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+site = "fn run (line 91)"
+text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
+body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
+prior_attempts = 1

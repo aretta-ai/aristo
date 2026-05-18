@@ -84,14 +84,16 @@ fn verify_neural_intent_writes_pending_request_file() {
         .stdout(contains("1 entry pending neural verification"))
         .stdout(contains("/aristo-neural-verify"));
 
-    let pending = fs::read_to_string(tmp.path().join(".aristo/pending-neural.toml")).unwrap();
+    let task_path = tmp.path().join(".aristo/verify-queue/pending/my_intent.toml");
+    let task = fs::read_to_string(&task_path)
+        .unwrap_or_else(|e| panic!("expected queue task at {:?}: {e}", task_path));
     assert!(
-        pending.contains("id = \"my_intent\""),
-        "pending file must list the entry; got:\n{pending}"
+        task.contains("id = \"my_intent\""),
+        "queue task must list the id; got:\n{task}"
     );
     assert!(
-        pending.contains("text_hash"),
-        "pending file must include text_hash for the subagent to copy"
+        task.contains("text_hash"),
+        "queue task must include text_hash for the subagent to copy"
     );
 }
 
@@ -558,8 +560,8 @@ grounds = [{{ kind = "composition", reason = "single-step proof" }}]
         .success();
 
     assert!(
-        !tmp.path().join(".aristo/pending-neural.toml").exists(),
-        "no pending file should be written when nothing's pending"
+        !tmp.path().join(".aristo/verify-queue/pending/my_intent.toml").exists(),
+        "no queue task should be enqueued when nothing's pending"
     );
 }
 
@@ -604,7 +606,7 @@ grounds = [{{ kind = "composition", reason = "by inspection of source" }}]
         .assert()
         .success();
     assert!(
-        !tmp.path().join(".aristo/pending-neural.toml").exists(),
+        !tmp.path().join(".aristo/verify-queue/pending/my_intent.toml").exists(),
         "counterexample with valid proof must not be re-pended (GAP-2 fix)"
     );
 }
@@ -683,10 +685,13 @@ rationale = "would close gap"
         .arg("verify")
         .assert()
         .success();
-    let pending = fs::read_to_string(tmp.path().join(".aristo/pending-neural.toml")).unwrap();
+    let task_path = tmp.path().join(".aristo/verify-queue/pending/my_intent.toml");
+    let task = fs::read_to_string(&task_path).unwrap_or_else(|e| {
+        panic!("expected queue task at {:?}: {e}", task_path)
+    });
     assert!(
-        pending.contains("prior_attempts = 2"),
-        "pending file must carry prior_attempts; got:\n{pending}"
+        task.contains("prior_attempts = 2"),
+        "queue task must carry prior_attempts; got:\n{task}"
     );
 }
 
@@ -741,13 +746,10 @@ rationale = "would close gap"
         .stderr(contains("exhausted the repair budget"))
         .stderr(contains("stuck_intent"));
 
-    // Pending file must NOT include the budget-exhausted entry.
-    let pending_path = tmp.path().join(".aristo/pending-neural.toml");
-    if pending_path.exists() {
-        let pending = fs::read_to_string(&pending_path).unwrap();
-        assert!(
-            !pending.contains("stuck_intent"),
-            "budget-exhausted entry must be excluded from pending; got:\n{pending}"
-        );
-    }
+    // Queue must NOT have a task file for the budget-exhausted entry.
+    let task_path = tmp.path().join(".aristo/verify-queue/pending/stuck_intent.toml");
+    assert!(
+        !task_path.exists(),
+        "budget-exhausted entry must not be enqueued"
+    );
 }

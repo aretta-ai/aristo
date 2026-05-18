@@ -28,7 +28,9 @@ use aristo_core::index::{AnnotationId, IndexFile};
 use aristo_core::proof::ProofFile;
 
 use crate::commands::verify::apply::{stamp_ground_hashes, write_proof_atomic};
+use crate::commands::verify::pending::PIPELINE_NAME;
 use crate::commands::verify::validator::validate;
+use crate::pipeline::queue::{self, QueueDir};
 use crate::{CliError, CliResult, Workspace};
 
 #[aristo::intent(
@@ -114,6 +116,11 @@ pub(crate) fn run_submit_verdict(
         exit_code: 1,
     })?;
     let h = body_hash(&written);
+    // Clear the queue entry now that the artifact has landed. Idempotent —
+    // submit-done is a no-op if the entry isn't in claimed/ (e.g., submitted
+    // out-of-band by --apply-verdicts replay, or never popped from the queue).
+    let qdir = QueueDir::for_pipeline(ws, PIPELINE_NAME);
+    queue::submit_done(&qdir, &id)?;
     println!("accepted: {h}");
     Ok(())
 }
