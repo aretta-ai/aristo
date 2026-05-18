@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T20:37:39.022127Z"
+generated_at = "2026-05-18T20:51:54.093965Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -158,6 +158,17 @@ file = "crates/aristo-cli/src/commands/critique/validator.rs"
 site = "fn stamp_derived (line 130)"
 covered_region = "function"
 
+[critique_on_accept_stamps_disposition_in_critique_file]
+kind = "intent"
+text = "Accepting a critique finding stamps `disposition = accepted` into the corresponding finding inside `.aristo/critiques/<id>.critique`. Future `aristo critique --apply-findings` runs hide closed findings by default (the loop is closed: a reviewed finding doesn't re-surface). A refactor that updated the substrate's session state without touching the .critique file would leave the finding visible to every subsequent apply run as if no review had happened."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:69c6b0bc002a1f440dec892ddaa80995f6d92d3f205276a3bc491ad67edbe799"
+body_hash = "sha256:f22788475022a6c72fca19d0d2f8b4e2d5180e2c1ebce90b773eba433c420eb4"
+file = "crates/aristo-cli/src/commands/critique/session_kind.rs"
+site = "impl SessionKind for CritiqueReviewSession::on_accept (line 48)"
+covered_region = "function"
+
 [critique_queue_entries_are_self_contained]
 kind = "intent"
 text = "Critique queue entries embed the focal annotation text PLUS sibling and parent annotation texts as a self-contained TOML body under `.aristo/critique-queue/pending/<id>.toml`. Workers get Bash-only tooling (no Read, no Write) and decide findings purely from the embedded context — they cannot wander into the repo. A refactor that left the queue entry thin (id + hash only, agent reads source itself) would re-introduce the very failure mode this design defends against: agents spending tokens on unrelated reads and producing critique grounded in irrelevant code."
@@ -177,7 +188,7 @@ status = "unknown"
 text_hash = "sha256:c2fc45fff111078b8adba8b37b554eedb85cf2bc5338c40cb597a5de1eec4d5e"
 body_hash = "sha256:f6d21a4ff2907342b72fc957f27732a05785f19c9fd60273b5d6ff3d3bb1cce6"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
-site = "fn run (line 29)"
+site = "fn run (line 30)"
 covered_region = "function"
 
 [critique_sibling_embedding_capped_at_five_per_parent]
@@ -605,6 +616,17 @@ text_hash = "sha256:46c84821843266195127e5ae086761da1c7aaefddb116c6ba041da7c7aa9
 body_hash = "sha256:85580bce2249ffb2c3574085d539b0b8d6a6fc555d624bf82fe36f019ae017bb"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn run (line 38)"
+covered_region = "function"
+
+[stamp_disposition_uses_atomic_write]
+kind = "intent"
+text = "Stamping a disposition mutates the on-disk .critique file via atomic_write (temp + rename). The .critique file is the audit trail of every triage decision against this critique; a non-atomic write would deserialize-fail on partial state and look to `--apply-findings` like the critique has vanished."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:30eb056875cb3bcb56333422b25cced7c40228af68962f9e8b7bc085af80ee7d"
+body_hash = "sha256:32898249d7da4ca2fc8ef6c7eefe4cf6d97eccd2ee9af467e3d19be9a9c1933a"
+file = "crates/aristo-cli/src/commands/critique/session_kind.rs"
+site = "fn stamp_disposition (line 197)"
 covered_region = "function"
 
 [stamp_surfaces_counterexamples_loudly]

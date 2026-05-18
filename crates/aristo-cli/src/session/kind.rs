@@ -91,11 +91,14 @@ pub trait SessionKind {
 /// Look up the kind implementation by its wire name. Returns `None`
 /// for unknown kinds — the substrate treats unknown kinds as
 /// substrate-only (no per-kind callbacks fire). Currently registered
-/// kinds: `critique-review`. `proof-review` lands in step 6.
+/// kinds: `critique-review`, `proof-review`. Future: `author-review`.
 pub fn kind_for(name: &str) -> Option<Box<dyn SessionKind>> {
     match name {
         "critique-review" => Some(Box::new(
             crate::commands::critique::session_kind::CritiqueReviewSession,
+        )),
+        "proof-review" => Some(Box::new(
+            crate::commands::verify::session_kind::ProofReviewSession,
         )),
         _ => None,
     }
