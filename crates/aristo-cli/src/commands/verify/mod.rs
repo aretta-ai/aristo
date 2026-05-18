@@ -41,6 +41,7 @@ pub(crate) fn run(
     rewrite_hashes: bool,
     submit_verdict: bool,
     pop_next: bool,
+    queue_status: bool,
     id: Option<String>,
     json: Option<String>,
 ) -> CliResult<()> {
@@ -60,6 +61,10 @@ pub(crate) fn run(
 
     if pop_next {
         return run_pop_next(&ws);
+    }
+
+    if queue_status {
+        return run_queue_status(&ws);
     }
 
     if apply_verdicts {
@@ -165,6 +170,25 @@ fn run_pop_next(ws: &Workspace) -> CliResult<()> {
         }
         None => Ok(()),
     }
+}
+
+#[aristo::intent(
+    "`aristo verify --queue-status` is the orchestrator's peek mechanism: \
+     prints `pending: N` + `claimed: M` to stdout, exit 0. Non-destructive — \
+     unlike `--pop-next` it does not claim. The verify skill orchestrator \
+     uses it to decide whether to dispatch another one-shot worker after \
+     a prior worker retires (verify workers do not loop — reusing a \
+     worker across verifications risks context pollution between \
+     unrelated proofs).",
+    verify = "neural",
+    id = "verify_queue_status_is_non_destructive_peek"
+)]
+fn run_queue_status(ws: &Workspace) -> CliResult<()> {
+    let qdir = pipeline::queue::QueueDir::for_pipeline(ws, pending::PIPELINE_NAME);
+    let status = pipeline::queue::queue_status(&qdir)?;
+    println!("pending: {}", status.pending);
+    println!("claimed: {}", status.claimed);
+    Ok(())
 }
 
 #[derive(Default, Debug)]

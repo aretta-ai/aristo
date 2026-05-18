@@ -28,36 +28,58 @@ Before spawning any worker, read `.aristo/index.toml` once and keep it loaded. W
 
 Pass the full index content into every worker prompt so it can grep through it without an extra file read.
 
-## Step 3 — spawn N parallel workers (pop-loop pattern)
+## Step 3 — continuous dispatch with one-shot workers (max N=5 in flight)
 
-Spawn up to **N=2** fresh `Agent` workers (use the `general-purpose` subagent_type) in parallel. Each worker loops on `aristo verify --pop-next` until the queue is drained. Workers race-safely on the queue: POSIX rename atomicity guarantees two workers calling `--pop-next` on the same task cannot both succeed.
+**Workers are one-shot.** Each worker claims EXACTLY ONE task, processes it, submits, and exits. They do not loop. Reason: verification is context-heavy (deep code reads, proof tree construction, ground hash citations). Reusing a worker across tasks would let one verification's context pollute the next — silently degrading proof quality.
+
+**Dispatch is continuous, not wave-based.** Waves waste time waiting for the slowest worker in each batch before starting the next batch. Instead: maintain up to **N=5** background workers in flight at all times; as soon as ANY worker finishes, immediately spawn its replacement (if the queue still has work). This keeps the parallelism steady-state at the cap.
+
+The orchestration uses Claude Code's `Agent(run_in_background=true)` primitive, which fires the worker async and notifies the orchestrator when it completes — no polling, no waiting on the slowest sibling.
+
+```
+in_flight = 0   # orchestrator-side counter; tracks live background workers
+
+# 1. Initial fill: spawn workers until in_flight == 5 OR queue empty
+loop:
+    status = aristo verify --queue-status   # peek
+    if in_flight >= 5: break
+    if status.pending == 0: break
+    spawn Agent(run_in_background=true, model="opus", prompt=worker_prompt)
+    in_flight += 1
+
+# 2. Continuous replenishment: on each completion notification,
+#    record the result and (if more work) spawn one replacement
+on_worker_complete(result):
+    in_flight -= 1
+    record result for the final summary
+    status = aristo verify --queue-status
+    if status.pending > 0:
+        spawn Agent(run_in_background=true, model="opus", prompt=worker_prompt)
+        in_flight += 1
+
+# 3. Termination: when in_flight == 0 AND pending+claimed == 0 → done
+```
 
 Each worker gets **`Bash` and `Read` tools only** — no `Write`. **Workers cannot create `.proof` files directly**; the SDK is the sole writer via `aristo verify --submit-verdict`.
 
 Use a prompt structured exactly like this:
 
 ```
-You are a verify-pipeline WORKER. You loop on
-`aristo verify --pop-next` to atomically claim one queued task at a
-time, verify the focal annotation, and submit the verdict via
-`aristo verify --submit-verdict`. The SDK is the sole writer of
-`.proof` files — you do NOT write any files yourself. You do NOT
-modify any source files.
+You are a ONE-SHOT verify worker. Claim ONE task from the queue,
+verify it, submit the verdict, and EXIT. Do NOT loop. The orchestrator
+spawns a fresh worker for the next task — keeping your context clean
+of unrelated verifications is the whole point.
 
-## Worker loop
+## Step 1 — claim your task
+
+Run exactly:
 
 ```bash
-while true; do
-  task=$(aristo verify --pop-next)
-  if [ -z "$task" ]; then
-    break        # queue drained — exit cleanly
-  fi
-  # parse $task (TOML), do the verification work, submit the verdict.
-  # See "Per-task work" below for the per-iteration steps.
-done
+aristo verify --pop-next
 ```
 
-The task body printed by `--pop-next` is TOML in this shape:
+The stdout is either empty (queue drained by a concurrent sibling
+worker — exit cleanly without processing) or a TOML body in this shape:
 
 ```toml
 id = "balance_no_duplicate_cells"
@@ -69,20 +91,19 @@ body_hash = "sha256:..."
 prior_attempts = 0   # may be omitted when zero
 ```
 
-Other workers may be running concurrently against the same queue;
-POSIX rename atomicity guarantees you and they will never receive
-the same task.
+POSIX rename atomicity guarantees you and any concurrent siblings
+will never receive the same task.
 
-## Current index (for grounding lookups)
+## Step 2 — read the index ONCE (for grounding lookups)
 
 The full content of `.aristo/index.toml` is at that path. Read it
-ONCE at startup before processing any task. Any intent or assume
-`id` you cite as a ground MUST appear verbatim in that file.
+exactly once. Any intent or assume `id` you cite as a ground MUST
+appear verbatim in that file.
 
-## Per-task work
+## Step 3 — do the work
 
-For each claimed task, read the source file `<file>` at the popped
-task's `file:site`, then decide whether the intent's claim holds:
+Read the source file `<file>` at the popped task's `file:site` and
+decide whether the intent's claim holds:
 
 - **verified**: the claim holds. Provide an informal proof tree.
 - **counterexample**: the claim does NOT hold. Provide a concrete
@@ -206,44 +227,46 @@ run; record the failure in your accumulating per-task summary.
 
 ## Return to the orchestrator
 
-When your worker loop exits (queue drained), return a summary of all
-tasks you processed during this run. One block per task, separated by
-`===`:
+You processed exactly one task (or none, if the queue drained before
+you could claim). Return ONE block matching one of these shapes:
+
+**On accept:** do ONE `Read` of `.aristo/proofs/<id-with-colons-to-underscores>.proof`
+to capture the SDK's stamped TOML form, then return:
 
 ```
 accepted: <id>  sha256:<hex>
 ---
-<TOML content from .aristo/proofs/<id-with-colons-to-underscores>.proof, verbatim>
-===
-accepted: <id-2>  sha256:<hex>
----
-<TOML content>
-===
-rejected: <id-3>  <one-line summary>
----
-<full stderr from the final failed submit attempt for this task>
+<TOML content from the proof file, verbatim>
 ```
 
-For each accepted task, do ONE `Read` of the on-disk proof file to
-capture the SDK's stamped TOML form. For rejected tasks, include the
-stderr verbatim so the orchestrator can show it to the user.
+**On reject** (after exhausting up to 2 inline retries):
 
-If your worker drained the queue without processing anything (the
-queue was already empty when you started), return just:
+```
+rejected: <id>  <one-line summary>
+---
+<full stderr from the final failed submit attempt>
+```
+
+**On empty pop** (sibling worker drained the queue before you ran):
 
 ```
 worker exited: queue drained on entry
 ```
 
-## Step 4 — verify each worker's report
+No commentary outside these formats. Each worker returns one block;
+the orchestrator aggregates blocks across all completed workers for
+the final summary.
 
-For each worker's returned text, split on `===` to get per-task blocks. For each block:
+## Step 4 — handle each completion notification
 
-1. Split on the first line containing exactly `---`. Header line first; body after.
-2. If the header starts with `rejected:` — record as a rejection with the body as the failure detail; skip 4.3–4.5 for this task.
-3. If the header starts with `accepted: <id>  sha256:<hex>` — extract `<id>` and `<hex>`.
-4. Compute the sha256 of the body (the canonical TOML). Many environments have `shasum -a 256` or `sha256sum`; an Aristo binary helper exists at `aristo show --json sha256 <stdin>` if needed. The simplest is `printf '%s' "$body" | shasum -a 256`.
-5. Compare. Match → record as accepted; keep the body in memory for step 7 (avoids a re-Read). Mismatch → record as rejected with detail "subagent reported sha256 does not match returned TOML (subagent cache corrupted or fabricated); on-disk file is still the SDK's write, but the returned text cannot be trusted".
+When `Agent(run_in_background=true)` notifies you that worker W completed:
+
+1. Decrement `in_flight`.
+2. Parse W's return text. Split on the first line containing exactly `---`. Header line first; body after.
+3. If the header is `worker exited: queue drained on entry` — no-op (no task was processed); fall through to dispatch decision.
+4. If the header starts with `rejected:` — record as a rejection with the body as the failure detail; fall through to dispatch decision.
+5. If the header starts with `accepted: <id>  sha256:<hex>` — extract `<id>` and `<hex>`, then run the integrity check: compute `sha256` of the body (the canonical TOML) via `printf '%s' "$body" | shasum -a 256` and compare with the reported hash. Match → record as accepted; keep the body in memory for step 7 (avoids a re-Read). Mismatch → record as rejected with detail "worker reported sha256 does not match returned TOML; on-disk file is still the SDK's write but the returned text cannot be trusted".
+6. After recording: check `aristo verify --queue-status`. If `pending > 0`, spawn one replacement worker (in_flight += 1). Otherwise, wait for the next completion notification.
 
 Do NOT write anything yourself. The SDK has already written the file.
 

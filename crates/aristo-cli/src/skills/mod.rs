@@ -134,15 +134,30 @@ mod tests {
              (single write path; no direct file writes from agents)"
         );
         assert!(
-            body.contains("`Bash` and `Read` tools allowed"),
+            body.contains("`Bash` and `Read` tools only"),
             "skill body must restrict subagent tools to Bash + Read (no Write)"
+        );
+        assert!(
+            body.contains("ONE-SHOT") || body.contains("one-shot"),
+            "skill body must teach the one-shot-per-worker pattern \
+             (context pollution risk if workers loop)"
+        );
+        assert!(
+            body.contains("aristo verify --queue-status"),
+            "skill body must teach the orchestrator to use --queue-status \
+             as the non-destructive peek between worker dispatches"
+        );
+        assert!(
+            body.contains("run_in_background"),
+            "skill body must teach continuous dispatch via Agent(run_in_background=true) \
+             — waves of N workers waste time waiting on the slowest in each batch"
         );
         assert!(
             body.contains("accepted: sha256:"),
             "skill body must teach the subagent how to parse the SDK's accept stdout"
         );
         assert!(
-            body.contains("compares with the reported hash"),
+            body.contains("compare with the reported hash"),
             "skill body must teach the orchestrator's hash-comparison integrity check"
         );
         assert!(

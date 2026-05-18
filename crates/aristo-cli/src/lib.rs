@@ -203,11 +203,19 @@ enum Commands {
         json: Option<String>,
         /// Worker-facing API: atomically claim one task from the
         /// pending queue and print its TOML body to stdout. Empty
-        /// stdout means the queue is drained (still exits 0). Used by
-        /// the in-agent neural-verify skill in a loop:
-        /// `while task=$(aristo verify --pop-next); [ -n "$task" ]; do ...`
-        #[arg(long = "pop-next", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
+        /// stdout means the queue is drained (still exits 0). Verify
+        /// workers are ONE-SHOT (call once, process the task, exit)
+        /// to avoid context pollution across verifications. The
+        /// orchestrator waves N workers in parallel and uses
+        /// `--queue-status` to decide whether to spawn the next wave.
+        #[arg(long = "pop-next", conflicts_with_all = ["apply_verdicts", "submit_verdict", "queue_status"])]
         pop_next: bool,
+        /// Peek at queue state without claiming. Prints `pending: N`
+        /// + `claimed: M` to stdout, exit 0. Used by the orchestrator
+        /// to decide whether to dispatch another wave of workers.
+        /// Non-destructive — multiple callers do not race.
+        #[arg(long = "queue-status", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
+        queue_status: bool,
     },
 
     /// Agentic prose-improvement pass via the critique skill.
@@ -283,6 +291,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             id,
             json,
             pop_next,
+            queue_status,
         } => commands::verify::run(
             &filters,
             rerun,
@@ -292,6 +301,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             rewrite_hashes,
             submit_verdict,
             pop_next,
+            queue_status,
             id,
             json,
         ),
