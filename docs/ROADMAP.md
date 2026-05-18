@@ -92,7 +92,7 @@ Originally five slices (22–26). Slices 24, 25, 26 (`verify="test"` and `verify
 |---|---|---|
 | **28** | `aristo doc` | Per-annotation markdown to `.aristo/doc/<id-safe>.md` (`<id-safe>` replaces `:` with `__`); incremental writes; `--include-status` (B5b status bake-in); `--summary` (project-level `_summary.md`); `--check` CI gate. Promotes 5 of 6 `doc_*.md`. |
 | **29** | `aristo graph` | Mermaid (default stdout); DOT; SVG (via `dot` binary; friendly missing-binary error with platform install hints); J2 `--filter`; `--exclude-assumes`; `--include-status`; `--depth`; `--include-orphans`; `--out`. Promotes all 11 `graph_*.md`. The `--include-graph` from doc lands here too via slice composition. |
-| **30** | `aristo_doc` cargo feature in `aristo-macros` | Proc-macro injects `#[doc = include_str!("...")]` from `.aristo/doc/` when feature enabled. Cargo-fixture imperative test. |
+| **30** | `aristo_doc` cargo feature in `aristo-macros` | **[Session B — in flight on `session-B-docs`.]** Proc-macro injects `#[doc = include_str!("...")]` from `.aristo/doc/` when feature enabled. Cargo-fixture imperative test. |
 
 ## Milestone H — Auxiliary + audit → v0.1.0 (MVP)
 

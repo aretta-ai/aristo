@@ -21,6 +21,14 @@ default = ["aristo_check"]
 # fastest feedback loop. Downstream users who want zero validation cost
 # can disable via `aristo-macros = { default-features = false }`.
 aristo_check = []
+# aristo_doc: when on, `#[aristo::intent]` and `#[aristo::assume]` inject a
+# `#[doc = include_str!(".../.aristo/doc/<id-safe>.md")]` attribute above
+# the wrapped item so `cargo doc` renders the Aristo-generated MD inline
+# with the function's normal rustdoc. v0 requires an explicit `id = "..."`
+# argument (matches the dogfood pattern; lints already encourage explicit
+# ids). Off by default so non-doc-rendering builds aren't paying the
+# include-time read cost.
+aristo_doc = []
 
 [dependencies]
 proc-macro2 = "1.0"
@@ -29,4 +37,5 @@ syn = { version = "2.0", features = ["full"] }
 
 [dev-dependencies]
 aristo = { workspace = true }
+tempfile = "3.10"
 trybuild = "1.0"

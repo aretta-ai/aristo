@@ -13,9 +13,11 @@
 //! `AssumeEntry` that the developer writes by hand (text, verify, parent,
 //! id) — `aristo stamp` populates the rest from source position.
 
+mod inject;
 mod validate;
 
 use proc_macro::TokenStream;
+use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{Expr, LitStr, Token};
 
@@ -75,8 +77,18 @@ impl Parse for IntentArgs {
 /// unchanged.
 #[proc_macro_attribute]
 pub fn intent(attr: TokenStream, item: TokenStream) -> TokenStream {
-    match syn::parse::<IntentArgs>(attr).and_then(|args| validate::validate_intent(&args)) {
-        Ok(()) => item,
+    let args = match syn::parse::<IntentArgs>(attr) {
+        Ok(a) => a,
+        Err(err) => return err.to_compile_error().into(),
+    };
+    if let Err(err) = validate::validate_intent(&args) {
+        return err.to_compile_error().into();
+    }
+    match inject::doc_attribute_or_error(args.id.as_ref()) {
+        Ok(prefix) => {
+            let item_ts = proc_macro2::TokenStream::from(item);
+            quote!(#prefix #item_ts).into()
+        }
         Err(err) => err.to_compile_error().into(),
     }
 }
@@ -162,8 +174,18 @@ impl Parse for AssumeArgs {
 /// Pass-through during slice 6.
 #[proc_macro_attribute]
 pub fn assume(attr: TokenStream, item: TokenStream) -> TokenStream {
-    match syn::parse::<AssumeArgs>(attr).and_then(|args| validate::validate_assume(&args)) {
-        Ok(()) => item,
+    let args = match syn::parse::<AssumeArgs>(attr) {
+        Ok(a) => a,
+        Err(err) => return err.to_compile_error().into(),
+    };
+    if let Err(err) = validate::validate_assume(&args) {
+        return err.to_compile_error().into();
+    }
+    match inject::doc_attribute_or_error(args.id.as_ref()) {
+        Ok(prefix) => {
+            let item_ts = proc_macro2::TokenStream::from(item);
+            quote!(#prefix #item_ts).into()
+        }
         Err(err) => err.to_compile_error().into(),
     }
 }

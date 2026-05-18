@@ -15,6 +15,9 @@ workspace = true
 default = ["aristo_check"]
 # Pass-through to aristo-macros/aristo_check; see that crate for rationale.
 aristo_check = ["aristo-macros/aristo_check"]
+# Pass-through to aristo-macros/aristo_doc — gates rustdoc injection of
+# `.aristo/doc/<id-safe>.md` content above each annotated item. Slice 30.
+aristo_doc = ["aristo-macros/aristo_doc"]
 
 [dependencies]
 aristo-macros = { workspace = true }

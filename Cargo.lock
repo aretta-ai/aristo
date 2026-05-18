@@ -146,6 +146,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+ "tempfile",
  "trybuild",
 ]
 
