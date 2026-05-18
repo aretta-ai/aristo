@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T01:32:25.466512Z"
+generated_at = "2026-05-18T03:12:09.088816Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -24,6 +24,17 @@ text_hash = "sha256:1033936bd224f14b75c286e4c8b2df9321719a0dfcd8de8ddf3d930d8a91
 body_hash = "sha256:9c756bf103f3f04ad0c2a049fc33cb586b5267b2fb3812ae4142d4331eafb564"
 file = "crates/aristo-cli/src/skills/install.rs"
 site = "fn agents_md_uninstall (line 134)"
+covered_region = "function"
+
+[apply_prunes_pending_for_landed_verdicts]
+kind = "intent"
+text = "After --apply-verdicts succeeds for an entry, remove that entry from .aristo/pending-neural.toml so the next /aristo-neural-verify run does not re-process already-landed verdicts. If pruning empties the file, delete the file. Without this, the pending list accumulates stale entries that have been processed; the skill would re-spawn subagents against work that's done."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:4b2f36a26d77486d506052020c65cc4b30ec6cc17237cdbcfd4b498659535dd2"
+body_hash = "sha256:f1160d126d16716e72ab6f600fd27f21a5bfcb453482dd92257ceb7325b33565"
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+site = "fn prune_pending (line 293)"
 covered_region = "function"
 
 [atomic_write_via_tempfile_rename]
@@ -213,6 +224,17 @@ file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn merge_status_from_prev (line 265)"
 covered_region = "function"
 
+[pending_backs_up_existing_proof_on_rerun]
+kind = "intent"
+text = "When `aristo verify` re-pends an entry that already has a .proof on disk, move the existing proof to <id>.proof.bak before the next attempt overwrites it. Single-deep backup — overwrites any prior .bak. Lets the user diff a rejected re-attempt against the prior verdict. The .bak is auto-deleted on successful --apply-verdicts."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:132cefd77cd1a36ab43c826232ec8e30085c0a3ff61d26b9ec199fc66b9c6fd5"
+body_hash = "sha256:8980e7137a919185a1b98d4af4fa1b1716b787ebb0837eef6aaeb43e03129091"
+file = "crates/aristo-cli/src/commands/verify/pending.rs"
+site = "fn backup_existing_proof (line 152)"
+covered_region = "function"
+
 [pending_carries_prior_attempts_from_existing_proof]
 kind = "intent"
 text = "Prior attempts for an id come from the existing `.aristo/proofs/ <id>.proof` file (if any), parsed once to extract verdict.attempts. Carrying this across re-spawns activates the K-bounded repair budget that would otherwise be dead code: each fresh subagent invocation writing attempts=1 means a hard-to-verify intent can re-spawn indefinitely without ever hitting the cap. Reading from the rejected proof on disk is the only persistence channel available — the SDK doesn't track per-entry attempt history elsewhere."
@@ -221,16 +243,16 @@ status = "unknown"
 text_hash = "sha256:a9b4d9dc372ae79199a57540e486617abb55128b00107cf57ee47156fea59779"
 body_hash = "sha256:111d46035feb2c03762bb1cb68c33d81338b1b32fac3e84ed7cb7d36220f679b"
 file = "crates/aristo-cli/src/commands/verify/pending.rs"
-site = "fn read_prior_attempts (line 109)"
+site = "fn read_prior_attempts (line 114)"
 covered_region = "function"
 
 [pending_neural_file_is_sdk_to_agent_request_not_a_result]
 kind = "intent"
 text = "The pending file is a REQUEST from the SDK to the in-agent skill, not a result. The skill reads it, dispatches per-entry verification work, and writes proofs to `.aristo/proofs/<id>.proof` for the SDK to validate via `--apply-verdicts`. A refactor that has the SDK auto-read its own pending file (e.g., to call an LLM directly) would conflate the CLI with the agent and break the design split: the CLI never makes LLM calls; the agent never bypasses the SDK validator."
 verify = "neural"
-status = "neural"
+status = "stale"
 text_hash = "sha256:5d04f4f2136735e523ef1b12a43f0f5862be2ff7542cb69416271144b3c8259c"
-body_hash = "sha256:fd56edcc8978747c8de43b29609b1010e2514c8c02e37704898191e2d1e77087"
+body_hash = "sha256:774d3742fe3fe941b6886dbf9b0a34361eac1b7409c3bef88bfdadcd7a5f0a07"
 file = "crates/aristo-cli/src/commands/verify/pending.rs"
 site = "fn write_pending_neural (line 53)"
 covered_region = "function"
@@ -243,7 +265,7 @@ status = "unknown"
 text_hash = "sha256:a3d155c4d0593856df81728cb65861745e7e2fc6bd6793140f68b5ac13bfcc81"
 body_hash = "sha256:0f38c0bf82565d752728d897d99e035df1d13f74415bf0267040c5b8d42cc3e0"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-site = "fn id_from_filename (line 228)"
+site = "fn id_from_filename (line 244)"
 covered_region = "function"
 
 [proof_tree_uses_path_addressed_flat_list]
@@ -265,7 +287,7 @@ status = "unknown"
 text_hash = "sha256:db4a42a4c2aa63e816ff743443caf38fd9387ff2f12199c9cbc4252d6449ba93"
 body_hash = "sha256:a375f28c18cbc1eeb7062793e71b92c2e40265d1c9b02841b40ed095101ec271"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-site = "fn clear_ground_hashes (line 99)"
+site = "fn clear_ground_hashes (line 111)"
 covered_region = "function"
 
 [sha256_from_bytes_is_canonical_form]
@@ -332,6 +354,39 @@ text_hash = "sha256:1be10f580efbb4857173d91ded4f73ee87ea18e2193d3d2b841b8126a64f
 body_hash = "sha256:8d016c0d239b1b208de4b9e03439a7e1a6be933f6ba991fd95e1537cb3876a42"
 file = "crates/aristo-core/src/walk/extract.rs"
 site = "impl Visit for Walker::visit_stmt_macro (line 220)"
+covered_region = "function"
+
+[submit_returns_sha256_of_written_file]
+kind = "intent"
+text = "On accept, the SDK prints `accepted: sha256:<hex>` to stdout where <hex> is the sha256 of the on-disk TOML body. The orchestrator can compare this against body_hash(text_returned_by_subagent) for a cheap integrity check: SDK is the sole writer, so a mismatch means the subagent's reported text diverged from what hit disk (corrupted cache, fabricated response). The hash anchors the write-acknowledgement so the orchestrator does not have to re-read the file just to validate the subagent's word."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:1cd3494cdce2019142ec33788c70f98216ec0896cceb8b63b7343b1fd8487f84"
+body_hash = "sha256:6deab6258bce4bd37effadc90f99b64682da788d88aa1ad98abdb89e57839692"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+site = "fn run_submit_verdict (line 60)"
+covered_region = "function"
+
+[submit_validation_matches_apply_validation]
+kind = "intent"
+text = "Submit-time validation runs the EXACT SAME `validate()` function as `--apply-verdicts`. Schema rules, ground resolution, and hash-staleness checks must not diverge between the write gate and the apply gate. A verdict the validator accepts at submit MUST be a verdict the validator would accept at apply (modulo intervening index/source drift). A divergence — even subtly different rules in the two paths — would let proofs land that later fail apply, wasting the subagent's repair budget on unfixable schema mismatches."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:c4506ca7cf8649dadb6b0b178ec20fb2430647c39e732a81835580b548e8ddea"
+body_hash = "sha256:6deab6258bce4bd37effadc90f99b64682da788d88aa1ad98abdb89e57839692"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+site = "fn run_submit_verdict (line 48)"
+covered_region = "function"
+
+[submit_verdict_is_only_write_path_for_proofs]
+kind = "intent"
+text = "`aristo verify --submit-verdict` is the SINGLE write path for `.aristo/proofs/<id>.proof` files. Subagents have no Write-tool access to the proofs directory; this command is the only way a verdict reaches disk. A refactor that adds a second writer (e.g., direct file writes from the skill orchestrator, or a 'fast-path' that skips validation) would let unvalidated proofs land — defeating the schema gate that catches the failure modes the post-hoc --apply-verdicts validator was previously the only guard against (invalid enum variants, child-as-prior-step, out-of-range line citations)."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:aeb403650a57ce9b32dcdf5c7ce1d212cb3fe93d5f8af01f0f5826d53a3ddd96"
+body_hash = "sha256:6deab6258bce4bd37effadc90f99b64682da788d88aa1ad98abdb89e57839692"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+site = "fn run_submit_verdict (line 34)"
 covered_region = "function"
 
 [text_hash_normalizes_whitespace]
@@ -408,7 +463,7 @@ status = "neural"
 text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 215)"
+site = "fn resolve_verify_level (line 228)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -419,7 +474,7 @@ status = "neural"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 227)"
+site = "fn resolve_verify_level (line 240)"
 covered_region = "function"
 
 [verify_false_arm_is_intentional_skip]
@@ -430,7 +485,7 @@ status = "neural"
 text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
 body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run (line 68)"
+site = "fn run (line 81)"
 covered_region = "statement"
 
 [verify_skip_consults_validator_not_just_status]
@@ -441,7 +496,7 @@ status = "unknown"
 text_hash = "sha256:ec349c62caa14bf353768509d1662e6ec68dc8d5d703d542e698ca3c5fb1089f"
 body_hash = "sha256:92a9f4dcd35a81ce63e0cd198bee192b970574abf1a2282d7fc7dd2b693f163c"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn skip_because_proof_still_holds (line 252)"
+site = "fn skip_because_proof_still_holds (line 265)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]

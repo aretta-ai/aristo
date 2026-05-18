@@ -1,12 +1,12 @@
 ---
 name: aristo-neural-verify
-description: Verifies aristo intent annotations whose `verify = "neural"`. Reads `.aristo/pending-neural.toml`, spawns one subagent per entry to produce a structured proof, writes proofs to `.aristo/proofs/<id>.proof`, and invokes `aristo verify --apply-verdicts` so the SDK's mechanical validator gates the status change.
+description: Verifies aristo intent annotations whose `verify = "neural"`. Reads `.aristo/pending-neural.toml`, spawns one subagent per entry which submits a JSON-serialized verdict via `aristo verify --submit-verdict` (the SDK is the sole writer of `.proof` files; subagents have no Write-tool access), and invokes `aristo verify --apply-verdicts` so the SDK's mechanical validator gates the status change.
 sdk_version: {{SDK_VERSION}}
 ---
 
 # Aristo neural-verification orchestrator
 
-When the user invokes this skill (typically by typing `/aristo-neural-verify`, but also when they ask to "verify the neural intents" or "run aristo verify"), follow this orchestration exactly. The Aristo SDK has already done the dispatch + validator work; **your job is to produce verdicts for the SDK to validate, NOT to update the index directly.**
+When the user invokes this skill (typically by typing `/aristo-neural-verify`, but also when they ask to "verify the neural intents" or "run aristo verify"), follow this orchestration exactly. The Aristo SDK has already done the dispatch + validator work; **your job is to produce verdicts the SDK validates and writes, NOT to update the index or proofs directory directly.**
 
 ## Step 1 — read the pending request
 
@@ -40,13 +40,16 @@ Pass the full index content into every subagent prompt so it can grep through it
 
 ## Step 3 — spawn ONE subagent per entry (parallel where possible)
 
-For each `pending` entry, spawn a fresh `Agent` subagent (use the `general-purpose` subagent_type). The subagent runs in its own context window, isolating its judgment from the other entries' verdicts. Use a prompt structured exactly like this:
+For each `pending` entry, spawn a fresh `Agent` subagent (use the `general-purpose` subagent_type) **with only `Bash` and `Read` tools allowed** — no `Write`. The subagent runs in its own context window, isolating its judgment from the other entries' verdicts. **Subagents cannot create `.proof` files directly**; the SDK is the sole writer via `aristo verify --submit-verdict`.
+
+Use a prompt structured exactly like this:
 
 ```
-You are verifying ONE aristo intent annotation. Produce a verdict in
-the schema below. Do NOT modify any source files. Do NOT call the
-aristo CLI. Your output is a TOML document that the aristo SDK
-validator will then check structurally.
+You are verifying ONE aristo intent annotation. Construct a JSON-
+serialized verdict and submit it to the Aristo SDK via the CLI; the
+SDK will validate the schema, write the .proof file on accept, and
+return a sha256 anchor. You do NOT write any files yourself. You do
+NOT modify any source files.
 
 ## Intent under verification
 
@@ -62,12 +65,9 @@ prior_attempts:  {{prior_attempts}}  # 0 on first try; carried over from any
 
 ## Current index (for grounding lookups)
 
-The following is the full content of `.aristo/index.toml`. Any intent
-or assume ground you cite MUST appear here with the exact id you use.
-
-```toml
-{{index_toml_content}}
-```
+The full content of `.aristo/index.toml` is at that path. Read it
+ONCE before citing any intent or assume ground. Any intent or assume
+`id` you cite MUST appear verbatim in that file.
 
 ## Your task
 
@@ -81,104 +81,154 @@ code. Decide whether the intent's claim holds:
   Describe the gap and suggest at least one annotation the user could
   add (an `aristo::intent` or `aristo::assume`) that would close it.
 
-## Schema
+## JSON schema (what you submit)
 
-You MUST emit a single TOML document in this shape (and nothing else
-in your output — no commentary outside the TOML, no markdown fences):
+Construct a single JSON object matching the ProofFile shape. Field
+names are `snake_case`; enum variants are `kebab-case`. Top-level:
 
-[verdict]
-type = "verified"        # or "counterexample" or "inconclusive"
-method = "neural"
-produced_at_text_hash = "{{text_hash}}"  # copy verbatim from prompt
-produced_at_body_hash = "{{body_hash}}"  # copy verbatim from prompt
-produced_by = "aristo-neural-verifier@v0.0.5"
-attempts = {{prior_attempts}} + 1  # use the integer literal — e.g., prior_attempts=2 → write `attempts = 3`
-property_kind = "invariant"  # or postcondition | precondition | equivalence | safety | progress
+{
+  "verdict": {
+    "type": "verified",                         // or "counterexample" or "inconclusive"
+    "method": "neural",
+    "produced_at_text_hash": "{{text_hash}}",   // copy verbatim from prompt
+    "produced_at_body_hash": "{{body_hash}}",   // copy verbatim from prompt
+    "produced_by": "aristo-neural-verifier@v0.0.6",
+    "attempts": <prior_attempts + 1>,           // integer literal — e.g. prior_attempts=2 → 3
+    "property_kind": "invariant"                // or postcondition | precondition | equivalence | safety | progress
+  },
+  // Then exactly ONE of "verified" / "counterexample" / "inconclusive":
+  "verified": {
+    "proof": {
+      "conclusion": "<plain-English restatement of the focal intent>",
+      "steps": [
+        {
+          "path": "0",                          // tree address; root is "0"; children "0.0", "0.1", "0.0.1", ...
+          "claim": "<the step's claim>",
+          "relation_to_parent": "decomposes",   // ONLY: decomposes | instantiates | restricts | composes | excludes-counterexample
+          "grounds": [
+            { "kind": "intent",     "id": "<id-from-index>", "relation": "instantiates",            "reason": "..." },
+            { "kind": "assume",     "id": "<id-from-index>", "relation": "excludes-counterexample", "reason": "..." },
+            { "kind": "code",       "file": "src/x.rs", "lines": "10-25", "reason": "..." },
+            { "kind": "prior-step", "path": "0.0" },
+            { "kind": "composition", "reason": "subgoals combine via AND" }
+          ],
+          "subgoal_paths": ["0.0", "0.1"],      // children of this node (if any)
+          "proposed_promotion": false
+        }
+      ]
+    }
+  }
+}
 
-# Then exactly ONE of [verified] / [counterexample] / [inconclusive]:
+Counterexample form: replace the `"verified"` block with
+`"counterexample": { "violation": { "description": "...", "violated_step_path": "0.1", "trigger_steps": [ ... ] } }` —
+same step shape inside trigger_steps.
 
-[verified.proof]
-conclusion = "<plain-English restatement of the focal intent>"
-
-[[verified.proof.steps]]
-path = "0"               # tree address — root is "0"; subgoals are "0.0", "0.1", "0.0.1", ...
-claim = "<the step's claim>"
-relation_to_parent = "decomposes"   # decomposes | instantiates | restricts | composes | excludes-counterexample
-grounds = [
-  # At least one ground per step. Variants — DO NOT include hash fields;
-  # the SDK validator computes them mechanically from your citations:
-  { kind = "intent",   id = "<id-from-index>", relation = "instantiates", reason = "..." },
-  { kind = "assume",   id = "<id-from-index>", relation = "excludes-counterexample", reason = "..." },
-  { kind = "code",     file = "src/x.rs", lines = "10-25", reason = "..." },
-  { kind = "prior-step", path = "0.0" },
-  { kind = "composition", reason = "subgoals combine via AND" },
-]
-subgoal_paths = ["0.0", "0.1"]    # if this step decomposes
-proposed_promotion = false        # set true if THIS step's claim is reusable
-                                  #   beyond this proof and is a candidate
-                                  #   for becoming a standalone aristo intent
+Inconclusive form:
+`"inconclusive": { "partial_proof": null_or_steps, "gap": { "description": "...", "unfilled_path": "0.1", "suggested_annotations": [ { "kind": "intent", "suggested_text": "...", "at_site": "fn foo (src/x.rs:42)", "rationale": "..." } ] } }`
 
 ## Hard rules — the SDK validator rejects on any violation
 
 1. Every step MUST have ≥1 ground. No "trivial" / "obviously" / "clearly" filler.
 2. Prefer citing existing annotations (intent/assume by id) over re-deriving
-   from code. Reading the index above tells you which ids exist.
+   from code. Reading the index file tells you which ids exist.
 3. **Cited id discipline.** Any `intent` or `assume` ground id MUST appear
-   verbatim in the index TOML above. Do NOT guess, recall from memory, or
+   verbatim in `.aristo/index.toml`. Do NOT guess, recall from memory, or
    approximate. Search the index for the id; if it isn't there, the ground
    is invalid — drop it or pick a different one. The validator rejects with
    "cited id `X` not found in current index" on any miss.
-4. If you need an unstated assumption, do NOT inline it as a discovered ground.
+4. **Valid `relation_to_parent` values are EXACTLY these five — nothing else:**
+   `decomposes`, `instantiates`, `restricts`, `composes`, `excludes-counterexample`.
+   `supports` is NOT a valid variant. If you find yourself wanting a sixth, use
+   `decomposes` (most general) and explain via grounds' `reason` fields.
+5. **Valid ground `relation` values (for intent/assume grounds) are EXACTLY:**
+   `instantiates`, `restricts`, `composes`, `excludes-counterexample`, `promoted`.
+   No `supports`, no `decomposes` here either.
+6. If you need an unstated assumption, do NOT inline it as a discovered ground.
    Return `inconclusive` with that assumption as a `suggested_annotation`.
-5. **DO NOT write hash fields.** Omit `code_text_hash` from code grounds
+7. **DO NOT write hash fields.** Omit `code_text_hash` from code grounds
    and `at_text_hash` from intent/assume grounds entirely. The SDK validator
-   computes both from your citations (file+lines, or id lookup) and stamps
-   them into the proof on accept. Writing your own hash is at best a wasted
-   guess; at worst, a wrong guess that the validator rejects as staleness.
-6. `prior-step` grounds must reference an EARLIER step (smaller path
-   string). No cycles.
-7. Tree branching: keep ≤ 3 subgoals per node. If you need more, split
+   computes both from your citations and stamps them into the saved proof.
+8. **`prior-step` references must point to an EARLIER step in the tree**
+   (lexically SMALLER path string). A step at path `"0"` CANNOT cite
+   `"0.0"` as a prior-step — `"0.0"` is a CHILD, not a predecessor.
+   Use `composition` or `decomposes` to wire parent→child relationships;
+   `prior-step` is for sibling-or-uncle dependencies (e.g., step `"0.2"`
+   may cite `"0.0"` or `"0.1"` as prior-step).
+9. Tree branching: keep ≤ 3 subgoals per node. If you need more, split
    into intermediate intents with `proposed_promotion = true`.
-8. For counterexample: violated_step_path must point at a step in your
-   trigger_steps tree. trigger_steps must demonstrate the violating
-   state concretely, not vaguely "could happen".
-9. For inconclusive: gap.unfilled_path must name the path of the step
-   you couldn't discharge. gap.suggested_annotations MUST have ≥1 entry.
-10. `attempts` MUST equal `prior_attempts + 1` from the prompt above (you're
-    a single-shot subagent; the SDK tracks repair budget across re-spawns
-    via the existing .proof file on disk). When `prior_attempts = 0` (first
-    try), write `attempts = 1`. The SDK refuses to dispatch beyond the
-    K-bounded budget; you don't have to check it yourself.
+10. **Code-ground line ranges must be REAL.** Use small, focused ranges
+    (function body, a specific match arm). Do NOT cite `"1-200"` or other
+    overestimates — the validator computes the file length and rejects
+    "line range `X-Y` exceeds file length Z". When in doubt, check the
+    file length with `wc -l` first.
+11. For counterexample: `violated_step_path` must point at a step in your
+    `trigger_steps` tree. `trigger_steps` must demonstrate the violating
+    state concretely, not vaguely "could happen".
+12. For inconclusive: `gap.unfilled_path` must name the path of the step
+    you couldn't discharge. `gap.suggested_annotations` MUST have ≥1 entry.
+13. `attempts` MUST equal `prior_attempts + 1` from the prompt above
+    (you're a single-shot subagent; the SDK tracks repair budget across
+    re-spawns). When `prior_attempts = 0`, write `attempts = 1`.
 
-## Write the file yourself
+## Submit the verdict
 
-Before returning, use the `Write` tool to save your TOML verdict to
-`.aristo/proofs/<id>.proof` where `<id>` is the entry's id with `:`
-replaced by `__`. The path you write is exactly that string — no other
-directory, no rename, no suffix beyond `.proof`. The SDK has already
-moved any prior verdict for this id to `<id>.proof.bak` so your write
-does not destroy history.
+Invoke the SDK to validate and write the proof. Wrap the JSON in
+SINGLE quotes (JSON only uses double quotes internally, so the wrap is
+safe):
 
-After writing, return ONLY the TOML you wrote (the same text). No
-commentary, no markdown fences, no leading/trailing whitespace beyond
-what the TOML body needs. The orchestrator will verify that the file on
-disk matches the text you returned; mismatch is treated as failure.
+aristo verify --submit-verdict --id {{id}} --json '<JSON-FROM-ABOVE>'
+
+On success: stdout contains `accepted: sha256:<64-hex>`. The SDK has
+written `.aristo/proofs/{{id_with_colons_to_underscores}}.proof` and
+stamped any computed hashes. Capture the sha256 line.
+
+On failure: stderr contains a structured `verdict rejected (N check(s)
+failed):` block listing each failure with location + detail, OR a
+`--json: parse error: ...` if the JSON itself is malformed. Read the
+errors, FIX the JSON, and re-invoke the same command. You may retry up
+to TWO times inline (so at most three total submit calls in one
+subagent run). If still failing after the third try, give up and
+return the last failure verbatim — the orchestrator will report it as
+rejected.
+
+## Return to the orchestrator
+
+After a successful submit, do ONE Read of the on-disk proof file at
+`.aristo/proofs/{{id_with_colons_to_underscores}}.proof` to capture
+the SDK's TOML form (with computed hashes stamped). Return EXACTLY:
+
+accepted: sha256:<the hex from submit stdout>
+---
+<the TOML content from the file, verbatim>
+
+No commentary before or after. The two parts are separated by a single
+line containing exactly `---`. The orchestrator computes
+sha256(TOML-content) and compares with the reported hash for an
+integrity check; mismatch is treated as failure.
+
+If you exhausted retries without a successful submit, return EXACTLY:
+
+rejected: <one-line summary>
+---
+<the full stderr output from the final failed submit attempt>
 ```
 
-**Important: the subagent writes the proof file itself, then returns the text it wrote.** This removes a round-trip — you (the orchestrator) don't re-write what the subagent already wrote, but you DO keep the text in memory for the interactive review in step 7 (saves a Read).
+When the subagent returns, capture its output. The first line tells
+you the outcome (`accepted:` vs `rejected:`); the body below `---` is
+either the canonical TOML or the failure stderr.
 
-When the subagent returns, capture its output (the TOML it wrote to disk).
+## Step 4 — verify the acknowledgement
 
-## Step 4 — verify the subagent's write (no duplicate write)
+For each subagent's returned text:
 
-The subagent already wrote `.aristo/proofs/<id>.proof` directly. Your job here is defensive:
+1. Split on the first line containing exactly `---`. Header line first; body after.
+2. If the header starts with `rejected:` — record as a rejection with the body as the failure detail; skip steps 4.3–4.5 for this entry.
+3. If the header starts with `accepted: sha256:<hex>` — extract `<hex>`.
+4. Compute the sha256 of the body (the canonical TOML). Many environments have `shasum -a 256` or `sha256sum`; an Aristo binary helper exists at `aristo show --json sha256 <stdin>` if needed. The simplest is `printf '%s' "$body" | shasum -a 256`.
+5. Compare. Match → record as accepted; keep the body in memory for step 7 (avoids a re-Read). Mismatch → record as rejected with detail "subagent reported sha256 does not match returned TOML (subagent cache corrupted or fabricated); on-disk file is still the SDK's write, but the returned text cannot be trusted".
 
-1. Confirm the file exists at the expected path (`<id>` with `:` → `__`).
-2. Read the file once; assert the on-disk content matches the text the subagent returned. Mismatch → the subagent lied or fat-fingered; flag this loudly in the report and skip step 5 for this entry.
-
-Do NOT re-write the file with the returned text. The subagent's write is the source of truth on disk; the returned text is only your cache for step 7.
-
-If the file is missing entirely: treat the subagent as having failed; this is a parse-style failure that will surface in the summary.
+Do NOT write anything yourself. The SDK has already written the file.
 
 ## Step 5 — call `aristo verify --apply-verdicts`
 
@@ -320,18 +370,23 @@ When the user picks "Stop review" or the walkthrough reaches the end:
 
 ## What this skill does NOT do
 
+- It does NOT write `.aristo/proofs/<id>.proof` files directly — neither this orchestrator nor the spawned subagents have Write-tool access to that directory. The SDK is the sole writer, via `aristo verify --submit-verdict`.
 - It does NOT modify `.aristo/index.toml` directly. The SDK does that via `--apply-verdicts`.
-- It does NOT auto-fix rejected verdicts. The user reviews first.
+- It does NOT auto-fix rejected verdicts beyond the subagent's two inline retries. The user reviews further failures first.
 - It does NOT call any LLM-as-judge between the verdict and the validator. The validator is purely mechanical; that's the design.
-- It does NOT compute hashes. The SDK does that mechanically on accept.
+- It does NOT compute ground hashes. The SDK does that mechanically on accept.
 - It does NOT touch source code unprompted. Source edits only happen as a direct result of a user choice in step 7 (accept suggestion, fix code, rewrite intent) — and every such edit is confirmed via a second `AskUserQuestion` showing the diff before it lands.
 
 ## Anti-patterns
 
+- ❌ Granting `Write` (or any other file-mutation tool) to a spawned subagent. Subagents are Bash + Read only; the submit-verdict CLI is the single write path.
 - ❌ Spawning subagents with the same context already polluted by earlier verdicts. Each subagent must be a fresh `Agent(...)` call.
 - ❌ Re-writing the SDK's pending file. The SDK regenerates it on the next `aristo verify` run.
 - ❌ Including `code_text_hash` or `at_text_hash` in any ground — the validator computes and stamps them. Any value you write will be ignored at best and rejected at worst.
 - ❌ Citing an intent or assume id you didn't find verbatim in the loaded `.aristo/index.toml`. The validator will reject "cited id not found in current index" and waste your repair budget.
+- ❌ Using `relation_to_parent = "supports"` (or any value not in the exact five-variant list). Same for `"supports"` as a ground `relation`.
+- ❌ Using `prior-step` to reference a CHILD path (e.g., step `"0"` citing `"0.0"` as prior-step). Prior-step is for siblings and uncles; parent→child wiring is `subgoal_paths` + `composition`.
+- ❌ Citing code line ranges that exceed actual file length (`"1-200"` for a 40-line file). The validator computes file length and rejects out-of-range citations.
 - ❌ Returning a verdict on behalf of the user ("this seems verified to me"). The subagent is the only authority; you (this skill) orchestrate, you do not judge.
 - ❌ **Walking through every proof verbatim without offering choices.** The interactive review only earns its keep when the user can actually act. Dumping all proofs to the chat is just noise.
 - ❌ **Editing source without explicit confirmation.** Even when the user picks "Add suggestion 1", the actual `Edit` call only happens after a second `AskUserQuestion` that shows the proposed change. Skipping that step turns a typo into a silent regression.

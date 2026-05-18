@@ -136,7 +136,11 @@ fn clear_ground_hashes(pf: &mut ProofFile) {
 /// Walk every step in the proof (verified / counterexample trigger /
 /// inconclusive partial) and fill in computed hashes for any Ground
 /// whose hash is currently None. Returns the count of fields stamped.
-fn stamp_ground_hashes(pf: &mut ProofFile, index: &IndexFile, workspace_root: &Path) -> usize {
+pub(crate) fn stamp_ground_hashes(
+    pf: &mut ProofFile,
+    index: &IndexFile,
+    workspace_root: &Path,
+) -> usize {
     let mut count = 0;
     for_each_step_mut(pf, |step| {
         for g in step.grounds.iter_mut() {
@@ -209,7 +213,7 @@ fn compute_code_hash(
     Some(body_hash(&slice_lines(&source, lo, hi)))
 }
 
-fn write_proof_atomic(path: &Path, pf: &ProofFile) -> CliResult<()> {
+pub(crate) fn write_proof_atomic(path: &Path, pf: &ProofFile) -> CliResult<()> {
     let toml_text = pf.to_toml().map_err(|e| CliError::Other {
         message: format!("serializing {}: {e}", path.display()),
         exit_code: 1,

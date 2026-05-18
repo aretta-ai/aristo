@@ -129,6 +129,23 @@ mod tests {
             "skill body must teach the agent to call the SDK validator after producing proofs"
         );
         assert!(
+            body.contains("aristo verify --submit-verdict"),
+            "skill body must teach the subagent to submit verdicts via the SDK CLI \
+             (single write path; no direct file writes from agents)"
+        );
+        assert!(
+            body.contains("`Bash` and `Read` tools allowed"),
+            "skill body must restrict subagent tools to Bash + Read (no Write)"
+        );
+        assert!(
+            body.contains("accepted: sha256:"),
+            "skill body must teach the subagent how to parse the SDK's accept stdout"
+        );
+        assert!(
+            body.contains("compares with the reported hash"),
+            "skill body must teach the orchestrator's hash-comparison integrity check"
+        );
+        assert!(
             body.contains("do NOT inline it as a discovered ground"),
             "skill body must encode the strict-on-discovered-assumptions rule"
         );
@@ -139,6 +156,21 @@ mod tests {
         assert!(
             body.contains("Cited id discipline"),
             "skill body must encode the cited-id-discipline rule (open #2 fix)"
+        );
+        assert!(
+            body.contains("`supports` is NOT a valid variant"),
+            "skill body must explicitly disallow the `supports` enum variant \
+             (broke 2/4 of the first submit-flow dogfood run)"
+        );
+        assert!(
+            body.contains("CANNOT cite"),
+            "skill body must explicitly disallow child-as-prior-step \
+             (broke verify_bool_true on first dogfood run)"
+        );
+        assert!(
+            body.contains("\"1-200\""),
+            "skill body must call out the over-broad line-range failure mode \
+             (broke pending_neural on first dogfood run)"
         );
         assert!(
             body.contains("prior_attempts + 1") || body.contains("prior_attempts}} + 1"),

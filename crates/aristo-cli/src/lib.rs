@@ -169,7 +169,7 @@ enum Commands {
         /// Reads every `<id>.proof`, runs the mechanical validator, and
         /// (if it passes) flips the entry's status. Skips dispatch of
         /// new verifications when set.
-        #[arg(long = "apply-verdicts")]
+        #[arg(long = "apply-verdicts", conflicts_with = "submit_verdict")]
         apply_verdicts: bool,
         /// Migration-only: ignore any agent-stamped ground hashes in the
         /// `.proof` files and recompute them from the cited file ranges
@@ -180,6 +180,26 @@ enum Commands {
         /// `--apply-verdicts`.
         #[arg(long = "rewrite-hashes", requires = "apply_verdicts")]
         rewrite_hashes: bool,
+        /// Subagent write-path for a single verdict: parse the JSON
+        /// payload, run the mechanical validator, and (on pass) write
+        /// `.aristo/proofs/<id>.proof` atomically. Prints
+        /// `accepted: sha256:<hex>` to stdout on success; structured
+        /// errors to stderr on reject. The SDK is the sole writer of
+        /// `.proof` files — agents never write them directly.
+        #[arg(long = "submit-verdict", requires = "id", requires = "json")]
+        submit_verdict: bool,
+        /// Annotation id that this verdict is about. Required with
+        /// `--submit-verdict`. The `.proof` file lands at
+        /// `.aristo/proofs/<id>.proof` (with `:` → `__`).
+        #[arg(long = "id", requires = "submit_verdict")]
+        id: Option<String>,
+        /// JSON-serialized ProofFile body. Required with
+        /// `--submit-verdict`. Pass as a single-quoted shell string;
+        /// the SDK parses it into a ProofFile and rejects anything
+        /// the validator would reject. Same schema as the TOML body
+        /// that gets written on accept.
+        #[arg(long = "json", requires = "submit_verdict")]
+        json: Option<String>,
     },
 
     /// Agentic prose-improvement pass via the review skill.
@@ -247,6 +267,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             strict,
             apply_verdicts,
             rewrite_hashes,
+            submit_verdict,
+            id,
+            json,
         } => commands::verify::run(
             &filters,
             rerun,
@@ -254,6 +277,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             strict,
             apply_verdicts,
             rewrite_hashes,
+            submit_verdict,
+            id,
+            json,
         ),
         Commands::Review => not_yet("aristo review", "slice 27"),
         Commands::Doc => not_yet("aristo doc", "slice 28"),

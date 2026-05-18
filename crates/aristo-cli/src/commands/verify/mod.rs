@@ -28,6 +28,7 @@ use crate::{CliError, CliResult};
 
 pub(crate) mod apply;
 pub(crate) mod pending;
+pub(crate) mod submit;
 pub(crate) mod validator;
 
 pub(crate) fn run(
@@ -37,11 +38,23 @@ pub(crate) fn run(
     strict: bool,
     apply_verdicts: bool,
     rewrite_hashes: bool,
+    submit_verdict: bool,
+    id: Option<String>,
+    json: Option<String>,
 ) -> CliResult<()> {
     let _ = (check, strict); // wired for forward-compat; no behavior yet (see module doc)
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
+
+    if submit_verdict {
+        // clap's `requires = ...` ensures id/json are Some here; the
+        // .expect() documents the invariant rather than introducing a
+        // user-facing error mode that can't actually trigger.
+        let id_str = id.expect("--id is required with --submit-verdict (enforced by clap)");
+        let json_str = json.expect("--json is required with --submit-verdict (enforced by clap)");
+        return submit::run_submit_verdict(&ws, &index, &id_str, &json_str);
+    }
 
     if apply_verdicts {
         return apply::run_apply_verdicts(&ws, &index, rewrite_hashes);
