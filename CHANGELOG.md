@@ -8,6 +8,19 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [v0.0.7] — 2026-05-18
+
+Milestone F (Critique + Review-sessions) closes. Slice 27.5 shipped the
+generic review-session substrate (Session / SessionKind / 4-bucket
+triage + 3-layer enforcement); slice 27.7 polishes critique with
+disposition-aware apply, cache-skip dispatch, --staged / --all flags,
+and the line-range filter syntax. Two scenarios in `_pending/`
+(`critique_filter.md`, `stale_preflight_on_critique.md`) describe a
+synchronous-output critique UX that pre-dates the queue-pipeline
+architecture (D2 from `critique-and-pipeline-architecture.md`); they
+stay in `_pending/` until a later milestone re-aligns implementation
+with their shape, per the specs-are-immutable discipline.
+
 ### Changed
 - chore(.aristo,.gitignore): dogfood the session substrate end-to-end + gitignore runtime state. **Dogfood run** (5 verifications via the rewritten `aristo-neural-verify` skill): 5 fresh `.proof` files landed on first try via the session-wrapped flow — `apply_sweeps_queue_stragglers_after_accept` (attempts=2), `backlog_writes_are_atomic_via_tempfile_rename` (1), `submit_verdict_is_only_write_path_for_proofs` (3), `submit_findings_is_only_write_path_for_critiques` (1), `verify_assumes_are_documentation_only_by_design` (3). All 5 routed through a proof-review session with 5 Accept decides, strict exit, audit trail in `.aristo/sessions/closed/`. **Substrate validated end-to-end** — Layer 1 guard blocked mutations during the session; per-kind dispatch fired on each `decide`; bucket counts surfaced in `status`; clean strict close. Notable: proof 4 used `stamp_disposition_uses_atomic_write` as an `excludes-counterexample` ground, demonstrating productive cross-citation that's only possible with the substrate's grounded-on-prior-intents pattern. **Stamp-cascade housekeeping**: 9 prior proofs (install_skills_scope_symmetry, pending_neural_file_..., pop_next_..., submit_returns_..., submit_validation_..., verify_bool_true..., verify_false_arm..., verify_pop_next..., workspace_load_config...) text-drifted during slice 27.5 work; the pre-commit hook's stamp cascade deleted their stale `.proof` files. They re-enqueue for re-verification in the next dogfood run (32 still pending in queue). **Gitignore additions per design D5**: `.aristo/sessions/` (per-user session lifecycle), `.aristo/verify-queue/` + `.aristo/critique-queue/` (runtime queue state), and `.aristo/proofs/*.proof.bak` (SDK internal write-protection backups, transient by design). 9 orphan `.bak` files cleaned up. Index now reports 21 entries at `Status::Neural`, 58 at `Status::Unknown` (most pending re-verify).
 - docs(decisions): `badge-tier-scheme.md` — locks the five tier names (Aspirant / Apprentice / Adept / Ascendent / Areté) and the hidden-tier mechanic for the post-slice-31 badge scoring work. All five tiers begin with A, reinforcing the brand etymology (Aretta ← Greek ἀρετή "excellence"; Aristo ← Greek ἄριστος "best"); the four visible tiers (Aspirant through Ascendent) form a narrative arc — *every aspirant is one path away from areté* — and the hidden Areté tier requires `verify="full"` formal proofs that are server-bound via `aristo sync` (paid). Free-tier projects reach Ascendent as their visible ceiling; Areté is a discovery moment, not a paywall nudge. Spelling locked as Ascendent (Latinate -*ent* form, classical register). The numeric score formula, tier cutoffs, and visual treatment are explicitly deferred to a follow-up DECIDED block so the math can be calibrated against real codebases before commitment. Implementation lands as slice 31.5 once the formula is locked. (Session B; in flight on `session-B-docs`.)

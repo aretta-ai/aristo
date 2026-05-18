@@ -133,7 +133,7 @@ names are `snake_case`; enum variants are `kebab-case`. Top-level:
     "method": "neural",
     "produced_at_text_hash": "<text_hash from popped task>",   // copy verbatim
     "produced_at_body_hash": "<body_hash from popped task>",   // copy verbatim
-    "produced_by": "aristo-neural-verifier@v0.0.6",
+    "produced_by": "aristo-neural-verifier@v0.0.7",
     "attempts": <prior_attempts + 1>,           // integer literal — e.g. prior_attempts=2 → 3
     "property_kind": "invariant"                // or postcondition | precondition | equivalence | safety | progress
   },
