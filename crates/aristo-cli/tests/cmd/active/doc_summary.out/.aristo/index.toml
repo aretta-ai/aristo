@@ -1,0 +1,37 @@
+[__meta__]
+schema_version = 1
+
+[an_assume]
+kind = "assume"
+text = "Documentation-only — doc_summary fixture."
+status = "unknown"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/lib.rs"
+site = "mod storage (line 3)"
+covered_region = "module_inline_body"
+
+[a_local_intent]
+kind = "intent"
+text = "Documentation-only — doc_summary fixture."
+verify = false
+status = "unknown"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/lib.rs"
+site = "fn alpha (line 1)"
+covered_region = "function"
+
+["aristos:bound_intent"]
+kind = "intent"
+text = "Documentation-only — doc_summary fixture."
+verify = "full"
+status = "verified"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/lib.rs"
+site = "fn beta (line 2)"
+covered_region = "function"
+linked = "arta_op4q3z9NbV"
+verified_outcome = "v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+last_verified_at_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

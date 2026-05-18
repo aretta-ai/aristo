@@ -8,6 +8,12 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+
+- feat(cli): `aristo doc --summary` writes `.aristo/doc/_summary.md` (slice 28 v1, opens milestone G). Reads `.aristo/index.toml`, tallies intent/assume + server-bound + verify-level counts, renders the crate-root summary markdown per the I1 `samples.md` shape. Footer hints the user toward `#![doc = include_str!("../.aristo/doc/_summary.md")]` in their crate root for rustdoc rendering. Per `docs/decisions` (i.e., the I1 mockup), `--summary` writes the summary FILE only — it does not also trigger the per-annotation pass; `aristo doc --include-graph` (slice 29) is the composite that does both. Includes the new dogfood intent `doc_summary_writes_summary_only` (verify="neural") on the `run_summary` body. Promotes `doc_summary.md` per §12A; promotion is byte-for-byte. Per-annotation rendering, `--include-status`, `--check`, and incremental-skip behavior land in follow-up slice-28 commits. 5 new unit tests in `commands/doc.rs` (count tallying across kinds + verify levels + server-bound; `render_summary_md` markdown shape; `id_safe` colon→`__` substitution).
+
+### Changed
+
 - docs(test): fix two authoring bugs in `_pending/doc_first_run.md` — `[..]` on a standalone line changed to `...` (snapbox 0.6.24 multi-line skip), and two annotation-listing lines reordered to match `BTreeMap` iteration of `AnnotationId`. Companion to the design-archive mockup fix; logged under CLAUDE.md §12's authorized-exception list.
 
 ## [v0.0.6] — 2026-05-17

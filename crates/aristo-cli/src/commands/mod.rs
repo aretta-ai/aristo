@@ -2,6 +2,7 @@
 //! is the entry point invoked from `lib::dispatch`.
 
 pub(crate) mod critique;
+pub(crate) mod doc;
 pub(crate) mod index;
 pub(crate) mod init;
 pub(crate) mod install_skills;
