@@ -157,6 +157,24 @@ mod tests {
             "skill body must teach that the task body is self-contained \
              (no source reads needed)"
         );
+        assert!(
+            body.contains("aristo session active"),
+            "skill body's step 0 must check for an active review session \
+             (slice 27.5 Layer 3 enforcement)"
+        );
+        assert!(
+            body.contains("aristo session start critique-review"),
+            "skill body's step 5 must open a session before interactive review"
+        );
+        assert!(
+            body.contains("aristo session decide --item"),
+            "skill body's step 5 must record per-finding decisions via the substrate"
+        );
+        assert!(
+            body.contains("aristo session exit --defer-undecided"),
+            "skill body must offer defer-undecided as the early-stop path \
+             so open items go to backlog, not silently dropped"
+        );
     }
 
     #[test]

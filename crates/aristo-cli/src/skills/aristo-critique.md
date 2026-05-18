@@ -10,6 +10,16 @@ When the user invokes this skill (typically by typing `/aristo-critique`, or ask
 
 Critique findings are **advisory** — categorized prose-quality suggestions on an annotation's text. They never block merge; they never modify source. The whole point is opinionated feedback that the user opts into.
 
+## Step 0 — check for an active review session (FIRST, BEFORE ANY WORK)
+
+Run `aristo session active`. Three cases:
+
+- **Empty stdout** → no active session; proceed normally.
+- **Stdout shows a session id with `kind: critique-review`** → there is a prior critique-review session in flight (e.g., from a previous turn that didn't reach exit). Resume it: jump to step 5 with that session id; do NOT enqueue new tasks or spawn workers, because the user has unfinished triage to handle first.
+- **Stdout shows a session id with a different `kind` (e.g., `proof-review`)** → REFUSE. Print: "an aristo `<kind>` session is currently active (id=<id>, subject=<subject>). Exit it first with `aristo session exit` (or `aristo session exit --defer-undecided` to park open items), then re-invoke `/aristo-critique`." Stop here. Do not enqueue, spawn, or touch state.
+
+This check is Layer 3 of the three-layer enforcement (Layer 1 is the SDK pre-check that refuses `aristo critique` while a session is active; Layer 2 is the `UserPromptSubmit` hook that reminds you every turn). The skill body discipline matters because some agents skip the SDK check by going directly to a worker subagent — the body refusal in this step is the last line of defense.
+
 ## Step 1 — check the queue
 
 The SDK enqueued each annotation as a separate self-contained task file at `.aristo/critique-queue/pending/<id>.toml`. Each task embeds the focal annotation text PLUS sibling and parent annotation texts — workers do NOT need to read source.
@@ -214,9 +224,19 @@ Emit a short markdown summary:
 
 If there are findings the user might want to act on (anything that's not info), offer the interactive review in step 5. Otherwise stop with a one-line "ok: critique complete."
 
-## Step 5 — interactive review (gated by user choice)
+## Step 5 — interactive review wrapped in a review session
 
-For findings with `severity` ≥ `suggest`, offer to walk through them via `AskUserQuestion`. Same pattern as the neural-verify skill's step 7:
+For findings with `severity` ≥ `suggest`, offer to walk through them. This is the **review session** flow — every decision lands as a substrate-recorded triage state and stamps `disposition` into the `.critique` file, so future `--apply-findings` runs hide reviewed findings by default.
+
+### 5.0 Open the session
+
+If step 0 found no active session, start one now:
+
+```bash
+aristo session start critique-review --subject "<short description of what's being reviewed>"
+```
+
+(If step 0 found a resumable critique-review session, skip this — you're continuing it.)
 
 ### 5.1 Opening choice
 
@@ -225,24 +245,42 @@ Question: How would you like to review the N actionable findings?
 Options:
 - Walk through all findings           — go through each suggestion step by step
 - Strong-suggest only                 — focus on the most important findings
-- Skip review                         — I'll come back later
+- Skip review (defer to backlog)      — `aristo session exit --defer-undecided` (open items go to the per-kind backlog; next session will surface them)
+- Abort (drop this review entirely)   — `aristo session abort` (destructive; confirmation prompt)
 ```
 
 ### 5.2 Per-finding action menu
 
-For each finding rendered:
+For each finding rendered (in walk order), build the item ref as `<critique_id>#<finding_index>` and offer:
 
 ```
-Question: <id> [<category>, <severity>]. What next?
+Question: <critique_id>#<index> [<category>, <severity>]. What next?
 Options:
-- Apply the suggested rewrite         — edit source to use suggested_text (rephrasing only)
-- Defer / next finding                — leave the suggestion in the .critique file
-- Stop review                         — exit step 5
+- Accept                              — `aristo session decide --item <ref> --bucket accepted [--note "..."]`
+- Reject                              — `aristo session decide --item <ref> --bucket rejected [--note "..."]`
+- Defer (park for later)              — `aristo session decide --item <ref> --bucket pending [--note "..."]`
+- Apply the suggested rewrite         — for category=rephrasing only: edit source to use suggested_text, then `aristo session decide --item <ref> --bucket accepted --note "applied"`
+- Stop review (defer remaining)       — `aristo session exit --defer-undecided`
 ```
 
-For non-rephrasing findings (vocabulary, parent-shape, scope, clarity), the action menu skips "apply the suggested rewrite" — these usually need human judgment to act on. Just offer next/stop.
+For non-rephrasing findings (vocabulary, parent-shape, scope, clarity), the action menu skips "apply the suggested rewrite" — those usually need human judgment to act on. Just offer Accept/Reject/Defer/Stop.
 
-On **Apply**: read the current annotation text from the source file (via Edit tool), construct the diff, confirm via a second `AskUserQuestion` showing the proposed change, then apply. Run `aristo stamp` after — the text change will flip status to Stale and the entry will re-pend for fresh verify.
+On **Accept** (without applying): records the decision; the user will act on the finding manually. The SDK stamps `disposition = "accepted"` into the `.critique` file.
+
+On **Reject**: records the decision and emits a per-kind fingerprint to `.aristo/sessions/rejections.log`. Future critique runs on the same focal annotation will route any equivalent finding (same category + similar rationale prefix) to a separate "auto-rejected" menu instead of the main flow — the user can still see them, but they don't clutter the open list.
+
+On **Defer**: records the decision; the finding moves to the per-kind backlog (`.aristo/sessions/backlog/critique-review.toml`). Future sessions surface backlog items in the opening menu.
+
+On **Apply rewrite**: read the current annotation text from the source file (via Edit tool), construct the diff, confirm via a second `AskUserQuestion` showing the proposed change, then apply. Then call `aristo session decide --item <ref> --bucket accepted --note "applied"`. Run `aristo stamp` AFTER closing the session — the text change flips status to Stale and the entry re-pends for fresh verify, but stamp is a mutation and the session guard blocks it.
+
+### 5.3 Closing the session
+
+When all findings are decided OR the user picks "Stop review (defer remaining)":
+
+- **All decided** → `aristo session exit` (strict close; succeeds because every item has a bucket).
+- **Stopped early** → `aristo session exit --defer-undecided` (open items move to backlog; never silently drops).
+
+Print the closing summary line (the SDK emits one already) and stop. Subsequent steps (running `aristo stamp` for an applied rewrite, etc.) can happen now that the session is closed.
 
 ## What this skill does NOT do
 
@@ -260,3 +298,6 @@ On **Apply**: read the current annotation text from the source file (via Edit to
 - ❌ Returning more than 3-4 findings per annotation. If the annotation needs that much critique, it probably needs a rewrite or split, not a long list of nits.
 - ❌ Submitting findings of severity `info` only. They surface as low-priority noise; if you have nothing actionable to say, return an empty critique (zero findings is a valid result).
 - ❌ **Editing source without explicit confirmation.** Every source edit (when applying a rewrite suggestion) requires a second `AskUserQuestion` showing the diff before it lands.
+- ❌ Skipping step 0's `aristo session active` check. Layer-3 enforcement exists because some agents jump straight to the worker subagent and bypass the SDK pre-check. The skill body is your last line of defense — always run the check first.
+- ❌ Starting a critique-review session and walking away without `exit` / `exit --defer-undecided` / `abort`. Every other aristo mutation will refuse until the session closes; leaving one open strands the user. Always reach a close path.
+- ❌ Walking findings interactively without wrapping in a session. Decisions made outside a session aren't recorded — the `.critique` file keeps no disposition, future `--apply-findings` re-surfaces everything, and there's no rejection log for the auto-rejection filter to consult next time.
