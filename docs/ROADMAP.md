@@ -80,11 +80,11 @@ Originally five slices (22–26). Slices 24, 25, 26 (`verify="test"` and `verify
 | **22** | `aristo verify` dispatcher + `verify=false` path | Top-level command, J2 `--filter` reuse from slice 18, `--rerun` flag, `--check` / `--strict`, per-entry pipeline skeleton, `vlvl=false → noop` arm. Promotes `verify_false_skipped.md`, `verify_filter_rerun.md`. |
 | **23** | `verify="neural"` free path | Bundles `aristo-neural-verify` skill manifest; invokes it via host agent's standard skill mechanism; status-only update. Promotes `verify_neural_free.md`. **Post-shipment hardening** (2026-05-17) closed 8 lifecycle gaps in a follow-up arc: validator-fills-hashes, Status::Inconclusive variant, validator-at-list-time skip logic, suggestion-vs-index check, strict text-drift policy, attempts persistence, stamp cascade-on-removal, loud Counterexample warning. |
 
-## Milestone F — Review → v0.0.7
+## Milestone F — Critique → v0.0.7
 
 | Slice | Deliverable | Notes |
 |---|---|---|
-| **27** | `aristo review` | Bundles `aristo-review-skill` manifest; invokes it; parses categorized findings (`rephrasing` / `parent-shape` / `vocabulary` / etc., severity-tagged); J2 `--filter` with line-range form; lint-blocked-target skip with pointer to `aristo lint --fix`; updates index `last_reviewed_at_text_hash` for caching. Promotes `review_filter.md`, `stale_preflight_on_review.md`. We review our own annotations with this — findings inform the next round of authoring-skill polish. |
+| **27** | `aristo critique` | Renamed from `aristo review` to honor the opinionated nature of the output (categorized findings + suggested rewrites, not neutral inspection) and to keep a clean lane separation from `aristo verify`. Bundles `aristo-critique` skill manifest; invokes it; parses categorized findings (`rephrasing` / `parent-shape` / `vocabulary` / `scope` / `clarity`, severity-tagged); comma-list `--filter id=a,b,c`; line-range form deferred to v1; lint-blocked-target skip with pointer to `aristo lint --fix`; updates index `last_critiqued_at_text_hash` + `last_critique_finding_count` for caching. Default scope is **filter-required** (no implicit codebase sweep) per `docs/decisions/critique-and-pipeline-architecture.md` §D6. Promotes `critique_filter.md`, `stale_preflight_on_critique.md`. Lands after a prep refactor that extracts the queue-based dispatch + submit-gate + apply-pass into `pipeline/` infrastructure shared with the verify pipeline (per the design doc §D1, §D7). |
 
 ## Milestone G — Doc + graph → v0.0.8
 

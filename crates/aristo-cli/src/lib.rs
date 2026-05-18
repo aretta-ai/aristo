@@ -202,8 +202,12 @@ enum Commands {
         json: Option<String>,
     },
 
-    /// Agentic prose-improvement pass via the review skill.
-    Review,
+    /// Agentic prose-improvement pass via the critique skill.
+    /// (Named "critique" rather than "review" because the output is
+    /// opinionated suggestions on annotation prose — categorized
+    /// findings with severity tags — not neutral inspection. Avoids
+    /// the false analogy to PR / code review where humans sign off.)
+    Critique,
 
     /// Generate per-annotation markdown to .aristo/doc/.
     Doc,
@@ -281,7 +285,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             id,
             json,
         ),
-        Commands::Review => not_yet("aristo review", "slice 27"),
+        Commands::Critique => not_yet("aristo critique", "slice 27"),
         Commands::Doc => not_yet("aristo doc", "slice 28"),
         Commands::Graph => not_yet("aristo graph", "slice 29"),
         Commands::Badge => not_yet("aristo badge", "slice 31"),
@@ -321,9 +325,9 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Review).unwrap_err();
+        let err = dispatch(Commands::Critique).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo review"), "msg: {msg}");
+        assert!(msg.contains("aristo critique"), "msg: {msg}");
         assert!(msg.contains("slice 27"), "msg: {msg}");
     }
 
@@ -334,7 +338,7 @@ mod tests {
         // Index, Stamp, Show, List, Status, Lint, Verify) are tested
         // elsewhere.
         let variants = [
-            (Commands::Review, "slice 27"),
+            (Commands::Critique, "slice 27"),
             (Commands::Doc, "slice 28"),
             (Commands::Graph, "slice 29"),
             (Commands::Badge, "slice 31"),

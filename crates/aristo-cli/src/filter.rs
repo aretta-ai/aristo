@@ -1,5 +1,5 @@
 //! J2 unified filter grammar shared across `aristo list` / `verify` /
-//! `graph` / `review`.
+//! `graph` / `critique`.
 //!
 //! Form: `<key>=<value>`. Allowed keys: `id`, `file`, `parent`, `status`.
 //! Multiple `--filter` flags AND together at the call site (not modeled

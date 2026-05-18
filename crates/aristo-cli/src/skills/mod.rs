@@ -2,7 +2,7 @@
 //!
 //! Each skill is a markdown manifest embedded in the binary via
 //! `include_str!`. Slice 12 ships only the authoring skill; the mining,
-//! neural-verify, and review skills get added in their consuming slices
+//! neural-verify, and critique skills get added in their consuming slices
 //! (24, 23, 27) — adding a new skill is a one-line edit to `BUNDLED`.
 //!
 //! Per K4 (mockup 12), each agent gets the skill installed via that
@@ -111,7 +111,7 @@ mod tests {
     fn future_skill_names_not_yet_bundled() {
         // Sentinels: these skills land in their consuming slices.
         assert!(find("aristo-mine-assertions").is_none()); // slice 24
-        assert!(find("aristo-review-skill").is_none()); // slice 27
+        assert!(find("aristo-critique").is_none()); // slice 27
     }
 
     #[test]

@@ -54,10 +54,10 @@ fn defined_but_unimplemented_subcommand_exits_64() {
     // Canary that the dispatch glue routes a known-but-unshipped command
     // to `CliError::NotImplemented` with a slice pointer. Re-point at
     // whichever command is currently stubbed when this one ships;
-    // `aristo review` (slice 27) is the next on the roadmap.
+    // `aristo critique` (slice 27) is the next on the roadmap.
     Command::cargo_bin("aristo")
         .unwrap()
-        .arg("review")
+        .arg("critique")
         .assert()
         .failure()
         .code(64)
