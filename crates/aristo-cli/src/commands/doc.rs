@@ -40,10 +40,62 @@ pub(crate) fn run(summary: bool, include_status: bool, check: bool) -> CliResult
         return run_summary(&ws, &index);
     }
 
-    // --check lands in a follow-up slice-28 commit.
-    let _ = check;
+    if check {
+        return run_check(&ws, &index, include_status);
+    }
 
     run_per_annotation(&ws, &index, include_status)
+}
+
+// ─── --check CI gate ───────────────────────────────────────────────────────
+
+#[aristo::intent(
+    "`aristo doc --check` is a CI gate: it MUST NOT write to \
+     `.aristo/doc/` under any circumstance — its job is to detect \
+     drift so CI can block a merge that has stale doc artifacts. A \
+     regression that wrote during --check would silently fix the \
+     thing CI was supposed to catch.",
+    verify = "neural",
+    id = "doc_check_never_writes"
+)]
+fn run_check(ws: &Workspace, index: &IndexFile, include_status: bool) -> CliResult<()> {
+    let doc_dir = ws.root.join(".aristo").join("doc");
+
+    println!("→ Reading .aristo/index.toml … ok");
+    println!("→ Computing expected per-annotation markdown …");
+    println!("→ Comparing against .aristo/doc/ on disk …");
+
+    let mut drift: Vec<String> = Vec::new();
+    for (id, entry) in &index.entries {
+        let path = doc_dir.join(format!("{}.md", id_safe(id)));
+        let rendered = render_annotation_md(id, entry, include_status);
+        let on_disk = fs::read_to_string(&path).unwrap_or_default();
+        if on_disk != rendered {
+            drift.push(id_safe(id));
+        }
+    }
+
+    if drift.is_empty() {
+        println!();
+        println!("ok: doc artifacts are in sync with the index.");
+        return Ok(());
+    }
+
+    for d in &drift {
+        println!("  • Out of sync: .aristo/doc/{d}.md");
+        println!("    (text in index does not match rendered markdown)");
+    }
+    println!();
+
+    let n = drift.len();
+    let plural = if n == 1 { "" } else { "s" };
+    Err(CliError::Other {
+        message: format!(
+            "{n} doc artifact{plural} out of sync with the index.\n\
+             \x20      Run `aristo doc` locally and commit the result."
+        ),
+        exit_code: 1,
+    })
 }
 
 // ─── per-annotation rendering ──────────────────────────────────────────────

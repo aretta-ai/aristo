@@ -1,0 +1,16 @@
+[__meta__]
+schema_version = 1
+
+["aristos:balance_no_duplicate_cells"]
+kind = "intent"
+text = "For all B-tree balance operations, no cells are duplicated."
+verify = "full"
+status = "verified"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "core/storage/btree.rs"
+site = "fn balance_non_root (line 3010)"
+covered_region = "function"
+linked = "arta_op4q3z9NbV"
+verified_outcome = "v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+last_verified_at_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
