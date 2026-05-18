@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:42:54.716062Z"
+generated_at = "2026-05-18T18:48:13.764322Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -169,15 +169,26 @@ file = "crates/aristo-cli/src/commands/show.rs"
 site = "fn did_you_mean (line 251)"
 covered_region = "function"
 
+[doc_include_status_block_records_state_with_staleness_disclaimer]
+kind = "intent"
+text = "The `--include-status` block is a blockquote that records the status at MD-generation time. The icon + label are stable; dropping the `(this state is current as of …)` disclaimer would mislead readers into thinking the embedded status is live, which it isn't — it goes stale the moment source code changes. The disclaimer is what keeps the doc artifact honest."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:075cd098dafb817c34ce4f5559c0786a81c1b965011cb577d473ced64829be16"
+body_hash = "sha256:e7fe552006cfe040fe3a48c390cc08e6d90e0cb652f163105839c8954327a3f8"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn status_block_for_intent (line 173)"
+covered_region = "function"
+
 [doc_per_annotation_filename_uses_id_safe]
 kind = "intent"
 text = "`aristo doc` writes each annotation to .aristo/doc/<id-safe>.md where `<id-safe>` substitutes `:` with `__`. Same convention as `.proof` and `.critique` files so users have one mental model for id↔filename mapping across the SDK. A regression that picks a different escape (or uses the raw id with `:`) would create platform-specific filename failures (`:` is illegal on Windows / macOS HFS+) AND silently break the slice-30 proc-macro that reads these files via `include_str!`."
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:37800ee178014cabf7dd805bf35e78affb3fec3fb1fa57d30648c66e9f386fe4"
-body_hash = "sha256:db9f9086ecef06d4318b748105e8dbcaae8c352861cb715df70d783c428dcfc6"
+body_hash = "sha256:5ab8e342c00c1ba578af08659d5c8dddc79e88250608a92305cc6a9a160f062f"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_per_annotation (line 52)"
+site = "fn run_per_annotation (line 51)"
 covered_region = "function"
 
 [doc_per_annotation_md_shape_locked_by_samples_mockup]
@@ -186,9 +197,9 @@ text = 'Per-annotation markdown structure is locked by the I1 `samples.md` mocku
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:b026ae240228658551323bfa60a7771cd828e85ded7764602fa8e83122de2de6"
-body_hash = "sha256:6dc1fed28c002dce0c8613738292d8e6ce58865b10d6c5e2eddb73d9d6dc984f"
+body_hash = "sha256:e672f6d1e657cc61436a108c729512cd0d0fa285a1cd31b4e3e7e48ea0f50a43"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn render_annotation_md (line 113)"
+site = "fn render_annotation_md (line 132)"
 covered_region = "function"
 
 [doc_summary_writes_summary_only]
@@ -199,7 +210,7 @@ status = "unknown"
 text_hash = "sha256:63bcb80f0391a30b7523d2444a3c6585e93967a39eebc30a0c30d00afc528eb7"
 body_hash = "sha256:cf0d617f7cde85b1a6457b91b241582d5dd0c8910d83092f04f781e99a4bf6b7"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_summary (line 184)"
+site = "fn run_summary (line 254)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]

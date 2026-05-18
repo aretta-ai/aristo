@@ -22,8 +22,8 @@ use std::fs;
 use std::path::Path;
 
 use aristo_core::index::{
-    AnnotationId, AssumeEntry, IdNamespace, IndexEntry, IndexFile, IntentEntry, ParentLink,
-    VerifyLevel, VerifyMethod,
+    AnnotationId, AssumeEntry, BindingState, IdNamespace, IndexEntry, IndexFile, IntentEntry,
+    ParentLink, Status, VerifyLevel, VerifyMethod,
 };
 
 use crate::commands::index::workspace_or_error;
@@ -40,11 +40,10 @@ pub(crate) fn run(summary: bool, include_status: bool, check: bool) -> CliResult
         return run_summary(&ws, &index);
     }
 
-    // --include-status + --check land in follow-up slice-28 commits.
-    let _ = include_status;
+    // --check lands in a follow-up slice-28 commit.
     let _ = check;
 
-    run_per_annotation(&ws, &index)
+    run_per_annotation(&ws, &index, include_status)
 }
 
 // ─── per-annotation rendering ──────────────────────────────────────────────
@@ -61,42 +60,62 @@ pub(crate) fn run(summary: bool, include_status: bool, check: bool) -> CliResult
     verify = "neural",
     id = "doc_per_annotation_filename_uses_id_safe"
 )]
-fn run_per_annotation(ws: &Workspace, index: &IndexFile) -> CliResult<()> {
+fn run_per_annotation(ws: &Workspace, index: &IndexFile, include_status: bool) -> CliResult<()> {
     let doc_dir = ws.root.join(".aristo").join("doc");
     fs::create_dir_all(&doc_dir).map_err(CliError::Io)?;
 
     let counts = Counts::from(index);
     println!();
-    println!(
-        "→ Reading .aristo/index.toml … ok ({} annotations: {} intent, {} assume)",
-        counts.total, counts.intent, counts.assume,
-    );
+    if include_status {
+        println!(
+            "→ Reading .aristo/index.toml … ok ({} annotations)",
+            counts.total,
+        );
+        println!("→ Including current B5b verification status in rendered docs.");
+    } else {
+        println!(
+            "→ Reading .aristo/index.toml … ok ({} annotations: {} intent, {} assume)",
+            counts.total, counts.intent, counts.assume,
+        );
+    }
     println!("→ Generating per-annotation markdown to .aristo/doc/ …");
 
     let mut written = 0usize;
     let mut unchanged = 0usize;
     for (id, entry) in &index.entries {
         let path = doc_dir.join(format!("{}.md", id_safe(id)));
-        let rendered = render_annotation_md(id, entry);
+        let rendered = render_annotation_md(id, entry, include_status);
         if file_unchanged(&path, &rendered) {
             unchanged += 1;
             continue;
         }
         fs::write(&path, &rendered).map_err(CliError::Io)?;
-        println!("  • Wrote: .aristo/doc/{}.md", id_safe(id));
+        if !include_status {
+            println!("  • Wrote: .aristo/doc/{}.md", id_safe(id));
+        }
         written += 1;
     }
-    println!("  ({written} files written, {unchanged} unchanged)");
+    if include_status {
+        println!("  ({written} files written, including status blocks)");
+    } else {
+        println!("  ({written} files written, {unchanged} unchanged)");
+    }
     println!();
     println!("ok: doc artifacts updated.");
     println!();
-    println!("Next steps:");
-    println!("  • Enable the `aristo_doc` cargo feature in your Cargo.toml:");
-    println!("        [features]");
-    println!("        default = [\"aristo_doc\"]");
-    println!("  • Or run `cargo doc --features aristo_doc` to render docs with annotations.");
-    println!("  • Optional: add `#[doc = include_str!(\".aristo/doc/_summary.md\")]`");
-    println!("    above your crate's `//!` doc to render the project-level summary.");
+    if include_status {
+        println!("ℹ Status is a build-time fact and will become stale as code evolves.");
+        println!("   Re-run `aristo doc --include-status` to refresh, or omit `--include-status`");
+        println!("   for purely static rendering.");
+    } else {
+        println!("Next steps:");
+        println!("  • Enable the `aristo_doc` cargo feature in your Cargo.toml:");
+        println!("        [features]");
+        println!("        default = [\"aristo_doc\"]");
+        println!("  • Or run `cargo doc --features aristo_doc` to render docs with annotations.");
+        println!("  • Optional: add `#[doc = include_str!(\".aristo/doc/_summary.md\")]`");
+        println!("    above your crate's `//!` doc to render the project-level summary.");
+    }
     Ok(())
 }
 
@@ -124,7 +143,7 @@ fn file_unchanged(path: &Path, rendered: &str) -> bool {
     verify = "neural",
     id = "doc_per_annotation_md_shape_locked_by_samples_mockup"
 )]
-fn render_annotation_md(id: &AnnotationId, entry: &IndexEntry) -> String {
+fn render_annotation_md(id: &AnnotationId, entry: &IndexEntry, include_status: bool) -> String {
     let header = match entry {
         IndexEntry::Intent(_) => format!("**Aristo verified intent — `{id}`**"),
         IndexEntry::Assume(_) => format!("**Aristo assumption — `{id}`**"),
@@ -137,7 +156,58 @@ fn render_annotation_md(id: &AnnotationId, entry: &IndexEntry) -> String {
         IndexEntry::Intent(e) => intent_meta_line(id, e),
         IndexEntry::Assume(e) => assume_meta_line(e),
     };
-    format!("{header}\n\n{text}\n\n{meta}\n\n---\n")
+    let status_block = if include_status {
+        match entry {
+            IndexEntry::Intent(e) => Some(status_block_for_intent(e)),
+            IndexEntry::Assume(_) => None,
+        }
+    } else {
+        None
+    };
+    match status_block {
+        Some(sb) => format!("{header}\n\n{text}\n\n{meta}\n\n{sb}\n\n---\n"),
+        None => format!("{header}\n\n{text}\n\n{meta}\n\n---\n"),
+    }
+}
+
+#[aristo::intent(
+    "The `--include-status` block is a blockquote that records the \
+     status at MD-generation time. The icon + label are stable; \
+     dropping the `(this state is current as of …)` disclaimer would \
+     mislead readers into thinking the embedded status is live, which \
+     it isn't — it goes stale the moment source code changes. The \
+     disclaimer is what keeps the doc artifact honest.",
+    verify = "neural",
+    id = "doc_include_status_block_records_state_with_staleness_disclaimer"
+)]
+fn status_block_for_intent(e: &IntentEntry) -> String {
+    let icon_state = match e.status {
+        Status::Verified => "✓ verified",
+        Status::Tested => "✓ tested",
+        Status::Neural => "✓ neural",
+        Status::Stale => "⚠ stale",
+        Status::Orphan => "⚠ orphan",
+        Status::Forged => "⚠ forged",
+        Status::Counterexample => "✗ counterexample",
+        Status::PendingDeepen => "? pending-deepen",
+        Status::Unknown => "? unknown",
+        Status::Inconclusive => "? inconclusive",
+    };
+    let commit_hint = match &e.binding {
+        BindingState::Certified {
+            last_verified_at_commit,
+            ..
+        } => {
+            let hex = last_verified_at_commit.as_str();
+            let short: String = hex.chars().take(10).collect();
+            format!(" at commit `{short}…`")
+        }
+        _ => String::new(),
+    };
+    format!(
+        "> **Verification state:** {icon_state}{commit_hint}\n\
+         > *(this state is current as of the last `aristo doc --include-status` run; re-run to refresh)*"
+    )
 }
 
 fn intent_meta_line(id: &AnnotationId, e: &IntentEntry) -> String {
@@ -451,7 +521,7 @@ mod tests {
     fn render_intent_uses_aristo_verified_intent_header() {
         let id = AnnotationId::parse("aristos:balance_no_duplicate_cells").unwrap();
         let entry = intent(VerifyLevel::Method(VerifyMethod::Full), true);
-        let md = render_annotation_md(&id, &entry);
+        let md = render_annotation_md(&id, &entry, false);
         assert!(
             md.starts_with("**Aristo verified intent — `aristos:balance_no_duplicate_cells`**\n"),
             "got:\n{md}"
@@ -462,7 +532,7 @@ mod tests {
     fn render_assume_uses_aristo_assumption_header() {
         let id = AnnotationId::parse("storage_write_atomicity").unwrap();
         let entry = assume();
-        let md = render_annotation_md(&id, &entry);
+        let md = render_annotation_md(&id, &entry, false);
         assert!(
             md.starts_with("**Aristo assumption — `storage_write_atomicity`**\n"),
             "got:\n{md}"
@@ -473,7 +543,7 @@ mod tests {
     fn render_intent_metadata_marks_server_bound_for_aristos_namespace() {
         let id = AnnotationId::parse("aristos:bound").unwrap();
         let entry = intent(VerifyLevel::Method(VerifyMethod::Full), true);
-        let md = render_annotation_md(&id, &entry);
+        let md = render_annotation_md(&id, &entry, false);
         assert!(
             md.contains("Verify level: **full**"),
             "expected verify-level marker; got:\n{md}"
@@ -488,7 +558,7 @@ mod tests {
     fn render_intent_metadata_omits_server_bound_for_local() {
         let id = AnnotationId::parse("local_intent").unwrap();
         let entry = intent(VerifyLevel::Bool(false), false);
-        let md = render_annotation_md(&id, &entry);
+        let md = render_annotation_md(&id, &entry, false);
         assert!(
             md.contains("Verify level: **false**"),
             "expected verify-level marker; got:\n{md}"
@@ -510,7 +580,7 @@ mod tests {
         entry.parent = Some(ParentLink::Single(
             AnnotationId::parse("balance_no_cells_lost").unwrap(),
         ));
-        let md = render_annotation_md(&id, &IndexEntry::Intent(entry));
+        let md = render_annotation_md(&id, &IndexEntry::Intent(entry), false);
         assert!(
             md.contains("See [parent: balance_no_cells_lost](./balance_no_cells_lost.md)"),
             "expected parent link; got:\n{md}"
@@ -521,11 +591,94 @@ mod tests {
     fn render_ends_with_separator_rule() {
         let id = AnnotationId::parse("any").unwrap();
         let entry = intent(VerifyLevel::Bool(false), false);
-        let md = render_annotation_md(&id, &entry);
+        let md = render_annotation_md(&id, &entry, false);
         assert!(
             md.trim_end().ends_with("\n---"),
             "expected trailing `---` separator; got:\n{md}"
         );
+    }
+
+    // ─── --include-status ──────────────────────────────────────────────
+
+    #[test]
+    fn render_intent_with_include_status_appends_blockquote() {
+        let id = AnnotationId::parse("aristos:bound").unwrap();
+        let entry = intent(VerifyLevel::Method(VerifyMethod::Full), true);
+        // Force status to verified for this test.
+        let entry = match entry {
+            IndexEntry::Intent(mut e) => {
+                e.status = Status::Verified;
+                IndexEntry::Intent(e)
+            }
+            other => other,
+        };
+        let md = render_annotation_md(&id, &entry, true);
+        assert!(
+            md.contains("> **Verification state:** ✓ verified"),
+            "expected verified blockquote; got:\n{md}"
+        );
+        assert!(
+            md.contains("state is current as of the last"),
+            "expected staleness disclaimer; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_intent_with_include_status_includes_commit_hint_for_certified() {
+        let id = AnnotationId::parse("aristos:bound").unwrap();
+        let entry = intent(VerifyLevel::Method(VerifyMethod::Full), true);
+        let md = render_annotation_md(&id, &entry, true);
+        // CommitHash in the fixture is "a" * 40; first 10 chars = "aaaaaaaaaa".
+        assert!(
+            md.contains("at commit `aaaaaaaaaa…`"),
+            "expected 10-char commit hint; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_intent_with_include_status_omits_commit_hint_for_local() {
+        let id = AnnotationId::parse("local").unwrap();
+        let entry = intent(VerifyLevel::Bool(false), false);
+        let md = render_annotation_md(&id, &entry, true);
+        assert!(
+            !md.contains("at commit"),
+            "did not expect commit hint on local entry; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_assume_with_include_status_omits_blockquote() {
+        // Assumes are not verification targets; status block is skipped
+        // even when --include-status is set.
+        let id = AnnotationId::parse("storage_write_atomicity").unwrap();
+        let entry = assume();
+        let md = render_annotation_md(&id, &entry, true);
+        assert!(
+            !md.contains("Verification state"),
+            "did not expect blockquote on assume; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn status_block_uses_warn_icon_for_stale() {
+        let mut e = match intent(VerifyLevel::Method(VerifyMethod::Full), true) {
+            IndexEntry::Intent(e) => e,
+            _ => unreachable!(),
+        };
+        e.status = Status::Stale;
+        let block = status_block_for_intent(&e);
+        assert!(block.contains("⚠ stale"), "got: {block}");
+    }
+
+    #[test]
+    fn status_block_uses_cross_icon_for_counterexample() {
+        let mut e = match intent(VerifyLevel::Method(VerifyMethod::Full), true) {
+            IndexEntry::Intent(e) => e,
+            _ => unreachable!(),
+        };
+        e.status = Status::Counterexample;
+        let block = status_block_for_intent(&e);
+        assert!(block.contains("✗ counterexample"), "got: {block}");
     }
 
     // ─── file_unchanged ────────────────────────────────────────────────
