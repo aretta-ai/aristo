@@ -160,9 +160,7 @@ pub fn clear_active_pointer(ws: &Workspace) -> CliResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::types::{
-        ExitKind, Item, ItemRef, NestingPolicy, Session, SessionState,
-    };
+    use crate::session::types::{ExitKind, Item, ItemRef, NestingPolicy, Session, SessionState};
     use tempfile::TempDir;
 
     fn fresh_workspace(dir: &TempDir) -> Workspace {

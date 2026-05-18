@@ -36,10 +36,13 @@
 //! - All of `.aristo/sessions/` is gitignored — only the *effects* of
 //!   approvals (source edits) reach git.
 
-// The types + storage here are scaffolding for the rest of slice 27.5
-// — the CLI surface (step 2), pre-check guards (step 3), and per-kind
-// impls (steps 5-6) consume them. Suppress dead-code warnings at the
-// module level until step 2 lands; remove the `#[allow]` then.
+// The types + storage + rejection log here are scaffolding for the
+// rest of slice 27.5 — the CLI surface (step 2), pre-check guards
+// (step 3), and per-kind impls (steps 5-6) consume them. Suppress
+// dead-code warnings at the module level until step 2 lands; remove
+// the `#[allow]` then.
+#[allow(dead_code, reason = "scaffolding consumed by steps 2-6 of slice 27.5")]
+pub mod rejections;
 #[allow(dead_code, reason = "scaffolding consumed by steps 2-6 of slice 27.5")]
 pub mod storage;
 #[allow(dead_code, reason = "scaffolding consumed by steps 2-6 of slice 27.5")]

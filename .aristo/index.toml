@@ -1,8 +1,19 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:40:45.026161Z"
+generated_at = "2026-05-18T18:45:49.834782Z"
 source_root = "."
+
+[active_pointer_read_trims_whitespace]
+kind = "intent"
+text = "`.active` is the single source of truth for 'is there an active session?'. Reading it is the first step of every SDK pre-check. Whitespace-trim the contents so a stray trailing newline (from an editor or a shell `echo`) doesn't break id lookup. A refactor that used the contents verbatim would silently treat an edited pointer as no-such-session."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:57c2d70759060bfca953500e1e7af6e7e3f3968b0c454807b2557f239e049117"
+body_hash = "sha256:048cc31364b00e1c9edbc0e72d8cbec420874d13ce354b1ea3b38a08f5019b89"
+file = "crates/aristo-cli/src/session/storage.rs"
+site = "fn read_active_pointer (line 109)"
+covered_region = "function"
 
 [agents_md_install_preserves_outside_markers]
 kind = "intent"
@@ -79,6 +90,17 @@ text_hash = "sha256:e263b091886cb4c609e53a9967e731cb3c967aa28163a64f90b6d5f93c48
 body_hash = "sha256:cd90679da5a4b2be67dab24d0af844740a795916a5d7634477e3a204e2b0aaf4"
 file = "crates/aristo-cli/src/skills/mod.rs"
 site = "fn bundled (line 53)"
+covered_region = "function"
+
+[clear_active_pointer_is_idempotent_and_load_bearing_for_exit]
+kind = "intent"
+text = "Clearing `.active` is the last step of every session-exit flow (strict exit, defer-undecided exit, and abort all clear it). A refactor that left `.active` pointing at a closed session would break every subsequent pre-check — the SDK would think a session is in flight that the user already exited. Idempotent (missing file is fine) so re-running an exit handler doesn't error."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:100148decb0b5b2bc352b9a9e154beeb1425bfba264599d38e581494672719f6"
+body_hash = "sha256:dafa100aaff6cc25482d70286e7799f5d87c480a3b00d38efb62d1488009fa72"
+file = "crates/aristo-cli/src/session/storage.rs"
+site = "fn clear_active_pointer (line 141)"
 covered_region = "function"
 
 [critique_apply_is_summary_only_in_v0]
@@ -429,6 +451,28 @@ text_hash = "sha256:db4a42a4c2aa63e816ff743443caf38fd9387ff2f12199c9cbc4252d6449
 body_hash = "sha256:a375f28c18cbc1eeb7062793e71b92c2e40265d1c9b02841b40ed095101ec271"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
 site = "fn clear_ground_hashes (line 129)"
+covered_region = "function"
+
+[session_close_uses_atomic_rename_active_to_closed]
+kind = "intent"
+text = "Closing a session is an atomic file move from active/ to closed/. A reader that sees the file is gone from active/ MUST find it in closed/ (or .active was cleared first — see `[[clear_active_pointer]]`). A refactor that copied + deleted instead of renaming would introduce a window where the session exists in both directories (stale-read risk) or in neither (lost audit trail)."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:1abaac120a4f9ce88ac2ee353cf09015c0b744aa43ccb7706f09e6fc809fe2f1"
+body_hash = "sha256:a5eaa1eee5b382caf535c15778772d5f66e238afae6fad0b274cef2c5b03b674"
+file = "crates/aristo-cli/src/session/storage.rs"
+site = "fn move_to_closed (line 90)"
+covered_region = "function"
+
+[session_writes_are_atomic_via_tempfile_rename]
+kind = "intent"
+text = "Session writes go through `atomic_write` (temp-file + rename) so a concurrent reader cannot observe a partially-serialized session file. The session TOML is the single source of truth for in-flight state; a half-written file would deserialize-error and look like 'session is gone' from the reader's perspective. A refactor that used `fs::write` directly would re-introduce the partial-read window between open and close."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:95804e77cd60e3e9f9e85c8ed36b780a48ba2a9ff899f18db45fa5750b00e68b"
+body_hash = "sha256:126d6ddb944e78ef6646bb39fdd4bd739b6d4d5086642cfba691a755a726d409"
+file = "crates/aristo-cli/src/session/storage.rs"
+site = "fn write_active_session (line 53)"
 covered_region = "function"
 
 [sha256_from_bytes_is_canonical_form]
