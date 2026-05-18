@@ -288,7 +288,15 @@ enum Commands {
     Graph,
 
     /// Generate a shareable SVG verification badge for README / docs.
-    Badge,
+    Badge {
+        /// Write SVG to this path (relative to workspace root, or absolute).
+        /// Default: stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Badge style. Mirrors shields.io's three default forms.
+        #[arg(long, default_value = "flat")]
+        style: String,
+    },
 
     /// Atomic project-wide rename of an annotation id.
     Rename,
@@ -384,7 +392,14 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             check,
         } => commands::doc::run(summary, include_status, check),
         Commands::Graph => not_yet("aristo graph", "slice 29"),
-        Commands::Badge => not_yet("aristo badge", "slice 31"),
+        Commands::Badge { out, style } => {
+            let style =
+                commands::badge::Style::parse(&style).map_err(|message| CliError::Other {
+                    message,
+                    exit_code: 2,
+                })?;
+            commands::badge::run(out, style)
+        }
         Commands::Rename => not_yet("aristo rename", "slice 32"),
     }
 }
@@ -440,7 +455,6 @@ mod tests {
         // fully implemented.
         let variants = [
             (Commands::Graph, "slice 29"),
-            (Commands::Badge, "slice 31"),
             (Commands::Rename, "slice 32"),
         ];
         for (cmd, expected_slice) in variants {

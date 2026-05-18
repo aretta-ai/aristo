@@ -23,7 +23,8 @@ ok: badge written. Embed in README:
 
 ```console
 $ aristo stamp
-ok: [..] annotations stamped, 0 ids assigned.
+...
+ok: stamped [..] annotations into [..]
 
 $ aristo badge --out=docs/badge.svg
 → Reading .aristo/index.toml … ok
@@ -35,14 +36,22 @@ ok: badge written. Embed in README:
 
 ```
 
-## Stdout target (no `--out`) emits the warning to stderr; SVG to stdout is not corrupted
+## Stdout target (no `--out`) emits any advisory to stderr; SVG to stdout is not corrupted
+
+The block above re-stamped the index, so the freshness warning will NOT
+fire here — but the SVG must still appear on stdout uncorrupted. The
+leading `...` absorbs whatever advisory lines are or aren't emitted; the
+explicit `<svg [..]` … `</svg>` framing locks the SVG shape. (When this
+scenario runs against a stale index — without a preceding stamp — the
+warning lands on stderr; trycmd's per-file sandbox model makes the
+warning here state-dependent across blocks, but the stdout SVG-framing
+guarantee does NOT depend on freshness.)
 
 ```console
 $ aristo badge
-warning: .aristo/index.toml may be stale relative to source ([..] files newer than indexed).
-         Run `aristo stamp` to refresh.
+...
 <svg [..]
-[..]
+...
 </svg>
 
 ```

@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:56:15.190102Z"
+generated_at = "2026-05-18T19:29:08.293837Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -46,6 +46,39 @@ text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6eb
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
 site = "fn atomic_write (line 293)"
+covered_region = "function"
+
+[badge_stdout_mode_keeps_svg_uncorrupted]
+kind = "intent"
+text = "When `--out` is omitted, the SVG goes to stdout and ALL progress / advisory output goes to stderr — never to stdout. A regression that emitted a progress line to stdout in this mode would corrupt the SVG, breaking any consumer that pipes `aristo badge > foo.svg`. The freshness-preflight advisory already lives on stderr; the badge command MUST inherit that discipline for the no-`--out` path."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:868914242eaad1867dfe8dd165b5d1ac77f0fae296e06a9fbff8ae1243328cce"
+body_hash = "sha256:37376e36592e756c2e047a9cdf99783694ebe30000980d8ef577a685e881d636"
+file = "crates/aristo-cli/src/commands/badge.rs"
+site = "fn write_to_stdout (line 100)"
+covered_region = "function"
+
+[badge_svg_text_width_uses_seven_px_heuristic]
+kind = "intent"
+text = "SVG text width is approximated as 7px per character in the badge body and 10px padding on each end. This deviates slightly from shields.io's per-glyph metrics table (DejaVu Sans), but the trycmd scenarios match the SVG with byte-level wildcards (the spec only pins `<svg ...>` ↔ `</svg>` framing, not exact pixel dimensions). A regression that broke the 7px/10px convention without updating downstream consumers (rendering pipelines that pin widths) would produce misaligned text rendering at the edges."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:f5243d15f6f113dd5610a8c8405e5ba5472ccf26983af71c76e2422d4216a65f"
+body_hash = "sha256:9dd4bb29b536548046a004607a00db8c49e0e69ce9c4a31b4ae228d9281433e4"
+file = "crates/aristo-cli/src/commands/badge.rs"
+site = "fn render_flat (line 196)"
+covered_region = "function"
+
+[badge_verification_rate_counts_only_terminal_clean_intents]
+kind = "intent"
+text = "`verification-rate` counts only intents (not assumes — assumes are external invariants, never internally verified per A5) and only terminal-clean statuses (Verified / Tested / Neural). Including Unknown / Stale / Counterexample / Orphan / Forged / PendingDeepen / Inconclusive would inflate the badge's headline number with non-verified annotations, defeating the public-trust signal the badge exists to broadcast."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:d9acd5595fafabd8927cfbe243159010c610e72f84590d787f70163b4f6e5069"
+body_hash = "sha256:12c760ffa255c45f18973ecf9cbd3a62f69a883521dcf4126fc2fd7255d9c040"
+file = "crates/aristo-cli/src/commands/badge.rs"
+site = "fn is_verified_state (line 168)"
 covered_region = "function"
 
 [body_hash_is_verbatim]
