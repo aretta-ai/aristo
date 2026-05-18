@@ -268,6 +268,24 @@ mod tests {
             "skill body must require two-step confirmation before any source edit \
              (no silent source mutation from skill orchestration)"
         );
+        assert!(
+            body.contains("aristo session active"),
+            "skill body's step 0 must check for an active review session \
+             (slice 27.5 Layer 3 enforcement)"
+        );
+        assert!(
+            body.contains("aristo session start proof-review"),
+            "skill body's step 7 must open a session before interactive review"
+        );
+        assert!(
+            body.contains("aristo session decide --item"),
+            "skill body's step 7 must record per-proof decisions via the substrate"
+        );
+        assert!(
+            body.contains("aristo session exit --defer-undecided"),
+            "skill body must offer defer-undecided as the early-stop path \
+             so un-decided proofs go to backlog, not silently dropped"
+        );
     }
 
     #[test]

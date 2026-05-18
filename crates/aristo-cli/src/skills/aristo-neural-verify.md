@@ -8,6 +8,16 @@ sdk_version: {{SDK_VERSION}}
 
 When the user invokes this skill (typically by typing `/aristo-neural-verify`, but also when they ask to "verify the neural intents" or "run aristo verify"), follow this orchestration exactly. The Aristo SDK has already done the dispatch + validator work; **your job is to produce verdicts the SDK validates and writes, NOT to update the index or proofs directory directly.**
 
+## Step 0 — check for an active review session (FIRST, BEFORE ANY WORK)
+
+Run `aristo session active`. Three cases:
+
+- **Empty stdout** → no active session; proceed normally.
+- **Stdout shows a session id with `kind: proof-review`** → there is a prior proof-review session in flight (e.g., from a previous turn that didn't reach exit). Resume it: jump to step 7 with that session id; do NOT enqueue new tasks or spawn workers, because the user has unfinished triage to handle first.
+- **Stdout shows a session id with a different `kind` (e.g., `critique-review`)** → REFUSE. Print: "an aristo `<kind>` session is currently active (id=<id>, subject=<subject>). Exit it first with `aristo session exit` (or `aristo session exit --defer-undecided` to park open items), then re-invoke `/aristo-neural-verify`." Stop here. Do not enqueue, spawn, or touch state.
+
+This check is Layer 3 of the three-layer enforcement (Layer 1 is the SDK pre-check that refuses `aristo verify` while a session is active; Layer 2 is the `UserPromptSubmit` hook that reminds you every turn). The skill body discipline matters because some agents bypass the SDK check by going directly to a worker subagent — the body refusal in this step is the last line of defense.
+
 ## Step 1 — check the queue
 
 The SDK enqueued each annotation needing neural verification as a separate task file at `.aristo/verify-queue/pending/<id>.toml`. Workers atomically pop one task at a time via `aristo verify --pop-next`.
@@ -302,9 +312,19 @@ Emit a short markdown summary immediately after `--apply-verdicts` returns. Keep
 
 If everything was rejected or there is no accepted content: stop here. There is nothing to walk through.
 
-## Step 7 — interactive review (gated by user choice)
+## Step 7 — interactive review wrapped in a review session
 
-After the summary, offer an interactive walk-through via `AskUserQuestion`. This is where the skill earns its keep — the user gets to actually act on counterexamples and suggestions, not just see them.
+After the summary, offer an interactive walk-through via `AskUserQuestion` — wrapped end-to-end in a **proof-review session** so every decision lands as a substrate-recorded triage state.
+
+### 7.0 Open the session
+
+If step 0 found no active session, start one now:
+
+```bash
+aristo session start proof-review --subject "<short description of what was verified>"
+```
+
+(If step 0 found a resumable proof-review session, skip this — you're continuing it.)
 
 ### 7.1 Opening choice
 
@@ -313,13 +333,14 @@ Ask the user how they want to engage:
 ```
 Question: How would you like to review the results?
 Options:
-- Walk through all proofs           — go through each verdict step by step
-- Counterexamples only              — focus on what was refuted
-- Inconclusive only                 — focus on suggestions you could accept
-- Skip review                       — I'll come back later
+- Walk through all proofs                  — go through each verdict step by step
+- Counterexamples only                     — focus on what was refuted
+- Inconclusive only                        — focus on suggestions you could accept
+- Skip review (defer to backlog)           — `aristo session exit --defer-undecided` (any items you wanted to triage move to the backlog; never silently dropped)
+- Abort review entirely                    — `aristo session abort` (destructive; confirmation prompt)
 ```
 
-If the user picks "Skip review", stop. The proofs are on disk; they can be reviewed any time via `aristo show <id>` or by reading `.aristo/proofs/<id>.proof`.
+If the user picks one of the close options, run that command and stop. The proofs themselves are on disk; they can be reviewed any time via `aristo show <id>` or by reading `.aristo/proofs/<id>.proof`.
 
 ### 7.2 Per-proof walkthrough — render the proof in markdown
 
@@ -349,16 +370,17 @@ Keep ground summaries short. For code grounds: `crates/x/y.rs:LO-HI — <reason 
 
 ### 7.3 Per-proof action menu
 
-After rendering each proof, ask the user what to do next. The options depend on verdict type:
+After rendering each proof, ask the user what to do next. Every option maps to a `aristo session decide --item <ref> --bucket <...>` invocation so the substrate records the triage. Item refs use the proof-review encoding: `<proof_id>#verdict` for proof-level decisions, `<proof_id>#<suggestion_index>` for per-suggestion decisions on inconclusive proofs.
 
 #### Verified verdicts
 
 ```
 Question: Verified — <annotation-id>. What next?
 Options:
-- Next proof                — continue
-- Ask a follow-up question  — spawn a Q&A subagent with the proof loaded
-- Stop review               — exit step 7
+- Accept                    — `aristo session decide --item <id>#verdict --bucket accepted` (acknowledges the verdict in the session audit trail)
+- Ask a follow-up question  — spawn a Q&A subagent with the proof loaded; loop back here after answering
+- Defer (next proof)        — `aristo session decide --item <id>#verdict --bucket pending` (parks for later; appears in next session's backlog)
+- Stop review               — `aristo session exit --defer-undecided` (closes the session; any un-decided items go to backlog)
 ```
 
 If the user asks a follow-up: spawn a fresh `Agent(general-purpose)` with the proof file + the relevant source loaded; relay the user's question; return the answer; loop back to the action menu.
@@ -368,21 +390,21 @@ If the user asks a follow-up: spawn a fresh `Agent(general-purpose)` with the pr
 ```
 Question: Counterexample — <annotation-id>. The proof shows the claim does NOT hold. What next?
 Options:
-- Fix the code            — make a source edit so the claim holds (you propose, user confirms)
-- Rewrite the intent text — narrow the claim to exclude the failing case
-- Defer                   — leave as Counterexample (will surface loudly on every aristo stamp)
-- Next proof              — move on, decide later
+- Fix the code            — make a source edit; then `aristo session decide --item <id>#verdict --bucket accepted --note "fixed in source"`
+- Rewrite the intent text — narrow the claim to exclude the failing case; then `aristo session decide --item <id>#verdict --bucket accepted --note "intent narrowed"`
+- Reject                  — `aristo session decide --item <id>#verdict --bucket rejected --note "..."` (verdict not actionable — e.g., counterexample is in a deprecated path)
+- Defer                   — `aristo session decide --item <id>#verdict --bucket pending` (leave as Counterexample; loud warning on every `aristo stamp` keeps it visible)
 ```
 
-On **Fix the code**: read the violated step, propose a specific edit (Edit tool — show the diff first via the question's `preview` field if reasonable). Confirm via a second `AskUserQuestion` before applying. After applying: run `aristo stamp` so the entry transitions to Stale, then re-pend for re-verification.
+On **Fix the code**: read the violated step, propose a specific edit (Edit tool — show the diff first via the question's `preview` field if reasonable). Confirm via a second `AskUserQuestion` before applying. After applying: record the decide. `aristo stamp` happens AFTER the session closes (the guard blocks it during the session).
 
-On **Rewrite the intent text**: read the current intent text from the source file, propose a narrowed version that excludes the failing case, confirm via `AskUserQuestion` with the new text in `preview`. Apply via Edit. Run `aristo stamp`. The entry transitions to Stale, will be re-verified on next `/aristo-neural-verify`.
+On **Rewrite the intent text**: read the current intent text from the source file, propose a narrowed version, confirm via `AskUserQuestion` with the new text in `preview`. Apply via Edit. Record the decide. `aristo stamp` after close.
 
-On **Defer**: do nothing. Continue to next proof. The loud-counterexample warning on `aristo stamp` ensures it stays visible.
+On **Defer**: the substrate records this as `pending`; the counterexample stays loud on `aristo stamp` regardless (per `aristo stamp`'s built-in counterexample warning).
 
 #### Inconclusive verdicts
 
-This is the case the user specifically called out. **Every suggested annotation gets surfaced as an actionable question.**
+This is the case the user specifically called out. **Every suggested annotation gets surfaced as an actionable question.** Each suggestion has its own item ref `<id>#<suggestion_index>`.
 
 ```
 Question: Inconclusive — <annotation-id>. The verifier suggests <N> annotation(s) that could close the gap. Pick one:
@@ -390,23 +412,25 @@ Options:
 - Add suggestion 1: <kind> at <site> — "<truncated text>..."
 - Add suggestion 2: <kind> at <site> — "<truncated text>..."   (if exists)
 - Add suggestion 3: <kind> at <site> — "<truncated text>..."   (if exists; AskUserQuestion supports max 4)
-- Skip — review later                  — leave the suggestions in the proof file
+- Skip — defer all                     — `aristo session decide --item <id>#verdict --bucket pending` (parks the whole proof for later)
 ```
 
 Use `preview` on each option to show the full suggested text (multi-line, with the file/site context). The user picks one (or "Other" for a custom variant of the suggestion).
 
-On **Add suggestion N**: edit the source file at the suggested `at_site` to insert the new `#[aristo::intent(...)]` or `#[aristo::assume(...)]` annotation with the suggested text. Show the proposed edit (file path + new lines) and confirm via a second `AskUserQuestion` before applying. After applying: run `aristo stamp` so the new annotation is indexed. The new annotation will appear in the next `aristo verify` pending list (it needs its own verification).
+On **Add suggestion N**: edit the source file at the suggested `at_site` to insert the new `#[aristo::intent(...)]` or `#[aristo::assume(...)]` annotation with the suggested text. Show the proposed edit (file path + new lines) and confirm via a second `AskUserQuestion` before applying. After applying: record `aristo session decide --item <id>#<N> --bucket accepted --note "added"`. Also record the OTHER suggestions on the same proof as rejected (with notes) so the substrate's fingerprint captures the per-suggestion judgment. `aristo stamp` after the session closes.
 
 If a proof has more than 3 suggestions: present the first 3 as direct options + a 4th option "Show all suggestions" that re-prompts with the next batch.
 
-On **Skip**: continue. The suggestions stay in the proof file. The validator's suggestion-vs-index check (see `validator_rejects_inconclusive_when_suggestion_is_in_index`) means that IF the user later adds an annotation matching one of the suggestions, the entry auto-re-pends.
+On **Skip — defer all**: records the proof-level defer; suggestions stay in the proof file. The validator's suggestion-vs-index check (see `validator_rejects_inconclusive_when_suggestion_is_in_index`) means IF the user later adds an annotation matching one of the suggestions, the entry auto-re-pends.
 
-### 7.4 Closing
+### 7.4 Closing the session
 
-When the user picks "Stop review" or the walkthrough reaches the end:
+When all proofs are decided OR the user picks "Stop review (defer remaining)":
 
-- Print a one-line closing summary: actions taken this session (e.g., "3 proofs reviewed; 1 suggestion accepted (added assume on `atomic_write`); 1 counterexample deferred").
-- If any source edits were made AND `aristo verify` hasn't been re-run yet: remind the user that the affected entries are now Stale and will be re-verified on the next `aristo verify` / `/aristo-neural-verify` cycle.
+- **All decided** → `aristo session exit` (strict close).
+- **Stopped early** → `aristo session exit --defer-undecided` (un-decided items move to backlog; never silently dropped).
+
+Print the closing summary line (SDK emits one already). If any source edits were made: remind the user the affected entries are now Stale and will re-pend on the next `aristo verify` / `/aristo-neural-verify` cycle. Run `aristo stamp` AFTER closing the session (the guard blocks it during the session).
 
 ## What this skill does NOT do
 
