@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T06:33:45.45441Z"
+generated_at = "2026-05-18T18:37:05.459221Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -167,6 +167,17 @@ text_hash = "sha256:83deaa81889acf09c9fb6383c823ac8363bc91277a16be89294ac106f979
 body_hash = "sha256:cc2281617efc9e3c91c3a6da65da3072d3f3b19e9110d3b3a710746ebda12ddf"
 file = "crates/aristo-cli/src/commands/show.rs"
 site = "fn did_you_mean (line 251)"
+covered_region = "function"
+
+[doc_summary_writes_summary_only]
+kind = "intent"
+text = "`aristo doc --summary` writes the crate-root `_summary.md` ONLY — it does not also run the per-annotation pass. Combining both is `aristo doc --include-graph` (slice 29). A regression that made `--summary` imply per-annotation writes would surprise users who opted into the cheap summary-only flow for CI gates."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:63bcb80f0391a30b7523d2444a3c6585e93967a39eebc30a0c30d00afc528eb7"
+body_hash = "sha256:cf0d617f7cde85b1a6457b91b241582d5dd0c8910d83092f04f781e99a4bf6b7"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn run_summary (line 55)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]
