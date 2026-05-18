@@ -256,6 +256,14 @@ enum Commands {
         /// --filter id=X` are free when X is unchanged).
         #[arg(long = "rerun")]
         rerun: bool,
+        /// Restrict scope to annotations in files git-staged for the
+        /// next commit (`git diff --cached --name-only`). Useful for
+        /// pre-commit hook integration. Satisfies the filter-required
+        /// guard on its own; composes with explicit `--filter`
+        /// clauses via intersection (annotations must match BOTH
+        /// `--filter` and appear in the staged set).
+        #[arg(long = "staged")]
+        staged: bool,
         /// Worker-facing API: atomically claim one task from the
         /// critique queue and print its TOML body to stdout. Empty
         /// stdout means the queue is drained (still exits 0). Critique
@@ -485,6 +493,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             apply_findings,
             include_closed,
             rerun,
+            staged,
             pop_next,
             queue_status,
             submit_findings,
@@ -498,6 +507,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             apply_findings,
             include_closed,
             rerun,
+            staged,
             id,
             json,
         ),

@@ -48,6 +48,7 @@ pub(crate) fn run(
     apply_findings: bool,
     include_closed: bool,
     rerun: bool,
+    staged: bool,
     id: Option<String>,
     json: Option<String>,
 ) -> CliResult<()> {
@@ -77,13 +78,16 @@ pub(crate) fn run(
         return apply::run_apply_findings(&ws, include_closed);
     }
 
-    // Default path: enqueue tasks for the filtered ids.
-    if filter_strings.is_empty() {
+    // Default path: enqueue tasks for the filtered ids. `--staged`
+    // satisfies the filter-required guard on its own (it provides
+    // bounded scope: only files git-staged for the next commit).
+    if filter_strings.is_empty() && !staged {
         return Err(CliError::Other {
-            message: "`aristo critique` requires `--filter`. Examples:\n  \
+            message: "`aristo critique` requires `--filter` or `--staged`. Examples:\n  \
                  aristo critique --filter id=my_intent\n  \
                  aristo critique --filter id=foo,bar,baz\n  \
-                 aristo critique --filter file=src/x.rs\n\
+                 aristo critique --filter file=src/x.rs\n  \
+                 aristo critique --staged    # critique annotations in git-staged files\n\
                  (a default --all sweep is intentionally not provided — \
                  critique is an LLM call and shouldn't be the accidental path)"
                 .into(),
@@ -94,11 +98,22 @@ pub(crate) fn run(
     crate::session::guard::ensure_no_active_session(&ws, "aristo critique")?;
 
     let filters = parse_filters(filter_strings)?;
+    let staged_files: Option<std::collections::BTreeSet<String>> = if staged {
+        Some(staged_files_or_error(&ws)?)
+    } else {
+        None
+    };
     let mut matched: Vec<&AnnotationId> = Vec::new();
     for (id, entry) in index.entries.iter() {
-        if matches_all(id, entry, &filters) {
-            matched.push(id);
+        if !matches_all(id, entry, &filters) {
+            continue;
         }
+        if let Some(staged) = &staged_files {
+            if !staged.contains(file_of(entry)) {
+                continue;
+            }
+        }
+        matched.push(id);
     }
 
     if matched.is_empty() {
@@ -213,6 +228,49 @@ fn parent_ids(entry: &IndexEntry) -> Option<&aristo_core::index::ParentLink> {
         IndexEntry::Intent(e) => e.parent.as_ref(),
         IndexEntry::Assume(e) => e.parent.as_ref(),
     }
+}
+
+#[aristo::intent(
+    "`aristo critique --staged` intersects with any `--filter file=` \
+     clauses rather than replacing them. Composition semantic, not \
+     replacement: `--staged --filter file=src/x.rs` enqueues the \
+     intersection (annotations in src/x.rs that ALSO appear in the \
+     git-staged set), not the union. A refactor that unions them would \
+     turn `--staged` into a quiet expansion that ignores explicit \
+     scoping the user added, contradicting its scoping-tighter purpose. \
+     Empty intersection (no staged files match the filter) yields the \
+     usual `0 annotations matched` exit, not an error.",
+    verify = "neural",
+    id = "critique_staged_filter_intersects_with_explicit_filter"
+)]
+fn staged_files_or_error(ws: &Workspace) -> CliResult<std::collections::BTreeSet<String>> {
+    let output = std::process::Command::new("git")
+        .arg("diff")
+        .arg("--cached")
+        .arg("--name-only")
+        .current_dir(&ws.root)
+        .output()
+        .map_err(|e| CliError::Other {
+            message: format!("`--staged` requires `git` on PATH; running `git diff --cached --name-only` failed: {e}"),
+            exit_code: 2,
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(CliError::Other {
+            message: format!(
+                "`--staged` ran `git diff --cached --name-only` but git exited non-zero. \
+                 Is this directory inside a git repository? Stderr: {stderr}"
+            ),
+            exit_code: 2,
+        });
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let files: std::collections::BTreeSet<String> = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+        .collect();
+    Ok(files)
 }
 
 #[aristo::intent(

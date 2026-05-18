@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T23:29:34.082325Z"
+generated_at = "2026-05-18T23:33:23.624549Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -230,7 +230,7 @@ text = "`aristo critique` requires an explicit `--filter` (id or file). Default 
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:c2fc45fff111078b8adba8b37b554eedb85cf2bc5338c40cb597a5de1eec4d5e"
-body_hash = "sha256:b618ea27fdca5ad0c83d173119e2cf81840f99d422093cbcc614880318ae582c"
+body_hash = "sha256:aa49223714241b24520f2cea2065dac6568066e1db6516328c361da1b18c2242"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
 site = "fn run (line 30)"
 covered_region = "function"
@@ -244,6 +244,17 @@ text_hash = "sha256:1a1256630dba9c0a3da9d4aef15f8e897778a4c79b48ae1fcd4e523dac4e
 body_hash = "sha256:ee9baa8cfa966240c9c689d84cca1a913035b022a8cbfa7083e88fa331b02dc9"
 file = "crates/aristo-cli/src/commands/critique/pending.rs"
 site = "fn sibling_annotations (line 122)"
+covered_region = "function"
+
+[critique_skip_consults_cached_text_hash_for_drift]
+kind = "intent"
+text = """`aristo critique` consults `last_critiqued_at_text_hash` on each IntentEntry before re-enqueueing it. If the cached value equals the entry's current `text_hash`, the existing .critique file is up to date and re-running the LLM would burn tokens for the same answer — skip the enqueue. This is the whole point of the cache: a refactor that always re-enqueues regardless of cache state re-introduces the daily-loop LLM cost the cache exists to amortize. AssumeEntries and entries with no cache (the field is `None`) are NEVER skipped — for assumes the cache is irrelevant; for first-time entries the absent cache means "no critique on record" so the dispatcher must produce one. `--rerun` bypasses the cache entirely."""
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:69093923520528f8073dbb349408b7dd147b700f64067b61887e6779a226db8f"
+body_hash = "sha256:e52b7d0a967aee592c885d6c269837712e19c8a1073340b1f1c5d4509a4d94b7"
+file = "crates/aristo-cli/src/commands/critique/mod.rs"
+site = "fn critique_is_current (line 218)"
 covered_region = "function"
 
 [critique_validator_checks_schema_and_focal_id_in_index]
