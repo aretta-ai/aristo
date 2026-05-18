@@ -13,9 +13,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use aristo_core::critique::{CritiqueFile, Disposition, Finding, Severity};
-use aristo_core::index::AnnotationId;
+use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
 
-use crate::commands::index::workspace_or_error;
+use crate::commands::index::{atomic_write, workspace_or_error};
 use crate::commands::show::read_index;
 use crate::pipeline::queue::{self, QueueDir};
 use crate::{CliError, CliResult, Workspace};
@@ -84,6 +84,13 @@ pub(crate) fn run_apply_findings(_ws: &Workspace, include_closed: bool) -> CliRe
         if pending_path.is_file() {
             let _ = std::fs::remove_file(&pending_path);
         }
+    }
+
+    // Stamp the cache fields on every accepted critique's IntentEntry.
+    // Commit 4 will consult these to skip re-enqueue when text hasn't
+    // drifted. Assume entries are skipped (cache fields are IntentEntry-only).
+    if !accepted.is_empty() {
+        stamp_critique_cache(&ws, &index, &accepted)?;
     }
 
     print_summary(&accepted, &rejected, &parse_errors, include_closed);
@@ -209,6 +216,58 @@ fn partition_for_render(findings: &[Finding], include_closed: bool) -> (Vec<&Fin
     (visible, total_closed)
 }
 
+#[aristo::intent(
+    "`aristo critique --apply-findings` stamps `last_critiqued_at_text_hash` \
+     + `last_critique_finding_count` on each accepted critique's IntentEntry \
+     in the same operation that validates the .critique file. The cache and \
+     the on-disk .critique MUST be updated together: a writer that stamps \
+     before validate or skips the stamp leaves readers seeing stale-cache + \
+     fresh-file divergence (the cache claims a critique is current when the \
+     file says otherwise, or vice versa). Idempotent: re-running on an \
+     unchanged .critique re-writes the same values. AssumeEntry is skipped \
+     (the cache fields are IntentEntry-only by design — assumes are \
+     documentation-only annotations per A5 and don't have the same cache \
+     lifecycle as verifiable intents).",
+    verify = "neural",
+    id = "critique_apply_stamps_cache_on_success"
+)]
+fn stamp_critique_cache(
+    ws: &Workspace,
+    index: &IndexFile,
+    accepted: &[(AnnotationId, CritiqueFile)],
+) -> CliResult<()> {
+    let (new_index, stamped) = apply_cache_to_index(index.clone(), accepted);
+    if stamped == 0 {
+        return Ok(());
+    }
+    let toml_text = toml::to_string_pretty(&new_index).map_err(|e| CliError::Other {
+        message: format!("serializing index.toml: {e}"),
+        exit_code: 1,
+    })?;
+    atomic_write(&ws.index_path(), &toml_text)
+}
+
+/// Pure: write the cache fields onto each IntentEntry whose id appears
+/// in `accepted`. Returns the mutated index + the count of entries stamped.
+/// AssumeEntries are silently skipped (cache fields are IntentEntry-only).
+/// Missing ids are silently skipped (the .critique points at an id that
+/// no longer exists in the current index — apply already rejected those
+/// upstream via the validator's focal_id check).
+fn apply_cache_to_index(
+    mut index: IndexFile,
+    accepted: &[(AnnotationId, CritiqueFile)],
+) -> (IndexFile, usize) {
+    let mut stamped = 0usize;
+    for (id, cf) in accepted {
+        if let Some(IndexEntry::Intent(e)) = index.entries.get_mut(id) {
+            e.last_critiqued_at_text_hash = Some(cf.critique.critiqued_at_text_hash.clone());
+            e.last_critique_finding_count = Some(cf.critique.findings.len() as u32);
+            stamped += 1;
+        }
+    }
+    (index, stamped)
+}
+
 fn disposition_label(d: Disposition) -> &'static str {
     match d {
         Disposition::Accepted => "accepted",
@@ -249,7 +308,12 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aristo_core::critique::Category;
+    use aristo_core::critique::{Category, CritiqueBody};
+    use aristo_core::index::{
+        AssumeEntry, BindingState, CoveredRegion, IntentEntry, Meta, Sha256, Status, VerifyLevel,
+        VerifyMethod,
+    };
+    use std::collections::BTreeMap;
 
     fn finding(disposition: Option<Disposition>) -> Finding {
         Finding {
@@ -313,5 +377,155 @@ mod tests {
         let (visible, total_closed) = partition_for_render(&findings, false);
         assert!(visible.is_empty(), "all closed, none visible by default");
         assert_eq!(total_closed, 2);
+    }
+
+    fn sha(c: char) -> Sha256 {
+        Sha256::parse(&format!("sha256:{}", c.to_string().repeat(64))).unwrap()
+    }
+
+    fn intent_entry(text_hash: Sha256) -> IntentEntry {
+        IntentEntry {
+            text: "x".into(),
+            verify: VerifyLevel::Method(VerifyMethod::Neural),
+            status: Status::Unknown,
+            text_hash,
+            body_hash: sha('b'),
+            file: "src/x.rs".into(),
+            site: "fn x (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            binding: BindingState::Local,
+            parent: None,
+            last_critiqued_at_text_hash: None,
+            last_critique_finding_count: None,
+        }
+    }
+
+    fn empty_meta() -> Meta {
+        Meta {
+            schema_version: 1,
+            generated_by: None,
+            generated_at: None,
+            source_root: None,
+        }
+    }
+
+    fn critique_with(text_hash: Sha256, n_findings: usize) -> CritiqueFile {
+        let findings = (0..n_findings).map(|_| finding(None)).collect();
+        CritiqueFile {
+            critique: CritiqueBody {
+                critiqued_at_text_hash: text_hash,
+                produced_at_body_hash: sha('c'),
+                produced_by: "test".into(),
+                attempts: 1,
+                finding_count: Some(n_findings as u32),
+                highest_severity: None,
+                findings,
+            },
+        }
+    }
+
+    #[test]
+    fn apply_cache_stamps_text_hash_and_count_on_intent() {
+        let id = AnnotationId::parse("foo").unwrap();
+        let text_hash = sha('a');
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            id.clone(),
+            IndexEntry::Intent(intent_entry(text_hash.clone())),
+        );
+        let index = IndexFile {
+            meta: empty_meta(),
+            entries,
+        };
+        let cf = critique_with(text_hash.clone(), 3);
+
+        let (new_index, stamped) = apply_cache_to_index(index, &[(id.clone(), cf)]);
+        assert_eq!(stamped, 1);
+
+        let IndexEntry::Intent(e) = new_index.entries.get(&id).unwrap() else {
+            panic!("expected intent");
+        };
+        assert_eq!(e.last_critiqued_at_text_hash.as_ref(), Some(&text_hash));
+        assert_eq!(e.last_critique_finding_count, Some(3));
+    }
+
+    #[test]
+    fn apply_cache_idempotent_on_repeat() {
+        // Stamping twice with the same critique writes the same values.
+        let id = AnnotationId::parse("foo").unwrap();
+        let text_hash = sha('a');
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            id.clone(),
+            IndexEntry::Intent(intent_entry(text_hash.clone())),
+        );
+        let index = IndexFile {
+            meta: empty_meta(),
+            entries,
+        };
+        let cf = critique_with(text_hash.clone(), 2);
+
+        let (idx1, _) = apply_cache_to_index(index, &[(id.clone(), cf.clone())]);
+        let (idx2, stamped) = apply_cache_to_index(idx1.clone(), &[(id.clone(), cf)]);
+        assert_eq!(stamped, 1, "second stamp still counts as a stamp");
+        assert_eq!(idx1.entries, idx2.entries, "values unchanged on re-stamp");
+    }
+
+    #[test]
+    fn apply_cache_skips_assume_entries() {
+        // Cache fields are IntentEntry-only; an assume in `accepted` is a no-op.
+        let id = AnnotationId::parse("foo").unwrap();
+        let text_hash = sha('a');
+        let assume = AssumeEntry {
+            text: "x".into(),
+            status: Status::Unknown,
+            text_hash: text_hash.clone(),
+            body_hash: sha('b'),
+            file: "src/x.rs".into(),
+            site: "fn x (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            linked: None,
+            parent: None,
+        };
+        let mut entries = BTreeMap::new();
+        entries.insert(id.clone(), IndexEntry::Assume(assume));
+        let index = IndexFile {
+            meta: empty_meta(),
+            entries,
+        };
+        let cf = critique_with(text_hash, 1);
+
+        let (_, stamped) = apply_cache_to_index(index, &[(id, cf)]);
+        assert_eq!(stamped, 0, "assume entries are not stamped");
+    }
+
+    #[test]
+    fn apply_cache_skips_unknown_ids() {
+        // A .critique whose id no longer exists in the index is silently
+        // skipped (the validator would've rejected it upstream anyway).
+        let id_in = AnnotationId::parse("present").unwrap();
+        let id_missing = AnnotationId::parse("gone").unwrap();
+        let text_hash = sha('a');
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            id_in.clone(),
+            IndexEntry::Intent(intent_entry(text_hash.clone())),
+        );
+        let index = IndexFile {
+            meta: empty_meta(),
+            entries,
+        };
+        let cf_present = critique_with(text_hash.clone(), 2);
+        let cf_missing = critique_with(text_hash, 5);
+
+        let (new_index, stamped) = apply_cache_to_index(
+            index,
+            &[(id_in.clone(), cf_present), (id_missing, cf_missing)],
+        );
+        assert_eq!(stamped, 1, "only the present id stamps");
+        let IndexEntry::Intent(e) = new_index.entries.get(&id_in).unwrap() else {
+            panic!("expected intent");
+        };
+        assert_eq!(e.last_critique_finding_count, Some(2));
     }
 }
