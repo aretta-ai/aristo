@@ -3,71 +3,59 @@ type = "verified"
 method = "neural"
 produced_at_text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
 produced_at_body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
-produced_by = "aristo-neural-verifier@v0.0.5"
+produced_by = "aristo-neural-verifier@v0.0.6"
 attempts = 1
 property_kind = "invariant"
 
 [verified.proof]
-conclusion = "The VerifyLevel::Bool(false) match arm in fn run (mod.rs:67-78) invokes no skill, runs no test, and writes no signed outcome. Its only effect is the `aristo::intent_stmt!` documentation macro (the covered statement itself, which expands to a no-op marker the extractor reads) and incrementing `stats.skipped_doc_only`. This is the intentional documentation-only skip path, structurally identical to the assume-entry path that `verify_assumes_are_documentation_only_by_design` documents on the same dispatcher."
+conclusion = "The Bool(false) match arm in fn run is an intentional skip: it invokes no skill, runs no test, writes no signed outcome, and only increments the in-memory stats.skipped_doc_only counter. The arm's body is exhaustively two items — an aristo::intent_stmt! macro (compile-time annotation metadata, not runtime dispatch) and the counter bump. Module-level documentation and the Stats field doc-comment both describe this arm as the deliberate skip path for verify=false (and, via resolve_verify_level, for assumes). A refactor that adds a skill call here would erase the user-visible distinction between verify=false and verify='neural', defeating the opt-out semantic."
 
 [[verified.proof.steps]]
 path = "0"
-claim = "The VerifyLevel::Bool(false) arm body contains exactly two items: the `aristo::intent_stmt!` macro invocation (the covered statement) and `stats.skipped_doc_only += 1;`. No other statements, no function calls beyond the counter mutation."
+claim = "The Bool(false) arm body contains only the intent_stmt! macro and the stats.skipped_doc_only counter increment — no skill invocation, no test execution, no proof write."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "67-78"
+lines = "80-91"
 code_text_hash = "sha256:c61da08cd757c886b34b3e99d20f670ac1266a37a82cabf86d07805881211ed9"
-reason = "Reading the arm verbatim: `VerifyLevel::Bool(false) => { aristo::intent_stmt!(...); stats.skipped_doc_only += 1; }`. Two statements total."
+reason = "The entire arm body is two items: the aristo::intent_stmt! macro (compile-time annotation, no runtime dispatch effect) at lines 81-89, and stats.skipped_doc_only += 1 at line 90. There is no pending_neural.push, no fs::write to a proof path, no NotImplemented return, no skill spawn — only an in-memory counter bump. The match arm satisfies the intent's three negatives literally: no skill, no test, no signed outcome."
 
 [[verified.proof.steps]]
-path = "0.0"
-claim = "The `aristo::intent_stmt!` macro invocation is a documentation marker that the extractor reads at index time; it does not invoke any skill, run any test, or write any signed outcome at runtime — it expands to a no-op (or effectively no-op) for the compiled binary."
-relation_to_parent = "decomposes"
-
-[[verified.proof.steps.grounds]]
-kind = "intent"
-id = "stmt_form_intents_use_open_visit_descent_not_whitelist"
-at_text_hash = "sha256:1be10f580efbb4857173d91ded4f73ee87ea18e2193d3d2b841b8126a64f575d"
-relation = "instantiates"
-reason = "Documents that stmt-form intents (like `intent_stmt!`) are DISCOVERED via syn::Visit traversal at extraction time — i.e., they are source-level markers for the indexer, not runtime dispatch hooks. There is no SDK→skill or SDK→test plumbing wired through the macro expansion."
-
-[[verified.proof.steps.grounds]]
-kind = "intent"
-id = "pending_neural_file_is_sdk_to_agent_request_not_a_result"
-at_text_hash = "sha256:5d04f4f2136735e523ef1b12a43f0f5862be2ff7542cb69416271144b3c8259c"
-relation = "instantiates"
-reason = "Establishes the architectural invariant that the SDK CLI never makes LLM/skill calls directly — agent invocation happens only via the pending-neural request file written by `pending::write_pending_neural`. The Bool(false) arm does not touch `pending_neural`, `pending_test`, or `pending_full`, so by this design rule it cannot invoke any skill."
-
-[[verified.proof.steps]]
-path = "0.1"
-claim = "`stats.skipped_doc_only += 1;` is a local counter increment used only by `emit_summary` for the user-facing 'N skipped' line. It writes no proof file, no index mutation, no signed outcome to disk."
-relation_to_parent = "decomposes"
+path = "1"
+claim = "The skip shape is intentional per design — module documentation and the Stats field doc-comment explicitly call out the verify=false arm as 'skipped without invoking any skill or updating status'."
+relation_to_parent = "composes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "115-151"
-code_text_hash = "sha256:3bdb558da846b00e5c9bf979fd89c03b9bf5bcc8cc95a267c25d9b03ba752a67"
-reason = "`Stats` is a `#[derive(Default, Debug)] struct` with two `usize` fields, owned locally in `fn run` (line 53: `let mut stats = Stats::default();`). It is consumed only by `emit_summary` (line 94) which `println!`s the count. No filesystem writes, no signed-outcome emission."
-
-[[verified.proof.steps]]
-path = "0.2"
-claim = "Signed outcomes (proof files + index status mutations) are written exclusively by the `apply::run_apply_verdicts` branch (returned early at line 47 before the dispatch loop) and by `pending::write_pending_neural` (line 91, only reached when `pending_neural` is non-empty). The Bool(false) arm neither falls into apply nor pushes onto `pending_neural`, so it cannot reach either signed-outcome writer."
-relation_to_parent = "decomposes"
+lines = "1-14"
+code_text_hash = "sha256:6eb4b242c8d15fb7efeba3e02b71781fd5ec35ef43ab523267110cbcced21abd"
+reason = "Module doc-comment names the 'verify = false no-op arm' as a shipped slice-22 feature and contrasts it with the other arms that return NotImplemented with a slice pointer. The no-op is presented as the design, not a stub awaiting completion."
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "46-91"
-code_text_hash = "sha256:49ee622d9f9f62fffa5fa3d243068422e2ba8e77258a25744d713d3e06f1be62"
-reason = "Control flow: `if apply_verdicts { return apply::run_apply_verdicts(...); }` (line 46-48) short-circuits before the loop. Inside the loop, only `VerifyLevel::Method(VerifyMethod::Neural)` pushes to `pending_neural` (line 83); `Bool(false)` only increments `stats.skipped_doc_only`. `pending::write_pending_neural` (line 91) runs only `if !pending_neural.is_empty()`."
+lines = "131-139"
+code_text_hash = "sha256:233ff2c97344006145fffc34b8dd16df54432fe1784e9e34e60188b00d78a43e"
+reason = "Stats::skipped_doc_only doc-comment: 'Annotations with verify = false: documentation only, skipped without invoking any skill or updating status.' This pins the contract — the arm MUST not invoke a skill and MUST not update status. The intent text mirrors this verbatim."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "The counterfactual harm follows from the dispatcher's structural shape: a skill-invoking arm pushes into pending_neural and triggers downstream skill dispatch; adding such a push to the Bool(false) arm would route opt-out entries (and assumes that piggyback via resolve_verify_level) through the verification pipeline, erasing the user-visible distinction the opt-out semantic depends on."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "95-105"
+code_text_hash = "sha256:2a752881780151c03436eec32fad255bfb3998e70c322a4d8719792251bfaaf3"
+reason = "The VerifyMethod::Neural arm pushes the id into pending_neural; downstream at lines 103-105, write_pending_neural emits .aristo/pending-neural.toml — the SDK-to-agent request that triggers actual skill work. A 'completing' refactor of the Bool(false) arm would add a similar push, sending verify=false entries down the exact same pipeline as verify='neural' — there is no other dispatch mechanism in this function to add a skill call through. The opt-out semantic depends on Bool(false) NOT joining that queue."
 
 [[verified.proof.steps.grounds]]
 kind = "intent"
 id = "verify_assumes_are_documentation_only_by_design"
 at_text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
-relation = "instantiates"
-reason = "Sibling intent on the same dispatcher documenting that the Bool(false) arm is the 'single skip-without-skill path' — confirms by design that this arm is the no-skill, no-test, no-write path that both opt-out intents and assume entries flow through."
+relation = "composes"
+reason = "Sibling invariant on resolve_verify_level establishes that the dispatcher's single 'skip-without-skill' path serves both opt-out intents AND assumes (which resolve to Bool(false) at line 254). Adding a skill call to this arm would simultaneously break the verify=false opt-out and force a verification semantic onto assumes that the design explicitly rejects."

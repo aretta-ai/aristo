@@ -1,0 +1,68 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:1cd3494cdce2019142ec33788c70f98216ec0896cceb8b63b7343b1fd8487f84"
+produced_at_body_hash = "sha256:6deab6258bce4bd37effadc90f99b64682da788d88aa1ad98abdb89e57839692"
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "On a successful submit, run_submit_verdict reads back the file just written and prints exactly `accepted: sha256:<hex>` to stdout, where <hex> is body_hash (verbatim sha256) of the on-disk TOML body — giving the orchestrator a cheap integrity check against body_hash(text_returned_by_subagent) without re-reading the file."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "After validation and stamping, the SDK writes the proof to disk via write_proof_atomic, which serializes pf.to_toml() and atomically writes the resulting text — so the on-disk bytes are exactly the TOML serialization of the validated ProofFile."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+lines = "106-110"
+code_text_hash = "sha256:c8eb3547c322382f032538c5f489942dbfad9f39911d96d5015bacc521cb3d81"
+reason = "proof_path_for(ws, &id) -> create_dir_all(parent) -> write_proof_atomic(&path, &pf) lands the validated ProofFile on disk before any read-back/hash step."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+lines = "216-222"
+code_text_hash = "sha256:9da2e45afc41d46cf06e79c57c4952168beadf8e1365925921a22520985c8954"
+reason = "write_proof_atomic serializes pf via pf.to_toml() and then atomic_write(path, &toml_text) — confirms the on-disk bytes are the TOML body of the ProofFile."
+
+[[verified.proof.steps]]
+path = "1"
+claim = "The SDK then reads the just-written file back into `written` and computes h = body_hash(&written); body_hash is a verbatim sha256 of the input bytes, so h is the sha256 of the exact on-disk TOML body."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+lines = "112-116"
+code_text_hash = "sha256:464146ec75abdb1cf1b0d15c570578e1346a9310c8aa91bae151c71e3a5327ef"
+reason = "std::fs::read_to_string(&path) loads the just-written file into `written`, then `let h = body_hash(&written);` — the hash is computed over the on-disk bytes (no normalization, no re-serialization)."
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "body_hash_is_verbatim"
+at_text_hash = "sha256:e95670473c6cdceaa8221ae7737fb289b9fe8dfbc3a1ca6d85a49e7c2fe365ea"
+relation = "composes"
+reason = "body_hash is sha256 of the input bytes verbatim — every byte counts, no whitespace collapsing — so h == sha256 of the on-disk TOML body exactly."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "On the success path, the SDK then prints exactly the line `accepted: {h}` to stdout and returns Ok(()) — matching the annotation's promised `accepted: sha256:<hex>` acknowledgement format that the orchestrator parses."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+lines = "117-118"
+code_text_hash = "sha256:b2838ff6fdeff181e6c69aa82669b76988a52a22733f48387c356f1134d18916"
+reason = '`println!("accepted: {h}");` followed by `Ok(())` — stdout receives the literal `accepted: ` prefix concatenated with the sha256:<hex> Display of the canonical Sha256 form, exactly the wire format the annotation specifies.'
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "sha256_from_bytes_is_canonical_form"
+at_text_hash = "sha256:ad55ed98136c35f699a6f08c7a5ef8782ca3f77944ffcfbdae0a2b249da6f3fd"
+relation = "composes"
+reason = "Sha256 produced by from_bytes (which body_hash calls) Displays in canonical `sha256:<64hex>` form — so `accepted: {h}` renders as `accepted: sha256:<hex>` without any extra formatting step."

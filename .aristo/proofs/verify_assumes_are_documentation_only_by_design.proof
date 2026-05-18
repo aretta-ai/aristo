@@ -3,52 +3,71 @@ type = "verified"
 method = "neural"
 produced_at_text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 produced_at_body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
-produced_by = "aristo-neural-verifier@v0.0.5"
+produced_by = "aristo-neural-verifier@v0.0.6"
 attempts = 1
 property_kind = "invariant"
 
 [verified.proof]
-conclusion = "In `resolve_verify_level`, an `IndexEntry::Assume(_)` is short-circuited to `VerifyLevel::Bool(false)` regardless of any field on the assume, and the dispatcher's `Bool(false)` arm is the same skip-without-skill path used by opt-out intents (`verify_false_arm_is_intentional_skip`). Because `AssumeEntry` carries no `verify` field at the type level, there is no alternative method value that could be plumbed through — any refactor that tried to verify assumes would have to either invent a new verification semantic or fabricate a method from thin air."
+conclusion = "resolve_verify_level early-returns VerifyLevel::Bool(false) for every IndexEntry::Assume(_) regardless of the assume entry contents. This routes assumes to the same Bool(false) arm in run that handles intent opt-outs (verify=false), where the dispatcher records skipped_doc_only without invoking any skill. The design is enforced structurally upstream: AssumeEntry has no verify field at all (serde deny_unknown_fields), so an assume carrying verify = is rejected at parse time, and constructing AssumeEntry { verify: ... } is a compile error. Together: (a) assumes cannot opt INTO verification at the schema level, and (b) the dispatcher cannot accidentally route an assume to a verification skill, since the Method(..) arms are unreachable for assumes. A refactor adding a verification path for assumes would have to either add a verify field to AssumeEntry (changing the on-disk schema and contradicting the A5 design that assumes describe external trust, not THIS code) or branch on assume-specific verification semantics that do not exist in the project. The invariant holds."
 
 [[verified.proof.steps]]
 path = "0"
-claim = "Assumes are unconditionally resolved to `VerifyLevel::Bool(false)` and therefore funnel into the same dispatcher arm as opt-out intents — the skip-without-skill path — rather than any path that invokes a verification method."
+claim = "For every IndexEntry::Assume(_), resolve_verify_level returns VerifyLevel::Bool(false) unconditionally, before any inspection of assume-entry fields, and the Bool(false) arm in run is the single skip-without-skill path shared with verify=false intents."
+relation_to_parent = "composes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+    "0.2",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "composition"
+reason = "Conjunction of sub-claims 0.0 (assumes always resolve to Bool(false)), 0.1 (the Bool(false) arm is the shared single skip-without-skill path), and 0.2 (the schema rules out an alternative verification path for assumes a priori). Together these discharge the parent claim that assumes are documentation-only by design."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "For every IndexEntry::Assume(_), resolve_verify_level returns VerifyLevel::Bool(false) unconditionally."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "235-247"
+lines = "251-263"
 code_text_hash = "sha256:2b01704581321f22e12d1b3b470816047856447ef79be9326cd494e004212848"
-reason = "`fn resolve_verify_level` matches on `entry`: the `IndexEntry::Assume(_)` arm `return`s `VerifyLevel::Bool(false)` directly, never consulting any field on the assume and never reaching the `match raw` that handles method resolution for intents."
+reason = "Line 254 reads `IndexEntry::Assume(_) => return VerifyLevel::Bool(false)`. The outer match on `entry` short-circuits on the Assume variant before reaching the inner `match raw` that resolves Bool(true) via project default. No path through this function returns Method(..) for an Assume entry."
 
 [[verified.proof.steps]]
+path = "0.1"
+claim = "The Bool(false) arm in run is the single skip-without-skill path; it increments skipped_doc_only and invokes no verification skill, the same handling intent opt-outs (verify=false) receive."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "79-101"
+code_text_hash = "sha256:24410ecbcb3bbcf0f8f82efffb0322957f5780901762e956b03130690ee8b4bf"
+reason = "The match on resolve_verify_level(entry, &cfg) has exactly one Bool(false) arm (lines 80-91) whose body runs only stats.skipped_doc_only += 1 plus an intent_stmt! documenting the intentional no-op. The Method(..) arms (lines 95-99) push to pending_neural / pending_test / pending_full — those paths are unreachable for assumes per 0.0."
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "verify_false_arm_is_intentional_skip"
+at_text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
+relation = "composes"
+reason = "Sibling intent sited inside the Bool(false) arm body (line 81) certifies that this arm invokes no skill, runs no test, writes no signed outcome — the exact documentation-only semantic the parent claim says assumes inherit by sharing the arm."
+
+[[verified.proof.steps.grounds]]
+kind = "prior-step"
 path = "0.0"
-claim = "`AssumeEntry` has no `verify` field at the type level, so there is no method value the dispatcher could read from an assume even if the short-circuit were removed — confirming the design choice that assumes are not verification targets."
-relation_to_parent = "excludes-counterexample"
+reason = "Routing of assumes into this arm relies on 0.0; combined, assumes reach exactly the documentation-only handler."
+
+[[verified.proof.steps]]
+path = "0.2"
+claim = "The schema makes verifying assumes structurally impossible: AssumeEntry has no verify field, so an assume cannot opt INTO any verification method at the on-disk or in-memory level."
+relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-core/src/index/entry.rs"
 lines = "70-87"
 code_text_hash = "sha256:a9518220ccc90595462b566b29d6d56bc0edc7e91e50652e672b4f45b5ffca30"
-reason = "`pub struct AssumeEntry` (with `#[serde(deny_unknown_fields)]`) lists `text`, `status`, `text_hash`, `body_hash`, `file`, `site`, `covered_region`, `linked`, `parent` — no `verify` field. The doc comment explicitly states 'No `verify` (assumptions aren't verification targets per A5)'."
-
-[[verified.proof.steps]]
-path = "0.1"
-claim = "The `Bool(false)` arm in the dispatcher is the documentation-only skip-without-skill path: it invokes no skill, runs no test, writes no signed outcome, and just increments `skipped_doc_only`. Routing assumes into this arm is exactly what the intent claims."
-relation_to_parent = "composes"
-
-[[verified.proof.steps.grounds]]
-kind = "intent"
-id = "verify_false_arm_is_intentional_skip"
-at_text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
-relation = "instantiates"
-reason = "This is the very `intent_stmt!` annotation living inside the `VerifyLevel::Bool(false)` match arm in `fn run` (verify/mod.rs lines 67-78). It documents that the arm 'Invokes no skill, runs no test, writes no signed outcome' — i.e., the single skip-without-skill path that the assume case also lands on via `resolve_verify_level` returning `Bool(false)`."
-
-[[verified.proof.steps.grounds]]
-kind = "code"
-file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "66-78"
-code_text_hash = "sha256:0337c0c51b35f72d97ba04918165c66f9038215816086a3c8ef6576de15130bc"
-reason = "The dispatcher in `fn run` matches `resolve_verify_level(entry, &cfg)`; the `VerifyLevel::Bool(false) =>` arm performs no work beyond `stats.skipped_doc_only += 1`, demonstrating that assumes (which resolve to `Bool(false)`) and opt-out intents share this single skip-without-skill path."
+reason = "AssumeEntry is #[serde(deny_unknown_fields)] and its fields are {text, status, text_hash, body_hash, file, site, covered_region, linked, parent} — no verify. The module doc (lines 4-13) records the design: assume has no verify because assumptions are not verification targets, and the tagged-enum encoding makes `AssumeEntry { verify: Some(...) }` a compile error rather than a runtime rejection. So a refactor trying to verify assumes would have to first change the schema, which is exactly the design choice the parent intent says is rejected."

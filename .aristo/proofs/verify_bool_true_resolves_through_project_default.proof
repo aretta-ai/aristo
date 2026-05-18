@@ -3,45 +3,80 @@ type = "verified"
 method = "neural"
 produced_at_text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 produced_at_body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
-produced_by = "aristo-neural-verifier@v0.0.5"
-attempts = 2
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 1
 property_kind = "invariant"
 
 [verified.proof]
-conclusion = "When resolve_verify_level receives an Intent whose raw VerifyLevel is Bool(true), it returns VerifyLevel::Method(cfg.verify.default_method.unwrap_or(VerifyMethod::Test)). Both the project-default path and the free-tier fallback path are realized exactly once each, dispatched on cfg.verify.default_method.is_some()/is_none(). Any refactor that hard-codes either side (replaces the match on cfg.verify.default_method, or removes the Test fallback) would change verification depth for every Bool(true) annotation — i.e., precisely the annotations that deferred to project policy — defeating the deferral. The claim holds."
+conclusion = "When the entry is an intent with VerifyLevel::Bool(true), resolve_verify_level returns VerifyLevel::Method(cfg.verify.default_method) if Some, else VerifyLevel::Method(VerifyMethod::Test). Neither side is hard-coded: the Some(m) arm forwards the project's chosen method verbatim, and the None arm uses the free-tier default Test as the documented fallback. A refactor that replaced either arm with a constant would override the author's deferral to project policy for every Bool(true) annotation."
 
 [[verified.proof.steps]]
 path = "0"
-claim = "resolve_verify_level routes Bool(true) through cfg.verify.default_method with a VerifyMethod::Test fallback, and the surrounding type system constrains this routing to exactly the project-default + free-tier-fallback semantic the intent describes."
+claim = "For Bool(true), resolve_verify_level returns Method(default_method) when configured, else Method(Test), so the function is the project-policy indirection promised by the annotation."
 relation_to_parent = "decomposes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+    "0.2",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "composition"
+reason = "Conjunction of three subgoals: (0.0) Some(m) branch forwards the configured method, (0.1) None branch defaults to Test, (0.2) any hard-coded refactor would override Bool(true) annotations that deferred to project policy. Together they cover both branches of the match and the refutation half of the annotation."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "When cfg.verify.default_method is Some(m), the Bool(true) arm returns VerifyLevel::Method(m) — the project's configured method, not a hard-coded constant."
+relation_to_parent = "instantiates"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "235-247"
-code_text_hash = "sha256:2b01704581321f22e12d1b3b470816047856447ef79be9326cd494e004212848"
-reason = "Function body: the match on `raw` has a single arm for `VerifyLevel::Bool(true)` that itself matches on `cfg.verify.default_method`: `Some(m) => VerifyLevel::Method(m)` (project default) and `None => VerifyLevel::Method(VerifyMethod::Test) // free-tier default` (the literal comment confirms the free-tier semantic). All other raw values fall through `other => other`. Assumes (subordinate intent) is handled by the early-return above on line 238 and is out of scope for the Bool(true) claim."
-
-[[verified.proof.steps]]
-path = "0.0"
-claim = "The project-default arm and free-tier fallback arm are the only two branches reachable for Bool(true); the type system makes a third silent option unrepresentable, so any 'hard-coded either side' refactor is necessarily a visible source change to one of these two arms."
-relation_to_parent = "decomposes"
+lines = "257-258"
+code_text_hash = "sha256:0d4d896f59daf407e789adf389508fad0b17969b7dcac4584b5e8bf829db2e5a"
+reason = "`VerifyLevel::Bool(true) => match cfg.verify.default_method { Some(m) => VerifyLevel::Method(m), ... }` — m is bound from the config and forwarded as the result variant; no constant substitution."
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-core/src/config/mod.rs"
-lines = "67-77"
-code_text_hash = "sha256:fa2d81f4af4fb3c2359361ae1648b1182b3ed27efb581275cb4d01797be3fb75"
-reason = "VerifyConfig.default_method is declared `pub default_method: Option<VerifyMethod>` — an Option, so exactly two inhabitants (`Some(VerifyMethod)` / `None`) feed the inner match in resolve_verify_level. The doc comment on lines 70-72 codifies the same semantic the intent claims: `None means 'use the per-tier default' (free → test, paid → full per G1)`, matching the `VerifyMethod::Test` fallback at line 243 of verify/mod.rs."
+lines = "69-77"
+code_text_hash = "sha256:847a1a952a25755b7eaa444c0512a1c54c4d8d9cf9d3ef6da604d53976dc4423"
+reason = "VerifyConfig.default_method: Option<VerifyMethod> is the project-policy field the annotation names — the indirection target."
+
+[[verified.proof.steps]]
+path = "0.1"
+claim = "When cfg.verify.default_method is None, the Bool(true) arm returns VerifyLevel::Method(VerifyMethod::Test), the documented free-tier default."
+relation_to_parent = "instantiates"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "259-259"
+code_text_hash = "sha256:6ddacfcfc31f05d0cf9cdff973d28dc482f2e84fcf8c20745fcb3d6c89538b51"
+reason = "`None => VerifyLevel::Method(VerifyMethod::Test), // free-tier default` — the inline comment names the fallback the annotation cites verbatim."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/config/mod.rs"
+lines = "70-74"
+code_text_hash = "sha256:51d4f197a45cdd10da0ed60b72d07a9eb623ca58c56483359dd3e468c78ffb06"
+reason = """VerifyConfig docstring: `None means 'use the per-tier default' (free → "test", paid → "full" per G1)` — Test is the documented free-tier resolution of None, matching the implementation."""
+
+[[verified.proof.steps]]
+path = "0.2"
+claim = "Hard-coding either arm would override the project default for exactly the Bool(true) entries that deferred to it, defeating the deferral the annotation defends."
+relation_to_parent = "excludes-counterexample"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-core/src/index/enums.rs"
-lines = "64-78"
-code_text_hash = "sha256:87b389ec7cf36833fbfaa8e94c278c90dfafb6f1498f1b72ed4c7746f35a8a32"
-reason = "VerifyLevel is a closed two-variant enum (`Bool(bool)` | `Method(VerifyMethod)`); VerifyMethod is a closed three-variant enum (`Neural` | `Test` | `Full`). The variant set is fixed, so the only way to 'hard-code either side' is to edit one of the two arms inside resolve_verify_level — not something a downstream caller can mask. Doc comment line 62 (`true (TOML bool): resolves to project default in aristo.toml [verify] default_method`) is the spec the implementation realizes."
+lines = "59-69"
+code_text_hash = "sha256:85d78e0b701ec1247c3a44409cb2260abe6f7c169b963d2bd2adadd59533284a"
+reason = "VerifyLevel enum doc: `true (TOML bool): resolves to project default in aristo.toml [verify] default_method.` Replacing the Some(m) arm with a constant (e.g., always Test) would ignore default_method even when set; replacing the None arm with a non-Test method would override the documented free-tier fallback. Either change silently changes verification depth on every Bool(true) entry."
 
 [[verified.proof.steps.grounds]]
-kind = "prior-step"
-path = "0"
-reason = "Step 0 already established that the Bool(true) match arm is the single dispatch site; combined with the closed-enum structure here, there is no other code location where the project-default semantic could be implemented or silently overridden."
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "256-262"
+code_text_hash = "sha256:9e4db852a0552c8fdc5b4c80367a90f7f940149ae858155ee6aa7d9262325a34"
+reason = "The Bool(true) arm forwards through Option::map-shape (Some(m) → Method(m); None → Method(Test)); no constant collapse. The `other => other` final arm preserves explicit Method/Bool(false) choices, so Bool(true) is the unique entry point into this resolution — that uniqueness is what makes a hard-coded refactor here universally override the deferral."

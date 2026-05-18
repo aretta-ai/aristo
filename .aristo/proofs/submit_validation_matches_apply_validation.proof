@@ -1,0 +1,61 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:c4506ca7cf8649dadb6b0b178ec20fb2430647c39e732a81835580b548e8ddea"
+produced_at_body_hash = "sha256:6deab6258bce4bd37effadc90f99b64682da788d88aa1ad98abdb89e57839692"
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "submit-time and apply-time validation invoke the SAME `validate()` function from `crate::commands::verify::validator` with the same (focal_id, &ProofFile, &IndexFile, workspace_root) arguments, so schema rules, ground resolution, and hash-staleness checks cannot diverge between the write gate and the apply gate."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "submit.rs imports the canonical validator and invokes `validate(&id, &pf, index, &ws.root)` as its sole schema gate before writing the .proof file."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+lines = "31-31"
+code_text_hash = "sha256:b4245573097edf8d23055d6c3b0c774fd8ec886ff1d19096faabda56104b45a3"
+reason = "`use crate::commands::verify::validator::validate;` — submit pulls the validator from the shared module, not a local copy."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+lines = "95-99"
+code_text_hash = "sha256:61ad46f1a749f4f1d85c2fa2c018bc844f4e73e9f79b6e69e18bdd68c170d907"
+reason = "`let report = validate(&id, &pf, index, &ws.root);` followed by `if !report.is_empty() { ...; return Err(...); }` — the write only proceeds when the shared validator returns empty."
+
+[[verified.proof.steps]]
+path = "1"
+claim = "apply.rs imports the same canonical validator from the same module path and invokes `validate(&id, &pf, index, &ws.root)` with structurally identical arguments before flipping the index status."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+lines = "19-19"
+code_text_hash = "sha256:0defa50ac4bcc5e7046c8710abd4ca24b8272bf190fde7aca314b9ed4f495ddd"
+reason = "`use crate::commands::verify::validator::{parse_line_range, slice_lines, validate, ValidatorReport};` — same `validate` symbol from the same module as submit.rs line 31."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+lines = "61-66"
+code_text_hash = "sha256:e945d50ca3886f46c437fb82824fe6a6441dd01ff1d0982af13f8c1cdb8eb288"
+reason = "`let report = validate(&id, &pf, index, &ws.root);` — identical call signature to submit.rs; on non-empty report the proof is rejected, never status-flipped."
+
+[[verified.proof.steps]]
+path = "2"
+claim = "Because both call sites resolve to a single `pub(crate) fn validate` definition in validator.rs, divergence is impossible by construction: any rule change (schema, ground resolution, hash-staleness) edits the one function and applies to both gates simultaneously."
+relation_to_parent = "composes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/validator.rs"
+lines = "83-88"
+code_text_hash = "sha256:609f11bc19acc22d736b0fc32746d62aad1b8e6b81725e35160daab546743665"
+reason = "`pub(crate) fn validate(focal_id: &AnnotationId, pf: &ProofFile, index: &IndexFile, workspace_root: &Path) -> ValidatorReport` — the single shared definition both call sites resolve to. There is no second `pub fn validate` in the verify module."
