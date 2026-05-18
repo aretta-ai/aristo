@@ -19,9 +19,11 @@
 //! slice-28 commits.
 
 use std::fs;
+use std::path::Path;
 
 use aristo_core::index::{
-    AnnotationId, IdNamespace, IndexEntry, IndexFile, IntentEntry, VerifyLevel, VerifyMethod,
+    AnnotationId, AssumeEntry, IdNamespace, IndexEntry, IndexFile, IntentEntry, ParentLink,
+    VerifyLevel, VerifyMethod,
 };
 
 use crate::commands::index::workspace_or_error;
@@ -38,16 +40,143 @@ pub(crate) fn run(summary: bool, include_status: bool, check: bool) -> CliResult
         return run_summary(&ws, &index);
     }
 
-    // Per-annotation rendering + --include-status + --check land in
-    // follow-up slice-28 commits. Return NotImplemented with the slice
-    // pointer so `binary_smoke::defined_but_unimplemented_subcommand_exits_64`
-    // and any user invocation get a clear "coming in slice 28" message.
+    // --include-status + --check land in follow-up slice-28 commits.
     let _ = include_status;
     let _ = check;
-    Err(CliError::NotImplemented {
-        what: "aristo doc (per-annotation markdown)",
-        slice: "slice 28",
-    })
+
+    run_per_annotation(&ws, &index)
+}
+
+// ─── per-annotation rendering ──────────────────────────────────────────────
+
+#[aristo::intent(
+    "`aristo doc` writes each annotation to .aristo/doc/<id-safe>.md \
+     where `<id-safe>` substitutes `:` with `__`. Same convention as \
+     `.proof` and `.critique` files so users have one mental model for \
+     id↔filename mapping across the SDK. A regression that picks a \
+     different escape (or uses the raw id with `:`) would create \
+     platform-specific filename failures (`:` is illegal on Windows / \
+     macOS HFS+) AND silently break the slice-30 proc-macro that \
+     reads these files via `include_str!`.",
+    verify = "neural",
+    id = "doc_per_annotation_filename_uses_id_safe"
+)]
+fn run_per_annotation(ws: &Workspace, index: &IndexFile) -> CliResult<()> {
+    let doc_dir = ws.root.join(".aristo").join("doc");
+    fs::create_dir_all(&doc_dir).map_err(CliError::Io)?;
+
+    let counts = Counts::from(index);
+    println!();
+    println!(
+        "→ Reading .aristo/index.toml … ok ({} annotations: {} intent, {} assume)",
+        counts.total, counts.intent, counts.assume,
+    );
+    println!("→ Generating per-annotation markdown to .aristo/doc/ …");
+
+    let mut written = 0usize;
+    let mut unchanged = 0usize;
+    for (id, entry) in &index.entries {
+        let path = doc_dir.join(format!("{}.md", id_safe(id)));
+        let rendered = render_annotation_md(id, entry);
+        if file_unchanged(&path, &rendered) {
+            unchanged += 1;
+            continue;
+        }
+        fs::write(&path, &rendered).map_err(CliError::Io)?;
+        println!("  • Wrote: .aristo/doc/{}.md", id_safe(id));
+        written += 1;
+    }
+    println!("  ({written} files written, {unchanged} unchanged)");
+    println!();
+    println!("ok: doc artifacts updated.");
+    println!();
+    println!("Next steps:");
+    println!("  • Enable the `aristo_doc` cargo feature in your Cargo.toml:");
+    println!("        [features]");
+    println!("        default = [\"aristo_doc\"]");
+    println!("  • Or run `cargo doc --features aristo_doc` to render docs with annotations.");
+    println!("  • Optional: add `#[doc = include_str!(\".aristo/doc/_summary.md\")]`");
+    println!("    above your crate's `//!` doc to render the project-level summary.");
+    Ok(())
+}
+
+/// True iff the file at `path` exists AND its current content equals
+/// `rendered`. Drives the incremental-skip behavior promised by the I1
+/// `--check` and incremental-run scenarios — a no-op re-write would
+/// churn mtimes and bloat git diffs without changing the content.
+fn file_unchanged(path: &Path, rendered: &str) -> bool {
+    fs::read_to_string(path)
+        .map(|on_disk| on_disk == rendered)
+        .unwrap_or(false)
+}
+
+#[aristo::intent(
+    "Per-annotation markdown structure is locked by the I1 `samples.md` \
+     mockup: header line (`**Aristo verified intent — \\`<id>\\`**` for \
+     intents, `**Aristo assumption — \\`<id>\\`**` for assumes), blank \
+     line, body text verbatim, blank line, `<sub>` metadata line, \
+     blank line, `---`. The metadata line composes verify-level + \
+     server-bound marker + parent link with ` · ` separators. A \
+     regression that drops the trailing `---` would break readers \
+     that include this MD with `include_str!` between other doc \
+     blocks — the separator is what isolates this annotation from \
+     surrounding rustdoc.",
+    verify = "neural",
+    id = "doc_per_annotation_md_shape_locked_by_samples_mockup"
+)]
+fn render_annotation_md(id: &AnnotationId, entry: &IndexEntry) -> String {
+    let header = match entry {
+        IndexEntry::Intent(_) => format!("**Aristo verified intent — `{id}`**"),
+        IndexEntry::Assume(_) => format!("**Aristo assumption — `{id}`**"),
+    };
+    let text = match entry {
+        IndexEntry::Intent(e) => e.text.as_str(),
+        IndexEntry::Assume(e) => e.text.as_str(),
+    };
+    let meta = match entry {
+        IndexEntry::Intent(e) => intent_meta_line(id, e),
+        IndexEntry::Assume(e) => assume_meta_line(e),
+    };
+    format!("{header}\n\n{text}\n\n{meta}\n\n---\n")
+}
+
+fn intent_meta_line(id: &AnnotationId, e: &IntentEntry) -> String {
+    let mut pieces: Vec<String> = Vec::new();
+    pieces.push(format!("Verify level: **{}**", verify_label(e.verify)));
+    if matches!(id.namespace(), IdNamespace::Aristos) {
+        pieces.push("Server-bound (`aristos:` namespace)".to_string());
+    }
+    if let Some(parent_text) = parent_link_text(e.parent.as_ref()) {
+        pieces.push(parent_text);
+    }
+    format!("<sub>{}</sub>", pieces.join(" · "))
+}
+
+fn assume_meta_line(e: &AssumeEntry) -> String {
+    let mut pieces: Vec<String> = vec!["Background fact (no verification target)".to_string()];
+    if let Some(parent_text) = parent_link_text(e.parent.as_ref()) {
+        pieces.push(parent_text);
+    }
+    format!("<sub>{}.</sub>", pieces.join(" · "))
+}
+
+fn parent_link_text(parent: Option<&ParentLink>) -> Option<String> {
+    let parent = parent?;
+    let parts: Vec<String> = parent
+        .iter()
+        .map(|p| format!("[parent: {p}](./{}.md)", id_safe(p)))
+        .collect();
+    Some(format!("See {}", parts.join(", ")))
+}
+
+fn verify_label(level: VerifyLevel) -> &'static str {
+    match level {
+        VerifyLevel::Bool(false) => "false",
+        VerifyLevel::Bool(true) => "true",
+        VerifyLevel::Method(VerifyMethod::Neural) => "neural",
+        VerifyLevel::Method(VerifyMethod::Test) => "test",
+        VerifyLevel::Method(VerifyMethod::Full) => "full",
+    }
 }
 
 // ─── --summary path ────────────────────────────────────────────────────────
@@ -173,7 +302,6 @@ fn render_summary_md(c: &Counts) -> String {
 /// Filesystem-safe form of an annotation id: `:` → `__`. Same convention
 /// as `.proof` / `.critique` files so the user has one mental model for
 /// "how does an id become a filename" across the SDK.
-#[allow(dead_code)]
 fn id_safe(id: &AnnotationId) -> String {
     id.as_str().replace(':', "__")
 }
@@ -315,5 +443,111 @@ mod tests {
     fn id_safe_leaves_local_id_unchanged() {
         let id = AnnotationId::parse("cells_extracted_without_aliasing").unwrap();
         assert_eq!(id_safe(&id), "cells_extracted_without_aliasing");
+    }
+
+    // ─── per-annotation rendering ──────────────────────────────────────
+
+    #[test]
+    fn render_intent_uses_aristo_verified_intent_header() {
+        let id = AnnotationId::parse("aristos:balance_no_duplicate_cells").unwrap();
+        let entry = intent(VerifyLevel::Method(VerifyMethod::Full), true);
+        let md = render_annotation_md(&id, &entry);
+        assert!(
+            md.starts_with("**Aristo verified intent — `aristos:balance_no_duplicate_cells`**\n"),
+            "got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_assume_uses_aristo_assumption_header() {
+        let id = AnnotationId::parse("storage_write_atomicity").unwrap();
+        let entry = assume();
+        let md = render_annotation_md(&id, &entry);
+        assert!(
+            md.starts_with("**Aristo assumption — `storage_write_atomicity`**\n"),
+            "got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_intent_metadata_marks_server_bound_for_aristos_namespace() {
+        let id = AnnotationId::parse("aristos:bound").unwrap();
+        let entry = intent(VerifyLevel::Method(VerifyMethod::Full), true);
+        let md = render_annotation_md(&id, &entry);
+        assert!(
+            md.contains("Verify level: **full**"),
+            "expected verify-level marker; got:\n{md}"
+        );
+        assert!(
+            md.contains("Server-bound (`aristos:` namespace)"),
+            "expected server-bound marker; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_intent_metadata_omits_server_bound_for_local() {
+        let id = AnnotationId::parse("local_intent").unwrap();
+        let entry = intent(VerifyLevel::Bool(false), false);
+        let md = render_annotation_md(&id, &entry);
+        assert!(
+            md.contains("Verify level: **false**"),
+            "expected verify-level marker; got:\n{md}"
+        );
+        assert!(
+            !md.contains("Server-bound"),
+            "did not expect server-bound marker on local entry; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_metadata_includes_parent_link() {
+        use aristo_core::index::ParentLink;
+        let id = AnnotationId::parse("child").unwrap();
+        let mut entry = match intent(VerifyLevel::Method(VerifyMethod::Test), false) {
+            IndexEntry::Intent(e) => e,
+            _ => unreachable!(),
+        };
+        entry.parent = Some(ParentLink::Single(
+            AnnotationId::parse("balance_no_cells_lost").unwrap(),
+        ));
+        let md = render_annotation_md(&id, &IndexEntry::Intent(entry));
+        assert!(
+            md.contains("See [parent: balance_no_cells_lost](./balance_no_cells_lost.md)"),
+            "expected parent link; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_ends_with_separator_rule() {
+        let id = AnnotationId::parse("any").unwrap();
+        let entry = intent(VerifyLevel::Bool(false), false);
+        let md = render_annotation_md(&id, &entry);
+        assert!(
+            md.trim_end().ends_with("\n---"),
+            "expected trailing `---` separator; got:\n{md}"
+        );
+    }
+
+    // ─── file_unchanged ────────────────────────────────────────────────
+
+    #[test]
+    fn file_unchanged_returns_true_for_byte_equal_disk_content() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "hello\n").unwrap();
+        assert!(file_unchanged(tmp.path(), "hello\n"));
+    }
+
+    #[test]
+    fn file_unchanged_returns_false_for_drift() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "before\n").unwrap();
+        assert!(!file_unchanged(tmp.path(), "after\n"));
+    }
+
+    #[test]
+    fn file_unchanged_returns_false_for_missing_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let missing = tmp.path().join("nope.md");
+        assert!(!file_unchanged(&missing, "anything"));
     }
 }

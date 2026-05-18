@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:37:05.459221Z"
+generated_at = "2026-05-18T18:42:54.716062Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -169,6 +169,28 @@ file = "crates/aristo-cli/src/commands/show.rs"
 site = "fn did_you_mean (line 251)"
 covered_region = "function"
 
+[doc_per_annotation_filename_uses_id_safe]
+kind = "intent"
+text = "`aristo doc` writes each annotation to .aristo/doc/<id-safe>.md where `<id-safe>` substitutes `:` with `__`. Same convention as `.proof` and `.critique` files so users have one mental model for id↔filename mapping across the SDK. A regression that picks a different escape (or uses the raw id with `:`) would create platform-specific filename failures (`:` is illegal on Windows / macOS HFS+) AND silently break the slice-30 proc-macro that reads these files via `include_str!`."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:37800ee178014cabf7dd805bf35e78affb3fec3fb1fa57d30648c66e9f386fe4"
+body_hash = "sha256:db9f9086ecef06d4318b748105e8dbcaae8c352861cb715df70d783c428dcfc6"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn run_per_annotation (line 52)"
+covered_region = "function"
+
+[doc_per_annotation_md_shape_locked_by_samples_mockup]
+kind = "intent"
+text = 'Per-annotation markdown structure is locked by the I1 `samples.md` mockup: header line (`**Aristo verified intent — \`<id>\`**` for intents, `**Aristo assumption — \`<id>\`**` for assumes), blank line, body text verbatim, blank line, `<sub>` metadata line, blank line, `---`. The metadata line composes verify-level + server-bound marker + parent link with ` · ` separators. A regression that drops the trailing `---` would break readers that include this MD with `include_str!` between other doc blocks — the separator is what isolates this annotation from surrounding rustdoc.'
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:b026ae240228658551323bfa60a7771cd828e85ded7764602fa8e83122de2de6"
+body_hash = "sha256:6dc1fed28c002dce0c8613738292d8e6ce58865b10d6c5e2eddb73d9d6dc984f"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn render_annotation_md (line 113)"
+covered_region = "function"
+
 [doc_summary_writes_summary_only]
 kind = "intent"
 text = "`aristo doc --summary` writes the crate-root `_summary.md` ONLY — it does not also run the per-annotation pass. Combining both is `aristo doc --include-graph` (slice 29). A regression that made `--summary` imply per-annotation writes would surprise users who opted into the cheap summary-only flow for CI gates."
@@ -177,7 +199,7 @@ status = "unknown"
 text_hash = "sha256:63bcb80f0391a30b7523d2444a3c6585e93967a39eebc30a0c30d00afc528eb7"
 body_hash = "sha256:cf0d617f7cde85b1a6457b91b241582d5dd0c8910d83092f04f781e99a4bf6b7"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_summary (line 55)"
+site = "fn run_summary (line 184)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]
