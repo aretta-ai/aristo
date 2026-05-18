@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:36:51.631186Z"
+generated_at = "2026-05-18T18:40:45.026161Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
