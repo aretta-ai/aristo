@@ -251,12 +251,29 @@ fn fingerprints_match(a: &serde_json::Value, b: &serde_json::Value) -> bool {
 }
 
 fn snapshot_for_backlog(f: &Finding) -> serde_json::Value {
-    serde_json::json!({
-        "category": category_str(f.category),
-        "severity": severity_str(f.severity),
-        "rationale": f.rationale,
-        "suggested_text": f.suggested_text,
-    })
+    // Build the snapshot field-by-field, skipping None so the result
+    // round-trips through TOML (TOML has no null type — a null value
+    // would crash backlog serialization at the substrate layer).
+    let mut m = serde_json::Map::new();
+    m.insert(
+        "category".into(),
+        serde_json::Value::String(category_str(f.category).into()),
+    );
+    m.insert(
+        "severity".into(),
+        serde_json::Value::String(severity_str(f.severity).into()),
+    );
+    m.insert(
+        "rationale".into(),
+        serde_json::Value::String(f.rationale.clone()),
+    );
+    if let Some(text) = &f.suggested_text {
+        m.insert(
+            "suggested_text".into(),
+            serde_json::Value::String(text.clone()),
+        );
+    }
+    serde_json::Value::Object(m)
 }
 
 fn category_str(c: aristo_core::critique::Category) -> &'static str {

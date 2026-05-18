@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- fix(cli): pending decide on a critique finding without `suggested_text` no longer crashes backlog serialization (slice 27.5, step 10 dogfood). End-to-end dogfood of the substrate surfaced a real bug: `CritiqueReviewSession::snapshot_for_backlog` used `serde_json::json!({...})` with `Option<String>` fields, emitting `serde_json::Value::Null` when the field was absent. TOML cannot serialize nulls, so the substrate's `backlog::write` failed mid-decide — the .critique disposition got stamped (per-kind side effect fires first), but the substrate-level backlog write errored, leaving partial state. Fix: build the snapshot map field-by-field, skipping None fields. Applied the same defensive pattern to `ProofReviewSession::snapshot_for`. New regression test `pending_on_finding_without_suggested_text_round_trips_toml` pins the round-trip and asserts the backlog contains no `= null` lines.
+
 ### Added
 - feat(cli): `aristo status` surfaces review-session backlog + active session (slice 27.5, step 9 of 10). Two new sections in the status output per design doc D9. **Review backlog** lists per-kind item counts (e.g. `critique-review: 3 items`, `proof-review: 1 item`) by walking `.aristo/sessions/backlog/*.toml` and calling the substrate's `backlog::count` for each kind; sections only render when at least one kind has items. **Active review session** renders a compact one-line summary (`id=… kind=… subject=… (open=N accepted=M rejected=K pending=J)`) when `.aristo/sessions/.active` is set, so the user notices an open session in case they forgot. Both sections omitted when empty. 3 new integration tests cover the present + absent cases (active-session surfaced, backlog count surfaced, both omitted when neither exists).
 

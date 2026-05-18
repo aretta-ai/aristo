@@ -234,6 +234,9 @@ fn fingerprint_for(r: &Resolved) -> serde_json::Value {
 }
 
 fn snapshot_for(r: &Resolved) -> serde_json::Value {
+    // Avoid serde_json::Value::Null in any field — the substrate's
+    // backlog serializer is TOML, which has no null type. Every
+    // field below is non-Option-derived so this stays safe.
     match &r.body {
         ResolvedBody::Verdict { verdict_type } => serde_json::json!({
             "proof_id": r.proof_id.as_str(),

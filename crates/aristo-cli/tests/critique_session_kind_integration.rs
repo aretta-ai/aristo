@@ -171,6 +171,41 @@ fn missing_critique_file_refused_with_actionable_error() {
 }
 
 #[test]
+fn pending_on_finding_without_suggested_text_round_trips_toml() {
+    // Regression for the step-10 dogfood crash: a pending decide on a
+    // finding lacking suggested_text used to emit serde_json::Null,
+    // which TOML cannot serialize → backlog write failed mid-decide.
+    // The fix omits the field; this test pins the round-trip.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_fixture_critique(tmp.path(), "foo");
+    aristo_in(tmp.path())
+        .args(["session", "start", "critique-review", "--subject", "x"])
+        .assert()
+        .success();
+    // Finding 0 is the clarity finding which has NO suggested_text.
+    aristo_in(tmp.path())
+        .args([
+            "session", "decide", "--item", "foo#0", "--bucket", "pending",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("foo#0 → Pending"));
+    let backlog = std::fs::read_to_string(
+        tmp.path()
+            .join(".aristo/sessions/backlog/critique-review.toml"),
+    )
+    .unwrap();
+    assert!(backlog.contains("clarity"), "backlog: {backlog}");
+    // Critical: must NOT contain the literal `null` value that would
+    // indicate the old broken path.
+    assert!(
+        !backlog.contains("= null"),
+        "backlog must not contain null fields (TOML can't serialize them): {backlog}"
+    );
+}
+
+#[test]
 fn bad_ref_form_refused_with_actionable_error() {
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
