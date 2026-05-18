@@ -145,6 +145,19 @@ mod tests {
             "skill body must teach the agent to compute attempts as prior_attempts + 1 \
              (GAP-9: repair budget accumulates across re-spawns)"
         );
+        assert!(
+            body.contains("AskUserQuestion") && body.contains("interactive review"),
+            "skill body must teach the post-apply interactive review flow via AskUserQuestion"
+        );
+        assert!(
+            body.contains("Every suggested annotation gets surfaced as an actionable question"),
+            "skill body must encode the GSD-style interactive-suggestions rule"
+        );
+        assert!(
+            body.contains("confirmed via a second `AskUserQuestion`"),
+            "skill body must require two-step confirmation before any source edit \
+             (no silent source mutation from skill orchestration)"
+        );
     }
 
     #[test]

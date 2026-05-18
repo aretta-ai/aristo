@@ -174,22 +174,138 @@ This invokes the mechanical validator on every `.proof` file in `.aristo/proofs/
 - reject verdicts that fail any check — printing the failure list to stderr with the proof file path
 - exit non-zero if any rejection or parse error
 
-## Step 6 — report the outcome to the user
+## Step 6 — summary report
 
-Summarize:
-- how many verdicts the SDK accepted (status flipped to `neural` for verified, `counterexample` for refuted)
-- how many were rejected, with a one-line summary of WHY for each
-- if any are inconclusive: list the suggested annotations the user could add
+Emit a short markdown summary immediately after `--apply-verdicts` returns. Keep this tight; it sets up the interactive review in step 7. Format:
 
-If the SDK rejected verdicts: do NOT immediately retry. The user reviews the rejections; they decide whether to ask you to repair. Repair is bounded — the SDK enforces `attempts ≤ 3`, so don't burn the budget mindlessly.
+```
+## Neural verification results
+
+| Verdict        | Count |
+|----------------|-------|
+| Verified       | N     |
+| Counterexample | N     |
+| Inconclusive   | N     |
+| Rejected       | N     |
+
+(plus a one-line "why" per rejection, if any)
+```
+
+If everything was rejected or there is no accepted content: stop here. There is nothing to walk through.
+
+## Step 7 — interactive review (gated by user choice)
+
+After the summary, offer an interactive walk-through via `AskUserQuestion`. This is where the skill earns its keep — the user gets to actually act on counterexamples and suggestions, not just see them.
+
+### 7.1 Opening choice
+
+Ask the user how they want to engage:
+
+```
+Question: How would you like to review the results?
+Options:
+- Walk through all proofs           — go through each verdict step by step
+- Counterexamples only              — focus on what was refuted
+- Inconclusive only                 — focus on suggestions you could accept
+- Skip review                       — I'll come back later
+```
+
+If the user picks "Skip review", stop. The proofs are on disk; they can be reviewed any time via `aristo show <id>` or by reading `.aristo/proofs/<id>.proof`.
+
+### 7.2 Per-proof walkthrough — render the proof in markdown
+
+For each proof in the chosen subset, render it human-readable. Pull the conclusion + steps + grounds from the on-disk `.proof` file (post-apply hashes are stamped, so the file is the source of truth). Format:
+
+```
+### Proof: <annotation-id>   (<verdict-type>)
+
+**Claim:** <annotation text>
+**Site:** <file>:<site>
+
+**Conclusion:** <proof.conclusion>
+
+**Reasoning:**
+1. <step path 0 claim>
+   - <ground 1 summary>
+   - <ground 2 summary>
+   1.1. <step 0.0 claim>  (relation_to_parent)
+        - <ground summary>
+   ...
+```
+
+For counterexamples: render the violation description + the trigger steps similarly.
+For inconclusive: render the partial proof (if any) + the gap description + each suggested annotation as a numbered list.
+
+Keep ground summaries short. For code grounds: `crates/x/y.rs:LO-HI — <reason truncated to 80 chars>`. For intent/assume grounds: `intent → <cited-id> — <reason truncated>`.
+
+### 7.3 Per-proof action menu
+
+After rendering each proof, ask the user what to do next. The options depend on verdict type:
+
+#### Verified verdicts
+
+```
+Question: Verified — <annotation-id>. What next?
+Options:
+- Next proof                — continue
+- Ask a follow-up question  — spawn a Q&A subagent with the proof loaded
+- Stop review               — exit step 7
+```
+
+If the user asks a follow-up: spawn a fresh `Agent(general-purpose)` with the proof file + the relevant source loaded; relay the user's question; return the answer; loop back to the action menu.
+
+#### Counterexample verdicts
+
+```
+Question: Counterexample — <annotation-id>. The proof shows the claim does NOT hold. What next?
+Options:
+- Fix the code            — make a source edit so the claim holds (you propose, user confirms)
+- Rewrite the intent text — narrow the claim to exclude the failing case
+- Defer                   — leave as Counterexample (will surface loudly on every aristo stamp)
+- Next proof              — move on, decide later
+```
+
+On **Fix the code**: read the violated step, propose a specific edit (Edit tool — show the diff first via the question's `preview` field if reasonable). Confirm via a second `AskUserQuestion` before applying. After applying: run `aristo stamp` so the entry transitions to Stale, then re-pend for re-verification.
+
+On **Rewrite the intent text**: read the current intent text from the source file, propose a narrowed version that excludes the failing case, confirm via `AskUserQuestion` with the new text in `preview`. Apply via Edit. Run `aristo stamp`. The entry transitions to Stale, will be re-verified on next `/aristo-neural-verify`.
+
+On **Defer**: do nothing. Continue to next proof. The loud-counterexample warning on `aristo stamp` ensures it stays visible.
+
+#### Inconclusive verdicts
+
+This is the case the user specifically called out. **Every suggested annotation gets surfaced as an actionable question.**
+
+```
+Question: Inconclusive — <annotation-id>. The verifier suggests <N> annotation(s) that could close the gap. Pick one:
+Options:
+- Add suggestion 1: <kind> at <site> — "<truncated text>..."
+- Add suggestion 2: <kind> at <site> — "<truncated text>..."   (if exists)
+- Add suggestion 3: <kind> at <site> — "<truncated text>..."   (if exists; AskUserQuestion supports max 4)
+- Skip — review later                  — leave the suggestions in the proof file
+```
+
+Use `preview` on each option to show the full suggested text (multi-line, with the file/site context). The user picks one (or "Other" for a custom variant of the suggestion).
+
+On **Add suggestion N**: edit the source file at the suggested `at_site` to insert the new `#[aristo::intent(...)]` or `#[aristo::assume(...)]` annotation with the suggested text. Show the proposed edit (file path + new lines) and confirm via a second `AskUserQuestion` before applying. After applying: run `aristo stamp` so the new annotation is indexed. The new annotation will appear in the next `aristo verify` pending list (it needs its own verification).
+
+If a proof has more than 3 suggestions: present the first 3 as direct options + a 4th option "Show all suggestions" that re-prompts with the next batch.
+
+On **Skip**: continue. The suggestions stay in the proof file. The validator's suggestion-vs-index check (see `validator_rejects_inconclusive_when_suggestion_is_in_index`) means that IF the user later adds an annotation matching one of the suggestions, the entry auto-re-pends.
+
+### 7.4 Closing
+
+When the user picks "Stop review" or the walkthrough reaches the end:
+
+- Print a one-line closing summary: actions taken this session (e.g., "3 proofs reviewed; 1 suggestion accepted (added assume on `atomic_write`); 1 counterexample deferred").
+- If any source edits were made AND `aristo verify` hasn't been re-run yet: remind the user that the affected entries are now Stale and will be re-verified on the next `aristo verify` / `/aristo-neural-verify` cycle.
 
 ## What this skill does NOT do
 
 - It does NOT modify `.aristo/index.toml` directly. The SDK does that via `--apply-verdicts`.
 - It does NOT auto-fix rejected verdicts. The user reviews first.
-- It does NOT touch source code. Verification is read-only on source.
 - It does NOT call any LLM-as-judge between the verdict and the validator. The validator is purely mechanical; that's the design.
 - It does NOT compute hashes. The SDK does that mechanically on accept.
+- It does NOT touch source code unprompted. Source edits only happen as a direct result of a user choice in step 7 (accept suggestion, fix code, rewrite intent) — and every such edit is confirmed via a second `AskUserQuestion` showing the diff before it lands.
 
 ## Anti-patterns
 
@@ -198,3 +314,6 @@ If the SDK rejected verdicts: do NOT immediately retry. The user reviews the rej
 - ❌ Including `code_text_hash` or `at_text_hash` in any ground — the validator computes and stamps them. Any value you write will be ignored at best and rejected at worst.
 - ❌ Citing an intent or assume id you didn't find verbatim in the loaded `.aristo/index.toml`. The validator will reject "cited id not found in current index" and waste your repair budget.
 - ❌ Returning a verdict on behalf of the user ("this seems verified to me"). The subagent is the only authority; you (this skill) orchestrate, you do not judge.
+- ❌ **Walking through every proof verbatim without offering choices.** The interactive review only earns its keep when the user can actually act. Dumping all proofs to the chat is just noise.
+- ❌ **Editing source without explicit confirmation.** Even when the user picks "Add suggestion 1", the actual `Edit` call only happens after a second `AskUserQuestion` that shows the proposed change. Skipping that step turns a typo into a silent regression.
+- ❌ **Bulk-accepting all suggestions in one go.** Each suggestion is its own decision. If the user wants to accept many, they navigate through; the skill doesn't offer a single "accept all" option (too easy to land junk).
