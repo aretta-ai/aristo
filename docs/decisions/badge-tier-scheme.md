@@ -150,7 +150,7 @@ server-bound entries).
 
 ### D5. Visible-score ceiling at Ascendent
 
-The visible score formula (TBD — see "Pending" below) is independent
+The visible score formula (D7 — see below) is independent
 of the Areté gate. A free-tier project can reach
 `visible_score = 0.92` and STILL be **Ascendent**, because the Areté
 gate (D4) is a separate hurdle. The visible-score scale therefore
@@ -184,44 +184,169 @@ unlocked) and *down* (annotations drift to `Status::Stale`, a proof
 goes `Counterexample`). Tier is computed per-invocation from the
 current index state.
 
+### D7. Visible-score formula — depth × module-aware coverage
+
+**Status: DECIDED 2026-05-18.** Locked in `harshest-yet-realistic`
+posture per the calibration principle below.
+
+```
+contribution(intent):
+    if intent.verify == false:                excluded entirely
+    elif intent.status not in clean-verified: 0
+    elif intent.verify == "full":             1.0
+    elif intent.verify == "test":             0.8
+    elif intent.verify == "neural":           0.6
+    elif intent.verify == "true":             resolve via aristo.toml default
+
+verifiable = { i : i.verify != false }
+verification_ratio = Σ contribution(i) / |verifiable|     (0 if |verifiable|=0)
+
+For each module m where fn_count(m) > 0:
+    target(m) = max(1, ⌈√fn_count(m)⌉)
+    intents_in(m) = count of verifiable intents at file == m
+    local_credit(m) = min(1.0, intents_in(m) / target(m))
+
+coverage_score = Σ local_credit(m) / |{m : fn_count(m) > 0}|
+
+# Articulation floor — baseline credit for the act of writing intents
+articulation_floor = min(|verifiable|, ART_CAP) × ART_PER_INTENT
+                     where ART_CAP = 3, ART_PER_INTENT = 0.05
+                     (floor saturates at 0.15)
+
+visible_score = max(articulation_floor, verification_ratio × coverage_score) ∈ [0, 1]
+```
+
+Notes:
+- `clean-verified` = `Status::Verified` ∪ `Status::Tested` ∪
+  `Status::Neural`. All other statuses (Unknown, Stale,
+  Counterexample, Orphan, Forged, PendingDeepen, Inconclusive)
+  contribute 0 to the numerator.
+- `fn_count(m)` counts `Item::Fn` + methods on `Item::Impl`,
+  excluding `#[cfg(test)]`-gated items. Closures excluded.
+  Macro-generated fns excluded. Trait default methods counted.
+- Modules with zero functions (pure-type modules) are skipped
+  entirely from the coverage denominator — they have no
+  verifiable behavioral surface.
+- Assumes are excluded from both numerator and denominator (per
+  A5 — assumes are external invariants, not verification targets).
+- `Status::Counterexample` contributes 0, same as Unknown. Not
+  negative — that would incentivize deletion. The
+  `aristo stamp` loud-warning surfaces counterexamples
+  independently of the badge.
+- **Articulation floor** addresses the cold-start case: a
+  brand-new project that has articulated invariants (intents
+  exist) but hasn't verified them yet still gets a small
+  baseline. Caps at 3 intents × 0.05 = 0.15 — keeps the
+  project in Apprentice range while they bootstrap their
+  verification flow. Cannot reach Adept by articulation
+  alone — verification is required for that. Anti-padding:
+  beyond 3 intents, more articulation doesn't help the floor.
+  The floor only "wins" the max when the verified score is
+  below 0.15 (early-stage or heavily-unverified projects);
+  for any meaningfully verified project, `ratio × coverage`
+  exceeds 0.15 and the floor is irrelevant.
+
+### D8. Tier cutoffs
+
+| Tier | `visible_score` range |
+|------|------------------------|
+| Aspirant | `[0, 0.10)` |
+| Apprentice | `[0.10, 0.35)` |
+| Adept | `[0.35, 0.65)` |
+| Ascendent | `[0.65, 1.0]` |
+| Areté | (any score, with D4 gate met) |
+
+Calibrated so that:
+- A project with 30+ test-verified intents (verification_ratio = 0.8)
+  spread evenly across all modules (coverage_score ≈ 1.0) reaches
+  Ascendent at score 0.80. Free-tier `verify="test"` users (once
+  slices 24/25 land) reach the top visible tier without paid features.
+- Neural-only projects (verification_ratio ≤ 0.6) cap at Adept on the
+  visible scale, regardless of how well-distributed. To pass Adept,
+  free-tier users need actual assertion-based verification.
+- Areté is a discrete state change via D4, not a continuous gradient.
+
+### D9. Calibration posture — `harshest-yet-realistic`
+
+The locked values above (target = √fn_count, sqrt scaling, cutoffs
+at 0.10/0.35/0.65, no module-filter softening) are chosen to err
+on the side of *underrating* projects. Specifically:
+
+- The Aristo SDK itself, at the rebase point of this commit
+  (89 intents, 41 modules with intents, 17 zero-intent modules
+  with code), would compute `coverage_score ≈ 0.45` (estimated
+  with proper test-fn exclusion). Under all-neural verification,
+  visible_score ≈ 0.27 → **Apprentice**. Under all-test
+  verification, visible_score ≈ 0.36 → **Adept** (lower edge).
+- A "thoughtfully but partially annotated" library is expected
+  to land at Apprentice or Adept under these settings.
+- Reaching Ascendent requires substantial real verification
+  coverage, not just lots of annotations.
+
+This is deliberate. The principle: **easier to loosen later than
+to tighten.** Tightening tiers retroactively (raising thresholds,
+adding stricter filters) takes points away from users who already
+hit a tier — UX disaster, mirrors airline mile devaluation. Loosening
+(lower thresholds, exclude internal modules from denominator, soften
+sqrt to log) hands out points users haven't gotten yet — frictionless.
+
+Knobs explicitly preserved as **post-launch loosening candidates**
+(in priority order, if real-world distribution warrants softening):
+
+1. **Lower Ascendent cutoff** from 0.65 to 0.55 — most common
+   adjustment if most projects cluster at Adept.
+2. **Add `coverage_score` floor** — replace `verification_ratio ×
+   coverage_score` with `verification_ratio × (0.3 + 0.7 ×
+   coverage_score)` so a project with deep verification but limited
+   spread isn't fully punished.
+3. **Filter coverage denominator** — count only modules with ≥1
+   public `pub` function (skip pure-internal helper modules).
+4. **Switch sqrt → log** for `target(m)` — eases burden on
+   very large modules (200+ fns: target drops from 14 to 8).
+
+None of these can be done in the OPPOSITE direction post-launch.
+Tightening side is locked here.
+
+### D10. Worked example — Aristo SDK at rebase commit
+
+Rough computation against this repo's state at `1b18cc0` (slice 27.7
+in flight; 89 intents across 41 modules; 17 additional modules with
+code but no intents):
+
+| Scenario | `verification_ratio` | `coverage_score` (est.) | `ratio × cov` | `articulation_floor` | `visible_score` | Tier |
+|----------|----------------------|--------------------------|----------------|-----------------------|------------------|------|
+| All Unknown (no verify run) | 0.00 | 0.45 | 0.00 | 0.15 (capped) | **0.15** | Apprentice |
+| All neural-verified | 0.60 | 0.45 | 0.27 | 0.15 | 0.27 | Apprentice |
+| 50/50 neural+test mix | 0.70 | 0.45 | 0.32 | 0.15 | 0.32 | Apprentice |
+| All test-verified | 0.80 | 0.45 | 0.36 | 0.15 | 0.36 | Adept (barely) |
+| All full-verified + bound | 1.00 | 0.45 | 0.45 | 0.15 | 0.45 → Areté gate met → **Areté** |
+
+The articulation floor lifts the unverified case from Aspirant to
+Apprentice — modest but real recognition for having articulated
+89 invariants. All other scenarios are unaffected: the verified
+ratio exceeds 0.15 every time.
+
+`coverage_score` of 0.45 reflects: 17 zero-intent modules drag the
+average, and several large modules (`walk/extract.rs`, `index/
+strings.rs`) have intent counts below their sqrt-target. To raise
+coverage, the SDK needs more intents in under-annotated modules,
+not deeper verification of existing ones.
+
+This is the SDK's own dogfood pressure. The badge says: "you have
+verified depth on what you've annotated, but your articulation
+is sparse — keep expanding."
+
 ## Pending — to be decided in a follow-up document
 
 The following are explicitly NOT locked by this document:
 
-1. **The visible-score formula** — what mathematical function maps an
-   `IndexFile` to a `[0, 1]` score. Proposed shape (NOT locked):
-   ```
-   visible_score =
-       Wᵥ * verification_strength
-     + W_c * coverage_breadth
-     + W_b * server_bound_share
-   ```
-   where weights (Wᵥ, W_c, W_b) sum to 1.0 and `verification_strength`
-   weights `verify="full"` > `verify="test"` > `verify="neural"` >
-   `verify=false`. Specific weights TBD.
-
-2. **Numeric tier cutoffs** — what `visible_score` threshold corresponds
-   to which tier boundary (Aspirant → Apprentice, etc.). Depends on
-   formula choice. Calibration target: distribute realistic projects
-   across all four visible tiers roughly evenly, with Ascendent being
-   genuinely hard to reach (but achievable for serious users).
-
-3. **Visual treatment** — exact hex colors per tier, optional glyphs
+1. **Visual treatment** — exact hex colors per tier, optional glyphs
    (the Areté ✦ proposal), per-style variations for `for-the-badge`.
 
-4. **Anti-gaming refinements** — specifically: should
-   `coverage_breadth` cap at a fixed count (e.g., 50 intents)? Should
-   verify=false entries contribute negatively (penalty for
-   documentation-only padding)?
-
-5. **Backward-compatibility surface** — does the `--metric=` flag
+2. **Backward-compatibility surface** — does the `--metric=` flag
    eventually expose `count` / `rate` / `tier` choices? Slice 31 ships
    no `--metric` (count-only). The tier scheme defaults to `tier` once
    landed; `count` and `rate` remain accessible via the flag.
-
-These are sequenced — the formula must land before cutoffs can be
-calibrated, and cutoffs must land before visual treatment is final.
-Expect 1-2 follow-up DECIDED blocks before any code lands.
 
 ## Implementation hand-off
 
