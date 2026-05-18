@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- docs(test): fix two authoring bugs in `_pending/doc_first_run.md` — `[..]` on a standalone line changed to `...` (snapbox 0.6.24 multi-line skip), and two annotation-listing lines reordered to match `BTreeMap` iteration of `AnnotationId`. Companion to the design-archive mockup fix; logged under CLAUDE.md §12's authorized-exception list.
+
 ## [v0.0.6] — 2026-05-17
 
 **Milestone E — Verify pipeline (neural only).** End-to-end `verify="neural"` on the free tier: dispatcher (slice 22), in-agent skill orchestration (slice 23), and an 8-gap post-shipment hardening arc that brought the proof lifecycle to production quality. Slices 24/25/26 (`verify="test"` and `"full"`) were originally part of this milestone but are deferred to post-MVP pending tight design work on the specification schema and injection mechanism — captured in `docs/deferred/verify-test-design.md`. Slice 22 + 23 ship as the milestone-E close.

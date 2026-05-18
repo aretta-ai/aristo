@@ -166,7 +166,10 @@ The pre-written scenarios in `crates/aristo-cli/tests/cmd/_pending/`, the mockup
 - **DO NOT** delete a `_pending/` scenario because "trycmd can't easily express it" — the spec stays put; if needed, the fixture (`.in/`) does the expressing.
 - **ANY** exception requires explicit human signoff. Raise the conflict; document the agreed change in this CLAUDE.md or the design archive; then update the spec. The sequence is: raise → sign off → amend spec → implement.
 
-**Authorized prior exception:** the `intent!()` → `intent_stmt!()` rename in slice 11 was a Rust E0428 force (function-like and attribute proc-macros can't share a name). User accepted; design archive updated; this remains the *only* such authorized change.
+**Authorized prior exceptions:**
+
+- The `intent!()` → `intent_stmt!()` rename in slice 11 was a Rust E0428 force (function-like and attribute proc-macros can't share a name). User accepted; design archive updated.
+- The slice-28 `_pending/doc_first_run.md` mockup-to-scenario conversion had two authoring bugs: (a) `[..]` on a standalone line where snapbox 0.6.24 requires `...` for multi-line skip; (b) two annotation-listing lines (`cells_extracted_*` vs `cell_array_*`) in an order that contradicts `BTreeMap` lexicographic iteration of `AnnotationId`. Both are conversion errors against the authoritative design intent (`IndexFile.entries: BTreeMap<…>`); no documented behavior changes. User accepted Session B's surface 2026-05-18; design archive mockup updated in parallel commit.
 
 **If a scenario can't be promoted yet** (Phase 2 server dependency, hard architectural blocker), it stays in `_pending/` with its content preserved verbatim. Defer scenarios, never spec content.
 
