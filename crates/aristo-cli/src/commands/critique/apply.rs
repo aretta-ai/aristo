@@ -1,15 +1,18 @@
 //! `aristo critique --apply-findings` — scan `.aristo/critiques/*.critique`,
 //! re-validate against the current index, print a human-readable summary.
 //!
-//! For v0 of slice 27 this is print-only — no index update. The findings
-//! files on disk are the source of truth; v1 will add
-//! `last_critiqued_at_text_hash` + `last_critique_finding_count` +
-//! `last_critique_highest_severity` to the index for caching.
+//! By default the per-id summary lists only **open** findings (those whose
+//! `disposition` is `None`). Findings the user has already triaged via
+//! `aristo session decide` carry a `disposition` (Accepted / Rejected /
+//! Deferred) and stop re-surfacing on every apply — closing the review
+//! loop the substrate is designed for. Pass `--include-closed` to opt
+//! back into the full view; closed findings render with a `[disposition]`
+//! label before their rationale.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use aristo_core::critique::{CritiqueFile, Severity};
+use aristo_core::critique::{CritiqueFile, Disposition, Finding, Severity};
 use aristo_core::index::AnnotationId;
 
 use crate::commands::index::workspace_or_error;
@@ -18,20 +21,18 @@ use crate::pipeline::queue::{self, QueueDir};
 use crate::{CliError, CliResult, Workspace};
 
 #[aristo::intent(
-    "`aristo critique --apply-findings` scans every `.critique` file, \
-     re-validates against the current index (catches drift between \
-     submit time and apply time), prints a per-id summary grouped by \
-     severity, and sweeps queue stragglers. For v0 this is a read + \
-     summary pass — index update fields (last_critiqued_at_text_hash, \
-     last_critique_finding_count, last_critique_highest_severity) are \
-     deferred to v1 so this slice ships without touching the IndexEntry \
-     serde shape. The .critique files on disk are authoritative; \
-     re-running `aristo critique --apply-findings` is idempotent and \
-     non-destructive.",
+    "`aristo critique --apply-findings` defaults to listing only findings \
+     whose `disposition` is `None` (open / not yet reviewed). Findings the \
+     user has already accepted, rejected, or deferred via \
+     `aristo session decide` stop re-surfacing on every apply — that's how \
+     the review substrate closes the loop. A refactor that re-surfaces \
+     every finding by default breaks the user's \"I already triaged this\" \
+     assumption and re-introduces the noise the substrate exists to filter. \
+     `--include-closed` is the explicit opt-back-in.",
     verify = "neural",
-    id = "critique_apply_is_summary_only_in_v0"
+    id = "apply_findings_filters_open_by_default"
 )]
-pub(crate) fn run_apply_findings(_ws: &Workspace) -> CliResult<()> {
+pub(crate) fn run_apply_findings(_ws: &Workspace, include_closed: bool) -> CliResult<()> {
     // Re-resolve workspace + index here so we don't depend on caller
     // having loaded them already.
     let ws = workspace_or_error()?;
@@ -85,7 +86,7 @@ pub(crate) fn run_apply_findings(_ws: &Workspace) -> CliResult<()> {
         }
     }
 
-    print_summary(&accepted, &rejected, &parse_errors);
+    print_summary(&accepted, &rejected, &parse_errors, include_closed);
 
     if !rejected.is_empty() || !parse_errors.is_empty() {
         Err(CliError::Silent { exit_code: 1 })
@@ -124,6 +125,7 @@ fn print_summary(
     accepted: &[(AnnotationId, CritiqueFile)],
     rejected: &[(PathBuf, String)],
     parse_errors: &[(PathBuf, String)],
+    include_closed: bool,
 ) {
     let total = accepted.len() + rejected.len() + parse_errors.len();
     if total == 0 {
@@ -140,25 +142,45 @@ fn print_summary(
     if !accepted.is_empty() {
         println!();
         for (id, cf) in accepted {
-            let n = cf.critique.findings.len();
+            let total_findings = cf.critique.findings.len();
+            let (visible, total_closed) =
+                partition_for_render(&cf.critique.findings, include_closed);
+
             let sev = cf
                 .critique
                 .highest_severity
                 .map(severity_label)
                 .unwrap_or("—");
-            if n == 0 {
+            if total_findings == 0 {
                 println!("  {id}  no findings");
-            } else {
+            } else if visible.is_empty() {
                 println!(
-                    "  {id}  {n} finding{} (highest: {sev})",
-                    if n == 1 { "" } else { "s" }
+                    "  {id}  {total_findings} finding{} ({total_closed} closed, hidden — pass --include-closed to show)",
+                    if total_findings == 1 { "" } else { "s" }
                 );
-                for f in &cf.critique.findings {
-                    println!(
-                        "    [{}] {}",
-                        category_label(f.category),
-                        truncate(&f.rationale, 100)
-                    );
+            } else {
+                let suffix = if total_closed > 0 && include_closed {
+                    format!(" ({total_closed} closed)")
+                } else if total_closed > 0 {
+                    format!(" ({total_closed} closed, hidden)")
+                } else {
+                    String::new()
+                };
+                println!(
+                    "  {id}  {} finding{} (highest: {sev}){suffix}",
+                    visible.len(),
+                    if visible.len() == 1 { "" } else { "s" }
+                );
+                for f in visible {
+                    let disp = match f.disposition {
+                        Some(d) => format!(
+                            "[{}, {}] ",
+                            category_label(f.category),
+                            disposition_label(d)
+                        ),
+                        None => format!("[{}] ", category_label(f.category)),
+                    };
+                    println!("    {disp}{}", truncate(&f.rationale, 100));
                 }
             }
         }
@@ -168,6 +190,30 @@ fn print_summary(
     }
     for (path, msg) in rejected {
         eprintln!("error: {}: {}", path.display(), msg);
+    }
+}
+
+/// Split findings into (visible-for-this-view, total-closed-count).
+/// Default view (`include_closed = false`) hides findings with any
+/// `disposition` — that's the load-bearing behavior pinned by intent
+/// `apply_findings_filters_open_by_default`. `--include-closed` shows
+/// everything; either way the caller gets the total count of closed
+/// findings so it can render a `(N closed)` or `(N closed, hidden)`
+/// suffix appropriate to the chosen view.
+fn partition_for_render(findings: &[Finding], include_closed: bool) -> (Vec<&Finding>, usize) {
+    let total_closed = findings.iter().filter(|f| f.disposition.is_some()).count();
+    let visible: Vec<&Finding> = findings
+        .iter()
+        .filter(|f| include_closed || f.disposition.is_none())
+        .collect();
+    (visible, total_closed)
+}
+
+fn disposition_label(d: Disposition) -> &'static str {
+    match d {
+        Disposition::Accepted => "accepted",
+        Disposition::Rejected => "rejected",
+        Disposition::Deferred => "deferred",
     }
 }
 
@@ -197,5 +243,75 @@ fn truncate(s: &str, max: usize) -> String {
         let mut out: String = s.chars().take(max).collect();
         out.push('…');
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aristo_core::critique::Category;
+
+    fn finding(disposition: Option<Disposition>) -> Finding {
+        Finding {
+            category: Category::Clarity,
+            severity: Severity::Suggest,
+            rationale: "x".into(),
+            suggested_text: None,
+            disposition,
+            disposition_note: None,
+            closed_at: None,
+        }
+    }
+
+    #[test]
+    fn partition_default_hides_findings_with_any_disposition() {
+        let findings = vec![
+            finding(None),
+            finding(Some(Disposition::Accepted)),
+            finding(Some(Disposition::Rejected)),
+            finding(Some(Disposition::Deferred)),
+            finding(None),
+        ];
+        let (visible, total_closed) = partition_for_render(&findings, false);
+        assert_eq!(
+            visible.len(),
+            2,
+            "only the 2 None-disposition entries visible"
+        );
+        assert!(visible.iter().all(|f| f.disposition.is_none()));
+        assert_eq!(total_closed, 3);
+    }
+
+    #[test]
+    fn partition_include_closed_shows_everything_with_full_closed_count() {
+        let findings = vec![
+            finding(None),
+            finding(Some(Disposition::Accepted)),
+            finding(Some(Disposition::Rejected)),
+        ];
+        let (visible, total_closed) = partition_for_render(&findings, true);
+        assert_eq!(visible.len(), 3);
+        assert_eq!(
+            total_closed, 2,
+            "total_closed is informational with --include-closed"
+        );
+    }
+
+    #[test]
+    fn partition_empty_findings_is_empty_zero() {
+        let (visible, total_closed) = partition_for_render(&[], false);
+        assert!(visible.is_empty());
+        assert_eq!(total_closed, 0);
+    }
+
+    #[test]
+    fn partition_all_closed_hides_all_by_default() {
+        let findings = vec![
+            finding(Some(Disposition::Accepted)),
+            finding(Some(Disposition::Deferred)),
+        ];
+        let (visible, total_closed) = partition_for_render(&findings, false);
+        assert!(visible.is_empty(), "all closed, none visible by default");
+        assert_eq!(total_closed, 2);
     }
 }

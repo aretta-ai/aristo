@@ -36,12 +36,17 @@ pub(crate) mod validator;
     verify = "neural",
     id = "critique_requires_explicit_filter_no_implicit_all"
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "flag-shaped dispatcher; collapsing into a struct adds indirection without simplifying call sites — same pattern as verify::run"
+)]
 pub(crate) fn run(
     filter_strings: &[String],
     submit_findings: bool,
     pop_next: bool,
     queue_status: bool,
     apply_findings: bool,
+    include_closed: bool,
     id: Option<String>,
     json: Option<String>,
 ) -> CliResult<()> {
@@ -68,7 +73,7 @@ pub(crate) fn run(
 
     if apply_findings {
         crate::session::guard::ensure_no_active_session(&ws, "aristo critique --apply-findings")?;
-        return apply::run_apply_findings(&ws);
+        return apply::run_apply_findings(&ws, include_closed);
     }
 
     // Default path: enqueue tasks for the filtered ids.

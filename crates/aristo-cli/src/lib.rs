@@ -235,10 +235,20 @@ enum Commands {
         filters: Vec<String>,
         /// Apply pending critique files in `.aristo/critiques/` —
         /// re-validate every `<id>.critique` and print a summary
-        /// grouped by id. v0 is read+summary only; v1 will stamp
-        /// `last_critiqued_at_text_hash` into the index for caching.
+        /// grouped by id. Defaults to listing only findings whose
+        /// `disposition` is `None` (open / not yet reviewed); pass
+        /// `--include-closed` for the full view including findings
+        /// already triaged via `aristo session decide`.
         #[arg(long = "apply-findings", conflicts_with_all = ["submit_findings", "pop_next", "queue_status"])]
         apply_findings: bool,
+        /// Include findings whose `disposition` has been set (Accepted /
+        /// Rejected / Deferred) in the `--apply-findings` summary.
+        /// Default is to filter to open findings only — closed findings
+        /// stop re-surfacing on every apply, which is how the review
+        /// substrate closes the loop. Only meaningful with
+        /// `--apply-findings`.
+        #[arg(long = "include-closed", requires = "apply_findings")]
+        include_closed: bool,
         /// Worker-facing API: atomically claim one task from the
         /// critique queue and print its TOML body to stdout. Empty
         /// stdout means the queue is drained (still exits 0). Critique
@@ -466,6 +476,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::Critique {
             filters,
             apply_findings,
+            include_closed,
             pop_next,
             queue_status,
             submit_findings,
@@ -477,6 +488,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             pop_next,
             queue_status,
             apply_findings,
+            include_closed,
             id,
             json,
         ),
