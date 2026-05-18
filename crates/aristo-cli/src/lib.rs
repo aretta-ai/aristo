@@ -11,6 +11,7 @@ mod error;
 mod filter;
 mod pipeline;
 mod preflight;
+mod session;
 mod skills;
 mod workspace;
 

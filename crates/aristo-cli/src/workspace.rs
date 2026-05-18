@@ -82,6 +82,39 @@ impl Workspace {
         self.aristo_dir().join("doc")
     }
 
+    /// Path to `.aristo/sessions/`. Holds the review-session substrate's
+    /// local-only state — see `docs/decisions/review-sessions.md` §D5.
+    /// Everything under this directory is gitignored.
+    pub fn sessions_dir(&self) -> PathBuf {
+        self.aristo_dir().join("sessions")
+    }
+
+    /// Pointer file holding the active session id (if any). Existence
+    /// implies an active session; missing means none.
+    pub fn sessions_active_pointer(&self) -> PathBuf {
+        self.sessions_dir().join(".active")
+    }
+
+    /// Per-session TOML state for in-flight sessions.
+    pub fn sessions_active_session_dir(&self) -> PathBuf {
+        self.sessions_dir().join("active")
+    }
+
+    /// Closed-session audit trail.
+    pub fn sessions_closed_dir(&self) -> PathBuf {
+        self.sessions_dir().join("closed")
+    }
+
+    /// Append-only JSONL log of rejected items across all sessions.
+    pub fn sessions_rejections_log(&self) -> PathBuf {
+        self.sessions_dir().join("rejections.log")
+    }
+
+    /// Per-kind backlog directory (`backlog/<kind>.toml`).
+    pub fn sessions_backlog_dir(&self) -> PathBuf {
+        self.sessions_dir().join("backlog")
+    }
+
     /// Path to `aristo.toml`.
     pub fn config_path(&self) -> PathBuf {
         self.root.join("aristo.toml")
@@ -182,5 +215,33 @@ mod tests {
         assert_eq!(ws.specs_dir(), PathBuf::from("/proj/.aristo/specs"));
         assert_eq!(ws.doc_dir(), PathBuf::from("/proj/.aristo/doc"));
         assert_eq!(ws.config_path(), PathBuf::from("/proj/aristo.toml"));
+    }
+
+    #[test]
+    fn session_paths_compose_under_sessions_dir() {
+        let ws = Workspace {
+            root: PathBuf::from("/proj"),
+        };
+        assert_eq!(ws.sessions_dir(), PathBuf::from("/proj/.aristo/sessions"));
+        assert_eq!(
+            ws.sessions_active_pointer(),
+            PathBuf::from("/proj/.aristo/sessions/.active")
+        );
+        assert_eq!(
+            ws.sessions_active_session_dir(),
+            PathBuf::from("/proj/.aristo/sessions/active")
+        );
+        assert_eq!(
+            ws.sessions_closed_dir(),
+            PathBuf::from("/proj/.aristo/sessions/closed")
+        );
+        assert_eq!(
+            ws.sessions_rejections_log(),
+            PathBuf::from("/proj/.aristo/sessions/rejections.log")
+        );
+        assert_eq!(
+            ws.sessions_backlog_dir(),
+            PathBuf::from("/proj/.aristo/sessions/backlog")
+        );
     }
 }
