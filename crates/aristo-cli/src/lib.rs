@@ -249,6 +249,13 @@ enum Commands {
         /// `--apply-findings`.
         #[arg(long = "include-closed", requires = "apply_findings")]
         include_closed: bool,
+        /// Force re-enqueue of every matched annotation, bypassing the
+        /// `last_critiqued_at_text_hash` cache. Default behavior skips
+        /// annotations whose text hasn't drifted since the cached
+        /// critique was produced (so re-runs of `aristo critique
+        /// --filter id=X` are free when X is unchanged).
+        #[arg(long = "rerun")]
+        rerun: bool,
         /// Worker-facing API: atomically claim one task from the
         /// critique queue and print its TOML body to stdout. Empty
         /// stdout means the queue is drained (still exits 0). Critique
@@ -477,6 +484,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             filters,
             apply_findings,
             include_closed,
+            rerun,
             pop_next,
             queue_status,
             submit_findings,
@@ -489,6 +497,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             queue_status,
             apply_findings,
             include_closed,
+            rerun,
             id,
             json,
         ),

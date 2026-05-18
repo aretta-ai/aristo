@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T23:15:37.550406Z"
+generated_at = "2026-05-18T23:29:34.082325Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -46,6 +46,17 @@ text_hash = "sha256:1033936bd224f14b75c286e4c8b2df9321719a0dfcd8de8ddf3d930d8a91
 body_hash = "sha256:9c756bf103f3f04ad0c2a049fc33cb586b5267b2fb3812ae4142d4331eafb564"
 file = "crates/aristo-cli/src/skills/install.rs"
 site = "fn agents_md_uninstall (line 134)"
+covered_region = "function"
+
+[apply_findings_filters_open_by_default]
+kind = "intent"
+text = """`aristo critique --apply-findings` defaults to listing only findings whose `disposition` is `None` (open / not yet reviewed). Findings the user has already accepted, rejected, or deferred via `aristo session decide` stop re-surfacing on every apply — that's how the review substrate closes the loop. A refactor that re-surfaces every finding by default breaks the user's "I already triaged this" assumption and re-introduces the noise the substrate exists to filter. `--include-closed` is the explicit opt-back-in."""
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:f5d4795d9ecf51391849d08e8a50341d24dcddaaf54736d36774e8ae2e8c8aa7"
+body_hash = "sha256:db8bf2510d834d50d0f90154c4bb495220e0440324d4dca9717e6ea3593e12ac"
+file = "crates/aristo-cli/src/commands/critique/apply.rs"
+site = "fn run_apply_findings (line 23)"
 covered_region = "function"
 
 [apply_sweeps_queue_stragglers_after_accept]
@@ -169,15 +180,15 @@ file = "crates/aristo-cli/src/session/storage.rs"
 site = "fn clear_active_pointer (line 141)"
 covered_region = "function"
 
-[critique_apply_is_summary_only_in_v0]
+[critique_apply_stamps_cache_on_success]
 kind = "intent"
-text = "`aristo critique --apply-findings` scans every `.critique` file, re-validates against the current index (catches drift between submit time and apply time), prints a per-id summary grouped by severity, and sweeps queue stragglers. For v0 this is a read + summary pass — index update fields (last_critiqued_at_text_hash, last_critique_finding_count, last_critique_highest_severity) are deferred to v1 so this slice ships without touching the IndexEntry serde shape. The .critique files on disk are authoritative; re-running `aristo critique --apply-findings` is idempotent and non-destructive."
+text = "`aristo critique --apply-findings` stamps `last_critiqued_at_text_hash` + `last_critique_finding_count` on each accepted critique's IntentEntry in the same operation that validates the .critique file. The cache and the on-disk .critique MUST be updated together: a writer that stamps before validate or skips the stamp leaves readers seeing stale-cache + fresh-file divergence (the cache claims a critique is current when the file says otherwise, or vice versa). Idempotent: re-running on an unchanged .critique re-writes the same values. AssumeEntry is skipped (the cache fields are IntentEntry-only by design — assumes are documentation-only annotations per A5 and don't have the same cache lifecycle as verifiable intents)."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:0a136873a529a21239147cc15f0496faef2133d05d958db7da08578e14c8f626"
-body_hash = "sha256:0ecfadf05d43ed1d5983a65e8fc34f7db49cf1bc79c27799d89ed6a7b31ea073"
+text_hash = "sha256:0f0612b48b5498ce64b74e80ff95eb22016dee585fca7c9f299ca030de16c482"
+body_hash = "sha256:b2884768e6c38a7837b55624c433b3a728c76e9755ea558f407f1839837f64b0"
 file = "crates/aristo-cli/src/commands/critique/apply.rs"
-site = "fn run_apply_findings (line 20)"
+site = "fn stamp_critique_cache (line 219)"
 covered_region = "function"
 
 [critique_derived_fields_stamped_by_sdk_not_agent]
@@ -219,7 +230,7 @@ text = "`aristo critique` requires an explicit `--filter` (id or file). Default 
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:c2fc45fff111078b8adba8b37b554eedb85cf2bc5338c40cb597a5de1eec4d5e"
-body_hash = "sha256:f6d21a4ff2907342b72fc957f27732a05785f19c9fd60273b5d6ff3d3bb1cce6"
+body_hash = "sha256:b618ea27fdca5ad0c83d173119e2cf81840f99d422093cbcc614880318ae582c"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
 site = "fn run (line 30)"
 covered_region = "function"

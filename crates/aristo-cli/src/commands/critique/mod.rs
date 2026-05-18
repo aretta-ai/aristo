@@ -47,6 +47,7 @@ pub(crate) fn run(
     queue_status: bool,
     apply_findings: bool,
     include_closed: bool,
+    rerun: bool,
     id: Option<String>,
     json: Option<String>,
 ) -> CliResult<()> {
@@ -93,15 +94,42 @@ pub(crate) fn run(
     crate::session::guard::ensure_no_active_session(&ws, "aristo critique")?;
 
     let filters = parse_filters(filter_strings)?;
-    let mut targets: Vec<&AnnotationId> = Vec::new();
+    let mut matched: Vec<&AnnotationId> = Vec::new();
     for (id, entry) in index.entries.iter() {
         if matches_all(id, entry, &filters) {
-            targets.push(id);
+            matched.push(id);
         }
     }
 
-    if targets.is_empty() {
+    if matched.is_empty() {
         println!("ok: 0 annotations matched the filter; nothing to critique.");
+        return Ok(());
+    }
+
+    // Skip ids whose .critique is current — text_hash matches the cached
+    // last_critiqued_at_text_hash from `--apply-findings`. `--rerun`
+    // bypasses the cache and re-enqueues unconditionally.
+    let (targets, skipped) = if rerun {
+        (matched, 0usize)
+    } else {
+        let total = matched.len();
+        let kept: Vec<&AnnotationId> = matched
+            .into_iter()
+            .filter(|id| !critique_is_current(&index, id))
+            .collect();
+        let skipped = total - kept.len();
+        (kept, skipped)
+    };
+
+    if skipped > 0 {
+        println!(
+            "→ {skipped} {} skipped (text unchanged since last critique; pass --rerun to force).",
+            if skipped == 1 { "entry" } else { "entries" }
+        );
+    }
+
+    if targets.is_empty() {
+        println!("ok: nothing to enqueue.");
         return Ok(());
     }
 
@@ -184,5 +212,131 @@ fn parent_ids(entry: &IndexEntry) -> Option<&aristo_core::index::ParentLink> {
     match entry {
         IndexEntry::Intent(e) => e.parent.as_ref(),
         IndexEntry::Assume(e) => e.parent.as_ref(),
+    }
+}
+
+#[aristo::intent(
+    "`aristo critique` consults `last_critiqued_at_text_hash` on each \
+     IntentEntry before re-enqueueing it. If the cached value equals the \
+     entry's current `text_hash`, the existing .critique file is up to \
+     date and re-running the LLM would burn tokens for the same answer — \
+     skip the enqueue. This is the whole point of the cache: a refactor \
+     that always re-enqueues regardless of cache state re-introduces the \
+     daily-loop LLM cost the cache exists to amortize. AssumeEntries and \
+     entries with no cache (the field is `None`) are NEVER skipped — for \
+     assumes the cache is irrelevant; for first-time entries the absent \
+     cache means \"no critique on record\" so the dispatcher must produce \
+     one. `--rerun` bypasses the cache entirely.",
+    verify = "neural",
+    id = "critique_skip_consults_cached_text_hash_for_drift"
+)]
+fn critique_is_current(index: &aristo_core::index::IndexFile, id: &AnnotationId) -> bool {
+    let Some(IndexEntry::Intent(e)) = index.entries.get(id) else {
+        return false;
+    };
+    match &e.last_critiqued_at_text_hash {
+        Some(cached) => cached == &e.text_hash,
+        None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aristo_core::index::{
+        AssumeEntry, BindingState, CoveredRegion, IndexFile, IntentEntry, Meta, Sha256, Status,
+        VerifyLevel, VerifyMethod,
+    };
+    use std::collections::BTreeMap;
+
+    fn sha(c: char) -> Sha256 {
+        Sha256::parse(&format!("sha256:{}", c.to_string().repeat(64))).unwrap()
+    }
+
+    fn intent_with_cache(text_hash: Sha256, cached: Option<Sha256>) -> IntentEntry {
+        IntentEntry {
+            text: "x".into(),
+            verify: VerifyLevel::Method(VerifyMethod::Neural),
+            status: Status::Unknown,
+            text_hash,
+            body_hash: sha('b'),
+            file: "src/x.rs".into(),
+            site: "fn x (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            binding: BindingState::Local,
+            parent: None,
+            last_critiqued_at_text_hash: cached,
+            last_critique_finding_count: None,
+        }
+    }
+
+    fn one_intent_index(id_str: &str, e: IntentEntry) -> (AnnotationId, IndexFile) {
+        let id = AnnotationId::parse(id_str).unwrap();
+        let mut entries = BTreeMap::new();
+        entries.insert(id.clone(), IndexEntry::Intent(e));
+        (
+            id,
+            IndexFile {
+                meta: Meta {
+                    schema_version: 1,
+                    generated_by: None,
+                    generated_at: None,
+                    source_root: None,
+                },
+                entries,
+            },
+        )
+    }
+
+    #[test]
+    fn current_when_cache_matches_text_hash() {
+        let text = sha('a');
+        let (id, index) = one_intent_index("foo", intent_with_cache(text.clone(), Some(text)));
+        assert!(critique_is_current(&index, &id));
+    }
+
+    #[test]
+    fn not_current_when_cache_differs_from_text_hash() {
+        // The annotation's text drifted since the last critique was produced.
+        let (id, index) = one_intent_index("foo", intent_with_cache(sha('a'), Some(sha('e'))));
+        assert!(!critique_is_current(&index, &id));
+    }
+
+    #[test]
+    fn not_current_when_no_cache_recorded() {
+        // First-time entry — last_critiqued_at_text_hash is None.
+        let (id, index) = one_intent_index("foo", intent_with_cache(sha('a'), None));
+        assert!(!critique_is_current(&index, &id));
+    }
+
+    #[test]
+    fn not_current_for_assume_entries() {
+        // Cache fields are IntentEntry-only. Assumes always re-enqueue
+        // (though in practice the filter rarely selects them; per A5
+        // assumes are documentation-only).
+        let id = AnnotationId::parse("foo").unwrap();
+        let assume = AssumeEntry {
+            text: "x".into(),
+            status: Status::Unknown,
+            text_hash: sha('a'),
+            body_hash: sha('b'),
+            file: "src/x.rs".into(),
+            site: "fn x (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            linked: None,
+            parent: None,
+        };
+        let mut entries = BTreeMap::new();
+        entries.insert(id.clone(), IndexEntry::Assume(assume));
+        let index = IndexFile {
+            meta: Meta {
+                schema_version: 1,
+                generated_by: None,
+                generated_at: None,
+                source_root: None,
+            },
+            entries,
+        };
+        assert!(!critique_is_current(&index, &id));
     }
 }
