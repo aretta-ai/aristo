@@ -200,7 +200,7 @@ fn staged_intersects_with_filter_id_clause() {
 #[test]
 fn critique_without_filter_or_staged_errors_with_actionable_message() {
     // The filter-required guard still fires when neither --filter nor
-    // --staged is provided.
+    // --staged nor --all is provided.
     let tmp = make_two_file_project();
     let repo = tmp.path();
 
@@ -209,6 +209,44 @@ fn critique_without_filter_or_staged_errors_with_actionable_message() {
         .assert()
         .failure()
         .stderr(predicates::str::contains(
-            "requires `--filter` or `--staged`",
+            "requires `--filter`, `--staged`, or `--all`",
         ));
+}
+
+#[test]
+fn all_without_yes_prints_cost_estimate_and_exits_two() {
+    // The cost-gate: --all alone must show the count + dollar estimate
+    // and refuse to enqueue. Intent
+    // critique_all_flag_requires_confirmation_or_yes.
+    let tmp = make_two_file_project();
+    let repo = tmp.path();
+
+    aristo_in(repo)
+        .args(["critique", "--all"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains("will enqueue 2 annotations"))
+        .stderr(predicates::str::contains("$0.02"))
+        .stderr(predicates::str::contains("--all --yes"));
+
+    // Nothing was enqueued.
+    assert!(
+        queue_ids(repo).is_empty(),
+        "--all without --yes must not enqueue"
+    );
+}
+
+#[test]
+fn all_with_yes_enqueues_every_verifiable_intent() {
+    let tmp = make_two_file_project();
+    let repo = tmp.path();
+
+    aristo_in(repo)
+        .args(["critique", "--all", "--yes"])
+        .assert()
+        .success();
+
+    let ids = queue_ids(repo);
+    assert_eq!(ids, vec!["ann_in_a", "ann_in_b"]);
 }

@@ -264,6 +264,20 @@ enum Commands {
         /// `--filter` and appear in the staged set).
         #[arg(long = "staged")]
         staged: bool,
+        /// Opt-in sweep over every IntentEntry with a real verify
+        /// method (excludes documentation-only `verify = false`).
+        /// Loud: prints `(this will enqueue N annotations; ~$X cost
+        /// — proceed with --all --yes?)` and exits 2 unless `--yes`
+        /// is also passed. The cost gate is load-bearing: a sweep
+        /// without confirmation lets the agent accidentally fire
+        /// hundreds of LLM calls in one bash invocation.
+        #[arg(long = "all", conflicts_with_all = ["filters", "staged"])]
+        all: bool,
+        /// Skip the confirmation prompt for `--all`. Required alongside
+        /// `--all` to actually enqueue the sweep; without it `--all`
+        /// just prints the cost estimate and exits 2.
+        #[arg(long = "yes", requires = "all")]
+        yes: bool,
         /// Worker-facing API: atomically claim one task from the
         /// critique queue and print its TOML body to stdout. Empty
         /// stdout means the queue is drained (still exits 0). Critique
@@ -494,6 +508,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             include_closed,
             rerun,
             staged,
+            all,
+            yes,
             pop_next,
             queue_status,
             submit_findings,
@@ -508,6 +524,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             include_closed,
             rerun,
             staged,
+            all,
+            yes,
             id,
             json,
         ),

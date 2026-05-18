@@ -49,6 +49,8 @@ pub(crate) fn run(
     include_closed: bool,
     rerun: bool,
     staged: bool,
+    all: bool,
+    yes: bool,
     id: Option<String>,
     json: Option<String>,
 ) -> CliResult<()> {
@@ -78,18 +80,18 @@ pub(crate) fn run(
         return apply::run_apply_findings(&ws, include_closed);
     }
 
-    // Default path: enqueue tasks for the filtered ids. `--staged`
-    // satisfies the filter-required guard on its own (it provides
-    // bounded scope: only files git-staged for the next commit).
-    if filter_strings.is_empty() && !staged {
+    // Default path: enqueue tasks for the filtered ids. `--staged` and
+    // `--all` each satisfy the filter-required guard on their own.
+    if filter_strings.is_empty() && !staged && !all {
         return Err(CliError::Other {
-            message: "`aristo critique` requires `--filter` or `--staged`. Examples:\n  \
+            message: "`aristo critique` requires `--filter`, `--staged`, or `--all`. Examples:\n  \
                  aristo critique --filter id=my_intent\n  \
                  aristo critique --filter id=foo,bar,baz\n  \
                  aristo critique --filter file=src/x.rs\n  \
-                 aristo critique --staged    # critique annotations in git-staged files\n\
-                 (a default --all sweep is intentionally not provided — \
-                 critique is an LLM call and shouldn't be the accidental path)"
+                 aristo critique --staged    # critique annotations in git-staged files\n  \
+                 aristo critique --all       # sweep every verifiable intent (loud confirmation prompt)\n\
+                 (the sweep is intentionally loud — critique is an LLM call \
+                 and shouldn't be the accidental path)"
                 .into(),
             exit_code: 2,
         });
@@ -105,15 +107,33 @@ pub(crate) fn run(
     };
     let mut matched: Vec<&AnnotationId> = Vec::new();
     for (id, entry) in index.entries.iter() {
-        if !matches_all(id, entry, &filters) {
-            continue;
-        }
-        if let Some(staged) = &staged_files {
-            if !staged.contains(file_of(entry)) {
+        if all {
+            // --all sweeps every IntentEntry with a real verify method
+            // (excludes documentation-only verify=false). Assumes are
+            // skipped — they're not critique candidates per A5.
+            if !is_critique_candidate(entry) {
                 continue;
+            }
+        } else {
+            if !matches_all(id, entry, &filters) {
+                continue;
+            }
+            if let Some(staged) = &staged_files {
+                if !staged.contains(file_of(entry)) {
+                    continue;
+                }
             }
         }
         matched.push(id);
+    }
+
+    // --all confirmation gate. Fires AFTER matching so the user sees the
+    // real count, not an over- or under-estimate.
+    if all && !yes {
+        return Err(CliError::Other {
+            message: format_all_confirmation(matched.len()),
+            exit_code: 2,
+        });
     }
 
     if matched.is_empty() {
@@ -227,6 +247,46 @@ fn parent_ids(entry: &IndexEntry) -> Option<&aristo_core::index::ParentLink> {
     match entry {
         IndexEntry::Intent(e) => e.parent.as_ref(),
         IndexEntry::Assume(e) => e.parent.as_ref(),
+    }
+}
+
+#[aristo::intent(
+    "`aristo critique --all` requires explicit confirmation via `--yes` \
+     (or interactive Y/N — interactive is parked for v2; v1 requires \
+     `--yes` on the command line). The cost-gate fires AFTER the matched \
+     set is computed so the count and dollar estimate match what the \
+     user is actually about to pay for. A refactor that proceeds without \
+     `--yes` would let an agent (or a script) accidentally enqueue \
+     hundreds of LLM calls in one bash invocation — the gate exists \
+     because critique is the most expensive aristo operation per token \
+     spent.",
+    verify = "neural",
+    id = "critique_all_flag_requires_confirmation_or_yes"
+)]
+fn format_all_confirmation(n: usize) -> String {
+    // Fixed-per-task heuristic: ~$0.01 per Sonnet critique task (input
+    // ~2KB context + output ~500 tokens at current Sonnet pricing).
+    // Refinement parked: real-data calibration after v0.1.0 dogfood.
+    let est_cost_dollars = (n as f64) * 0.01;
+    format!(
+        "`aristo critique --all` will enqueue {n} annotation{} (~${est_cost_dollars:.2} estimated LLM cost).\n\
+         This is a no-op preview — pass `--yes` to actually enqueue:\n  \
+             aristo critique --all --yes",
+        if n == 1 { "" } else { "s" }
+    )
+}
+
+fn is_critique_candidate(entry: &IndexEntry) -> bool {
+    // Critique candidates are IntentEntries with a real verify method.
+    // Assumes (per A5) are documentation-only and not critique targets;
+    // intents with `verify = false` are also documentation-only.
+    match entry {
+        IndexEntry::Intent(e) => match e.verify {
+            aristo_core::index::VerifyLevel::Bool(false) => false,
+            aristo_core::index::VerifyLevel::Bool(true) => true,
+            aristo_core::index::VerifyLevel::Method(_) => true,
+        },
+        IndexEntry::Assume(_) => false,
     }
 }
 
