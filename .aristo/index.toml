@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T19:14:24.036166Z"
+generated_at = "2026-05-18T20:29:04.896866Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -67,7 +67,7 @@ status = "inconclusive"
 text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
-site = "fn atomic_write (line 293)"
+site = "fn atomic_write (line 294)"
 covered_region = "function"
 
 [backlog_append_is_read_modify_write_via_atomic]
@@ -111,7 +111,7 @@ status = "unknown"
 text_hash = "sha256:6cb86fd27bdf5161b150d5d06437183caf0091c7dca492ce7e8ad8a68ba0d31d"
 body_hash = "sha256:08a59064ddd2845c867d55c711553d64af148390de40a71655bf924e1b75221d"
 file = "crates/aristo-cli/src/commands/index.rs"
-site = "fn build_entries (line 106)"
+site = "fn build_entries (line 107)"
 covered_region = "function"
 
 [bundled_skills_is_stable_set]
@@ -175,7 +175,7 @@ text = "`aristo critique` requires an explicit `--filter` (id or file). Default 
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:c2fc45fff111078b8adba8b37b554eedb85cf2bc5338c40cb597a5de1eec4d5e"
-body_hash = "sha256:f37eccb1110b99d633625ef5153d824248b3bc0dc882ef962cdacc9a8e5fac47"
+body_hash = "sha256:f6d21a4ff2907342b72fc957f27732a05785f19c9fd60273b5d6ff3d3bb1cce6"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
 site = "fn run (line 29)"
 covered_region = "function"
@@ -233,6 +233,17 @@ text_hash = "sha256:a974c9c20933604965c9316944b526620748bcfa9d19fe68fe5855a0a4bf
 body_hash = "sha256:37166b0a910ce2f88d4db5086bfb9b317012e00e36c9ea4156001e5802f86bcb"
 file = "crates/aristo-cli/src/session/backlog.rs"
 site = "fn drain (line 126)"
+covered_region = "function"
+
+[every_mutating_command_calls_ensure_no_active_session]
+kind = "intent"
+text = "Every mutating aristo command MUST call `ensure_no_active_session` before touching shared state (index, proof/critique files, source). This is Layer 1 of three (hook + skill-body discipline are the other two). Layer 1 is the only one that's mechanically enforceable — the hook is advisory and the skill body is documentation. A refactor that bypasses the guard for any mutating command re-introduces the slop-drift failure mode the substrate exists to prevent: artifacts get committed without the user noticing they bypassed review."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:71ad1c64d3a3927a38112afd48f8b8cf38fac66e8eba8f0d148ea18618f2d195"
+body_hash = "sha256:29cb1080aec78d799e1c0428d04fcb8c45c879b30d4d2d8ba9ef643d50c7151b"
+file = "crates/aristo-cli/src/session/guard.rs"
+site = "fn ensure_no_active_session (line 24)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]
@@ -364,7 +375,7 @@ status = "unknown"
 text_hash = "sha256:a0ac0dfb85cc50c166523567c4bfd7d2cc183ecc395958d41da9aa6e244a2528"
 body_hash = "sha256:0ad71651760b091640468ba31f1cea494e3dd98388b1617a7ebc7682da274e58"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn merge_status_from_prev (line 262)"
+site = "fn merge_status_from_prev (line 267)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
@@ -571,7 +582,7 @@ status = "unknown"
 text_hash = "sha256:d03b32ef9843b1113f8100e2416538a428fddb56edd67b4fba971f58041b5b65"
 body_hash = "sha256:f4b85e3430910f576b56f53491d48206f8710025adb6edfa42a1ba24beab271e"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn cascade_delete_orphan_proofs (line 129)"
+site = "fn cascade_delete_orphan_proofs (line 134)"
 covered_region = "function"
 
 [stamp_check_never_writes]
@@ -580,7 +591,7 @@ text = "When `--check` is set, `aristo stamp` never writes the index. CI relies 
 verify = "test"
 status = "unknown"
 text_hash = "sha256:46c84821843266195127e5ae086761da1c7aaefddb116c6ba041da7c7aa993e0"
-body_hash = "sha256:d16f752c5570a1367029db6662955c0082f57e52e098ac52013a42f5b5a1ac72"
+body_hash = "sha256:85580bce2249ffb2c3574085d539b0b8d6a6fc555d624bf82fe36f019ae017bb"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn run (line 38)"
 covered_region = "function"
@@ -593,7 +604,7 @@ status = "unknown"
 text_hash = "sha256:9943c7d2092400e64549441f7d63887f9bb599db3a9b1a62fd1a4bf5129f64d4"
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn warn_on_counterexamples (line 166)"
+site = "fn warn_on_counterexamples (line 171)"
 covered_region = "function"
 
 [stmt_form_intents_use_open_visit_descent_not_whitelist]
@@ -736,7 +747,7 @@ status = "neural"
 text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 295)"
+site = "fn resolve_verify_level (line 304)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -747,7 +758,7 @@ status = "neural"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 307)"
+site = "fn resolve_verify_level (line 316)"
 covered_region = "function"
 
 [verify_false_arm_is_intentional_skip]
@@ -758,7 +769,7 @@ status = "neural"
 text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
 body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run (line 100)"
+site = "fn run (line 109)"
 covered_region = "statement"
 
 [verify_migrates_legacy_pending_neural_toml_to_queue]
@@ -780,7 +791,7 @@ status = "neural"
 text_hash = "sha256:0da73449029c5ac290374f71589048e283bb0c913c998a23d1c344347f81978e"
 body_hash = "sha256:74a7875b3adf5c47c7af8c22f122f1298f0e82ba013e1528b398ef9fa5944145"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run_pop_next (line 153)"
+site = "fn run_pop_next (line 162)"
 covered_region = "function"
 
 [verify_queue_status_is_non_destructive_peek]
@@ -791,7 +802,7 @@ status = "unknown"
 text_hash = "sha256:c1d5e4f08bfc2116718b94c7334dfdffdcf7981731e2e20d067e5dc617cdc608"
 body_hash = "sha256:96de1a2fc087ab877a852c94a7abb823017bad3e2c12318f4ea51e808c24a791"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run_queue_status (line 179)"
+site = "fn run_queue_status (line 188)"
 covered_region = "function"
 
 [verify_skip_consults_validator_not_just_status]
@@ -802,7 +813,7 @@ status = "unknown"
 text_hash = "sha256:ec349c62caa14bf353768509d1662e6ec68dc8d5d703d542e698ca3c5fb1089f"
 body_hash = "sha256:92a9f4dcd35a81ce63e0cd198bee192b970574abf1a2282d7fc7dd2b693f163c"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn skip_because_proof_still_holds (line 332)"
+site = "fn skip_because_proof_still_holds (line 341)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]

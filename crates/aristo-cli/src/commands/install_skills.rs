@@ -193,6 +193,18 @@ fn install_file_copy_agent(agent: Agent, root: &std::path::Path) -> CliResult<()
             InstallOutcome::Unchanged => println!("  • Unchanged: {display}"),
         }
     }
+    // Claude Code also gets the review-session UserPromptSubmit hook
+    // entry; other file-copy agents (Cursor, Antigravity) don't have
+    // an equivalent prompt-injection surface.
+    if matches!(agent, Agent::ClaudeCode) {
+        let settings_display = relative_display(root, &root.join(".claude").join("settings.json"));
+        let inserted = super::install_skills_hook::install_claude_hook(root)?;
+        if inserted {
+            println!("  • Wrote review-session hook to: {settings_display}");
+        } else {
+            println!("  • Review-session hook already present: {settings_display}");
+        }
+    }
     Ok(())
 }
 
@@ -219,6 +231,15 @@ fn uninstall_file_copy_agent(agent: Agent, root: &std::path::Path) -> CliResult<
         let target = file_copy_target(agent, root, skill);
         if file_copy_uninstall(&target).map_err(CliError::Io)? {
             println!("  • Removed: {}", relative_display(root, &target));
+            removed += 1;
+        }
+    }
+    if matches!(agent, Agent::ClaudeCode) {
+        let removed_hook = super::install_skills_hook::uninstall_claude_hook(root)?;
+        if removed_hook {
+            let settings_display =
+                relative_display(root, &root.join(".claude").join("settings.json"));
+            println!("  • Removed review-session hook from: {settings_display}");
             removed += 1;
         }
     }
