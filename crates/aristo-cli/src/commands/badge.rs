@@ -302,6 +302,8 @@ mod tests {
                 BindingState::Local
             },
             parent: None,
+            last_critiqued_at_text_hash: None,
+            last_critique_finding_count: None,
         })
     }
 

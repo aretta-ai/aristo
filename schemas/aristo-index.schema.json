@@ -120,6 +120,24 @@
                 "intent"
               ]
             },
+            "last_critique_finding_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "last_critiqued_at_text_hash": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "last_verified_at_commit": {
               "anyOf": [
                 {

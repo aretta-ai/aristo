@@ -60,6 +60,18 @@ pub struct IntentEntry {
     pub covered_region: CoveredRegion,
     pub binding: BindingState,
     pub parent: Option<ParentLink>,
+    /// Cache: the `text_hash` of this annotation at the moment its current
+    /// `.aristo/critiques/<id>.critique` file was generated. Lets
+    /// `aristo critique` skip dispatch for annotations whose text hasn't
+    /// drifted since the cached critique was produced. `None` means
+    /// "no critique on record" (never run, or the .critique file was
+    /// deleted). Stamped by `aristo critique --apply-findings`.
+    pub last_critiqued_at_text_hash: Option<Sha256>,
+    /// Cache: total findings in the on-disk `.critique` file when last
+    /// applied. Lets status display avoid re-reading the file just to
+    /// count. Co-managed with [`Self::last_critiqued_at_text_hash`]: both
+    /// stamp together on successful apply, both clear together on rerun.
+    pub last_critique_finding_count: Option<u32>,
 }
 
 /// `assume` annotation: states an external invariant the code relies on.
@@ -204,6 +216,10 @@ struct IntentEntryWire {
     last_verified_at_commit: Option<CommitHash>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parent: Option<ParentLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_critiqued_at_text_hash: Option<Sha256>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_critique_finding_count: Option<u32>,
 }
 
 impl Serialize for IntentEntry {
@@ -260,6 +276,8 @@ impl From<IntentEntry> for IntentEntryWire {
             verified_outcome,
             last_verified_at_commit,
             parent: e.parent,
+            last_critiqued_at_text_hash: e.last_critiqued_at_text_hash,
+            last_critique_finding_count: e.last_critique_finding_count,
         }
     }
 }
@@ -280,6 +298,8 @@ impl TryFrom<IntentEntryWire> for IntentEntry {
             covered_region: w.covered_region,
             binding,
             parent: w.parent,
+            last_critiqued_at_text_hash: w.last_critiqued_at_text_hash,
+            last_critique_finding_count: w.last_critique_finding_count,
         })
     }
 }
@@ -314,6 +334,8 @@ mod tests {
             covered_region: CoveredRegion::Function,
             binding: BindingState::Local,
             parent: None,
+            last_critiqued_at_text_hash: None,
+            last_critique_finding_count: None,
         }
     }
 
@@ -425,6 +447,34 @@ mod tests {
         let json = serde_json::to_string(&e).unwrap();
         assert!(json.contains("\"linked\""));
         assert!(!json.contains("verified_outcome"));
+        let back: IntentEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, e);
+    }
+
+    #[test]
+    fn intent_critique_cache_fields_absent_by_default() {
+        // Pre-27.7 indexes on disk have no critique-cache fields. Round-tripping
+        // a local intent must omit both fields, and deserializing an entry
+        // without them must default to None.
+        let e = intent_local();
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(!json.contains("last_critiqued_at_text_hash"));
+        assert!(!json.contains("last_critique_finding_count"));
+        let back: IntentEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.last_critiqued_at_text_hash, None);
+        assert_eq!(back.last_critique_finding_count, None);
+    }
+
+    #[test]
+    fn intent_critique_cache_fields_round_trip_when_populated() {
+        // After `aristo critique --apply-findings`, the cache fields are
+        // stamped. They must survive a write/read cycle on the index.
+        let mut e = intent_local();
+        e.last_critiqued_at_text_hash = Some(sha('c'));
+        e.last_critique_finding_count = Some(3);
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(json.contains("\"last_critiqued_at_text_hash\""));
+        assert!(json.contains("\"last_critique_finding_count\""));
         let back: IntentEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(back, e);
     }

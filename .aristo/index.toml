@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T22:40:54.645975Z"
+generated_at = "2026-05-18T23:14:41.071231Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -67,7 +67,7 @@ status = "inconclusive"
 text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
-site = "fn atomic_write (line 294)"
+site = "fn atomic_write (line 296)"
 covered_region = "function"
 
 [backlog_append_is_read_modify_write_via_atomic]

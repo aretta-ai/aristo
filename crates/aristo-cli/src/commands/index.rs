@@ -243,6 +243,8 @@ fn build_index_entry(
             covered_region,
             binding: BindingState::Local,
             parent,
+            last_critiqued_at_text_hash: None,
+            last_critique_finding_count: None,
         }),
         AnnotationKind::Assume => IndexEntry::Assume(AssumeEntry {
             text: common_text,

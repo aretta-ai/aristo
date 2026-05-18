@@ -412,6 +412,8 @@ mod tests {
                 covered_region: aristo_core::index::CoveredRegion::Function,
                 binding: aristo_core::index::BindingState::Local,
                 parent: None,
+                last_critiqued_at_text_hash: None,
+                last_critique_finding_count: None,
             }),
         )
     }
