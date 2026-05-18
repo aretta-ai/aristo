@@ -150,16 +150,35 @@ proposed_promotion = false        # set true if THIS step's claim is reusable
     try), write `attempts = 1`. The SDK refuses to dispatch beyond the
     K-bounded budget; you don't have to check it yourself.
 
-Output only the TOML. Nothing else.
+## Write the file yourself
+
+Before returning, use the `Write` tool to save your TOML verdict to
+`.aristo/proofs/<id>.proof` where `<id>` is the entry's id with `:`
+replaced by `__`. The path you write is exactly that string — no other
+directory, no rename, no suffix beyond `.proof`. The SDK has already
+moved any prior verdict for this id to `<id>.proof.bak` so your write
+does not destroy history.
+
+After writing, return ONLY the TOML you wrote (the same text). No
+commentary, no markdown fences, no leading/trailing whitespace beyond
+what the TOML body needs. The orchestrator will verify that the file on
+disk matches the text you returned; mismatch is treated as failure.
 ```
 
-When the subagent returns, capture its output. That's the proof body.
+**Important: the subagent writes the proof file itself, then returns the text it wrote.** This removes a round-trip — you (the orchestrator) don't re-write what the subagent already wrote, but you DO keep the text in memory for the interactive review in step 7 (saves a Read).
 
-## Step 4 — write each verdict to disk
+When the subagent returns, capture its output (the TOML it wrote to disk).
 
-For each subagent's returned TOML, write it to `.aristo/proofs/<id>.proof` — where `<id>` is the entry's id with `:` replaced by `__` (matching the SDK's filename convention).
+## Step 4 — verify the subagent's write (no duplicate write)
 
-Use the `Write` tool. Do NOT use the SDK to write the file; the SDK only reads proofs back during `--apply-verdicts`.
+The subagent already wrote `.aristo/proofs/<id>.proof` directly. Your job here is defensive:
+
+1. Confirm the file exists at the expected path (`<id>` with `:` → `__`).
+2. Read the file once; assert the on-disk content matches the text the subagent returned. Mismatch → the subagent lied or fat-fingered; flag this loudly in the report and skip step 5 for this entry.
+
+Do NOT re-write the file with the returned text. The subagent's write is the source of truth on disk; the returned text is only your cache for step 7.
+
+If the file is missing entirely: treat the subagent as having failed; this is a parse-style failure that will surface in the summary.
 
 ## Step 5 — call `aristo verify --apply-verdicts`
 

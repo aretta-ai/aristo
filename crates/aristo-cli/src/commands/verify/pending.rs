@@ -78,6 +78,11 @@ pub(crate) fn write_pending_neural(
             budget_exhausted.push(id);
             continue;
         }
+        // Single-deep backup: move any existing .proof to .proof.bak so the
+        // user can compare a rejected re-attempt against the prior verdict.
+        // Overwrites any pre-existing .bak — the system tracks only the
+        // most-recent prior attempt, not full history.
+        backup_existing_proof(ws, id);
         entries.push(PendingEntry {
             id: id.as_str().to_string(),
             text: entry_text(entry).to_string(),
@@ -132,6 +137,35 @@ fn read_prior_attempts(ws: &Workspace, id: &AnnotationId) -> u32 {
         return 0;
     };
     pf.verdict.attempts
+}
+
+pub(crate) fn proof_path_for(ws: &Workspace, id: &AnnotationId) -> std::path::PathBuf {
+    let filename = format!("{}.proof", id.as_str().replace(':', "__"));
+    ws.aristo_dir().join("proofs").join(filename)
+}
+
+pub(crate) fn proof_bak_path_for(ws: &Workspace, id: &AnnotationId) -> std::path::PathBuf {
+    let filename = format!("{}.proof.bak", id.as_str().replace(':', "__"));
+    ws.aristo_dir().join("proofs").join(filename)
+}
+
+#[aristo::intent(
+    "When `aristo verify` re-pends an entry that already has a .proof on \
+     disk, move the existing proof to <id>.proof.bak before the next \
+     attempt overwrites it. Single-deep backup — overwrites any prior \
+     .bak. Lets the user diff a rejected re-attempt against the prior \
+     verdict. The .bak is auto-deleted on successful --apply-verdicts.",
+    verify = "test",
+    id = "pending_backs_up_existing_proof_on_rerun"
+)]
+fn backup_existing_proof(ws: &Workspace, id: &AnnotationId) {
+    let src = proof_path_for(ws, id);
+    if !src.is_file() {
+        return;
+    }
+    let bak = proof_bak_path_for(ws, id);
+    // Best-effort: failures here shouldn't abort the verify pipeline.
+    let _ = std::fs::rename(&src, &bak);
 }
 
 fn warn_budget_exhausted(ids: &[&AnnotationId]) {

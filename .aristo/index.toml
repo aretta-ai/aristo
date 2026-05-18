@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
-generated_by = "aristo stamp 0.0.5"
-generated_at = "2026-05-17T23:31:27.695313Z"
+generated_by = "aristo stamp 0.0.6"
+generated_at = "2026-05-18T01:32:25.466512Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -408,7 +408,7 @@ status = "neural"
 text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 212)"
+site = "fn resolve_verify_level (line 215)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -419,7 +419,7 @@ status = "neural"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 224)"
+site = "fn resolve_verify_level (line 227)"
 covered_region = "function"
 
 [verify_false_arm_is_intentional_skip]
@@ -441,7 +441,7 @@ status = "unknown"
 text_hash = "sha256:ec349c62caa14bf353768509d1662e6ec68dc8d5d703d542e698ca3c5fb1089f"
 body_hash = "sha256:92a9f4dcd35a81ce63e0cd198bee192b970574abf1a2282d7fc7dd2b693f163c"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn skip_because_proof_still_holds (line 249)"
+site = "fn skip_because_proof_still_holds (line 252)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]
