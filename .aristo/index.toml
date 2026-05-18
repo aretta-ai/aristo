@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T21:23:02.500353Z"
+generated_at = "2026-05-18T22:02:55.469184Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -85,7 +85,7 @@ covered_region = "function"
 kind = "intent"
 text = "Backlog writes go through `atomic_write` (temp-file + rename) so a concurrent reader cannot observe a partially-serialized file. The backlog is the only durable record of deferred items between sessions; a partial write that deserialize-fails would look like 'no backlog' to a reader and silently drop user-deferred items — the exact failure mode the substrate exists to prevent."
 verify = "neural"
-status = "unknown"
+status = "neural"
 text_hash = "sha256:ec6cfe5ca6cb32a394252526dccec1fe1dc6b48fdbe6703359b3ac707a662df0"
 body_hash = "sha256:f48ed768d54677c37cb8de8327949ed46b7005237e73a842dd45faf9b40be643"
 file = "crates/aristo-cli/src/session/backlog.rs"
@@ -329,9 +329,9 @@ text = "Installing the session hook is idempotent — running install twice leav
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:076e69c8cd762de41df257ac030e4680137eb79fa3e4a8ad548c727e510c973f"
-body_hash = "sha256:ff76296ab40eb45b11a13536d62c8ae6f8f38025ed489719eb5be243d5f3e965"
+body_hash = "sha256:9ddf3fdd46a5c4d2681082fff2b6b656c389e7ef5c3da8464c42df8562ee5c28"
 file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn install_claude_hook (line 63)"
+site = "fn install_claude_hook (line 77)"
 covered_region = "function"
 
 [install_skills_scope_symmetry]
@@ -541,6 +541,17 @@ file = "crates/aristo-cli/src/commands/verify/apply.rs"
 site = "fn clear_ground_hashes (line 129)"
 covered_region = "function"
 
+[session_active_is_noop_outside_workspace]
+kind = "intent"
+text = "`aristo session active` is wired into Claude Code's UserPromptSubmit hook (Layer 2). The hook fires on EVERY prompt across EVERY project, not just aristo workspaces. So `active` must exit 0 with empty stdout when run outside an aristo workspace — a hard error would block every prompt in any non-aristo project the user opens. The interactive form (no `--hook-format`) follows the same rule for symmetry: an active session can only exist within a workspace anyway, so no-workspace and no-session are observationally identical at the CLI surface."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:49db7b8093b9a759da49aee4b53b3b7331a1a9925be0eefb57e13a22b5f5d1d9"
+body_hash = "sha256:82f934ae08215a99c0ecf03dad6b3ca7b682a9314ead7fcec5e6925ac0921fe6"
+file = "crates/aristo-cli/src/commands/session/active.rs"
+site = "fn run (line 13)"
+covered_region = "function"
+
 [session_close_uses_atomic_rename_active_to_closed]
 kind = "intent"
 text = "Closing a session is an atomic file move from active/ to closed/. A reader that sees the file is gone from active/ MUST find it in closed/ (or .active was cleared first — see `[[clear_active_pointer]]`). A refactor that copied + deleted instead of renaming would introduce a window where the session exists in both directories (stale-read risk) or in neither (lost audit trail)."
@@ -666,7 +677,7 @@ covered_region = "function"
 kind = "intent"
 text = "`aristo critique --submit-findings` is the SINGLE creation path for `.aristo/critiques/<id>.critique` files (subagents have no Write-tool access — critique workers have Bash only). On accept, prints `accepted: sha256:<hex>` to stdout for the orchestrator's integrity check. Validation gates schema enums + focal-id-in-index + text staleness anchor + per-finding rationale presence; any failure short-circuits before write_proof_atomic. Same shape as submit-verdict, different payload schema."
 verify = "neural"
-status = "unknown"
+status = "neural"
 text_hash = "sha256:2e2274c6035c3e2ce4e30951db71b59bd04abe6fac1d64c09dd19c0d0a4d1ba0"
 body_hash = "sha256:32dc975d18fbefea3b073dfa3e03d87a922593a5b6af1828e754a7afdb084a57"
 file = "crates/aristo-cli/src/commands/critique/submit.rs"
@@ -699,7 +710,7 @@ covered_region = "function"
 kind = "intent"
 text = "`aristo verify --submit-verdict` is the SINGLE *creation* path for `.aristo/proofs/<id>.proof` files (subagents have no Write-tool access). `--apply-verdicts` may re-write an existing proof in-place to stamp computed ground hashes, but only after running the same `validate()` schema gate. A refactor that added a third writer bypassing `validate()` would let unvalidated proofs land — defeating the schema gate that catches invalid enum variants, child-as-prior-step, and out-of-range line citations."
 verify = "neural"
-status = "stale"
+status = "neural"
 text_hash = "sha256:083cd7c4b6f469bf5f11525a98cbf3f0340b6571b7b316e69dfcde63d136ee69"
 body_hash = "sha256:476ab3733a15987f3ad0df829be69e009ac0afca3146a3a15bc875e645ad4367"
 file = "crates/aristo-cli/src/commands/verify/submit.rs"
@@ -723,9 +734,9 @@ text = "Uninstall removes ONLY aristo's session hook entry from UserPromptSubmit
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:62b31bfd4d0cb67341bd81bcf9603086275b0caea658c35172d8bd5f3529294b"
-body_hash = "sha256:1edf9430c90b52c98c064cd36cfe0d625e111ca46ce1d814d5cf8b66e9a177c4"
+body_hash = "sha256:ab583f8aa4520372d7727088a30648d5bfbc23040b738dc3f43a7ce7f29e3634"
 file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn uninstall_claude_hook (line 111)"
+site = "fn uninstall_claude_hook (line 125)"
 covered_region = "function"
 
 [uninstall_skills_reverses_install]

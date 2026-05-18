@@ -22,3 +22,23 @@
 # commit these artifacts too (per docs/TOOLS.md "Committed to the repo
 # by default") — this repo dogfoods that same convention.
 /.github/workflows/aristo.yml
+
+# Slice 27.5 D5: review-session state is per-user runtime, not project.
+# The *effects* of approvals (.proof, .critique, source/index changes)
+# reach git via normal commits — but the session lifecycle file, the
+# active pointer, the rejection log, and the per-kind backlog are all
+# personal audit trails, gitignored so cross-team contamination is
+# structurally impossible.
+.aristo/sessions/
+
+# Per-pipeline queue state — pending tasks, claimed-in-flight entries,
+# and the workers' atomic-rename machinery. Runtime only; a fresh clone
+# computes its own queue on the next `aristo verify` / `aristo critique`.
+.aristo/verify-queue/
+.aristo/critique-queue/
+
+# SDK-internal write-protection: `aristo verify --apply-verdicts`
+# writes <id>.proof.bak before overwriting <id>.proof, then the sweep
+# block cleans it up on success. Orphans can survive if stamp cascades
+# the .proof deletion (text-drift); they're transient by design.
+.aristo/proofs/*.proof.bak

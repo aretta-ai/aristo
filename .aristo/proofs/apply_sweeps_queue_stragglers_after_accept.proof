@@ -4,15 +4,15 @@ method = "neural"
 produced_at_text_hash = "sha256:a159b79648667c153c9917813799f8a7f6465885707e3c17a94b6f0907e8fd4b"
 produced_at_body_hash = "sha256:21bc2fdeaea0cb6c238f46e8f71331e03d021715d7398a99da007d19ed980ba8"
 produced_by = "aristo-neural-verifier@v0.0.6"
-attempts = 1
-property_kind = "invariant"
+attempts = 2
+property_kind = "postcondition"
 
 [verified.proof]
-conclusion = "After --apply-verdicts accepts a proof and applies status updates, run_apply_verdicts sweeps queue stragglers for each accepted id: (a) deletes <id>.proof.bak if present, (b) clears claimed/<id>.toml via the idempotent submit_done helper (no-op when already cleared), and (c) clears any surviving pending/<id>.toml. The sweep is gated on apply_status_updates having run (the !updates.is_empty() block) so straggler cleanup only fires for ids whose verdicts actually landed."
+conclusion = "After --apply-verdicts accepts a proof for id X, the sweep block runs exactly the three idempotent cleanups: it removes any prior <id>.proof.bak, clears claimed/<id>.toml via submit_done (no-op if absent), and removes pending/<id>.toml if it survived an out-of-band write."
 
 [[verified.proof.steps]]
 path = "0"
-claim = "After apply_status_updates persists accepted verdicts to the index, the sweep loop iterates each accepted id and performs three best-effort cleanups: delete .proof.bak, clear claimed/, clear pending/."
+claim = "The sweep block at apply.rs:101-111 executes the three cleanup actions for every accepted update, gated on updates being non-empty."
 relation_to_parent = "decomposes"
 subgoal_paths = [
     "0.0",
@@ -23,56 +23,60 @@ subgoal_paths = [
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-lines = "80-110"
+lines = "82-112"
 code_text_hash = "sha256:d1f956c26f45d977e2eee4877e4e069716ad21da5a48bce3f477ea5f46850412"
-reason = "The `if !updates.is_empty()` block (line 80) gates the sweep on at least one accepted update; apply_status_updates runs at line 81 and the for loop at lines 99-109 walks every accepted id performing the three sweep actions inside the same gated block."
+reason = "Outer block: when updates is non-empty, the function calls apply_status_updates, then iterates updates and performs the three sweep actions per id."
+
+[[verified.proof.steps.grounds]]
+kind = "composition"
+reason = "Subgoals (a),(b),(c) combine via AND to establish the full straggler sweep."
 
 [[verified.proof.steps]]
 path = "0.0"
-claim = "Sweep action (a): for each accepted id, if <id>.proof.bak exists in .aristo/proofs/, it is deleted with best-effort semantics."
+claim = "(a) Any prior-attempt <id>.proof.bak is deleted when present, with absence tolerated."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-lines = "100-103"
+lines = "102-105"
 code_text_hash = "sha256:02a7c765514090c59133d5298e66ea2198f50edc52d28820c9604b2842a4c51c"
-reason = "Computes bak = proof_bak_path_for(ws, id) and, when bak.is_file() returns true, calls std::fs::remove_file(&bak) with the result discarded (let _ =) — best-effort delete of the prior-attempt backup."
-
-[[verified.proof.steps.grounds]]
-kind = "code"
-file = "crates/aristo-cli/src/commands/verify/pending.rs"
-lines = "195-198"
-code_text_hash = "sha256:d8e999357045b8ed44c4535e2f806dfbc4e7d658cc76c3d4466606c317840fec"
-reason = "proof_bak_path_for constructs `.aristo/proofs/<id-with-colon-to-underscore>.proof.bak` — the exact location where backup_existing_proof (line 209) renames a prior .proof before a re-attempt overwrites it, confirming this delete targets the prior-attempt .bak."
+reason = "Computes bak via proof_bak_path_for(ws, id); guards on is_file() then remove_file with `let _ =` so absence is silently fine — matches the .proof.bak deletion clause of the intent."
 
 [[verified.proof.steps]]
 path = "0.1"
-claim = "Sweep action (b): submit_done(qdir, id) removes claimed/<id>.toml; if the worker already cleared it via the submit-verdict path, submit_done treats the NotFound as success (no-op)."
+claim = "(b) The claimed/<id>.toml entry is cleared idempotently via submit_done — a no-op when the worker already cleared it via submit-verdict."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-lines = "104-104"
-code_text_hash = "sha256:0b5639263dcfe01f2504c974e0e4fda69b637789d6e4f1f6971eee8556e40437"
-reason = "Calls crate::pipeline::queue::submit_done(&qdir, id) — the apply-time clear of any straggler claimed entry for this accepted id."
+lines = "97-106"
+code_text_hash = "sha256:9c6169fd05965d98e0cc4dc4f27d3a095a6fdf9007ce8d6b22fc52b7c4991666"
+reason = "Constructs the per-pipeline QueueDir, then calls pipeline::queue::submit_done(&qdir, id) to remove the claimed entry."
 
 [[verified.proof.steps.grounds]]
 kind = "intent"
 id = "submit_done_is_idempotent_on_missing_claimed"
 at_text_hash = "sha256:9070413f2bc853a6b1d84aecbdf624efd53463b136e25e22f66773dc520e4109"
-relation = "composes"
-reason = "submit_done is documented and implemented (queue.rs lines 213-220) to treat NotFound as success — exactly the no-op semantics the apply-sweep intent claims for case (b) when the worker already cleared the claim."
+relation = "instantiates"
+reason = "submit_done treats NotFound on the claimed file as success — exactly the no-op-if-already-cleared semantic the focal intent requires."
 
 [[verified.proof.steps]]
 path = "0.2"
-claim = "Sweep action (c): if a pending/<id>.toml file survived (e.g., out-of-band proof write that never went through the queue), it is removed best-effort."
+claim = "(c) Any straggler pending/<id>.toml is cleared after submit_done, covering the out-of-band-submit case."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
-lines = "105-108"
+lines = "107-110"
 code_text_hash = "sha256:747f52fd94127a4bc94bbd8fb9a48c7360da1b75ddf75d69f9f699da875d000c"
-reason = "pending_path = qdir.pending_path(id); when pending_path.is_file() the code calls std::fs::remove_file(&pending_path) with the result discarded — best-effort delete of the safety-net pending entry for the now-accepted id."
+reason = "Computes pending_path via QueueDir::pending_path; guards on is_file() then remove_file with `let _ =` so absence is fine — matches the pending/<id>.toml clause for the rare out-of-band-submit case."
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "queue_dir_is_per_pipeline_namespace"
+at_text_hash = "sha256:a88536476d35af7d102c46f75f5063bfcfff95f9296d63581696430605711da1"
+relation = "composes"
+reason = "QueueDir::for_pipeline scopes the pending_path/claimed_path lookups to .aristo/verify-queue/, ensuring the sweep only touches verify-pipeline stragglers and not critique."

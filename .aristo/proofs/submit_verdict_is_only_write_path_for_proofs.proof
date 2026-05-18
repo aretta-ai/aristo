@@ -1,24 +1,62 @@
 [verdict]
-type = "inconclusive"
+type = "verified"
 method = "neural"
-produced_at_text_hash = "sha256:aeb403650a57ce9b32dcdf5c7ce1d212cb3fe93d5f8af01f0f5826d53a3ddd96"
+produced_at_text_hash = "sha256:083cd7c4b6f469bf5f11525a98cbf3f0340b6571b7b316e69dfcde63d136ee69"
 produced_at_body_hash = "sha256:476ab3733a15987f3ad0df829be69e009ac0afca3146a3a15bc875e645ad4367"
 produced_by = "aristo-neural-verifier@v0.0.6"
-attempts = 2
+attempts = 3
 property_kind = "invariant"
 
-[inconclusive.gap]
-description = "The intent claims `aristo verify --submit-verdict` is the SINGLE write path for `.aristo/proofs/<id>.proof` files. However, `run_apply_verdicts` in `crates/aristo-cli/src/commands/verify/apply.rs` also calls `write_proof_atomic` at line 73 — it re-writes existing proof files in-place to stamp computed ground hashes after validation passes (and unconditionally when `--rewrite-hashes` is set). So there are two production writers of `.proof` files. The intent`s protective property (no UNVALIDATED proof can land) is preserved because apply also calls `validate(...)` at line 61 before its write, but the literal `SINGLE write path` claim is structurally false. Without a precise distinction between (a) creating a new proof file vs (b) re-writing/stamping an existing one, neural verification cannot certify the claim as stated. Either narrow the intent to `SINGLE *creation* path` / `single agent-initiated write path`, or add an assume covering the apply-time hash-stamping rewrite so the proof can cite both writers and conclude the validator gate is what makes both safe."
-unfilled_path = "0"
+[verified.proof]
+conclusion = "Every .aristo/proofs/<id>.proof file that lands on disk has passed the validate() schema gate, because submit-verdict is the sole creation path and apply-verdicts is the only path that may re-write an existing proof in-place, and both invoke validate() before any write."
 
-[[inconclusive.gap.suggested_annotations]]
+[[verified.proof.steps]]
+path = "0"
+claim = "All proof-file writes in the CLI flow through write_proof_atomic, and every call site to write_proof_atomic invokes validate() and short-circuits on failure before writing."
+relation_to_parent = "decomposes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "composition"
+reason = "Sub-goals 0.0 (sole creation path = submit) and 0.1 (apply may only re-write after validate) jointly establish the conclusion via AND."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "run_submit_verdict is the only function in the codebase that creates a fresh .aristo/proofs/<id>.proof file, and it calls validate() prior to write_proof_atomic, returning early on any validator finding."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/submit.rs"
+lines = "73-125"
+code_text_hash = "sha256:f895c41e65ae54c440ad5576d8165b649087f74a017b51b093aa14317b5c3f8f"
+reason = "run_submit_verdict body: parse JSON → validate() at line 96 → on non-empty report eprintln+Err (lines 97-100) → stamp_ground_hashes → write_proof_atomic at line 111. The write only executes after the validator returns an empty report."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+lines = "239-245"
+code_text_hash = "sha256:9da2e45afc41d46cf06e79c57c4952168beadf8e1365925921a22520985c8954"
+reason = "write_proof_atomic definition. Its only two callers in the crate are submit.rs:111 (creation) and apply.rs:75 (in-place re-write); no third writer exists."
+
+[[verified.proof.steps]]
+path = "0.1"
+claim = "run_apply_verdicts only re-writes an existing proof after the same validate() function returns empty; on a non-empty report it pushes to rejections and continues without calling write_proof_atomic."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/apply.rs"
+lines = "41-80"
+code_text_hash = "sha256:d1ba197dbf364338c2a7fb61d1a23e10e1206f11971a1f595128a6c12e344459"
+reason = "Per-proof loop: read raw → ProofFile::parse → validate() at line 63 → on non-empty report push to rejections and `continue` (lines 64-68) → only on empty report do stamp_ground_hashes + conditional write_proof_atomic (lines 73-76) fire."
+
+[[verified.proof.steps.grounds]]
 kind = "intent"
-suggested_text = "`aristo verify --submit-verdict` is the SINGLE *creation* path for `.aristo/proofs/<id>.proof` files (subagents have no Write-tool access). `--apply-verdicts` may re-write an existing proof in-place to stamp computed ground hashes, but only after running the same `validate()` schema gate. A refactor that added a third writer bypassing `validate()` would let unvalidated proofs land — defeating the schema gate that catches invalid enum variants, child-as-prior-step, and out-of-range line citations."
-at_site = "fn run_submit_verdict (crates/aristo-cli/src/commands/verify/submit.rs:74)"
-rationale = "Disambiguates creation from in-place re-stamp; preserves the safety property the original intent is defending while matching the code`s actual two-writer reality."
-
-[[inconclusive.gap.suggested_annotations]]
-kind = "assume"
-suggested_text = "Both writers of `.aristo/proofs/<id>.proof` (the submit-verdict creation path at `commands/verify/submit.rs:112` and the apply-verdicts re-stamp path at `commands/verify/apply.rs:73`) gate every write on a successful `validate()` call against the current index. The validator function is shared, so the schema rules cannot diverge between the two paths."
-at_site = "fn write_proof_atomic (crates/aristo-cli/src/commands/verify/apply.rs:232)"
-rationale = "Captures the actual cross-path invariant that the original intent was trying to express. Lets a future proof cite this assume as the load-bearing safety property instead of the over-strong `single write path` claim."
+id = "submit_validation_matches_apply_validation"
+at_text_hash = "sha256:c4506ca7cf8649dadb6b0b178ec20fb2430647c39e732a81835580b548e8ddea"
+relation = "composes"
+reason = "Sibling intent fixes the invariant that submit and apply call the SAME validate() function with the same rules, so the gate at apply.rs:63 is the same gate as at submit.rs:96."

@@ -1,0 +1,69 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:ec6cfe5ca6cb32a394252526dccec1fe1dc6b48fdbe6703359b3ac707a662df0"
+produced_at_body_hash = "sha256:f48ed768d54677c37cb8de8327949ed46b7005237e73a842dd45faf9b40be643"
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "backlog::write serializes the BacklogFile to TOML and persists it via the atomic_write helper, which performs a temp-file write followed by a rename(2) onto the target path. Consequently, a concurrent reader of backlog/<kind>.toml observes either the prior committed contents or the new contents — never a partially-written, deserialize-failing file."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "backlog::write delegates persistence to atomic_write(&path, &toml_text), so the on-disk update inherits atomic_write's no-partial-state guarantee."
+relation_to_parent = "composes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/session/backlog.rs"
+lines = "89-97"
+code_text_hash = "sha256:345b2bd96c6208268d28f93bf521509a964bcb7d2b7d9ab8bad3ec2155b6d70d"
+reason = "fn write builds the target path via backlog_path(ws, kind), serializes the BacklogFile with toml::to_string, and its terminal expression is atomic_write(&path, &toml_text) — there is no alternative write path inside the function."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/session/backlog.rs"
+lines = "24-24"
+code_text_hash = "sha256:d732d0dabbd4ed83b52dc813bff8111710d353058fd9cdc5de37f0d3092fcdcd"
+reason = "the function imports atomic_write from crate::commands::index, confirming the call resolves to the audited helper (no shadowing local definition)."
+
+[[verified.proof.steps.grounds]]
+kind = "composition"
+reason = "subgoals 0.0 and 0.1 combine: atomic_write provides temp+rename atomicity (0.0), and write has no other persistence side-effect that could expose partial state (0.1)."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "atomic_write writes content to a sibling temp file with extension `toml.tmp` and then renames it onto the target — so any concurrent reader of the target path sees only fully-committed bytes (POSIX rename(2) is atomic within a single filesystem)."
+relation_to_parent = "instantiates"
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "atomic_write_via_tempfile_rename"
+at_text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
+relation = "instantiates"
+reason = "the cited intent is the canonical statement that atomic_writes contract is `crash mid-write leaves either the prior file or the new file at the target — never a partial one`; the backlog claim is exactly an application of that contract to the backlog target path."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/index.rs"
+lines = "303-311"
+code_text_hash = "sha256:771c3d6da0cda6fc1afb78a58102c11d85625aa2030cd5e9ce3999b23f63c073"
+reason = 'the implementation writes to `target.with_extension("toml.tmp")` via fs::write then fs::rename(&tmp, target) — the literal temp-file + rename sequence the focal claim names.'
+
+[[verified.proof.steps]]
+path = "0.1"
+claim = "backlog::write performs no other observable write to the target path besides the atomic_write call, so it cannot independently expose a partial file."
+relation_to_parent = "restricts"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/session/backlog.rs"
+lines = "89-97"
+code_text_hash = "sha256:345b2bd96c6208268d28f93bf521509a964bcb7d2b7d9ab8bad3ec2155b6d70d"
+reason = "the function body contains exactly three side-effecting statements: fs::create_dir_all on the parent directory (creates the holding directory, never the target file), toml::to_string (pure), and atomic_write (the audited helper). No fs::write, OpenOptions, or File::create call targets the backlog path directly."

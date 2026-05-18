@@ -1,0 +1,17 @@
+[critique]
+critiqued_at_text_hash = "sha256:061676e468191a6a439b24eb55589be06a36d2fd8097932c81654a4f0c1b4588"
+produced_at_body_hash = "sha256:dc1ec5c4359fe1650fa74c1e3b979679a10cbc4787c0528d01b9fd4050a3d861"
+produced_by = "aristo-critique@v0.0.7"
+attempts = 1
+finding_count = 2
+highest_severity = "suggest"
+
+[[critique.findings]]
+category = "clarity"
+severity = "suggest"
+rationale = "The annotation mixes design rationale and failure-mode narrative into what should be a concise behavioral claim. The final sentence (starting with 'A refactor that left...') reads as defensive commentary rather than a property of the system. This makes it harder to verify: what exactly is being asserted? A cleaner annotation would state the invariant, not argue for why it exists."
+
+[[critique.findings]]
+category = "scope"
+severity = "suggest"
+rationale = "The annotation is attached to `fn enqueue_pending` but the claim covers the entire worker design (Bash-only tooling, no Read/Write). That broader architectural invariant belongs at a higher-level annotation site, not on a single enqueue function. The focal site can only enforce that entries are self-contained at enqueue time; it cannot enforce what workers do or do not have access to."

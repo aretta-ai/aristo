@@ -1,0 +1,89 @@
+[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "sha256:2e2274c6035c3e2ce4e30951db71b59bd04abe6fac1d64c09dd19c0d0a4d1ba0"
+produced_at_body_hash = "sha256:32dc975d18fbefea3b073dfa3e03d87a922593a5b6af1828e754a7afdb084a57"
+produced_by = "aristo-neural-verifier@v0.0.6"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "run_submit_findings is the sole creation site for .aristo/critiques/<id>.critique files: it parses the JSON payload as a CritiqueFile, runs the schema/focal-id/staleness/rationale validator, short-circuits with a Silent error before any write if validation fails, otherwise stamps derived fields, atomic-writes the file, and prints `accepted: sha256:<hex>` for the orchestrator integrity check."
+
+[[verified.proof.steps]]
+path = "0"
+claim = "run_submit_findings is the single creation path for .aristo/critiques/<id>.critique files, with validation gates running before atomic_write and an accepted: sha256:<hex> line emitted on success."
+relation_to_parent = "decomposes"
+subgoal_paths = [
+    "0.0",
+    "0.1",
+    "0.2",
+]
+
+[[verified.proof.steps.grounds]]
+kind = "composition"
+reason = "the top-level claim decomposes into (a) write path uniqueness, (b) the four validation gates, (c) short-circuit before write_proof_atomic, and (d) the accepted-line emission — proven by subgoals 0.0, 0.1, 0.2."
+
+[[verified.proof.steps]]
+path = "0.0"
+claim = "run_submit_findings is the only function that CREATES new .critique files: it is the unique call site that combines critique_path_for(ws, &id) with atomic_write on a fresh CritiqueFile. The only other writer of critique_path_for targets — stamp_disposition — mutates an already-loaded existing file rather than creating one."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/critique/submit.rs"
+lines = "60-68"
+code_text_hash = "sha256:c17edff311bd5877b7a7b92a6a2b18bbd783d99d271e2d92f6ff41b625eb25fa"
+reason = "submit.rs constructs the target path via critique_path_for, creates the parent directory, and atomically writes the serialized CritiqueFile — this is the create-from-JSON path."
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "stamp_disposition_uses_atomic_write"
+at_text_hash = "sha256:30eb056875cb3bcb56333422b25cced7c40228af68962f9e8b7bc085af80ee7d"
+relation = "excludes-counterexample"
+reason = "the only other writer to critique_path_for targets (`stamp_disposition`) loads an EXISTING .critique file, mutates a finding's disposition, and atomic-writes the mutation back — by construction it is a mutator, not a creator, so it does not contradict the singleton-creator claim."
+
+[[verified.proof.steps]]
+path = "0.1"
+claim = "Validation gates the four documented properties — schema enums (Category/Severity), focal-id-in-index, text staleness anchor (critiqued_at_text_hash == current entry text_hash), and per-finding rationale presence — and the gate runs before any disk write."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "critique_validator_checks_schema_and_focal_id_in_index"
+at_text_hash = "sha256:99cfdad751e9510f74daf9939cf6eeb9b6334fbd3e4965b8132837345be55f78"
+relation = "instantiates"
+reason = "the cited intent IS the validator contract claimed here; the focal annotation merely re-states the same contract from the submit caller's perspective."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/critique/validator.rs"
+lines = "65-128"
+code_text_hash = "sha256:880763b87b89888f03a3ebedb21444bd792fb5a2ea6dd17bcc7a328df78242a4"
+reason = "validate() enforces: focal-id lookup in index (lines 73-79), text staleness via critiqued_at_text_hash vs entry.text_hash (lines 84-98), and per-finding non-empty rationale (lines 102-108). Schema enums (Category/Severity) are enforced earlier by serde at parse time per the doc comment; the validator relies on that pre-condition."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/critique/submit.rs"
+lines = "44-53"
+code_text_hash = "sha256:81530db561d609c7bd3101dc22a024c331ba602bfa6f99eaeb99c36f5056a068"
+reason = "submit calls serde_json::from_str (parse-time enum check) at line 44, then runs validate() at line 49, then short-circuits with CliError::Silent if !report.is_empty() at lines 50-53 — all strictly before the file-write block at lines 60-68."
+
+[[verified.proof.steps]]
+path = "0.2"
+claim = "On a successful submit, run_submit_findings prints `accepted: sha256:<hex>` to stdout where <hex> is the sha256 of the byte-for-byte content read back from disk — matching the orchestrator integrity-check contract."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/critique/submit.rs"
+lines = "70-78"
+code_text_hash = "sha256:b15763f4715d4bd584907265d2398d2239167d023925de7cb88b9ef0c509eec8"
+reason = 'after atomic_write, submit reads the file back from disk into `written`, computes body_hash(&written) into `h`, calls queue::submit_done, and prints `println!("accepted: {h}")` — h is a sha256-prefixed Hash whose Display is `sha256:<hex>`.'
+
+[[verified.proof.steps.grounds]]
+kind = "intent"
+id = "atomic_write_via_tempfile_rename"
+at_text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
+relation = "composes"
+reason = "atomic_write guarantees the bytes the post-write read-back observes are exactly the bytes the SDK serialized (no partial-write race), so the printed sha256 anchors the orchestrator-visible bytes to the on-disk state."

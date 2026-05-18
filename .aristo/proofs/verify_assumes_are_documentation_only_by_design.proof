@@ -4,15 +4,15 @@ method = "neural"
 produced_at_text_hash = "sha256:52a7f47cb64e5ff1cbf3eb2bf9d3fbada34b756a1ed78158e8e54ea8e0d4e51a"
 produced_at_body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 produced_by = "aristo-neural-verifier@v0.0.6"
-attempts = 2
+attempts = 3
 property_kind = "invariant"
 
 [verified.proof]
-conclusion = "resolve_verify_level early-returns VerifyLevel::Bool(false) for every IndexEntry::Assume(_) regardless of its contents, routing assumes into the same Bool(false) arm in run that handles intent opt-outs (verify=false). That arm runs no skill, no test, no signed outcome (documented by sibling intent verify_false_arm_is_intentional_skip). The design is enforced structurally upstream: AssumeEntry is serde(deny_unknown_fields) and lists no verify field, so an assume entry cannot opt INTO any verification method at parse time or via construction. A refactor that tried to verify assumes would first have to change the schema (contradicting the design choice that assumes describe external trust, not properties of THIS code) or branch on assume-specific semantics that do not exist. The invariant holds."
+conclusion = "Assume entries carry no verify field by design and resolve_verify_level returns VerifyLevel::Bool(false) for them, which the dispatcher handles via the same skip-without-skill arm that documentation-only intents (verify=false) use."
 
 [[verified.proof.steps]]
 path = "0"
-claim = "For every IndexEntry::Assume(_), resolve_verify_level returns VerifyLevel::Bool(false) unconditionally, and the Bool(false) arm in run is the single skip-without-skill path shared with verify=false intents — so assumes are documentation-only by design."
+claim = "For every IndexEntry::Assume(_), resolve_verify_level returns VerifyLevel::Bool(false), and the dispatcher routes that value to the skip-without-skill arm shared with opt-out intents."
 relation_to_parent = "composes"
 subgoal_paths = [
     "0.0",
@@ -22,52 +22,54 @@ subgoal_paths = [
 
 [[verified.proof.steps.grounds]]
 kind = "composition"
-reason = "Conjunction of sub-claims 0.0 (assumes always resolve to Bool(false)), 0.1 (the Bool(false) arm is the shared single skip-without-skill path), and 0.2 (the schema makes verifying assumes structurally impossible). Together these discharge the parent claim that assumes are documentation-only by design."
+reason = "Subgoals 0.0, 0.1, 0.2 combine via AND: (a) AssumeEntry has no verify field structurally, (b) resolve_verify_level returns Bool(false) for Assume unconditionally, (c) the Bool(false) arm in the dispatcher is the same skip-without-skill arm as opt-out intents."
 
 [[verified.proof.steps]]
 path = "0.0"
-claim = "For every IndexEntry::Assume(_), resolve_verify_level returns VerifyLevel::Bool(false) unconditionally, before any inspection of assume-entry fields."
+claim = "AssumeEntry has no verify field. verify is only a member of IntentEntry, so there is no per-annotation verification level to dispatch on for assume entries."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
-file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "314-326"
-code_text_hash = "sha256:2b01704581321f22e12d1b3b470816047856447ef79be9326cd494e004212848"
-reason = "fn resolve_verify_level (line 314) matches on entry first. Line 317 reads `IndexEntry::Assume(_) => return VerifyLevel::Bool(false)`, returning before the inner `match raw` that would otherwise resolve Bool(true) via project default. No path through this function returns Method(..) for an Assume entry."
+file = "crates/aristo-core/src/index/entry.rs"
+lines = "52-63"
+code_text_hash = "sha256:0822fb444c9c0603c267b0f0dca0b5d59d5a06f7f0c768c3c953a398a845d99c"
+reason = "IntentEntry struct definition shows pub verify: VerifyLevel field on line 54."
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-core/src/index/entry.rs"
+lines = "72-87"
+code_text_hash = "sha256:48cdb157f50eba2b0559f4e390e12843a58df45375b37cb261aa22ac56ea3e59"
+reason = "AssumeEntry struct definition lists text/status/text_hash/body_hash/file/site/covered_region/linked/parent — no verify field. The doc comment on lines 66-67 explicitly notes assumptions are not verification targets per A5."
 
 [[verified.proof.steps]]
 path = "0.1"
-claim = "The Bool(false) arm in run is the single skip-without-skill path; it increments skipped_doc_only and invokes no verification skill — the same handling that intent opt-outs (verify=false) receive."
+claim = "resolve_verify_level returns VerifyLevel::Bool(false) for any IndexEntry::Assume(_) via an early return, before any inspection of project config or per-entry verify level."
 relation_to_parent = "decomposes"
 
 [[verified.proof.steps.grounds]]
 kind = "code"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-lines = "94-115"
-code_text_hash = "sha256:9bc552de5c3662745bc36927529d78e1ff33bc9ce936183e3768e43527dd18e4"
-reason = "The match on resolve_verify_level(entry, &cfg) has exactly one Bool(false) arm (lines 95-106) whose body runs only stats.skipped_doc_only += 1 plus an intent_stmt! documenting the intentional no-op. The Method(..) arms (lines 110-114) push to pending_neural / pending_test / pending_full — those paths are unreachable for assumes per 0.0."
+lines = "328-340"
+code_text_hash = "sha256:2b01704581321f22e12d1b3b470816047856447ef79be9326cd494e004212848"
+reason = "The match on entry has the arm IndexEntry::Assume(_) => return VerifyLevel::Bool(false) on line 331, short-circuiting the rest of the function. This is the only arm reached for Assume entries."
+
+[[verified.proof.steps]]
+path = "0.2"
+claim = "In the dispatcher loop, VerifyLevel::Bool(false) is the single skip-without-skill arm. It increments stats.skipped_doc_only and invokes no skill, and the inline intent_stmt anchors this arm as the same skip semantic used by opt-out intents (verify=false)."
+relation_to_parent = "decomposes"
+
+[[verified.proof.steps.grounds]]
+kind = "code"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+lines = "108-130"
+code_text_hash = "sha256:24410ecbcb3bbcf0f8f82efffb0322957f5780901762e956b03130690ee8b4bf"
+reason = "The match on resolve_verify_level result has exactly one Bool(false) arm (lines 109-120) which only increments stats.skipped_doc_only and calls no skill. The Neural/Test/Full arms each enqueue or count pending work; only Bool(false) is the no-op skip."
 
 [[verified.proof.steps.grounds]]
 kind = "intent"
 id = "verify_false_arm_is_intentional_skip"
 at_text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
 relation = "composes"
-reason = "Sibling intent sited inside the Bool(false) arm body certifies that this arm invokes no skill, runs no test, writes no signed outcome — the exact documentation-only semantic that assumes inherit by sharing the arm."
-
-[[verified.proof.steps.grounds]]
-kind = "prior-step"
-path = "0.0"
-reason = "Routing of assumes into this arm relies on 0.0; combined, assumes reach exactly the documentation-only handler."
-
-[[verified.proof.steps]]
-path = "0.2"
-claim = "The schema makes verifying assumes structurally impossible: AssumeEntry has no verify field, so an assume cannot opt INTO any verification method at the on-disk or in-memory level."
-relation_to_parent = "decomposes"
-
-[[verified.proof.steps.grounds]]
-kind = "code"
-file = "crates/aristo-core/src/index/entry.rs"
-lines = "65-87"
-code_text_hash = "sha256:a49e8418cc174cffcdadc5ac2fd9922d80bb76fcee7e60a98a28a55083aea78e"
-reason = "AssumeEntry is #[serde(deny_unknown_fields)] (line 71) and its fields are {text, status, text_hash, body_hash, file, site, covered_region, linked, parent} (lines 72-87) — no verify. The doc comment (lines 65-69) records the design: assume has no verify because assumptions are not verification targets per A5. So a refactor trying to verify assumes would have to first change the schema, which is precisely the design choice the parent intent says is rejected."
+reason = "This intent documents that the Bool(false) arm is the intentional no-skill skip for opt-out intents — the same arm Assume entries land on via the Bool(false) resolution from step 0.1, demonstrating the dispatcher's single skip-without-skill path handles both populations."
