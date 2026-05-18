@@ -69,14 +69,13 @@ pub(crate) fn run(
     // Default path: enqueue tasks for the filtered ids.
     if filter_strings.is_empty() {
         return Err(CliError::Other {
-            message:
-                "`aristo critique` requires `--filter`. Examples:\n  \
+            message: "`aristo critique` requires `--filter`. Examples:\n  \
                  aristo critique --filter id=my_intent\n  \
                  aristo critique --filter id=foo,bar,baz\n  \
                  aristo critique --filter file=src/x.rs\n\
                  (a default --all sweep is intentionally not provided — \
                  critique is an LLM call and shouldn't be the accidental path)"
-                    .into(),
+                .into(),
             exit_code: 2,
         });
     }
@@ -99,16 +98,12 @@ pub(crate) fn run(
         "→ {enqueued} {} enqueued for critique under .aristo/critique-queue/pending/.",
         if enqueued == 1 { "entry" } else { "entries" }
     );
-    println!(
-        "  In Claude Code (or another agent with the aristo-critique skill installed), run:"
-    );
+    println!("  In Claude Code (or another agent with the aristo-critique skill installed), run:");
     println!("    /aristo-critique");
     println!(
         "  to produce findings for each pending entry. The skill writes .aristo/critiques/<id>.critique"
     );
-    println!(
-        "  files; run `aristo critique --apply-findings` to validate and surface them."
-    );
+    println!("  files; run `aristo critique --apply-findings` to validate and surface them.");
     Ok(())
 }
 

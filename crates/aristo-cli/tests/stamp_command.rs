@@ -132,11 +132,7 @@ fn stamp_flips_counterexample_to_stale_on_body_change() {
         r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 1 }"#,
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
-    force_status(
-        tmp.path(),
-        "a",
-        aristo_core::index::Status::Counterexample,
-    );
+    force_status(tmp.path(), "a", aristo_core::index::Status::Counterexample);
 
     write_lib(
         tmp.path(),

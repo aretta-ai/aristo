@@ -210,8 +210,8 @@ enum Commands {
         /// `--queue-status` to decide whether to spawn the next wave.
         #[arg(long = "pop-next", conflicts_with_all = ["apply_verdicts", "submit_verdict", "queue_status"])]
         pop_next: bool,
-        /// Peek at queue state without claiming. Prints `pending: N`
-        /// + `claimed: M` to stdout, exit 0. Used by the orchestrator
+        /// Peek at queue state without claiming. Prints `pending: N`,
+        /// `claimed: M` to stdout, exit 0. Used by the orchestrator
         /// to decide whether to dispatch another wave of workers.
         /// Non-destructive — multiple callers do not race.
         #[arg(long = "queue-status", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]

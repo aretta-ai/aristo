@@ -105,7 +105,9 @@ pub enum Category {
 
 /// Critique finding severity. v0 locks three values; additions require a
 /// design-doc update + validator change, lockstep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Severity {
     /// Lowest severity. Informational; no action recommended.

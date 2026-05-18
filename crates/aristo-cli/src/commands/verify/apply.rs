@@ -16,7 +16,9 @@ use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Status};
 use aristo_core::proof::{Ground, ProofFile, VerdictType};
 
 use crate::commands::index::atomic_write;
-use crate::commands::verify::validator::{parse_line_range, slice_lines, validate, ValidatorReport};
+use crate::commands::verify::validator::{
+    parse_line_range, slice_lines, validate, ValidatorReport,
+};
 use crate::{CliError, CliResult, Workspace};
 
 pub(crate) fn run_apply_verdicts(
@@ -161,10 +163,12 @@ pub(crate) fn stamp_ground_hashes(
     for_each_step_mut(pf, |step| {
         for g in step.grounds.iter_mut() {
             match g {
-                Ground::Intent { id, at_text_hash, .. }
-                | Ground::Assume { id, at_text_hash, .. }
-                    if at_text_hash.is_none() =>
-                {
+                Ground::Intent {
+                    id, at_text_hash, ..
+                }
+                | Ground::Assume {
+                    id, at_text_hash, ..
+                } if at_text_hash.is_none() => {
                     if let Some(entry) = index.entries.get(id) {
                         *at_text_hash = Some(entry_text_hash(entry));
                         count += 1;
@@ -188,7 +192,10 @@ pub(crate) fn stamp_ground_hashes(
     count
 }
 
-fn for_each_step_mut(pf: &mut ProofFile, mut visit: impl FnMut(&mut aristo_core::proof::ProofStep)) {
+fn for_each_step_mut(
+    pf: &mut ProofFile,
+    mut visit: impl FnMut(&mut aristo_core::proof::ProofStep),
+) {
     if let Some(v) = pf.verified.as_mut() {
         for s in v.proof.steps.iter_mut() {
             visit(s);

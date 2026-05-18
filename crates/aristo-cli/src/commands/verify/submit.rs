@@ -189,7 +189,8 @@ mod tests {
     #[test]
     fn rejects_malformed_json() {
         let id = AnnotationId::parse("foo").unwrap();
-        let (ws, index) = workspace_with_index(vec![(id.clone(), intent_entry("src/x.rs", "fn x"))]);
+        let (ws, index) =
+            workspace_with_index(vec![(id.clone(), intent_entry("src/x.rs", "fn x"))]);
         let err = run_submit_verdict(&ws, &index, "foo", "{this is not json").unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("parse error"), "got: {msg}");

@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- chore: §6 hygiene — `cargo fmt --all` across 11 files in `aristo-cli` + `aristo-core`, plus targeted clippy fixes for newer-toolchain lints firing on pre-existing code: `while_let_loop` (queue test), `single_char_add_str` (critique apply), MSRV violation `Option::is_none_or` → `Option::map_or` (critique validator; workspace MSRV is 1.75), `doc_lazy_continuation` (verify pop-next docstring), `too_many_arguments` allow on `verify::run` (flag-shaped dispatcher; collapsing into a struct adds indirection without simplifying call sites), and `dead_code` allows on intentional placeholders in `pipeline/queue.rs` (`requeue`, `reap_stale_claims`, `ClaimedTask::{id, path}`, `QueueDir::root`) with `reason = ...` notes pointing at the future-slice consumers. No behavior change. Required so subsequent commits land green under the §6 check suite.
+
 ## [v0.0.6] — 2026-05-17
 
 **Milestone E — Verify pipeline (neural only).** End-to-end `verify="neural"` on the free tier: dispatcher (slice 22), in-agent skill orchestration (slice 23), and an 8-gap post-shipment hardening arc that brought the proof lifecycle to production quality. Slices 24/25/26 (`verify="test"` and `"full"`) were originally part of this milestone but are deferred to post-MVP pending tight design work on the specification schema and injection mechanism — captured in `docs/deferred/verify-test-design.md`. Slice 22 + 23 ship as the milestone-E close.

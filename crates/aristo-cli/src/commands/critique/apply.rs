@@ -195,7 +195,7 @@ fn truncate(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         let mut out: String = s.chars().take(max).collect();
-        out.push_str("…");
+        out.push('…');
         out
     }
 }

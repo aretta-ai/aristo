@@ -32,6 +32,10 @@ pub(crate) mod pending;
 pub(crate) mod submit;
 pub(crate) mod validator;
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "flag-shaped dispatcher; collapsing into a struct adds indirection without simplifying the call site"
+)]
 pub(crate) fn run(
     filter_strings: &[String],
     rerun: bool,

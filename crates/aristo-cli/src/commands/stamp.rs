@@ -137,10 +137,7 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
     verify = "test",
     id = "stamp_cascades_proof_deletion_on_removed_annotations"
 )]
-fn cascade_delete_orphan_proofs(
-    ws: &crate::Workspace,
-    summary: &StampSummary,
-) -> CliResult<()> {
+fn cascade_delete_orphan_proofs(ws: &crate::Workspace, summary: &StampSummary) -> CliResult<()> {
     let proofs_dir = ws.aristo_dir().join("proofs");
     if !proofs_dir.is_dir() {
         return Ok(());

@@ -84,7 +84,9 @@ fn verify_neural_intent_writes_pending_request_file() {
         .stdout(contains("1 entry pending neural verification"))
         .stdout(contains("/aristo-neural-verify"));
 
-    let task_path = tmp.path().join(".aristo/verify-queue/pending/my_intent.toml");
+    let task_path = tmp
+        .path()
+        .join(".aristo/verify-queue/pending/my_intent.toml");
     let task = fs::read_to_string(&task_path)
         .unwrap_or_else(|e| panic!("expected queue task at {:?}: {e}", task_path));
     assert!(
@@ -554,13 +556,12 @@ grounds = [{{ kind = "composition", reason = "single-step proof" }}]
         .success();
 
     // Next plain `verify` should skip — proof on disk + validator passes.
-    aristo_in(tmp.path())
-        .arg("verify")
-        .assert()
-        .success();
+    aristo_in(tmp.path()).arg("verify").assert().success();
 
     assert!(
-        !tmp.path().join(".aristo/verify-queue/pending/my_intent.toml").exists(),
+        !tmp.path()
+            .join(".aristo/verify-queue/pending/my_intent.toml")
+            .exists(),
         "no queue task should be enqueued when nothing's pending"
     );
 }
@@ -601,12 +602,11 @@ grounds = [{{ kind = "composition", reason = "by inspection of source" }}]
         .success();
 
     // status is now Counterexample. Next verify should NOT re-add to pending.
-    aristo_in(tmp.path())
-        .arg("verify")
-        .assert()
-        .success();
+    aristo_in(tmp.path()).arg("verify").assert().success();
     assert!(
-        !tmp.path().join(".aristo/verify-queue/pending/my_intent.toml").exists(),
+        !tmp.path()
+            .join(".aristo/verify-queue/pending/my_intent.toml")
+            .exists(),
         "counterexample with valid proof must not be re-pended (GAP-2 fix)"
     );
 }
@@ -681,14 +681,12 @@ rationale = "would close gap"
     let raw = raw.replace(&text_h, &stale);
     fs::write(&path, raw).unwrap();
 
-    aristo_in(tmp.path())
-        .arg("verify")
-        .assert()
-        .success();
-    let task_path = tmp.path().join(".aristo/verify-queue/pending/my_intent.toml");
-    let task = fs::read_to_string(&task_path).unwrap_or_else(|e| {
-        panic!("expected queue task at {:?}: {e}", task_path)
-    });
+    aristo_in(tmp.path()).arg("verify").assert().success();
+    let task_path = tmp
+        .path()
+        .join(".aristo/verify-queue/pending/my_intent.toml");
+    let task = fs::read_to_string(&task_path)
+        .unwrap_or_else(|e| panic!("expected queue task at {:?}: {e}", task_path));
     assert!(
         task.contains("prior_attempts = 2"),
         "queue task must carry prior_attempts; got:\n{task}"
@@ -747,7 +745,9 @@ rationale = "would close gap"
         .stderr(contains("stuck_intent"));
 
     // Queue must NOT have a task file for the budget-exhausted entry.
-    let task_path = tmp.path().join(".aristo/verify-queue/pending/stuck_intent.toml");
+    let task_path = tmp
+        .path()
+        .join(".aristo/verify-queue/pending/stuck_intent.toml");
     assert!(
         !task_path.exists(),
         "budget-exhausted entry must not be enqueued"

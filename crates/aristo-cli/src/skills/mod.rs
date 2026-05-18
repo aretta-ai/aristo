@@ -141,8 +141,10 @@ mod tests {
              (task body is self-contained; no Read needed)"
         );
         assert!(
-            body.contains("rephrasing") && body.contains("parent-shape")
-                && body.contains("vocabulary") && body.contains("scope")
+            body.contains("rephrasing")
+                && body.contains("parent-shape")
+                && body.contains("vocabulary")
+                && body.contains("scope")
                 && body.contains("clarity"),
             "skill body must enumerate all five v0 finding categories"
         );

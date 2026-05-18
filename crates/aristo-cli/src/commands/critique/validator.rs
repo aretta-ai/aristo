@@ -15,7 +15,9 @@ pub(crate) struct CritiqueReport {
 
 impl CritiqueReport {
     fn empty() -> Self {
-        Self { failures: Vec::new() }
+        Self {
+            failures: Vec::new(),
+        }
     }
 
     fn push(&mut self, location: String, detail: String) {
@@ -105,7 +107,9 @@ pub(crate) fn validate(
             );
         }
         if matches!(f.category, aristo_core::critique::Category::Rephrasing)
-            && f.suggested_text.as_ref().is_none_or(|s| s.trim().is_empty())
+            && f.suggested_text
+                .as_ref()
+                .map_or(true, |s| s.trim().is_empty())
         {
             // Soft warning encoded as a hard reject: rephrasing without
             // a suggested replacement is the most common low-value

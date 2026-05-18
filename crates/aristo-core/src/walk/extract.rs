@@ -345,7 +345,6 @@ impl<'ast> Visit<'ast> for Walker<'_> {
     }
 }
 
-
 /// Match `#[aristo::intent(...)]` / `#[aristo::assume(...)]` (also bare
 /// `intent` / `assume` for the `use aristo::intent;` user style). Returns
 /// the kind on a hit, `None` otherwise.

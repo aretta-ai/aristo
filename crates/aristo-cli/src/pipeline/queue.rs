@@ -47,6 +47,7 @@ impl QueueDir {
         }
     }
 
+    #[allow(dead_code, reason = "scheduled use in future status/reap commands")]
     pub(crate) fn root(&self) -> &PathBuf {
         &self.root
     }
@@ -94,7 +95,15 @@ pub(crate) struct QueueStatus {
 /// [`submit_done`] (success) or [`requeue`] (retry).
 #[derive(Debug)]
 pub(crate) struct ClaimedTask {
+    #[allow(
+        dead_code,
+        reason = "consumed by reaper / status commands in later slices"
+    )]
     pub id: AnnotationId,
+    #[allow(
+        dead_code,
+        reason = "consumed by reaper / status commands in later slices"
+    )]
     pub path: PathBuf,
     pub content: String,
 }
@@ -110,11 +119,7 @@ pub(crate) struct ClaimedTask {
     verify = "test",
     id = "queue_dir_is_per_pipeline_namespace"
 )]
-pub(crate) fn enqueue(
-    qdir: &QueueDir,
-    id: &AnnotationId,
-    task_toml: &str,
-) -> CliResult<()> {
+pub(crate) fn enqueue(qdir: &QueueDir, id: &AnnotationId, task_toml: &str) -> CliResult<()> {
     qdir.ensure_dirs()?;
     let path = qdir.pending_path(id);
     atomic_write(&path, task_toml)
@@ -230,6 +235,10 @@ pub(crate) fn submit_done(qdir: &QueueDir, id: &AnnotationId) -> CliResult<()> {
     verify = "test",
     id = "requeue_moves_claimed_back_to_pending"
 )]
+#[allow(
+    dead_code,
+    reason = "consumed by reap_stale_claims / submit cancel paths"
+)]
 pub(crate) fn requeue(qdir: &QueueDir, id: &AnnotationId) -> CliResult<()> {
     let src = qdir.claimed_path(id);
     if !src.is_file() {
@@ -253,6 +262,10 @@ pub(crate) fn requeue(qdir: &QueueDir, id: &AnnotationId) -> CliResult<()> {
      per-task latency.",
     verify = "test",
     id = "reap_stale_claims_recovers_crashed_workers"
+)]
+#[allow(
+    dead_code,
+    reason = "scheduled use at skill startup once worker-crash recovery lands"
 )]
 pub(crate) fn reap_stale_claims(
     qdir: &QueueDir,
@@ -412,11 +425,8 @@ mod tests {
                 let qdir = qdir.clone();
                 thread::spawn(move || {
                     let mut claimed = Vec::new();
-                    loop {
-                        match pop_next(&qdir).unwrap() {
-                            Some(t) => claimed.push(t.id.as_str().to_string()),
-                            None => break,
-                        }
+                    while let Some(t) = pop_next(&qdir).unwrap() {
+                        claimed.push(t.id.as_str().to_string());
                     }
                     claimed
                 })
@@ -430,7 +440,11 @@ mod tests {
         let mut dedup = all.clone();
         dedup.sort();
         dedup.dedup();
-        assert_eq!(dedup.len(), M, "duplicate claim detected — race-safety broken");
+        assert_eq!(
+            dedup.len(),
+            M,
+            "duplicate claim detected — race-safety broken"
+        );
     }
 
     #[test]
