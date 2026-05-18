@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T06:16:01.123259Z"
+generated_at = "2026-05-18T06:33:45.45441Z"
 source_root = "."
 
 [agents_md_install_preserves_outside_markers]
@@ -79,6 +79,72 @@ text_hash = "sha256:e263b091886cb4c609e53a9967e731cb3c967aa28163a64f90b6d5f93c48
 body_hash = "sha256:cd90679da5a4b2be67dab24d0af844740a795916a5d7634477e3a204e2b0aaf4"
 file = "crates/aristo-cli/src/skills/mod.rs"
 site = "fn bundled (line 53)"
+covered_region = "function"
+
+[critique_apply_is_summary_only_in_v0]
+kind = "intent"
+text = "`aristo critique --apply-findings` scans every `.critique` file, re-validates against the current index (catches drift between submit time and apply time), prints a per-id summary grouped by severity, and sweeps queue stragglers. For v0 this is a read + summary pass — index update fields (last_critiqued_at_text_hash, last_critique_finding_count, last_critique_highest_severity) are deferred to v1 so this slice ships without touching the IndexEntry serde shape. The .critique files on disk are authoritative; re-running `aristo critique --apply-findings` is idempotent and non-destructive."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:0a136873a529a21239147cc15f0496faef2133d05d958db7da08578e14c8f626"
+body_hash = "sha256:0ecfadf05d43ed1d5983a65e8fc34f7db49cf1bc79c27799d89ed6a7b31ea073"
+file = "crates/aristo-cli/src/commands/critique/apply.rs"
+site = "fn run_apply_findings (line 20)"
+covered_region = "function"
+
+[critique_derived_fields_stamped_by_sdk_not_agent]
+kind = "intent"
+text = "On accept, the SDK derives `finding_count` from `findings.len()` and `highest_severity` from `findings.iter().map(|f| f.severity).max()`. Agents may submit these fields explicitly (the schema accepts them) but the SDK overwrites — single source of truth, no agent/SDK disagreement on derived state. None when findings is empty."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:f5defe6df7297bcbb267680533d140fc7a1e915bffdf6b386135abba6027fe80"
+body_hash = "sha256:0c4f00d1aaa63c1456415f9d1ab3818abd8f6484580a0c7315dfe1865f8c5ba9"
+file = "crates/aristo-cli/src/commands/critique/validator.rs"
+site = "fn stamp_derived (line 126)"
+covered_region = "function"
+
+[critique_queue_entries_are_self_contained]
+kind = "intent"
+text = "Critique queue entries embed the focal annotation text PLUS sibling and parent annotation texts as a self-contained TOML body under `.aristo/critique-queue/pending/<id>.toml`. Workers get Bash-only tooling (no Read, no Write) and decide findings purely from the embedded context — they cannot wander into the repo. A refactor that left the queue entry thin (id + hash only, agent reads source itself) would re-introduce the very failure mode this design defends against: agents spending tokens on unrelated reads and producing critique grounded in irrelevant code."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:061676e468191a6a439b24eb55589be06a36d2fd8097932c81654a4f0c1b4588"
+body_hash = "sha256:dc1ec5c4359fe1650fa74c1e3b979679a10cbc4787c0528d01b9fd4050a3d861"
+file = "crates/aristo-cli/src/commands/critique/pending.rs"
+site = "fn enqueue_pending (line 54)"
+covered_region = "function"
+
+[critique_requires_explicit_filter_no_implicit_all]
+kind = "intent"
+text = "`aristo critique` requires an explicit `--filter` (id or file). Default scope is NOT all annotations — an unbounded codebase sweep is an expensive LLM operation and shouldn't be the accidental path. A refactor that defaults to `--all` would turn `aristo critique` into a footgun the first time a user runs it on a large project."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:c2fc45fff111078b8adba8b37b554eedb85cf2bc5338c40cb597a5de1eec4d5e"
+body_hash = "sha256:324394b7f7eaacf7199999b72ab0f28870d032200f86875ce95b18f0ea30b454"
+file = "crates/aristo-cli/src/commands/critique/mod.rs"
+site = "fn run (line 29)"
+covered_region = "function"
+
+[critique_sibling_embedding_capped_at_five_per_parent]
+kind = "intent"
+text = "Sibling embedding for critique tasks scopes to entries sharing the focal's parent id, capped at MAX_SIBLINGS=5 (deterministic order via BTreeMap iteration). Larger sets balloon worker token spend for diminishing vocabulary-alignment value; smaller sets miss the cross-sibling consistency findings (the whole point of the parent-shape and vocabulary categories). Five was chosen as a starting point during the design review; revisit after first month of dogfood if the alignment-finding rate is too low."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:1a1256630dba9c0a3da9d4aef15f8e897778a4c79b48ae1fcd4e523dac4e3c82"
+body_hash = "sha256:ee9baa8cfa966240c9c689d84cca1a913035b022a8cbfa7083e88fa331b02dc9"
+file = "crates/aristo-cli/src/commands/critique/pending.rs"
+site = "fn sibling_annotations (line 122)"
+covered_region = "function"
+
+[critique_validator_checks_schema_and_focal_id_in_index]
+kind = "intent"
+text = "The critique validator gates writes on schema integrity: enum values for category and severity (serde rejects unknown variants at parse time, so by the time we run the checks here those are already known to be in the locked set), the focal id resolves in the current index, and the rationale field is non-empty (a finding without a rationale is noise — silently dropping the requirement would let agents emit categorized-but-uninformative critiques). Unlike the verify validator there is no proof-tree integrity check because findings carry no derivations."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:99cfdad751e9510f74daf9939cf6eeb9b6334fbd3e4965b8132837345be55f78"
+body_hash = "sha256:451d5cdd9129c53f3e86a1d72a5f1f7e972d6bbb6cd6a1951d35b9fc29b441fc"
+file = "crates/aristo-cli/src/commands/critique/validator.rs"
+site = "fn validate (line 50)"
 covered_region = "function"
 
 [detect_cycles_returns_first_cycle_only]
@@ -429,6 +495,17 @@ text_hash = "sha256:9070413f2bc853a6b1d84aecbdf624efd53463b136e25e22f66773dc520e
 body_hash = "sha256:473b1b6fa7c3d8170b943a0a5d8b0f2fb007e5e71b8864017fe8c016535874b6"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
 site = "fn submit_done (line 204)"
+covered_region = "function"
+
+[submit_findings_is_only_write_path_for_critiques]
+kind = "intent"
+text = "`aristo critique --submit-findings` is the SINGLE creation path for `.aristo/critiques/<id>.critique` files (subagents have no Write-tool access — critique workers have Bash only). On accept, prints `accepted: sha256:<hex>` to stdout for the orchestrator's integrity check. Validation gates schema enums + focal-id-in-index + text staleness anchor + per-finding rationale presence; any failure short-circuits before write_proof_atomic. Same shape as submit-verdict, different payload schema."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:2e2274c6035c3e2ce4e30951db71b59bd04abe6fac1d64c09dd19c0d0a4d1ba0"
+body_hash = "sha256:32dc975d18fbefea3b073dfa3e03d87a922593a5b6af1828e754a7afdb084a57"
+file = "crates/aristo-cli/src/commands/critique/submit.rs"
+site = "fn run_submit_findings (line 14)"
 covered_region = "function"
 
 [submit_returns_sha256_of_written_file]

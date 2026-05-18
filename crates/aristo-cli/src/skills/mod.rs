@@ -92,7 +92,12 @@ const NEURAL_VERIFY: Skill = Skill {
     content: include_str!("aristo-neural-verify.md"),
 };
 
-const BUNDLED: &[Skill] = &[AUTHORING, NEURAL_VERIFY];
+const CRITIQUE: Skill = Skill {
+    name: "aristo-critique",
+    content: include_str!("aristo-critique.md"),
+};
+
+const BUNDLED: &[Skill] = &[AUTHORING, NEURAL_VERIFY, CRITIQUE];
 
 #[cfg(test)]
 mod tests {
@@ -110,8 +115,46 @@ mod tests {
     #[test]
     fn future_skill_names_not_yet_bundled() {
         // Sentinels: these skills land in their consuming slices.
-        assert!(find("aristo-mine-assertions").is_none()); // slice 24
-        assert!(find("aristo-critique").is_none()); // slice 27
+        assert!(find("aristo-mine-assertions").is_none()); // slice 24 (deferred)
+    }
+
+    #[test]
+    fn critique_skill_is_bundled() {
+        let s = find("aristo-critique").expect("aristo-critique must be bundled");
+        let body = s.resolved_content();
+        assert!(
+            body.contains("aristo critique --submit-findings"),
+            "skill body must teach the SDK CLI as the single write path"
+        );
+        assert!(
+            body.contains("aristo critique --pop-next"),
+            "skill body must teach the worker-loop pop pattern"
+        );
+        assert!(
+            body.contains("model=\"sonnet\""),
+            "skill body must specify the Sonnet model for critique workers \
+             (Opus is overkill for shallow prose work)"
+        );
+        assert!(
+            body.contains("Bash tools only"),
+            "skill body must restrict critique workers to Bash only \
+             (task body is self-contained; no Read needed)"
+        );
+        assert!(
+            body.contains("rephrasing") && body.contains("parent-shape")
+                && body.contains("vocabulary") && body.contains("scope")
+                && body.contains("clarity"),
+            "skill body must enumerate all five v0 finding categories"
+        );
+        assert!(
+            body.contains("strong-suggest") && body.contains("severity"),
+            "skill body must enumerate the severity scale"
+        );
+        assert!(
+            body.contains("self-contained"),
+            "skill body must teach that the task body is self-contained \
+             (no source reads needed)"
+        );
     }
 
     #[test]

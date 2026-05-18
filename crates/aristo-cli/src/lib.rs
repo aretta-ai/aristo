@@ -223,7 +223,47 @@ enum Commands {
     /// opinionated suggestions on annotation prose — categorized
     /// findings with severity tags — not neutral inspection. Avoids
     /// the false analogy to PR / code review where humans sign off.)
-    Critique,
+    Critique {
+        /// J2 unified filter clause (`id=<id>[,<id>,...]`,
+        /// `file=<path>`, `parent=<id>`, `status=<state>`). Repeatable;
+        /// multiple `--filter` flags AND together; values may be
+        /// comma-separated. **REQUIRED** — `aristo critique` with no
+        /// filter errors with usage. (No implicit codebase sweep per
+        /// `docs/decisions/critique-and-pipeline-architecture.md` §D6.)
+        #[arg(long = "filter", value_name = "key=value")]
+        filters: Vec<String>,
+        /// Apply pending critique files in `.aristo/critiques/` —
+        /// re-validate every `<id>.critique` and print a summary
+        /// grouped by id. v0 is read+summary only; v1 will stamp
+        /// `last_critiqued_at_text_hash` into the index for caching.
+        #[arg(long = "apply-findings", conflicts_with_all = ["submit_findings", "pop_next", "queue_status"])]
+        apply_findings: bool,
+        /// Worker-facing API: atomically claim one task from the
+        /// critique queue and print its TOML body to stdout. Empty
+        /// stdout means the queue is drained (still exits 0). Critique
+        /// workers loop on this call (shallow tasks; vocabulary
+        /// alignment benefits from cross-task context).
+        #[arg(long = "pop-next", conflicts_with_all = ["apply_findings", "submit_findings", "queue_status"])]
+        pop_next: bool,
+        /// Peek at queue state without claiming. Prints `pending: N`
+        /// + `claimed: M` to stdout, exit 0.
+        #[arg(long = "queue-status", conflicts_with_all = ["apply_findings", "submit_findings"])]
+        queue_status: bool,
+        /// Subagent write-path for a single critique: parse the JSON
+        /// payload, run the schema validator, write
+        /// `.aristo/critiques/<id>.critique` atomically on accept.
+        /// Prints `accepted: sha256:<hex>` to stdout.
+        #[arg(long = "submit-findings", requires = "id", requires = "json")]
+        submit_findings: bool,
+        /// Annotation id this submission is about. Required with
+        /// `--submit-findings`.
+        #[arg(long = "id", requires = "submit_findings")]
+        id: Option<String>,
+        /// JSON-serialized CritiqueFile body. Required with
+        /// `--submit-findings`.
+        #[arg(long = "json", requires = "submit_findings")]
+        json: Option<String>,
+    },
 
     /// Generate per-annotation markdown to .aristo/doc/.
     Doc,
@@ -305,7 +345,23 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             id,
             json,
         ),
-        Commands::Critique => not_yet("aristo critique", "slice 27"),
+        Commands::Critique {
+            filters,
+            apply_findings,
+            pop_next,
+            queue_status,
+            submit_findings,
+            id,
+            json,
+        } => commands::critique::run(
+            &filters,
+            submit_findings,
+            pop_next,
+            queue_status,
+            apply_findings,
+            id,
+            json,
+        ),
         Commands::Doc => not_yet("aristo doc", "slice 28"),
         Commands::Graph => not_yet("aristo graph", "slice 29"),
         Commands::Badge => not_yet("aristo badge", "slice 31"),
@@ -345,20 +401,19 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Critique).unwrap_err();
+        let err = dispatch(Commands::Doc).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo critique"), "msg: {msg}");
-        assert!(msg.contains("slice 27"), "msg: {msg}");
+        assert!(msg.contains("aristo doc"), "msg: {msg}");
+        assert!(msg.contains("slice 28"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
         // to update the slice pointer. Implemented commands (Init, Lang,
-        // Index, Stamp, Show, List, Status, Lint, Verify) are tested
-        // elsewhere.
+        // Index, Stamp, Show, List, Status, Lint, Verify, Critique) are
+        // tested elsewhere.
         let variants = [
-            (Commands::Critique, "slice 27"),
             (Commands::Doc, "slice 28"),
             (Commands::Graph, "slice 29"),
             (Commands::Badge, "slice 31"),
