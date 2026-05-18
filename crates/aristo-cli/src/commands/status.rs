@@ -55,11 +55,74 @@ pub(crate) fn run() -> CliResult<()> {
     println!("Index health:");
     println!("  schema_version: {} (current)", index.meta.schema_version);
 
+    // ─── review-session backlog + active surfacing (slice 27.5 D9) ─
+    // Surface deferred items so the user notices the backlog without
+    // having to start a review session to find them. Surface an
+    // active session so they don't forget it's open.
+    let backlog_counts = collect_backlog_counts(&ws)?;
+    if !backlog_counts.is_empty() {
+        println!();
+        println!("Review backlog:");
+        for (kind, count) in &backlog_counts {
+            let item_word = if *count == 1 { "item" } else { "items" };
+            println!("  {kind}: {count} {item_word}");
+        }
+    }
+    if let Some(active) = active_session_summary(&ws)? {
+        println!();
+        println!("Active review session:");
+        println!("  {active}");
+    }
+
     println!();
     println!(
         "[INFO] For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`)."
     );
     Ok(())
+}
+
+/// Walk `.aristo/sessions/backlog/` and return (kind, count) for
+/// every per-kind backlog file. Returns empty on missing directory.
+fn collect_backlog_counts(ws: &crate::Workspace) -> CliResult<Vec<(String, usize)>> {
+    let dir = ws.sessions_backlog_dir();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
+    let mut out: Vec<(String, usize)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some(kind) = name.strip_suffix(".toml") else {
+            continue;
+        };
+        if let Ok(count) = crate::session::backlog::count(ws, kind) {
+            if count > 0 {
+                out.push((kind.to_string(), count));
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Compact summary of the active session, if any. Format:
+/// `id=… kind=… subject=… (open=N accepted=M rejected=K pending=J)`.
+fn active_session_summary(ws: &crate::Workspace) -> CliResult<Option<String>> {
+    let Some(id) = crate::session::storage::read_active_pointer(ws)? else {
+        return Ok(None);
+    };
+    let Some(session) = crate::session::storage::read_active_session(ws, &id)? else {
+        return Ok(None);
+    };
+    let c = session.bucket_counts();
+    Ok(Some(format!(
+        "id={} kind={} subject={} (open={} accepted={} rejected={} pending={})",
+        session.id, session.kind, session.subject, c.open, c.accepted, c.rejected, c.pending
+    )))
 }
 
 fn default_verify_for_display(ws: &crate::Workspace) -> String {

@@ -102,3 +102,66 @@ fn status_no_warning_when_index_is_fresh() {
         "fresh index should not warn; got stderr: {stderr}"
     );
 }
+
+#[test]
+fn status_surfaces_active_review_session_when_present() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    aristo_in(tmp.path())
+        .args(["session", "start", "test-review", "--subject", "fixture"])
+        .assert()
+        .success();
+
+    aristo_in(tmp.path())
+        .arg("status")
+        .assert()
+        .success()
+        .stdout(contains("Active review session"))
+        .stdout(contains("kind=test-review"))
+        .stdout(contains("subject=fixture"));
+}
+
+#[test]
+fn status_surfaces_backlog_when_deferred_items_exist() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    aristo_in(tmp.path())
+        .args(["session", "start", "test-review", "--subject", "x"])
+        .assert()
+        .success();
+    aristo_in(tmp.path())
+        .args(["session", "decide", "--item", "a#0", "--bucket", "pending"])
+        .assert()
+        .success();
+    aristo_in(tmp.path())
+        .args(["session", "decide", "--item", "b#1", "--bucket", "pending"])
+        .assert()
+        .success();
+    aristo_in(tmp.path())
+        .args(["session", "exit"])
+        .assert()
+        .success();
+
+    aristo_in(tmp.path())
+        .arg("status")
+        .assert()
+        .success()
+        .stdout(contains("Review backlog"))
+        .stdout(contains("test-review: 2 items"));
+}
+
+#[test]
+fn status_omits_review_sections_when_no_session_or_backlog() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    let assert = aristo_in(tmp.path()).arg("status").assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(
+        !stdout.contains("Review backlog"),
+        "no backlog should be reported when empty: {stdout}"
+    );
+    assert!(
+        !stdout.contains("Active review session"),
+        "no active session should be reported when none open: {stdout}"
+    );
+}
