@@ -107,6 +107,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "dirs",
+ "getrandom 0.2.17",
  "predicates",
  "proc-macro2",
  "serde",

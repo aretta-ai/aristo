@@ -43,6 +43,12 @@ impl FromStr for SessionId {
     }
 }
 
+impl From<&str> for SessionId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
 /// Opaque per-kind item reference. Encoded as `<id>#<index>` (e.g.
 /// `critique_queue_entries_are_self_contained#0`). The `#` separator
 /// avoids ambiguity with annotation ids that contain `:`.
@@ -53,6 +59,10 @@ pub struct ItemRef(String);
 impl ItemRef {
     /// Build a ref from an id + index. The encoding is load-bearing —
     /// see the type-level rationale for `#`.
+    #[allow(
+        dead_code,
+        reason = "per-kind code (step 5+) constructs indexed refs; CLI handlers take opaque strings"
+    )]
     #[aristo::intent(
         "ItemRef uses `#` as the id↔index separator rather than `:` \
          because annotation ids in this project can legitimately \
@@ -73,6 +83,10 @@ impl ItemRef {
         Self(s.into())
     }
 
+    #[allow(
+        dead_code,
+        reason = "consumed by per-kind code in step 5+ and by unit tests"
+    )]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -80,6 +94,10 @@ impl ItemRef {
     /// Parse out `(id, index)` from a `<id>#<index>` ref. Returns `None`
     /// if the ref has no `#` or the suffix doesn't parse as usize —
     /// callers handling kinds with opaque refs use [`as_str`] instead.
+    #[allow(
+        dead_code,
+        reason = "per-kind code (step 5+) decodes refs back into (id, index) for index lookup"
+    )]
     pub fn split_indexed(&self) -> Option<(&str, usize)> {
         let (id, idx) = self.0.rsplit_once('#')?;
         let idx = idx.parse().ok()?;
@@ -149,6 +167,10 @@ pub struct Item {
 
 impl Item {
     /// New open item with no decision attached.
+    #[allow(
+        dead_code,
+        reason = "per-kind code (step 5+) seeds open items at session start; CLI's decide handler builds Item inline"
+    )]
     pub fn open(item_ref: ItemRef) -> Self {
         Self {
             item_ref,

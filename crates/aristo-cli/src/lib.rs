@@ -277,6 +277,99 @@ enum Commands {
 
     /// Atomic project-wide rename of an annotation id.
     Rename,
+
+    /// Stateful review-session substrate — start / inspect / decide /
+    /// exit on the in-flight review of a pipeline's reviewable
+    /// artifacts. See `docs/decisions/review-sessions.md`.
+    Session {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+}
+
+/// Subcommands under `aristo session`. Each maps to one substrate
+/// operation; per-kind side effects (e.g. mutating a `.critique`
+/// file on accept) plug in via the `SessionKind` trait wired in
+/// step 5.
+#[derive(clap::Subcommand, Debug)]
+pub(crate) enum SessionAction {
+    /// Begin a fresh review session of the given kind. Fails if a
+    /// session is already active and `--allow-nesting` was not
+    /// permitted by the kind.
+    Start {
+        /// Session kind (`critique-review`, `proof-review`).
+        kind: String,
+        /// Free-form display label for the focal artifact under review
+        /// (e.g. `src/critique/pending.rs` or
+        /// `proof:balance_no_duplicate_cells`).
+        #[arg(long = "subject")]
+        subject: String,
+        /// Override the kind's default nesting policy. v0 ships
+        /// `Disallow` as the only policy; the flag is reserved for
+        /// future per-kind opt-ins (design Q4).
+        #[arg(long = "allow-nesting", default_value_t = false)]
+        allow_nesting: bool,
+    },
+    /// Print the active session id (or empty stdout if none).
+    /// Exit 0 either way.
+    Active {
+        /// Emit the full `<system-reminder>` block instead of just
+        /// the id — for the `UserPromptSubmit` hook installed by
+        /// `aristo install-skills`. Empty stdout when no session
+        /// is active (the hook then injects nothing).
+        #[arg(long = "hook-format", default_value_t = false)]
+        hook_format: bool,
+    },
+    /// Print bucket counts + open items for the active session.
+    /// Exit 0; errors out if no session is active.
+    Status,
+    /// Record a decision on one item in the active session.
+    Decide {
+        /// Item reference (`<id>#<index>` for indexed items, or any
+        /// opaque per-kind string).
+        #[arg(long = "item")]
+        item: String,
+        /// Which bucket the item lands in.
+        #[arg(long = "bucket", value_enum)]
+        bucket: BucketArg,
+        /// Optional free-text reason captured with the decision.
+        #[arg(long = "note")]
+        note: Option<String>,
+    },
+    /// Close the active session. Strict by default — errors out if
+    /// any items are still in the open bucket.
+    Exit {
+        /// Move open items to the per-kind backlog instead of
+        /// erroring. Items are NEVER silently dropped; the next
+        /// session of this kind surfaces them via the backlog menu
+        /// (design doc D7).
+        #[arg(long = "defer-undecided", default_value_t = false)]
+        defer_undecided: bool,
+    },
+    /// Destructive cancel: drop the session entirely with no
+    /// decisions recorded. Requires `--yes` to skip the
+    /// confirmation prompt.
+    Abort {
+        /// Skip the confirmation prompt.
+        #[arg(long = "yes", default_value_t = false)]
+        yes: bool,
+    },
+    /// List the active session and the most recent N closed sessions.
+    List {
+        /// Maximum number of closed-session rows to include.
+        #[arg(long = "limit", default_value_t = 10)]
+        limit: usize,
+    },
+}
+
+/// User-facing bucket choices for `aristo session decide`. Maps to
+/// the substrate's [`session::types::ItemStatus`] (minus `Open`,
+/// which is the implicit pre-decision state).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum BucketArg {
+    Accepted,
+    Rejected,
+    Pending,
 }
 
 /// Process entry point. Parses `argv`, dispatches to the chosen subcommand,
@@ -367,6 +460,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::Graph => not_yet("aristo graph", "slice 29"),
         Commands::Badge => not_yet("aristo badge", "slice 31"),
         Commands::Rename => not_yet("aristo rename", "slice 32"),
+        Commands::Session { action } => commands::session::run(action),
     }
 }
 

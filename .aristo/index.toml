@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.6"
-generated_at = "2026-05-18T18:48:38.025339Z"
+generated_at = "2026-05-18T18:51:03.287527Z"
 source_root = "."
 
 [active_pointer_read_trims_whitespace]
@@ -57,6 +57,28 @@ text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6eb
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
 site = "fn atomic_write (line 293)"
+covered_region = "function"
+
+[backlog_append_is_read_modify_write_via_atomic]
+kind = "intent"
+text = "Appending to the backlog is read-modify-write: read the existing file, push the new entry, atomic-write the result. The `pending` bucket NEVER silently drops — every deferred item must land in this file. A refactor that used `OpenOptions::append` would lose atomicity (the backlog is TOML, not line-delimited; an interrupted append produces a non-parseable file)."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:ab3c79d6b6f1af4d2587e3585fa10a8e6d600ed4cfe726ea8a8b42131a48881b"
+body_hash = "sha256:97f1627ebaaf5afc1c179fa259426ea80cfb62de62e7e975e898285a0d0fbe44"
+file = "crates/aristo-cli/src/session/backlog.rs"
+site = "fn append_entry (line 99)"
+covered_region = "function"
+
+[backlog_writes_are_atomic_via_tempfile_rename]
+kind = "intent"
+text = "Backlog writes go through `atomic_write` (temp-file + rename) so a concurrent reader cannot observe a partially-serialized file. The backlog is the only durable record of deferred items between sessions; a partial write that deserialize-fails would look like 'no backlog' to a reader and silently drop user-deferred items — the exact failure mode the substrate exists to prevent."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:ec6cfe5ca6cb32a394252526dccec1fe1dc6b48fdbe6703359b3ac707a662df0"
+body_hash = "sha256:f48ed768d54677c37cb8de8327949ed46b7005237e73a842dd45faf9b40be643"
+file = "crates/aristo-cli/src/session/backlog.rs"
+site = "fn write (line 79)"
 covered_region = "function"
 
 [body_hash_is_verbatim]
@@ -189,6 +211,17 @@ text_hash = "sha256:83deaa81889acf09c9fb6383c823ac8363bc91277a16be89294ac106f979
 body_hash = "sha256:cc2281617efc9e3c91c3a6da65da3072d3f3b19e9110d3b3a710746ebda12ddf"
 file = "crates/aristo-cli/src/commands/show.rs"
 site = "fn did_you_mean (line 251)"
+covered_region = "function"
+
+[drain_returns_items_then_deletes_file]
+kind = "intent"
+text = "Draining the backlog atomically removes the file after returning its contents — once the caller has the items, the file is gone. The pattern matches `aristo verify --apply-verdicts`: read all, mutate, the artifact is consumed. A refactor that read without deleting would surface the same backlog items every session start, creating zombie-deferral. A refactor that deleted before returning would lose data if the caller crashed mid-handle — read-then-delete keeps the items in memory while the file is gone."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:a974c9c20933604965c9316944b526620748bcfa9d19fe68fe5855a0a4bfd012"
+body_hash = "sha256:37166b0a910ce2f88d4db5086bfb9b317012e00e36c9ea4156001e5802f86bcb"
+file = "crates/aristo-cli/src/session/backlog.rs"
+site = "fn drain (line 122)"
 covered_region = "function"
 
 [extract_returns_annotations_in_source_order]

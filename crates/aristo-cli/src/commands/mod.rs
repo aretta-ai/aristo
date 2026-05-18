@@ -8,6 +8,7 @@ pub(crate) mod install_skills;
 pub(crate) mod lang;
 pub(crate) mod lint;
 pub(crate) mod list;
+pub(crate) mod session;
 pub(crate) mod show;
 pub(crate) mod stamp;
 pub(crate) mod status;

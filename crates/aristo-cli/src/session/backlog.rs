@@ -115,6 +115,10 @@ pub fn append_entry(ws: &Workspace, kind: &str, entry: BacklogEntry) -> CliResul
 
 /// Count current backlog items for one kind. Used by `aristo status`
 /// to surface the backlog without enumerating it.
+#[allow(
+    dead_code,
+    reason = "consumed by `aristo status` integration in step 9"
+)]
 pub fn count(ws: &Workspace, kind: &str) -> CliResult<usize> {
     Ok(read(ws, kind)?.items.len())
 }
@@ -130,6 +134,10 @@ pub fn count(ws: &Workspace, kind: &str) -> CliResult<usize> {
      keeps the items in memory while the file is gone.",
     verify = "neural",
     id = "drain_returns_items_then_deletes_file"
+)]
+#[allow(
+    dead_code,
+    reason = "consumed by per-kind backlog-review flow wired in steps 5-6"
 )]
 pub fn drain(ws: &Workspace, kind: &str) -> CliResult<Vec<BacklogEntry>> {
     let backlog = read(ws, kind)?;

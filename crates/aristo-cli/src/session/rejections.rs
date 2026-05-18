@@ -74,6 +74,10 @@ pub fn append(ws: &Workspace, entry: &RejectionEntry) -> CliResult<()> {
 /// empty (no rejections yet). Parse errors on individual lines skip
 /// the line and continue — a hand-edited rejections.log shouldn't
 /// crash a review session.
+#[allow(
+    dead_code,
+    reason = "consumed by per-kind matches_prior_rejection computation in step 5"
+)]
 pub fn read_all(ws: &Workspace) -> CliResult<Vec<RejectionEntry>> {
     let path = ws.sessions_rejections_log();
     let f = match std::fs::File::open(&path) {
@@ -98,6 +102,10 @@ pub fn read_all(ws: &Workspace) -> CliResult<Vec<RejectionEntry>> {
 
 /// Filter [`read_all`] by kind. Used by per-kind `matches_prior_rejection`
 /// computation at session start to limit the comparison set.
+#[allow(
+    dead_code,
+    reason = "consumed by per-kind matches_prior_rejection computation in step 5"
+)]
 pub fn read_for_kind(ws: &Workspace, kind: &str) -> CliResult<Vec<RejectionEntry>> {
     Ok(read_all(ws)?
         .into_iter()
