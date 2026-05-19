@@ -5,11 +5,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
 rust-version.workspace = true
 authors.workspace = true
+documentation = "https://docs.rs/aristo"
+categories = ["development-tools", "development-tools::testing"]
 
 [lints]
 workspace = true
+
+[package.metadata.docs.rs]
+# Render with all features on so docs.rs picks up the rustdoc-injection
+# behaviour of `aristo_doc` alongside the default `aristo_check` path.
+all-features = true
 
 [features]
 default = ["aristo_check"]

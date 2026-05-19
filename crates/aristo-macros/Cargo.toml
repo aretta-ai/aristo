@@ -5,14 +5,24 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
 rust-version.workspace = true
 authors.workspace = true
+documentation = "https://docs.rs/aristo-macros"
+categories = ["development-tools::procedural-macro-helpers", "development-tools"]
 
 [lints]
 workspace = true
 
 [lib]
 proc-macro = true
+
+[package.metadata.docs.rs]
+# Render with all features on so `aristo_doc`'s rustdoc-injection
+# pathway is visible alongside the default `aristo_check` validation.
+all-features = true
 
 [features]
 default = ["aristo_check"]
@@ -36,6 +46,11 @@ quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
 
 [dev-dependencies]
-aristo = { workspace = true }
+# Path-only (no version) intentionally — `aristo` depends on this crate,
+# so a path+version dev-dep would create a publish-time cycle that even
+# `cargo package` can't resolve. Path-only deps are stripped during
+# publish-tarball preparation; locally they still resolve via the
+# workspace.
+aristo = { path = "../aristo" }
 tempfile = "3.10"
 trybuild = "1.0"

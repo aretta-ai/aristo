@@ -12,8 +12,18 @@ version = "0.0.8"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/aretta-dev/aristo"
+homepage = "https://github.com/aretta-dev/aristo"
 rust-version = "1.75"
 authors = ["Aretta <hello@aretta.dev>"]
+# Workspace-level keywords inherited by all 4 crates via
+# `keywords.workspace = true`. Max 5 entries; lowercase, no spaces;
+# crates.io facet search uses these.
+keywords = ["annotation", "verification", "intent", "proof", "sdk"]
+# NOTE: `readme` is NOT inherited via workspace.package because cargo
+# resolves the workspace-inherited value relative to each crate's dir
+# AFTER appending the workspace-relative prefix, producing wrong paths
+# (e.g. `../../../../README.md` for a crate at `crates/<name>/`).
+# Each crate's manifest sets `readme = "../../README.md"` directly.
 
 [workspace.dependencies]
 aristo = { path = "crates/aristo", version = "0.0.8" }

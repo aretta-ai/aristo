@@ -5,8 +5,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
 rust-version.workspace = true
 authors.workspace = true
+documentation = "https://docs.rs/aristo-core"
+categories = ["development-tools", "parsing"]
 
 [lints]
 workspace = true
