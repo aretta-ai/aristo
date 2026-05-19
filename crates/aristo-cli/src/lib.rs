@@ -348,6 +348,13 @@ enum Commands {
         /// load-bearing background facts.
         #[arg(long = "exclude-assumes")]
         exclude_assumes: bool,
+        /// Walk N hops from each filter-matched node in both
+        /// directions (ancestors + descendants) and include them in
+        /// the rendered graph. Useful for "show me this annotation +
+        /// some context". Only meaningful with `--filter`; without
+        /// a filter, the default scope is already the whole index.
+        #[arg(long, value_name = "N")]
+        depth: Option<u32>,
     },
 
     /// Generate a shareable SVG verification badge for README / docs.
@@ -562,7 +569,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             out,
             filters,
             exclude_assumes,
-        } => commands::graph::run(&format, out, &filters, exclude_assumes),
+            depth,
+        } => commands::graph::run(&format, out, &filters, exclude_assumes, depth),
         Commands::Badge { out, style } => {
             let style =
                 commands::badge::Style::parse(&style).map_err(|message| CliError::Other {

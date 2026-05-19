@@ -67,6 +67,7 @@ pub(crate) fn run(
     out: Option<PathBuf>,
     filter_strings: &[String],
     exclude_assumes: bool,
+    depth: Option<u32>,
 ) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
@@ -81,7 +82,12 @@ pub(crate) fn run(
     let mut scoped_index = if filters.is_empty() {
         index
     } else {
-        filter_index(index, &filters)
+        let matched = filter_index(index.clone(), &filters);
+        if let Some(n) = depth {
+            expand_by_depth(&index, matched, n)
+        } else {
+            matched
+        }
     };
     if exclude_assumes {
         scoped_index = drop_assumes(scoped_index);
@@ -214,6 +220,74 @@ fn drop_assumes(index: IndexFile) -> IndexFile {
         .collect();
     IndexFile {
         meta: index.meta,
+        entries,
+    }
+}
+
+/// Walk `depth` hops in both directions (ancestors via `parent` links,
+/// descendants via reverse-edge traversal) from each annotation in the
+/// `matched` subset of `full`. Returns a new IndexFile whose entries
+/// are `matched` ∪ everything reachable within `depth` hops.
+///
+/// Used by `--depth` to add context around filter-matched nodes. A
+/// `depth` of 0 means "matched only" (effectively the same as no
+/// `--depth` flag); higher values expand the context.
+fn expand_by_depth(full: &IndexFile, matched: IndexFile, depth: u32) -> IndexFile {
+    use std::collections::{BTreeSet, VecDeque};
+
+    if depth == 0 {
+        return matched;
+    }
+
+    // Build a reverse index: parent_id → [child_ids] so descendant
+    // expansion is a constant-time lookup per node.
+    let mut children_of: std::collections::HashMap<&AnnotationId, Vec<&AnnotationId>> =
+        std::collections::HashMap::new();
+    for (id, entry) in full.entries.iter() {
+        for p in parent_ids(entry) {
+            children_of.entry(p).or_default().push(id);
+        }
+    }
+
+    let mut included: BTreeSet<AnnotationId> = matched.entries.keys().cloned().collect();
+    // BFS frontier with remaining-hops counter per node.
+    let mut frontier: VecDeque<(AnnotationId, u32)> = matched
+        .entries
+        .keys()
+        .cloned()
+        .map(|id| (id, depth))
+        .collect();
+
+    while let Some((id, hops_remaining)) = frontier.pop_front() {
+        if hops_remaining == 0 {
+            continue;
+        }
+        // Ancestors (follow parent links).
+        if let Some(entry) = full.entries.get(&id) {
+            for parent in parent_ids(entry) {
+                if included.insert(parent.clone()) {
+                    frontier.push_back((parent.clone(), hops_remaining - 1));
+                }
+            }
+        }
+        // Descendants (follow reverse edges).
+        if let Some(kids) = children_of.get(&id) {
+            for child in kids {
+                if included.insert((*child).clone()) {
+                    frontier.push_back(((*child).clone(), hops_remaining - 1));
+                }
+            }
+        }
+    }
+
+    let entries = full
+        .entries
+        .iter()
+        .filter(|(id, _)| included.contains(id))
+        .map(|(id, entry)| (id.clone(), entry.clone()))
+        .collect();
+    IndexFile {
+        meta: full.meta.clone(),
         entries,
     }
 }
@@ -442,6 +516,100 @@ mod tests {
             parent: None,
         });
         assert_eq!(site_line(&entry), Some(42));
+    }
+
+    #[test]
+    fn expand_by_depth_zero_returns_matched_unchanged() {
+        let idx = make_index();
+        let matched = filter_index(idx.clone(), &[Filter::Id("a".into())]);
+        let expanded = expand_by_depth(&idx, matched.clone(), 0);
+        assert_eq!(
+            expanded.entries.keys().collect::<Vec<_>>(),
+            matched.entries.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn expand_by_depth_one_picks_up_immediate_descendants() {
+        let idx = make_index();
+        // a is the parent of b. Filter to {a}; depth=1 should pull in b.
+        let matched = filter_index(idx.clone(), &[Filter::Id("a".into())]);
+        let expanded = expand_by_depth(&idx, matched, 1);
+        let keys: Vec<&str> = expanded.entries.keys().map(|k| k.as_str()).collect();
+        assert!(keys.contains(&"a"));
+        assert!(keys.contains(&"b"));
+        assert!(
+            !keys.contains(&"c"),
+            "c is a separate root, should not be reached"
+        );
+    }
+
+    #[test]
+    fn expand_by_depth_one_picks_up_immediate_ancestors() {
+        let idx = make_index();
+        // Filter to {b}; depth=1 should pull in b's parent a (but not c).
+        let matched = filter_index(idx.clone(), &[Filter::Id("b".into())]);
+        let expanded = expand_by_depth(&idx, matched, 1);
+        let keys: Vec<&str> = expanded.entries.keys().map(|k| k.as_str()).collect();
+        assert!(keys.contains(&"a"));
+        assert!(keys.contains(&"b"));
+        assert!(!keys.contains(&"c"));
+    }
+
+    #[test]
+    fn expand_by_depth_bounded_by_n() {
+        // Create a linear chain a → b → c (b parent=a, c parent=b).
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            AnnotationId::parse("a").unwrap(),
+            IndexEntry::Intent(intent(
+                "src/a.rs",
+                VerifyLevel::Method(VerifyMethod::Neural),
+                Status::Unknown,
+                None,
+            )),
+        );
+        entries.insert(
+            AnnotationId::parse("b").unwrap(),
+            IndexEntry::Intent(intent(
+                "src/a.rs",
+                VerifyLevel::Method(VerifyMethod::Neural),
+                Status::Unknown,
+                Some(ParentLink::Single(AnnotationId::parse("a").unwrap())),
+            )),
+        );
+        entries.insert(
+            AnnotationId::parse("c").unwrap(),
+            IndexEntry::Intent(intent(
+                "src/a.rs",
+                VerifyLevel::Method(VerifyMethod::Neural),
+                Status::Unknown,
+                Some(ParentLink::Single(AnnotationId::parse("b").unwrap())),
+            )),
+        );
+        let idx = IndexFile {
+            meta: Meta {
+                schema_version: 1,
+                generated_by: None,
+                generated_at: None,
+                source_root: None,
+            },
+            entries,
+        };
+        // Start at {a}; depth=1 should reach b but not c.
+        let matched = filter_index(idx.clone(), &[Filter::Id("a".into())]);
+        let exp1 = expand_by_depth(&idx, matched.clone(), 1);
+        assert!(exp1
+            .entries
+            .contains_key(&AnnotationId::parse("b").unwrap()));
+        assert!(!exp1
+            .entries
+            .contains_key(&AnnotationId::parse("c").unwrap()));
+        // depth=2 should reach c.
+        let exp2 = expand_by_depth(&idx, matched, 2);
+        assert!(exp2
+            .entries
+            .contains_key(&AnnotationId::parse("c").unwrap()));
     }
 
     #[test]
