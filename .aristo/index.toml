@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T05:52:22.417171Z"
+generated_at = "2026-05-19T06:00:06.690483Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -673,15 +673,26 @@ file = "crates/aristo-cli/src/session/rejections.rs"
 site = "fn append (line 47)"
 covered_region = "function"
 
+[rename_plan_reads_only_index_referenced_files_once]
+kind = "intent"
+text = """Plan computation reads each candidate source file ONCE, then defers all writes to commit 4. The candidate file set is the union of (the renamed entry's own file) + (every file containing an entry whose parent references the renamed id) — the index alone determines this set, no broad source walk. If the scan finds zero `id = "old"` occurrences in the entry's own file, the rename refuses with a stale-index diagnostic rather than producing a misleading partial plan; the index says one occurrence MUST exist and its absence is structural drift the user needs to know about."""
+verify = "test"
+status = "unknown"
+text_hash = "sha256:4f89361fd9cb1718f8eb2c49fb618afa88c212a5b1b8f33d923d17d0dba52720"
+body_hash = "sha256:9f5da4fa9446eb101ef485413d6aaef9dfe7a82fadb4a0fba4411bbad422974c"
+file = "crates/aristo-cli/src/commands/rename.rs"
+site = "fn compute_plan (line 154)"
+covered_region = "function"
+
 [rename_validation_rejects_aristos_reserved_prefix_and_collision]
 kind = "intent"
 text = "Rename validation rejects three classes BEFORE any plan computation: (1) `aristos:` in either old or new id — server-bound renames are deferred to Phase 2 alongside `aristo sync`, so the surface lies; (2) cross-namespace renames (`aristos:foo` → bare) — that's an unbind, not a rename, and ships with sync; (3) reserved `aret_*` prefix in the target — opaque ids are stamp-assigned only (F1-b); a readable id renaming TO an opaque slot would let a user manually mint identities the stamp pipeline reserves. The fourth check, target collision against the live index, is the only one that depends on the workspace; the others can be tested in isolation."
 verify = "test"
 status = "unknown"
 text_hash = "sha256:e1ee9692fb157f489f14b14d645ee1d54ca50fe87d47b1280bea77987c65ac9f"
-body_hash = "sha256:d49930755ac5b8e5f9bc6d64417e531678006d9e4283d76e92ee969c507a6125"
+body_hash = "sha256:899f61e1372fa93078a3459f4b3404243bd66285fbf89ff4449bc5a061d90f4e"
 file = "crates/aristo-cli/src/commands/rename.rs"
-site = "fn parse_and_validate (line 71)"
+site = "fn parse_and_validate (line 489)"
 covered_region = "function"
 
 [requeue_moves_claimed_back_to_pending]

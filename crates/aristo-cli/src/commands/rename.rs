@@ -11,17 +11,21 @@
 //! - **Out (deferred to Phase 2 sync):** `aristos:` ↔ `aristos:` renames,
 //!   server-binding warning, `aristo unbind`, transactional rollback.
 //!
-//! This commit ships the dispatch + validation skeleton; the dry-run plan
-//! (commit 3) and the actual edits (commit 4) land in following commits.
+//! Commit 2 shipped the dispatch + validation skeleton. Commit 3 (THIS
+//! commit) ships the dry-run plan + renderer. Commit 4 (next) applies
+//! the plan to disk.
 
+use std::collections::BTreeSet;
+use std::fmt;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use aristo_core::index::{AnnotationId, IdNamespace, IndexFile};
+use aristo_core::index::{AnnotationId, IdNamespace, IndexEntry, IndexFile, ParentLink};
+use aristo_core::walk::{scan_id_occurrences, IdOccurrence, IdOccurrenceKind};
 
 use crate::commands::index::workspace_or_error;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
-use crate::{CliError, CliResult};
+use crate::{CliError, CliResult, Workspace};
 
 /// Entry point invoked from `lib::dispatch`.
 pub(crate) fn run(old_id: &str, new_id: &str, dry_run: bool) -> CliResult<()> {
@@ -30,16 +34,13 @@ pub(crate) fn run(old_id: &str, new_id: &str, dry_run: bool) -> CliResult<()> {
     let index = read_index(&ws.index_path())?;
 
     let parsed = parse_and_validate(old_id, new_id, &index)?;
-    let _ = (&parsed, &ws);
+    let plan = compute_plan(&ws, &index, &parsed)?;
 
     if dry_run {
-        // commit 3 lands the plan rendering. Until then, fail loudly so
-        // CI catches any premature wiring.
-        return Err(CliError::NotImplemented {
-            what: "aristo rename --dry-run",
-            slice: "slice 32 commit 3",
-        });
+        print!("{plan}");
+        return Ok(());
     }
+    let _ = plan;
     Err(CliError::NotImplemented {
         what: "aristo rename (apply)",
         slice: "slice 32 commit 4",
@@ -58,15 +59,432 @@ pub(crate) enum RenameShape {
     OpaquePromotion,
 }
 
-// Fields are read by tests + by the plan computation in commit 3;
-// gate the skeleton-only warning here so the struct stays public-typed.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedRename {
     pub old_id: AnnotationId,
     pub new_id: AnnotationId,
     pub shape: RenameShape,
 }
+
+// ─── Plan model ───────────────────────────────────────────────────────────
+
+/// What `aristo rename` would change. Computed once before either
+/// printing (dry-run) or applying (commit 4); the apply path consumes
+/// the same value.
+#[derive(Debug, Clone)]
+pub(crate) struct RenamePlan {
+    pub old_id: AnnotationId,
+    pub new_id: AnnotationId,
+    #[allow(dead_code)] // commit 4's success-renderer reads `shape`
+    pub shape: RenameShape,
+    /// Byte-range edits across source files. Ordered: same file edits
+    /// run highest-byte-first so earlier byte indexes stay stable.
+    pub source_edits: Vec<SourceEdit>,
+    /// Per-id artifact file renames (`.critique` + `.proof`). Empty if
+    /// no artifacts exist for `old_id`.
+    pub artifact_moves: Vec<ArtifactMove>,
+    /// In-index updates: the self-key rename plus every parent-link
+    /// rewrite. Computed deterministically from the index.
+    pub index_updates: Vec<IndexUpdate>,
+}
+
+// `byte_start` / `byte_end` are read by commit 4's applier; `before_array_text`
+// / `after_array_text` already serve the renderer in commit 3.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub(crate) struct SourceEdit {
+    /// Workspace-relative path (matches the `file` field stored in the
+    /// index entries — and what the spec rendering shows the user).
+    pub file: String,
+    /// 1-indexed line of the opening quote.
+    pub line: usize,
+    pub kind: SourceEditKind,
+    /// Byte range of the literal CONTENTS (no surrounding quotes) in
+    /// the file's bytes. Used by commit 4's substituter.
+    pub byte_start: usize,
+    pub byte_end: usize,
+    /// For `ParentArrayElement`: the BEFORE-line shown to the user
+    /// (e.g., `parent = ["foo", "bar"]`). Computed from the surrounding
+    /// source so the display matches the user's actual text.
+    pub before_array_text: Option<String>,
+    /// For `ParentArrayElement`: the AFTER-line (same array with this
+    /// one element substituted to `new_id`).
+    pub after_array_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SourceEditKind {
+    Id,
+    ParentSingle,
+    ParentArrayElement,
+}
+
+// `from`/`to` are read by commit 4's mover; the labels already serve
+// the renderer in commit 3.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub(crate) struct ArtifactMove {
+    pub from: PathBuf,
+    pub to: PathBuf,
+    /// Display label for the dry-run output, e.g. ".aristo/critiques/<id>.critique".
+    pub from_label: String,
+    pub to_label: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct IndexUpdate {
+    pub kind: IndexUpdateKind,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum IndexUpdateKind {
+    /// The renamed entry's own table key.
+    SelfKey,
+    /// A child entry's singular `parent = "<old>"`.
+    ChildParentSingle { child_id: AnnotationId },
+    /// A child entry's array `parent = [.., "<old>", ..]`.
+    ChildParentArray {
+        child_id: AnnotationId,
+        all_elements: Vec<AnnotationId>,
+    },
+}
+
+// ─── Plan computation ─────────────────────────────────────────────────────
+
+#[aristo::intent(
+    "Plan computation reads each candidate source file ONCE, then \
+     defers all writes to commit 4. The candidate file set is the union \
+     of (the renamed entry's own file) + (every file containing an \
+     entry whose parent references the renamed id) — the index alone \
+     determines this set, no broad source walk. If the scan finds zero \
+     `id = \"old\"` occurrences in the entry's own file, the rename \
+     refuses with a stale-index diagnostic rather than producing a \
+     misleading partial plan; the index says one occurrence MUST exist \
+     and its absence is structural drift the user needs to know about.",
+    verify = "test",
+    id = "rename_plan_reads_only_index_referenced_files_once"
+)]
+fn compute_plan(
+    ws: &Workspace,
+    index: &IndexFile,
+    parsed: &ParsedRename,
+) -> CliResult<RenamePlan> {
+    let mut candidate_files: BTreeSet<String> = BTreeSet::new();
+    // 1a. The renamed entry's own file (carries the `id = "..."` site).
+    let owner_entry = index
+        .entries
+        .get(&parsed.old_id)
+        .expect("validation guarantees old_id is in the index");
+    candidate_files.insert(entry_file(owner_entry).to_string());
+    // 1b. Files containing any child entry whose parent references old_id.
+    for entry in index.entries.values() {
+        if parent_references(entry, &parsed.old_id) {
+            candidate_files.insert(entry_file(entry).to_string());
+        }
+    }
+
+    // 2. Scan each candidate file and collect SourceEdits.
+    let mut source_edits = Vec::new();
+    for file_rel in &candidate_files {
+        let abs = ws.root.join(file_rel);
+        let source = fs::read_to_string(&abs).map_err(|e| CliError::Other {
+            message: format!(
+                "rename: cannot read `{}`: {e}\n\
+                 hint: the index references this file; run `aristo stamp` if you have moved or removed it.",
+                abs.display()
+            ),
+            exit_code: 1,
+        })?;
+        let occurrences = scan_id_occurrences(&source).map_err(|e| CliError::Other {
+            message: format!("rename: failed to parse `{}` as Rust: {e}", abs.display()),
+            exit_code: 1,
+        })?;
+        for occ in occurrences {
+            if occ.value != parsed.old_id.as_str() {
+                continue;
+            }
+            let kind = match occ.kind {
+                IdOccurrenceKind::Id => SourceEditKind::Id,
+                IdOccurrenceKind::ParentSingle => SourceEditKind::ParentSingle,
+                IdOccurrenceKind::ParentArrayElement => SourceEditKind::ParentArrayElement,
+            };
+            let (before_array_text, after_array_text) = if matches!(
+                occ.kind,
+                IdOccurrenceKind::ParentArrayElement
+            ) {
+                render_array_context(&source, &occ, parsed.new_id.as_str())
+            } else {
+                (None, None)
+            };
+            source_edits.push(SourceEdit {
+                file: file_rel.clone(),
+                line: occ.line,
+                kind,
+                byte_start: occ.byte_start,
+                byte_end: occ.byte_end,
+                before_array_text,
+                after_array_text,
+            });
+        }
+    }
+    // Refuse on stale-index drift: the owner file must contain at least
+    // one `id = "<old>"` occurrence for the rename to make sense.
+    let owner_file = entry_file(owner_entry);
+    let has_owner_id_edit = source_edits
+        .iter()
+        .any(|e| e.file == owner_file && e.kind == SourceEditKind::Id);
+    if !has_owner_id_edit {
+        return Err(CliError::Other {
+            message: format!(
+                "rename: index says `{}` lives in `{}` but no `id = \"{}\"` \
+                 occurrence was found in that file.\n\
+                 hint: source has drifted from the index. Run `aristo stamp` and retry.",
+                parsed.old_id.as_str(),
+                owner_file,
+                parsed.old_id.as_str()
+            ),
+            exit_code: 1,
+        });
+    }
+
+    // 3. Artifact moves (`.critique` + `.proof`).
+    let mut artifact_moves = Vec::new();
+    for (subdir, ext) in [("critiques", "critique"), ("proofs", "proof")] {
+        let old_name = format!("{}.{ext}", id_safe(parsed.old_id.as_str()));
+        let new_name = format!("{}.{ext}", id_safe(parsed.new_id.as_str()));
+        let from_path = ws.aristo_dir().join(subdir).join(&old_name);
+        if from_path.is_file() {
+            let to_path = ws.aristo_dir().join(subdir).join(&new_name);
+            artifact_moves.push(ArtifactMove {
+                from: from_path,
+                to: to_path,
+                from_label: format!(".aristo/{subdir}/{old_name}"),
+                to_label: format!(".aristo/{subdir}/{new_name}"),
+            });
+        }
+    }
+
+    // 4. Index updates: self-key + parent rewrites on children.
+    let mut index_updates = vec![IndexUpdate {
+        kind: IndexUpdateKind::SelfKey,
+    }];
+    for (child_id, entry) in &index.entries {
+        match entry_parent(entry) {
+            Some(ParentLink::Single(p)) if p == &parsed.old_id => {
+                index_updates.push(IndexUpdate {
+                    kind: IndexUpdateKind::ChildParentSingle {
+                        child_id: child_id.clone(),
+                    },
+                });
+            }
+            Some(ParentLink::Multiple(ids)) if ids.contains(&parsed.old_id) => {
+                index_updates.push(IndexUpdate {
+                    kind: IndexUpdateKind::ChildParentArray {
+                        child_id: child_id.clone(),
+                        all_elements: ids.clone(),
+                    },
+                });
+            }
+            _ => {}
+        }
+    }
+
+    Ok(RenamePlan {
+        old_id: parsed.old_id.clone(),
+        new_id: parsed.new_id.clone(),
+        shape: parsed.shape.clone(),
+        source_edits,
+        artifact_moves,
+        index_updates,
+    })
+}
+
+/// Given a `ParentArrayElement` occurrence, scan the surrounding bytes
+/// for the enclosing `parent = [ ... ]` literal so the dry-run can
+/// render BEFORE / AFTER with the full array contents. Returns
+/// `(None, None)` if the surrounding `[ ... ]` extent can't be
+/// determined — the renderer falls back to a single-line representation
+/// in that case.
+fn render_array_context(
+    source: &str,
+    occ: &IdOccurrence,
+    new_id: &str,
+) -> (Option<String>, Option<String>) {
+    let bytes = source.as_bytes();
+    // Walk backward from the element's opening quote to find the `[`.
+    // Stop at `parent` boundary or fail.
+    let mut i = occ.byte_start.saturating_sub(1);
+    while i > 0 && bytes[i] != b'[' {
+        i -= 1;
+    }
+    if bytes[i] != b'[' {
+        return (None, None);
+    }
+    let bracket_open = i;
+    // Walk back further to find `parent` keyword start.
+    let mut p = bracket_open;
+    while p > 0 && bytes[p] != b'p' {
+        p -= 1;
+    }
+    // Be defensive about matching "parent" exactly to avoid false hits.
+    if bytes.get(p..p + 6) != Some(b"parent") {
+        return (None, None);
+    }
+    let parent_kw_start = p;
+    // Walk forward from the element's closing quote to find `]`.
+    let mut j = occ.byte_end;
+    while j < bytes.len() && bytes[j] != b']' {
+        j += 1;
+    }
+    if j >= bytes.len() {
+        return (None, None);
+    }
+    let bracket_close = j;
+    let before = match std::str::from_utf8(&bytes[parent_kw_start..=bracket_close]) {
+        Ok(s) => s.to_string(),
+        Err(_) => return (None, None),
+    };
+    // AFTER: replace just this element's value-bytes with new_id.
+    let mut after_bytes: Vec<u8> = bytes[parent_kw_start..=bracket_close].to_vec();
+    let rel_start = occ.byte_start - parent_kw_start;
+    let rel_end = occ.byte_end - parent_kw_start;
+    after_bytes.splice(rel_start..rel_end, new_id.bytes());
+    let after = match String::from_utf8(after_bytes) {
+        Ok(s) => s,
+        Err(_) => return (None, None),
+    };
+    (Some(before), Some(after))
+}
+
+// ─── Plan rendering ───────────────────────────────────────────────────────
+
+impl fmt::Display for RenamePlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f)?;
+        writeln!(
+            f,
+            "Plan: rename `{}` → `{}`",
+            self.old_id.as_str(),
+            self.new_id.as_str()
+        )?;
+        writeln!(f)?;
+        writeln!(f, "Source edits:")?;
+        let old = self.old_id.as_str();
+        let new = self.new_id.as_str();
+        for edit in &self.source_edits {
+            let location = format!("  {}:{}", edit.file, edit.line);
+            match edit.kind {
+                SourceEditKind::Id => {
+                    writeln!(
+                        f,
+                        "{location}    id = \"{old}\"   →   id = \"{new}\""
+                    )?;
+                }
+                SourceEditKind::ParentSingle => {
+                    writeln!(
+                        f,
+                        "{location}    parent = \"{old}\"   →   parent = \"{new}\""
+                    )?;
+                }
+                SourceEditKind::ParentArrayElement => {
+                    match (&edit.before_array_text, &edit.after_array_text) {
+                        (Some(b), Some(a)) => {
+                            writeln!(f, "{location}    {b}")?;
+                            writeln!(f, "                       →   {a}")?;
+                        }
+                        _ => {
+                            // Fallback when the surrounding `[ ... ]` could
+                            // not be parsed from source — give a minimal
+                            // single-line representation rather than
+                            // suppressing the edit entirely.
+                            writeln!(
+                                f,
+                                "{location}    parent[..] = \"{old}\"   →   parent[..] = \"{new}\""
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+        if !self.artifact_moves.is_empty() {
+            writeln!(f)?;
+            writeln!(f, "Artifact files:")?;
+            for mv in &self.artifact_moves {
+                writeln!(f, "  {} → {}", mv.from_label, mv.to_label)?;
+            }
+        }
+        writeln!(f)?;
+        writeln!(f, "Index updates:")?;
+        for upd in &self.index_updates {
+            match &upd.kind {
+                IndexUpdateKind::SelfKey => {
+                    writeln!(f, "  [\"{old}\"]  →  [\"{new}\"]")?;
+                }
+                IndexUpdateKind::ChildParentSingle { child_id } => {
+                    writeln!(
+                        f,
+                        "  {}.parent: \"{old}\" → \"{new}\"",
+                        child_id.as_str()
+                    )?;
+                }
+                IndexUpdateKind::ChildParentArray {
+                    child_id,
+                    all_elements,
+                } => {
+                    let before = render_array(all_elements.iter().map(|id| id.as_str()));
+                    let after = render_array(
+                        all_elements
+                            .iter()
+                            .map(|id| if id == &self.old_id { new } else { id.as_str() }),
+                    );
+                    writeln!(
+                        f,
+                        "  {}.parent: {before} → {after}",
+                        child_id.as_str()
+                    )?;
+                }
+            }
+        }
+        writeln!(f)?;
+        writeln!(f, "(no changes written — dry-run)")?;
+        Ok(())
+    }
+}
+
+fn render_array<'a>(items: impl Iterator<Item = &'a str>) -> String {
+    let inner: Vec<String> = items.map(|s| format!("\"{s}\"")).collect();
+    format!("[{}]", inner.join(", "))
+}
+
+// ─── helpers (id-safe, parent/file readout) ───────────────────────────────
+
+fn entry_file(entry: &IndexEntry) -> &str {
+    match entry {
+        IndexEntry::Intent(e) => &e.file,
+        IndexEntry::Assume(e) => &e.file,
+    }
+}
+
+fn entry_parent(entry: &IndexEntry) -> Option<&ParentLink> {
+    match entry {
+        IndexEntry::Intent(e) => e.parent.as_ref(),
+        IndexEntry::Assume(e) => e.parent.as_ref(),
+    }
+}
+
+fn parent_references(entry: &IndexEntry, id: &AnnotationId) -> bool {
+    match entry_parent(entry) {
+        Some(ParentLink::Single(p)) => p == id,
+        Some(ParentLink::Multiple(ids)) => ids.contains(id),
+        None => false,
+    }
+}
+
+fn id_safe(id: &str) -> String {
+    id.replace(':', "__")
+}
+
+// ─── validation (shipped in commit 2; unchanged here) ─────────────────────
 
 #[aristo::intent(
     "Rename validation rejects three classes BEFORE any plan computation: \
@@ -87,7 +505,6 @@ pub(crate) fn parse_and_validate(
     new_raw: &str,
     index: &IndexFile,
 ) -> CliResult<ParsedRename> {
-    // Step 1 — old id must parse and currently exist in the index.
     let old_id = match AnnotationId::parse(old_raw) {
         Ok(id) => id,
         Err(e) => {
@@ -97,7 +514,6 @@ pub(crate) fn parse_and_validate(
             )));
         }
     };
-    // Reject aristos: ids in EITHER direction (scope trim).
     if old_id.namespace() == IdNamespace::Aristos {
         return Err(reject_aristos_deferred(old_raw));
     }
@@ -108,8 +524,6 @@ pub(crate) fn parse_and_validate(
              you have just edited source."
         )));
     }
-
-    // Step 2 — new id must parse.
     let new_id = match AnnotationId::parse(new_raw) {
         Ok(id) => id,
         Err(e) => {
@@ -120,11 +534,8 @@ pub(crate) fn parse_and_validate(
             )));
         }
     };
-
-    // Step 3 — namespace rules.
     let new_ns = new_id.namespace();
     match new_ns {
-        // bare → aret_X (F1-b: reject readable → opaque).
         IdNamespace::Opaque => {
             return Err(reject(format!(
                 "id `{new_raw}` uses the reserved `aret_` prefix (stamp-assigned only).\n       \
@@ -136,16 +547,10 @@ pub(crate) fn parse_and_validate(
             )));
         }
         IdNamespace::Aristos => {
-            // anything → aristos:* — reject. Distinguish two sub-cases for
-            // a cleaner message: if old is local, it's a cross-namespace
-            // bind attempt; if old is opaque, same. Either way the user
-            // wants `aristo sync` (deferred).
             return Err(reject_aristos_deferred(new_raw));
         }
         IdNamespace::Local => {}
     }
-
-    // Step 4 — target collision.
     if index.entries.contains_key(&new_id) {
         let site = site_for_collision(index, &new_id);
         return Err(reject(format!(
@@ -153,15 +558,11 @@ pub(crate) fn parse_and_validate(
              Pick a different id or delete the conflicting annotation first."
         )));
     }
-
-    // Step 5 — shape classification (drives the per-shape success note).
     let shape = match old_id.namespace() {
         IdNamespace::Local => RenameShape::LocalToLocal,
         IdNamespace::Opaque => RenameShape::OpaquePromotion,
-        // Aristos was rejected above.
         IdNamespace::Aristos => unreachable!(),
     };
-
     Ok(ParsedRename {
         old_id,
         new_id,
@@ -169,9 +570,6 @@ pub(crate) fn parse_and_validate(
     })
 }
 
-/// Construct the canonical "aristos: is deferred to Phase 2" diagnostic.
-/// Same message for either-side `aristos:` rejection — the user's next
-/// action is the same (wait for sync, or use bare ids).
 fn reject_aristos_deferred(raw: &str) -> CliError {
     if raw.starts_with("aristos:") {
         reject(
@@ -198,12 +596,7 @@ fn reject(message: String) -> CliError {
     }
 }
 
-/// Best-effort site string for the collision-error diagnostic. Returns
-/// `<unknown>` if the entry is not an intent / assume with file+site
-/// fields (defensive — should be unreachable, but the message renders
-/// regardless).
 fn site_for_collision(index: &IndexFile, id: &AnnotationId) -> String {
-    use aristo_core::index::IndexEntry;
     match index.entries.get(id) {
         Some(IndexEntry::Intent(e)) => format!("{}:{}", e.file, e.site),
         Some(IndexEntry::Assume(e)) => format!("{}:{}", e.file, e.site),
@@ -211,7 +604,7 @@ fn site_for_collision(index: &IndexFile, id: &AnnotationId) -> String {
     }
 }
 
-// ─── workspace IO (shared with other commands) ────────────────────────────
+// ─── workspace IO ─────────────────────────────────────────────────────────
 
 fn read_index(path: &Path) -> CliResult<IndexFile> {
     if !path.is_file() {
@@ -259,6 +652,16 @@ mod tests {
             last_critiqued_at_text_hash: None,
             last_critique_finding_count: None,
         })
+    }
+
+    fn intent_with_parent(file: &str, site: &str, parent: ParentLink) -> IndexEntry {
+        match intent(file, site) {
+            IndexEntry::Intent(mut e) => {
+                e.parent = Some(parent);
+                IndexEntry::Intent(e)
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn assume(file: &str, site: &str) -> IndexEntry {
@@ -398,9 +801,6 @@ mod tests {
 
     #[test]
     fn cross_namespace_aristos_to_bare_rejected_with_phase_2_message() {
-        // Per the scope trim, cross-namespace renames are also rejected
-        // via the same "aristos: deferred" path — sync (Phase 2) carries
-        // the unbind surface.
         let index = build_index(&[(
             "aristos:foo",
             intent("src/x.rs", "fn aristos_site (line 1)"),
@@ -409,5 +809,292 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("aristos:"), "msg: {msg}");
         assert!(msg.contains("Phase 2"), "msg: {msg}");
+    }
+
+    // ─── Plan computation + rendering ────────────────────────────────────
+
+    fn ws_with_source(files: &[(&str, &str)]) -> (tempfile::TempDir, Workspace) {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("aristo.toml"), "").unwrap();
+        fs::create_dir_all(dir.path().join(".aristo")).unwrap();
+        for (rel, contents) in files {
+            let p = dir.path().join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, contents).unwrap();
+        }
+        let ws = Workspace {
+            root: dir.path().to_path_buf(),
+        };
+        (dir, ws)
+    }
+
+    #[test]
+    fn plan_collects_id_edit_for_renamed_entry_own_file() {
+        let src = r#"
+            #[aristo::intent("the claim", verify = "test", id = "old_id")]
+            fn f() {}
+        "#;
+        let (_dir, ws) = ws_with_source(&[("src/lib.rs", src)]);
+        let index = build_index(&[("old_id", intent("src/lib.rs", "fn f (line 2)"))]);
+        let parsed = parse_and_validate("old_id", "new_id", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        let id_edits: Vec<_> = plan
+            .source_edits
+            .iter()
+            .filter(|e| e.kind == SourceEditKind::Id)
+            .collect();
+        assert_eq!(id_edits.len(), 1);
+        assert_eq!(id_edits[0].file, "src/lib.rs");
+    }
+
+    #[test]
+    fn plan_collects_parent_single_edit_from_child_file() {
+        let owner_src = r#"
+            #[aristo::intent("p", id = "parent_id")]
+            fn p() {}
+        "#;
+        let child_src = r#"
+            #[aristo::intent("c", parent = "parent_id", id = "child_id")]
+            fn c() {}
+        "#;
+        let (_dir, ws) =
+            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let mut entries = vec![
+            ("parent_id", intent("src/p.rs", "fn p (line 2)")),
+            (
+                "child_id",
+                intent_with_parent(
+                    "src/c.rs",
+                    "fn c (line 2)",
+                    ParentLink::Single(AnnotationId::parse("parent_id").unwrap()),
+                ),
+            ),
+        ];
+        let index = build_index(&entries);
+        let _ = &mut entries;
+        let parsed = parse_and_validate("parent_id", "new_parent", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        let parent_edits: Vec<_> = plan
+            .source_edits
+            .iter()
+            .filter(|e| e.kind == SourceEditKind::ParentSingle)
+            .collect();
+        assert_eq!(parent_edits.len(), 1);
+        assert_eq!(parent_edits[0].file, "src/c.rs");
+    }
+
+    #[test]
+    fn plan_collects_each_parent_array_element_with_array_context() {
+        let owner_src = r#"
+            #[aristo::intent("p", id = "parent_id")]
+            fn p() {}
+        "#;
+        let child_src = r#"
+            #[aristo::intent("c", parent = ["parent_id", "other"], id = "child_id")]
+            fn c() {}
+        "#;
+        let (_dir, ws) =
+            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let index = build_index(&[
+            ("parent_id", intent("src/p.rs", "fn p (line 2)")),
+            ("other", intent("src/p.rs", "fn other (line 5)")),
+            (
+                "child_id",
+                intent_with_parent(
+                    "src/c.rs",
+                    "fn c (line 2)",
+                    ParentLink::Multiple(vec![
+                        AnnotationId::parse("parent_id").unwrap(),
+                        AnnotationId::parse("other").unwrap(),
+                    ]),
+                ),
+            ),
+        ]);
+        let parsed = parse_and_validate("parent_id", "new_parent", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        let array_edits: Vec<_> = plan
+            .source_edits
+            .iter()
+            .filter(|e| e.kind == SourceEditKind::ParentArrayElement)
+            .collect();
+        assert_eq!(array_edits.len(), 1);
+        let before = array_edits[0].before_array_text.as_deref().unwrap();
+        let after = array_edits[0].after_array_text.as_deref().unwrap();
+        assert!(before.contains("\"parent_id\""), "before: {before}");
+        assert!(before.contains("\"other\""), "before: {before}");
+        assert!(after.contains("\"new_parent\""), "after: {after}");
+        assert!(after.contains("\"other\""), "after: {after}");
+        assert!(!after.contains("\"parent_id\""), "after: {after}");
+    }
+
+    #[test]
+    fn plan_includes_self_key_index_update() {
+        let src = r#"
+            #[aristo::intent("a", id = "alpha")]
+            fn a() {}
+        "#;
+        let (_dir, ws) = ws_with_source(&[("src/lib.rs", src)]);
+        let index = build_index(&[("alpha", intent("src/lib.rs", "fn a (line 2)"))]);
+        let parsed = parse_and_validate("alpha", "beta", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        let n_self = plan
+            .index_updates
+            .iter()
+            .filter(|u| matches!(u.kind, IndexUpdateKind::SelfKey))
+            .count();
+        assert_eq!(n_self, 1);
+    }
+
+    #[test]
+    fn plan_index_updates_include_each_child_parent_link() {
+        let owner_src = r#"
+            #[aristo::intent("p", id = "parent_id")]
+            fn p() {}
+        "#;
+        let child_a_src = r#"
+            #[aristo::intent("a", parent = "parent_id", id = "child_a")]
+            fn a() {}
+        "#;
+        let child_b_src = r#"
+            #[aristo::intent("b", parent = ["parent_id", "x"], id = "child_b")]
+            fn b() {}
+            #[aristo::intent("x", id = "x")]
+            fn xx() {}
+        "#;
+        let (_dir, ws) = ws_with_source(&[
+            ("src/p.rs", owner_src),
+            ("src/ca.rs", child_a_src),
+            ("src/cb.rs", child_b_src),
+        ]);
+        let index = build_index(&[
+            ("parent_id", intent("src/p.rs", "fn p (line 2)")),
+            ("x", intent("src/cb.rs", "fn xx (line 4)")),
+            (
+                "child_a",
+                intent_with_parent(
+                    "src/ca.rs",
+                    "fn a (line 2)",
+                    ParentLink::Single(AnnotationId::parse("parent_id").unwrap()),
+                ),
+            ),
+            (
+                "child_b",
+                intent_with_parent(
+                    "src/cb.rs",
+                    "fn b (line 2)",
+                    ParentLink::Multiple(vec![
+                        AnnotationId::parse("parent_id").unwrap(),
+                        AnnotationId::parse("x").unwrap(),
+                    ]),
+                ),
+            ),
+        ]);
+        let parsed = parse_and_validate("parent_id", "new_parent", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        let single_updates: Vec<_> = plan
+            .index_updates
+            .iter()
+            .filter(|u| matches!(u.kind, IndexUpdateKind::ChildParentSingle { .. }))
+            .collect();
+        let array_updates: Vec<_> = plan
+            .index_updates
+            .iter()
+            .filter(|u| matches!(u.kind, IndexUpdateKind::ChildParentArray { .. }))
+            .collect();
+        assert_eq!(single_updates.len(), 1);
+        assert_eq!(array_updates.len(), 1);
+    }
+
+    #[test]
+    fn plan_artifact_moves_appear_only_when_files_exist() {
+        let src = r#"
+            #[aristo::intent("a", id = "alpha")]
+            fn a() {}
+        "#;
+        let (dir, ws) = ws_with_source(&[("src/lib.rs", src)]);
+        let index = build_index(&[("alpha", intent("src/lib.rs", "fn a (line 2)"))]);
+        // No artifact files yet: no moves expected.
+        let parsed = parse_and_validate("alpha", "beta", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        assert!(plan.artifact_moves.is_empty(), "no artifacts → no moves");
+
+        // Now drop a .critique file and re-plan.
+        let crit_dir = dir.path().join(".aristo/critiques");
+        fs::create_dir_all(&crit_dir).unwrap();
+        fs::write(crit_dir.join("alpha.critique"), "").unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        assert_eq!(plan.artifact_moves.len(), 1);
+        assert!(plan.artifact_moves[0].from_label.ends_with("alpha.critique"));
+        assert!(plan.artifact_moves[0].to_label.ends_with("beta.critique"));
+    }
+
+    #[test]
+    fn plan_refuses_when_source_drift_hides_owner_id_occurrence() {
+        // Index says alpha is in src/lib.rs but source has no `id = "alpha"`.
+        let src = r#"
+            // intentionally missing the annotation
+            fn f() {}
+        "#;
+        let (_dir, ws) = ws_with_source(&[("src/lib.rs", src)]);
+        let index = build_index(&[("alpha", intent("src/lib.rs", "fn f (line 3)"))]);
+        let parsed = parse_and_validate("alpha", "beta", &index).unwrap();
+        let err = compute_plan(&ws, &index, &parsed).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("source has drifted"), "msg: {msg}");
+        assert!(msg.contains("aristo stamp"), "msg: {msg}");
+    }
+
+    #[test]
+    fn rendered_plan_matches_spec_format_for_local_to_local() {
+        let owner_src = r#"
+#[aristo::intent("p", id = "parent_id")]
+fn p() {}
+"#;
+        let child_src = r#"
+#[aristo::intent("c", parent = "parent_id", id = "child_id")]
+fn c() {}
+"#;
+        let (_dir, ws) =
+            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let index = build_index(&[
+            ("parent_id", intent("src/p.rs", "fn p (line 2)")),
+            (
+                "child_id",
+                intent_with_parent(
+                    "src/c.rs",
+                    "fn c (line 2)",
+                    ParentLink::Single(AnnotationId::parse("parent_id").unwrap()),
+                ),
+            ),
+        ]);
+        let parsed = parse_and_validate("parent_id", "new_parent", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
+        let rendered = format!("{plan}");
+        assert!(
+            rendered.contains("Plan: rename `parent_id` → `new_parent`"),
+            "rendered:\n{rendered}"
+        );
+        assert!(rendered.contains("Source edits:"), "rendered:\n{rendered}");
+        assert!(
+            rendered.contains("id = \"parent_id\"   →   id = \"new_parent\""),
+            "rendered:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("parent = \"parent_id\"   →   parent = \"new_parent\""),
+            "rendered:\n{rendered}"
+        );
+        assert!(rendered.contains("Index updates:"), "rendered:\n{rendered}");
+        assert!(
+            rendered.contains("[\"parent_id\"]  →  [\"new_parent\"]"),
+            "rendered:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("child_id.parent: \"parent_id\" → \"new_parent\""),
+            "rendered:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("(no changes written — dry-run)"),
+            "rendered:\n{rendered}"
+        );
     }
 }
