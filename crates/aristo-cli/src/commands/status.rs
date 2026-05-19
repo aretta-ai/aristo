@@ -3,19 +3,24 @@
 //! Phase 1 subset of the mockup-11 J7 output: reads the workspace's
 //! `aristo.toml` for the default verify level, the index for the
 //! annotation breakdown (by kind / verify / status), and reports schema
-//! version. Phase 2 fields (tier, quota, B5b binding counts, bundled
-//! key registry) wait for the server-side commands.
+//! version. Slice 34 added the per-pipeline verification rate
+//! breakdown (k/N per verify level) and tier + visible score (the same
+//! computation `aristo badge` uses). Phase 2 fields (quota, B5b
+//! binding counts, bundled key registry) wait for the server-side
+//! commands.
 
 use std::collections::BTreeMap;
 
+use aristo_core::badge::{compute_tier, TierComputation};
 use aristo_core::index::{
-    AssumeEntry, IndexEntry, IndexFile, IntentEntry, VerifyLevel, VerifyMethod,
+    AssumeEntry, IndexEntry, IndexFile, IntentEntry, Status, VerifyLevel, VerifyMethod,
 };
+use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
 
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::{read_index, status_label};
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
-use crate::CliResult;
+use crate::{CliError, CliResult};
 
 pub(crate) fn run() -> CliResult<()> {
     let ws = workspace_or_error()?;
@@ -50,6 +55,39 @@ pub(crate) fn run() -> CliResult<()> {
         .map(|(label, n)| format!("{label}={n}"))
         .collect();
     println!("{}", pieces.join("   "));
+
+    println!();
+    println!("Verification rate (verified / total per pipeline):");
+    println!(
+        "  neural:            {} / {} ({})",
+        counts.verified_neural,
+        counts.verify_neural,
+        format_rate(counts.verified_neural, counts.verify_neural),
+    );
+    println!(
+        "  test:              {} / {} ({})",
+        counts.verified_test,
+        counts.verify_test,
+        format_rate(counts.verified_test, counts.verify_test),
+    );
+    println!(
+        "  full:              {} / {} ({})",
+        counts.verified_full,
+        counts.verify_full,
+        format_rate(counts.verified_full, counts.verify_full),
+    );
+
+    let computation = compute_project_tier(&ws, &index)?;
+    println!();
+    println!("Tier:");
+    println!(
+        "  Score:             {:.3}  (visible)",
+        computation.visible_score
+    );
+    println!("  Tier:              {}", computation.tier.label());
+    if computation.arete_gate_met {
+        println!("  Areté gate:        ✓ met (paid-formal-proof + server-bound)");
+    }
 
     println!();
     println!("Index health:");
@@ -125,6 +163,42 @@ fn active_session_summary(ws: &crate::Workspace) -> CliResult<Option<String>> {
     )))
 }
 
+/// Render a `verified / total` rate as a percentage string. Special-
+/// cases the empty-denominator path so the output is "n/a" rather than
+/// `0.0%` (which falsely implies "0 of something").
+fn format_rate(verified: usize, total: usize) -> String {
+    if total == 0 {
+        "n/a".to_string()
+    } else {
+        let pct = (verified as f64 / total as f64) * 100.0;
+        format!("{pct:.1}%")
+    }
+}
+
+#[aristo::intent(
+    "Status's tier computation routes through `aristo_core::badge::compute_tier` \
+     with the same `count_fns_per_module_with(WalkOptions::none())` denominator \
+     that `aristo badge` uses. Drift between the two would produce a project \
+     where the badge SVG and `aristo status` report different tiers — a \
+     contradiction the user can't reconcile. Sharing the call site (not the \
+     formula) is the load-bearing invariant.",
+    verify = "test",
+    id = "status_tier_call_matches_badge_command_call"
+)]
+fn compute_project_tier(
+    ws: &crate::Workspace,
+    index: &IndexFile,
+) -> CliResult<TierComputation> {
+    let fn_counts = count_fns_per_module_with(&ws.root, &WalkOptions::none()).map_err(|e| {
+        CliError::Other {
+            message: format!("failed to walk source for tier computation: {e}"),
+            exit_code: 1,
+        }
+    })?;
+    let default_method = ws.load_config().verify.default_method;
+    Ok(compute_tier(index, &fn_counts, default_method))
+}
+
 fn default_verify_for_display(ws: &crate::Workspace) -> String {
     let path = ws.config_path();
     let Ok(text) = std::fs::read_to_string(&path) else {
@@ -151,6 +225,16 @@ struct Counts {
     verify_full: usize,
     verify_true: usize,
     verify_false: usize,
+    /// Intents with `verify = "neural"` that have landed in
+    /// [`Status::Neural`] (the clean state for the neural pipeline).
+    verified_neural: usize,
+    /// Intents with `verify = "test"` that have landed in
+    /// [`Status::Tested`].
+    verified_test: usize,
+    /// Intents with `verify = "full"` that have landed in
+    /// [`Status::Verified`]. The full pipeline's terminal clean state
+    /// is `Verified` (the strictest of the three).
+    verified_full: usize,
     by_status: BTreeMap<&'static str, usize>,
 }
 
@@ -176,9 +260,24 @@ impl Counts {
 
     fn tally_verify(&mut self, e: &IntentEntry) {
         match e.verify {
-            VerifyLevel::Method(VerifyMethod::Neural) => self.verify_neural += 1,
-            VerifyLevel::Method(VerifyMethod::Test) => self.verify_test += 1,
-            VerifyLevel::Method(VerifyMethod::Full) => self.verify_full += 1,
+            VerifyLevel::Method(VerifyMethod::Neural) => {
+                self.verify_neural += 1;
+                if e.status == Status::Neural {
+                    self.verified_neural += 1;
+                }
+            }
+            VerifyLevel::Method(VerifyMethod::Test) => {
+                self.verify_test += 1;
+                if e.status == Status::Tested {
+                    self.verified_test += 1;
+                }
+            }
+            VerifyLevel::Method(VerifyMethod::Full) => {
+                self.verify_full += 1;
+                if e.status == Status::Verified {
+                    self.verified_full += 1;
+                }
+            }
             VerifyLevel::Bool(true) => self.verify_true += 1,
             VerifyLevel::Bool(false) => self.verify_false += 1,
         }
@@ -190,6 +289,15 @@ impl Counts {
 
     fn tally_status_assume(&mut self, e: &AssumeEntry) {
         *self.by_status.entry(status_label(e.status)).or_insert(0) += 1;
+    }
+
+    #[cfg(test)]
+    fn verification_rate_triple(&self) -> ((usize, usize), (usize, usize), (usize, usize)) {
+        (
+            (self.verified_neural, self.verify_neural),
+            (self.verified_test, self.verify_test),
+            (self.verified_full, self.verify_full),
+        )
     }
 
     /// Emit status counts in a stable order: most-trusted states first,
@@ -217,5 +325,129 @@ impl Counts {
             out.push(("unknown", 0));
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aristo_core::index::{
+        AnnotationId, BindingState, CoveredRegion, IndexEntry, IndexFile, IntentEntry, Meta,
+        Sha256, Status, VerifyLevel, VerifyMethod,
+    };
+    use std::collections::BTreeMap;
+
+    fn sha(c: char) -> Sha256 {
+        Sha256::parse(&format!("sha256:{}", c.to_string().repeat(64))).unwrap()
+    }
+
+    fn intent_with(verify: VerifyLevel, status: Status) -> IndexEntry {
+        IndexEntry::Intent(IntentEntry {
+            text: "x".into(),
+            verify,
+            status,
+            text_hash: sha('a'),
+            body_hash: sha('b'),
+            file: "src/lib.rs".into(),
+            site: "fn x (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            binding: BindingState::Local,
+            parent: None,
+            last_critiqued_at_text_hash: None,
+            last_critique_finding_count: None,
+        })
+    }
+
+    fn build(entries: &[(&str, IndexEntry)]) -> IndexFile {
+        let mut map = BTreeMap::new();
+        for (id, e) in entries {
+            map.insert(AnnotationId::parse(id).unwrap(), e.clone());
+        }
+        IndexFile {
+            meta: Meta {
+                schema_version: 1,
+                generated_by: None,
+                generated_at: None,
+                source_root: None,
+            },
+            entries: map,
+        }
+    }
+
+    #[test]
+    fn verification_rate_neural_pipeline_counts_only_status_neural() {
+        let idx = build(&[
+            (
+                "a",
+                intent_with(VerifyLevel::Method(VerifyMethod::Neural), Status::Neural),
+            ),
+            (
+                "b",
+                intent_with(VerifyLevel::Method(VerifyMethod::Neural), Status::Unknown),
+            ),
+            (
+                "c",
+                intent_with(VerifyLevel::Method(VerifyMethod::Neural), Status::Stale),
+            ),
+        ]);
+        let c = Counts::from(&idx);
+        let ((vn, n), _, _) = c.verification_rate_triple();
+        assert_eq!((vn, n), (1, 3), "1 of 3 neural intents in clean state");
+    }
+
+    #[test]
+    fn verification_rate_test_pipeline_counts_only_status_tested() {
+        let idx = build(&[
+            (
+                "a",
+                intent_with(VerifyLevel::Method(VerifyMethod::Test), Status::Tested),
+            ),
+            (
+                "b",
+                intent_with(VerifyLevel::Method(VerifyMethod::Test), Status::Tested),
+            ),
+            (
+                "c",
+                intent_with(VerifyLevel::Method(VerifyMethod::Test), Status::Stale),
+            ),
+            (
+                "d",
+                // test intent that drifted into neural status is NOT counted
+                // as verified — pipeline mismatch.
+                intent_with(VerifyLevel::Method(VerifyMethod::Test), Status::Neural),
+            ),
+        ]);
+        let c = Counts::from(&idx);
+        let (_, (vt, t), _) = c.verification_rate_triple();
+        assert_eq!((vt, t), (2, 4));
+    }
+
+    #[test]
+    fn verification_rate_full_pipeline_counts_only_status_verified() {
+        let idx = build(&[
+            (
+                "a",
+                intent_with(VerifyLevel::Method(VerifyMethod::Full), Status::Verified),
+            ),
+            (
+                "b",
+                intent_with(VerifyLevel::Method(VerifyMethod::Full), Status::Tested),
+            ),
+        ]);
+        let c = Counts::from(&idx);
+        let (_, _, (vf, f)) = c.verification_rate_triple();
+        assert_eq!((vf, f), (1, 2));
+    }
+
+    #[test]
+    fn format_rate_empty_denominator_is_not_a_number() {
+        assert_eq!(format_rate(0, 0), "n/a");
+    }
+
+    #[test]
+    fn format_rate_normal_case_shows_one_decimal_place() {
+        assert_eq!(format_rate(1, 3), "33.3%");
+        assert_eq!(format_rate(3, 4), "75.0%");
+        assert_eq!(format_rate(0, 5), "0.0%");
     }
 }

@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T06:15:24.155935Z"
+generated_at = "2026-05-19T15:24:03.263099Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -847,6 +847,17 @@ text_hash = "sha256:9943c7d2092400e64549441f7d63887f9bb599db3a9b1a62fd1a4bf5129f
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn warn_on_counterexamples (line 171)"
+covered_region = "function"
+
+[status_tier_call_matches_badge_command_call]
+kind = "intent"
+text = "Status's tier computation routes through `aristo_core::badge::compute_tier` with the same `count_fns_per_module_with(WalkOptions::none())` denominator that `aristo badge` uses. Drift between the two would produce a project where the badge SVG and `aristo status` report different tiers — a contradiction the user can't reconcile. Sharing the call site (not the formula) is the load-bearing invariant."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:4557673137fec2e0b57eec92b91fd80bc25ed78fbb9d03545de2d5382f27c406"
+body_hash = "sha256:6c96e8bcbad15ed7cc730c012be103bb42c596a0650bd95f45bf64bbd40d3099"
+file = "crates/aristo-cli/src/commands/status.rs"
+site = "fn compute_project_tier (line 178)"
 covered_region = "function"
 
 [stmt_form_intents_use_open_visit_descent_not_whitelist]
