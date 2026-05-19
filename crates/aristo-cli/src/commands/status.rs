@@ -185,16 +185,12 @@ fn format_rate(verified: usize, total: usize) -> String {
     verify = "test",
     id = "status_tier_call_matches_badge_command_call"
 )]
-fn compute_project_tier(
-    ws: &crate::Workspace,
-    index: &IndexFile,
-) -> CliResult<TierComputation> {
-    let fn_counts = count_fns_per_module_with(&ws.root, &WalkOptions::none()).map_err(|e| {
-        CliError::Other {
+fn compute_project_tier(ws: &crate::Workspace, index: &IndexFile) -> CliResult<TierComputation> {
+    let fn_counts =
+        count_fns_per_module_with(&ws.root, &WalkOptions::none()).map_err(|e| CliError::Other {
             message: format!("failed to walk source for tier computation: {e}"),
             exit_code: 1,
-        }
-    })?;
+        })?;
     let default_method = ws.load_config().verify.default_method;
     Ok(compute_tier(index, &fn_counts, default_method))
 }

@@ -313,11 +313,7 @@ pub(crate) enum IndexUpdateKind {
     verify = "test",
     id = "rename_plan_reads_only_index_referenced_files_once"
 )]
-fn compute_plan(
-    ws: &Workspace,
-    index: &IndexFile,
-    parsed: &ParsedRename,
-) -> CliResult<RenamePlan> {
+fn compute_plan(ws: &Workspace, index: &IndexFile, parsed: &ParsedRename) -> CliResult<RenamePlan> {
     let mut candidate_files: BTreeSet<String> = BTreeSet::new();
     // 1a. The renamed entry's own file (carries the `id = "..."` site).
     let owner_entry = index
@@ -357,14 +353,12 @@ fn compute_plan(
                 IdOccurrenceKind::ParentSingle => SourceEditKind::ParentSingle,
                 IdOccurrenceKind::ParentArrayElement => SourceEditKind::ParentArrayElement,
             };
-            let (before_array_text, after_array_text) = if matches!(
-                occ.kind,
-                IdOccurrenceKind::ParentArrayElement
-            ) {
-                render_array_context(&source, &occ, parsed.new_id.as_str())
-            } else {
-                (None, None)
-            };
+            let (before_array_text, after_array_text) =
+                if matches!(occ.kind, IdOccurrenceKind::ParentArrayElement) {
+                    render_array_context(&source, &occ, parsed.new_id.as_str())
+                } else {
+                    (None, None)
+                };
             source_edits.push(SourceEdit {
                 file: file_rel.clone(),
                 line: occ.line,
@@ -524,10 +518,7 @@ impl fmt::Display for RenamePlan {
             let location = format!("  {}:{}", edit.file, edit.line);
             match edit.kind {
                 SourceEditKind::Id => {
-                    writeln!(
-                        f,
-                        "{location}    id = \"{old}\"   →   id = \"{new}\""
-                    )?;
+                    writeln!(f, "{location}    id = \"{old}\"   →   id = \"{new}\"")?;
                 }
                 SourceEditKind::ParentSingle => {
                     writeln!(
@@ -570,27 +561,21 @@ impl fmt::Display for RenamePlan {
                     writeln!(f, "  [\"{old}\"]  →  [\"{new}\"]")?;
                 }
                 IndexUpdateKind::ChildParentSingle { child_id } => {
-                    writeln!(
-                        f,
-                        "  {}.parent: \"{old}\" → \"{new}\"",
-                        child_id.as_str()
-                    )?;
+                    writeln!(f, "  {}.parent: \"{old}\" → \"{new}\"", child_id.as_str())?;
                 }
                 IndexUpdateKind::ChildParentArray {
                     child_id,
                     all_elements,
                 } => {
                     let before = render_array(all_elements.iter().map(|id| id.as_str()));
-                    let after = render_array(
-                        all_elements
-                            .iter()
-                            .map(|id| if id == &self.old_id { new } else { id.as_str() }),
-                    );
-                    writeln!(
-                        f,
-                        "  {}.parent: {before} → {after}",
-                        child_id.as_str()
-                    )?;
+                    let after = render_array(all_elements.iter().map(|id| {
+                        if id == &self.old_id {
+                            new
+                        } else {
+                            id.as_str()
+                        }
+                    }));
+                    writeln!(f, "  {}.parent: {before} → {after}", child_id.as_str())?;
                 }
             }
         }
@@ -1006,8 +991,7 @@ mod tests {
             #[aristo::intent("c", parent = "parent_id", id = "child_id")]
             fn c() {}
         "#;
-        let (_dir, ws) =
-            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let (_dir, ws) = ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
         let mut entries = vec![
             ("parent_id", intent("src/p.rs", "fn p (line 2)")),
             (
@@ -1042,8 +1026,7 @@ mod tests {
             #[aristo::intent("c", parent = ["parent_id", "other"], id = "child_id")]
             fn c() {}
         "#;
-        let (_dir, ws) =
-            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let (_dir, ws) = ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
         let index = build_index(&[
             ("parent_id", intent("src/p.rs", "fn p (line 2)")),
             ("other", intent("src/p.rs", "fn other (line 5)")),
@@ -1173,7 +1156,9 @@ mod tests {
         fs::write(crit_dir.join("alpha.critique"), "").unwrap();
         let plan = compute_plan(&ws, &index, &parsed).expect("plan ok");
         assert_eq!(plan.artifact_moves.len(), 1);
-        assert!(plan.artifact_moves[0].from_label.ends_with("alpha.critique"));
+        assert!(plan.artifact_moves[0]
+            .from_label
+            .ends_with("alpha.critique"));
         assert!(plan.artifact_moves[0].to_label.ends_with("beta.critique"));
     }
 
@@ -1213,8 +1198,7 @@ mod tests {
         let owner_src = "#[aristo::intent(\"p\", id = \"parent_id\")] fn p() {}\n";
         let child_src =
             "#[aristo::intent(\"c\", parent = [\"parent_id\", \"keep_me\"], id = \"child_id\")] fn c() {}\n";
-        let (dir, ws) =
-            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let (dir, ws) = ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
         let index = build_index(&[
             ("parent_id", intent("src/p.rs", "fn p (line 1)")),
             ("keep_me", intent("src/p.rs", "fn k (line 1)")),
@@ -1252,7 +1236,10 @@ mod tests {
         apply_plan(&ws, &index, plan).expect("apply ok");
         let post = fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
         let expected = src.replace("\"alpha\"", "\"beta\"");
-        assert_eq!(post, expected, "exactly-one-substitution; rest byte-identical");
+        assert_eq!(
+            post, expected,
+            "exactly-one-substitution; rest byte-identical"
+        );
     }
 
     #[test]
@@ -1260,8 +1247,7 @@ mod tests {
         let owner_src = "#[aristo::intent(\"p\", id = \"parent_id\")] fn p() {}\n";
         let child_src =
             "#[aristo::intent(\"c\", parent = \"parent_id\", id = \"child_id\")] fn c() {}\n";
-        let (dir, ws) =
-            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let (dir, ws) = ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
         let index = build_index(&[
             ("parent_id", intent("src/p.rs", "fn p (line 1)")),
             (
@@ -1278,8 +1264,12 @@ mod tests {
         apply_plan(&ws, &index, plan).expect("apply ok");
         let raw = fs::read_to_string(dir.path().join(".aristo/index.toml")).unwrap();
         let post: IndexFile = toml::from_str(&raw).expect("parse rewritten index");
-        assert!(post.entries.contains_key(&AnnotationId::parse("new_parent").unwrap()));
-        assert!(!post.entries.contains_key(&AnnotationId::parse("parent_id").unwrap()));
+        assert!(post
+            .entries
+            .contains_key(&AnnotationId::parse("new_parent").unwrap()));
+        assert!(!post
+            .entries
+            .contains_key(&AnnotationId::parse("parent_id").unwrap()));
         // Child's parent link was rewritten.
         match post
             .entries
@@ -1338,8 +1328,7 @@ fn p() {}
 #[aristo::intent("c", parent = "parent_id", id = "child_id")]
 fn c() {}
 "#;
-        let (_dir, ws) =
-            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let (_dir, ws) = ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
         let index = build_index(&[
             ("parent_id", intent("src/p.rs", "fn p (line 2)")),
             (
