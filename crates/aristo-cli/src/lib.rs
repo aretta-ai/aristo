@@ -398,7 +398,24 @@ enum Commands {
     },
 
     /// Atomic project-wide rename of an annotation id.
-    Rename,
+    ///
+    /// Scope (slice 32): bare → bare and stamp-assigned opaque
+    /// (`aret_*`) → bare. The `aristos:` server-bound namespace is
+    /// rejected in either direction with a "deferred to Phase 2 sync"
+    /// message; opaque-target ids are rejected per F1-b (stamp-assigned
+    /// only). See `docs/decisions/...` (slice 32 design doc).
+    Rename {
+        /// Annotation id to rename FROM. Must exist in the current
+        /// `.aristo/index.toml`.
+        old_id: String,
+        /// Annotation id to rename TO. Must not already exist and must
+        /// not use the reserved `aret_*` / `aristos:` prefixes.
+        new_id: String,
+        /// Compute and print the rename plan (source edits + per-id
+        /// artifact moves + index updates) without writing anything.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+    },
 
     /// Stateful review-session substrate — start / inspect / decide /
     /// exit on the in-flight review of a pipeline's reviewable
@@ -624,13 +641,13 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 })?;
             commands::badge::run(out, style, metric)
         }
-        Commands::Rename => not_yet("aristo rename", "slice 32"),
+        Commands::Rename {
+            old_id,
+            new_id,
+            dry_run,
+        } => commands::rename::run(&old_id, &new_id, dry_run),
         Commands::Session { action } => commands::session::run(action),
     }
-}
-
-fn not_yet(what: &'static str, slice: &'static str) -> CliResult<()> {
-    Err(CliError::NotImplemented { what, slice })
 }
 
 fn output_mode(json: bool, toml_out: bool) -> commands::show::OutputMode {
@@ -657,29 +674,7 @@ mod tests {
         Cli::command().debug_assert();
     }
 
-    #[test]
-    fn dispatch_returns_not_implemented_with_slice_pointer() {
-        // Spot-check one not-yet-implemented variant; the implemented
-        // ones are covered by their own tests.
-        let err = dispatch(Commands::Rename).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("aristo rename"), "msg: {msg}");
-        assert!(msg.contains("slice 32"), "msg: {msg}");
-    }
-
-    #[test]
-    fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
-        // Catches the easy mistake of copy-pasting a stub and forgetting
-        // to update the slice pointer. Implemented commands (Init, Lang,
-        // Index, Stamp, Show, List, Status, Lint, Verify, Critique, Doc,
-        // Graph) are tested elsewhere.
-        let variants = [(Commands::Rename, "slice 32")];
-        for (cmd, expected_slice) in variants {
-            let err = dispatch(cmd).unwrap_err();
-            assert!(
-                err.to_string().contains(expected_slice),
-                "expected `{expected_slice}` in message; got: {err}"
-            );
-        }
-    }
+    // Note: slice 32 removed the last `not_yet(...)` stub (Rename now
+    // has a real implementation). The `CliError::NotImplemented` variant
+    // is kept for future stubs but is no longer reachable from dispatch.
 }

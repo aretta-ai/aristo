@@ -50,20 +50,19 @@ fn help_flag_lists_offline_subcommands() {
 }
 
 #[test]
-fn defined_but_unimplemented_subcommand_exits_64() {
-    // Canary that the dispatch glue routes a known-but-unshipped command
-    // to `CliError::NotImplemented` with a slice pointer. Re-point at
-    // whichever command is currently stubbed when this one ships;
-    // `aristo rename` (slice 32) is the next on the roadmap now that
-    // slice 29 (`aristo graph`) has its first observable behavior shipped.
+fn unknown_subcommand_argument_rejected_with_exit_2() {
+    // After slice 32 shipped, every defined subcommand has a real
+    // implementation — there are no more `not_yet(...)` stubs in
+    // dispatch. This canary keeps the binary's argv-parser wired to
+    // clap's exit-2 misuse path: passing a bogus flag to a real
+    // command still surfaces a structured clap error, not a panic.
     Command::cargo_bin("aristo")
         .unwrap()
-        .arg("rename")
+        .args(["rename", "--not-a-real-flag", "foo", "bar"])
         .assert()
         .failure()
-        .code(64)
-        .stderr(contains("not yet implemented"))
-        .stderr(contains("slice 32"));
+        .code(2)
+        .stderr(contains("unexpected argument").or(contains("--not-a-real-flag")));
 }
 
 #[test]
