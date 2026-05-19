@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T15:24:39.126005Z"
+generated_at = "2026-05-19T15:28:32.287688Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -474,7 +474,7 @@ status = "unknown"
 text_hash = "sha256:0522fae6676189ff629bf6295ecc0cc883b20f8a4c3303fbcb6723d487d70be7"
 body_hash = "sha256:ec3e41b43d8ba9c1dafb159ec3cbdc042bb160339567a4ac8512407d1adb0cad"
 file = "crates/aristo-cli/src/commands/init.rs"
-site = "fn run (line 66)"
+site = "fn run (line 89)"
 covered_region = "function"
 
 [install_claude_hook_is_idempotent]
