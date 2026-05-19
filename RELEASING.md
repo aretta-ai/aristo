@@ -10,6 +10,37 @@ Step-by-step for the user (Claude can't push to crates.io or git remote — only
 
 3. **Signed-commit + signed-tag setup verified.** `git verify-commit HEAD` prints "Good signature". See README's Contributing section / your gitconfig for the SSH-signing setup. The release tag uses `git tag -s` (with `tag.gpgsign = true` set, plain `git tag v0.1.0` signs automatically).
 
+## Branch protection setup (one-time, repo owner only)
+
+The two CI workflows (`.github/workflows/aristo.yml` + `.github/workflows/ci.yml`) RUN on every PR and push, but their pass/fail doesn't BLOCK merging until you turn on branch protection. Do this once after the workflows have run at least once on `main` (GitHub needs to know the check names exist before it lets you require them).
+
+**GitHub.com → Settings → Branches → Branch protection rules → Add classic branch protection rule:**
+
+- **Branch name pattern**: `main`
+- **Require a pull request before merging**: ✓
+  - **Require approvals**: ✓ (set to 1 if solo or 2+ if you have a team; for solo dev set to 0 — you'll still need the PR + checks to pass)
+  - **Dismiss stale pull request approvals when new commits are pushed**: ✓ (re-review after force-pushes / new commits)
+- **Require status checks to pass before merging**: ✓
+  - **Require branches to be up to date before merging**: ✓ (forces PR rebase on top of latest `main`)
+  - **Status checks that are required** — search for and add ALL of these (names match the `name:` fields in the workflow YAMLs):
+    - `aristo` (from `aristo.yml` — runs stamp / lint / verify / doc / status / badge)
+    - `cargo fmt --check` (from `ci.yml::fmt`)
+    - `cargo clippy` (from `ci.yml::clippy`)
+    - `cargo test` (from `ci.yml::test`)
+    - `cargo build --release` (from `ci.yml::build-release`)
+    - `cargo doc` (from `ci.yml::docs`)
+    - `cargo check (MSRV 1.75)` (from `ci.yml::msrv`)
+- **Require signed commits**: ✓ (matches our local `commit.gpgsign = true` policy; rejects unsigned commits on `main`)
+- **Require linear history**: ✓ (rejects merge commits; forces squash or rebase-merge — keeps `main`'s log readable)
+- **Do not allow bypassing the above settings**: ✓ (applies the rules to everyone including admins; bypass should require lifting the rule, not silently circumventing)
+- **Restrict who can push to matching branches**: leave empty (PRs are the only path; nothing pushes to `main` directly)
+
+After saving, GitHub enforces these on every PR. The "Merge pull request" button stays disabled until all required checks are green AND the branch is up to date with `main`.
+
+**If you add a new CI job later**, you must add its `name` to the required-status-checks list — the protection rule pins specific check names, not "all checks". Forgetting this is the most common branch-protection pitfall: a new failing check won't block merge because it's not in the required list.
+
+**Verification:** open a PR with an intentionally-broken change (e.g. delete a function called from tests). The PR view should show the failing checks, and the merge button should be disabled with "Required statuses must pass before merging." If the button is enabled, the protection rule isn't covering that check name — re-check the list.
+
 ## Pre-publish sanity (run from a clean checkout)
 
 ```bash

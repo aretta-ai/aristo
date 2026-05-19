@@ -92,6 +92,13 @@ Each crate publishes independently to crates.io; the meta-crate `aristo` is what
 
 See [`CLAUDE.md`](./CLAUDE.md) for the working agreement: conventional-commit message style, small-batch ship discipline, "specifications are the truth" rule (never edit a spec to match implementation — fix the implementation), CHANGELOG bullet per commit, and pre-commit hook expectations.
 
+**CI gates every PR.** Two workflows run on every pull request and every push to `main`:
+
+- **`aristo`** ([`.github/workflows/aristo.yml`](./.github/workflows/aristo.yml)) — annotation pipeline gates: `stamp --check`, `lint --check --strict`, `verify --check --strict`, `doc --check`, plus an informational `status` print and a regenerated `docs/badge.svg` uploaded as an artifact.
+- **`ci`** ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) — standard Rust gates: `fmt`, `clippy`, `test` (unit + integration + trycmd), release build, `cargo doc` with `-D warnings`, and an MSRV check against rust 1.75.
+
+Both must pass for a PR to merge. Branch-protection setup (one-time, by the repo owner) is documented in [`RELEASING.md`](./RELEASING.md#branch-protection-setup-one-time-repo-owner-only).
+
 Bug reports and feature requests: [GitHub issues](https://github.com/aretta-dev/aristo/issues).
 
 ## License
