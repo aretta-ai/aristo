@@ -1,0 +1,13 @@
+[__meta__]
+schema_version = 1
+
+[tier_fixture_intent]
+kind = "intent"
+text = "Fixture intent for the tiered-badge default scenario."
+verify = "neural"
+status = "neural"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/lib.rs"
+site = "fn noop (line 2)"
+covered_region = "function"
