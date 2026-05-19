@@ -336,14 +336,87 @@ This is the SDK's own dogfood pressure. The badge says: "you have
 verified depth on what you've annotated, but your articulation
 is sparse — keep expanding."
 
+### D11. Visual treatment — bridge-as-Ω logo + International Orange palette
+
+**Status: DECIDED 2026-05-18.** Sketch at
+`docs/sketches/aristo-logo-v1.html` shows multi-size + in-badge
+rendering. User-approved for the v1 mark.
+
+**Logo:** stylized two-tower + dipping-cable + deck silhouette.
+Reads primarily as Golden Gate Bridge (Aretta's geographic + brand
+anchor), secondarily as Greek capital Ω (the etymological capstone
+of the tier scheme). Single-color (`fill="currentColor"`), 24×24
+viewBox, simpleicons-style. Survives down to 16px. Source:
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 24 24"
+     fill="currentColor"
+     role="img"
+     aria-label="Aristo">
+  <title>Aristo</title>
+  <!-- Suspension-cable catenary (dips between tower tops) -->
+  <path d="M5 4 Q12 12 19 4 L19 5.5 Q12 13.5 5 5.5 Z"/>
+  <!-- Left tower (Golden Gate / omega leg) -->
+  <path d="M2 21 L3 4 L7 4 L8 21 Z"/>
+  <!-- Right tower -->
+  <path d="M16 21 L17 4 L21 4 L22 21 Z"/>
+  <!-- Deck / omega base -->
+  <path d="M1 21 L23 21 L23 22.5 L1 22.5 Z"/>
+</svg>
+```
+
+**Brand-anchor color:** International Orange `#C0362C` — the actual
+Golden Gate Bridge color. Differentiates from every other
+verification badge in the ecosystem (they all default to green).
+
+**Tier color palette:**
+
+| Tier | Hex | Vibe |
+|------|-----|------|
+| Aspirant | `#8a8378` | muted bridge primer |
+| Apprentice | `#c9a87c` | tan / painting in progress |
+| Adept | `#C0362C` | International Orange (bridge proper) |
+| Ascendent | `#8c2913` | sunset bridge / deep red-orange |
+| Areté | `#d4a017` | warm gold + leading `✦` glyph |
+
+**Badge layout** (shields.io flat style):
+- Left half (label): dark gray `#555` background, white text "aristo"
+  with the bridge logo in white (14×14 px) immediately before the
+  wordmark.
+- Right half (value): tier color from the table above, white text
+  with the tier name. Areté tier adds a leading `✦` glyph.
+- For `for-the-badge` style: same layout, taller (28px), uppercase
+  text, bold weight, logo scales to 16×16.
+
+**Brand discipline:**
+- Logo appears in EVERY badge tier — anchors brand recognition.
+- Tier-color appears ONLY in the value half — keeps the brand
+  signature stable as the tier ramps up.
+- Areté's gold + `✦` is a discrete visual signal, not a continuous
+  gradient — reinforces D5's "discrete state change" model.
+
+**Logo distribution path** (implementation, not branding decision):
+- Inline as base64 data URI in shields.io URLs for external users
+  (`?logo=data:image/svg+xml;base64,...`); or
+- Self-host at `aretta.dev/static/icons/aristo.svg` and use
+  badge-maker / rsbadges Rust crates for self-generated badges.
+- Submit to simpleicons.org IF/WHEN the project has real adoption
+  (~6+ months out); not slice 31.5 scope.
+
+**Aretta (parent company) logo:** separate but family-related.
+Carries the full bridge silhouette more literally (no omega
+abstraction) plus the Aretta wordmark. The Aristo Ω-bridge is the
+*distilled* product mark; the Aretta logo is the *full* company
+mark. Same color family (International Orange anchor), same
+geometric voice. Specifics of the Aretta mark are out of scope
+for this document.
+
 ## Pending — to be decided in a follow-up document
 
 The following are explicitly NOT locked by this document:
 
-1. **Visual treatment** — exact hex colors per tier, optional glyphs
-   (the Areté ✦ proposal), per-style variations for `for-the-badge`.
-
-2. **Backward-compatibility surface** — does the `--metric=` flag
+1. **Backward-compatibility surface** — does the `--metric=` flag
    eventually expose `count` / `rate` / `tier` choices? Slice 31 ships
    no `--metric` (count-only). The tier scheme defaults to `tier` once
    landed; `count` and `rate` remain accessible via the flag.
