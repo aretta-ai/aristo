@@ -77,7 +77,7 @@ fn svg_renders_valid_xml_when_dot_is_on_path() {
     let out_path = repo.join("out.svg");
 
     aristo_in(repo)
-        .args(["graph", "--format=svg", "--out"])
+        .args(["graph", "--format=svg", "--include-orphans", "--out"])
         .arg(&out_path)
         .assert()
         .success();

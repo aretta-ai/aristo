@@ -355,6 +355,14 @@ enum Commands {
         /// a filter, the default scope is already the whole index.
         #[arg(long, value_name = "N")]
         depth: Option<u32>,
+        /// Include intent nodes that are graph-orphans (no parent
+        /// link AND no child links). Default OMITS them — they're
+        /// usually atomic load-bearing claims that don't add visual
+        /// structure to the graph. Assumes are always included
+        /// regardless (they're contextual "ground"; see
+        /// `--exclude-assumes` for that opt-out).
+        #[arg(long = "include-orphans")]
+        include_orphans: bool,
     },
 
     /// Generate a shareable SVG verification badge for README / docs.
@@ -570,7 +578,15 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             filters,
             exclude_assumes,
             depth,
-        } => commands::graph::run(&format, out, &filters, exclude_assumes, depth),
+            include_orphans,
+        } => commands::graph::run(
+            &format,
+            out,
+            &filters,
+            exclude_assumes,
+            depth,
+            include_orphans,
+        ),
         Commands::Badge { out, style } => {
             let style =
                 commands::badge::Style::parse(&style).map_err(|message| CliError::Other {

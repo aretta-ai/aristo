@@ -68,6 +68,7 @@ pub(crate) fn run(
     filter_strings: &[String],
     exclude_assumes: bool,
     depth: Option<u32>,
+    include_orphans: bool,
 ) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
@@ -91,6 +92,14 @@ pub(crate) fn run(
     };
     if exclude_assumes {
         scoped_index = drop_assumes(scoped_index);
+    }
+    // Orphan-omission only kicks in for the default (unfiltered) view.
+    // When --filter is present the user has explicitly asked for those
+    // nodes; dropping them post-filter as "orphans" would be a
+    // confusing footgun. --include-orphans is a no-op in the filtered
+    // case (since orphans are already kept).
+    if !include_orphans && filters.is_empty() {
+        scoped_index = drop_orphan_intents(scoped_index);
     }
     let graph = model::build(&scoped_index);
     let rendered = match format {
@@ -217,6 +226,42 @@ fn drop_assumes(index: IndexFile) -> IndexFile {
         .entries
         .into_iter()
         .filter(|(_, entry)| matches!(entry, IndexEntry::Intent(_)))
+        .collect();
+    IndexFile {
+        meta: index.meta,
+        entries,
+    }
+}
+
+/// Drop intent entries that have no parent AND no children (graph
+/// orphans). Assumes are always preserved — they're contextual
+/// background facts; `--exclude-assumes` is the separate opt-out
+/// for that population.
+fn drop_orphan_intents(index: IndexFile) -> IndexFile {
+    // Precompute which annotations are referenced as a parent by any
+    // other entry. `has_children[id] = true` means at least one other
+    // entry has `id` in its `parent` field.
+    let mut has_children: std::collections::HashSet<&AnnotationId> =
+        std::collections::HashSet::new();
+    for entry in index.entries.values() {
+        for p in parent_ids(entry) {
+            has_children.insert(p);
+        }
+    }
+    let has_children_owned: std::collections::HashSet<AnnotationId> =
+        has_children.into_iter().cloned().collect();
+
+    let entries = index
+        .entries
+        .into_iter()
+        .filter(|(id, entry)| match entry {
+            IndexEntry::Assume(_) => true, // Assumes always kept.
+            IndexEntry::Intent(_) => {
+                let no_parent = parent_ids(entry).is_empty();
+                let no_children = !has_children_owned.contains(id);
+                !(no_parent && no_children)
+            }
+        })
         .collect();
     IndexFile {
         meta: index.meta,
@@ -610,6 +655,52 @@ mod tests {
         assert!(exp2
             .entries
             .contains_key(&AnnotationId::parse("c").unwrap()));
+    }
+
+    #[test]
+    fn drop_orphan_intents_removes_standalone_intent_keeps_connected() {
+        // make_index has a (no parent, has child b), b (has parent a),
+        // c (no parent, no children → orphan intent).
+        let idx = make_index();
+        let pruned = drop_orphan_intents(idx);
+        let keys: Vec<&str> = pruned.entries.keys().map(|k| k.as_str()).collect();
+        assert!(keys.contains(&"a"), "a has child b, should stay");
+        assert!(keys.contains(&"b"), "b has parent a, should stay");
+        assert!(!keys.contains(&"c"), "c is an orphan intent, should drop");
+    }
+
+    #[test]
+    fn drop_orphan_intents_keeps_assumes_even_when_orphan() {
+        let id_assume = AnnotationId::parse("storage_atom").unwrap();
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            id_assume.clone(),
+            IndexEntry::Assume(AssumeEntry {
+                text: "x".into(),
+                status: Status::Unknown,
+                text_hash: sha('a'),
+                body_hash: sha('b'),
+                file: "src/x.rs".into(),
+                site: "mod storage".into(),
+                covered_region: CoveredRegion::ModuleInlineBody,
+                linked: None,
+                parent: None,
+            }),
+        );
+        let idx = IndexFile {
+            meta: Meta {
+                schema_version: 1,
+                generated_by: None,
+                generated_at: None,
+                source_root: None,
+            },
+            entries,
+        };
+        let pruned = drop_orphan_intents(idx);
+        assert!(
+            pruned.entries.contains_key(&id_assume),
+            "orphan assume must stay"
+        );
     }
 
     #[test]
