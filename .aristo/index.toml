@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T03:02:21.694446Z"
+generated_at = "2026-05-19T05:41:13.03777Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -693,6 +693,17 @@ text_hash = "sha256:db4a42a4c2aa63e816ff743443caf38fd9387ff2f12199c9cbc4252d6449
 body_hash = "sha256:a375f28c18cbc1eeb7062793e71b92c2e40265d1c9b02841b40ed095101ec271"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
 site = "fn clear_ground_hashes (line 129)"
+covered_region = "function"
+
+[scan_id_occurrences_byte_spans_round_trip_exactly]
+kind = "intent"
+text = "scan_id_occurrences returns byte-range spans that splice exactly the id value when used as `source[byte_start..byte_end]`. Slice 32's rename command rewrites source by byte substitution at these spans rather than by syn::visit_mut re-serialization — re-serialization destroys whitespace + comments and produces user-visible churn. Spans MUST exclude surrounding quotes so the new id can be spliced in verbatim."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:2cdea6ce11875b987205a21d84d6d9588b431e3de2891455fae8c6cf6615053c"
+body_hash = "sha256:afcff468ae5f2a62c21357ce064e0dcfabe9c1910fb936a2e2efc82ea2b551b9"
+file = "crates/aristo-core/src/walk/scan_ids.rs"
+site = "fn scan_id_occurrences (line 67)"
 covered_region = "function"
 
 [session_active_is_noop_outside_workspace]

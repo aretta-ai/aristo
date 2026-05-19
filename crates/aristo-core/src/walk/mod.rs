@@ -16,6 +16,7 @@
 pub mod count;
 pub mod extract;
 pub mod fs;
+pub mod scan_ids;
 
 pub use count::{
     count_fns_in_source, count_fns_per_module, count_fns_per_module_with, FnCountByModule,
@@ -27,3 +28,4 @@ pub use fs::{
     walk_directory, walk_directory_with, walk_for_freshness, walk_for_freshness_with,
     DiscoveredAnnotation, FsWalkError, WalkOptions,
 };
+pub use scan_ids::{scan_id_occurrences, IdOccurrence, IdOccurrenceKind};
