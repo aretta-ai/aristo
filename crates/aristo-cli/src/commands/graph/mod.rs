@@ -27,6 +27,7 @@ use crate::commands::show::read_index;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
+pub(crate) mod dot;
 pub(crate) mod mermaid;
 pub(crate) mod model;
 
@@ -34,16 +35,17 @@ pub(crate) mod model;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Format {
     Mermaid,
+    Dot,
 }
 
 impl Format {
     pub(crate) fn parse(raw: &str) -> Result<Self, String> {
         match raw {
             "mermaid" => Ok(Self::Mermaid),
-            // `dot` + `svg` formats land in commits 3 + 4. Parser
-            // rejects them now with a forward-pointing message so the
-            // user doesn't get an opaque "unknown format" error.
-            "dot" => Err("`--format=dot` ships in slice 29 commit 3; not yet available".into()),
+            "dot" => Ok(Self::Dot),
+            // `svg` lands in commit 4. Parser rejects it now with a
+            // forward-pointing message so the user doesn't get an
+            // opaque "unknown format" error.
             "svg" => Err("`--format=svg` ships in slice 29 commit 4; not yet available".into()),
             other => Err(format!(
                 "unknown --format `{other}`; expected `mermaid` (default), `dot`, or `svg`"
@@ -54,6 +56,7 @@ impl Format {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Mermaid => "Mermaid",
+            Self::Dot => "DOT",
         }
     }
 }
@@ -71,6 +74,7 @@ pub(crate) fn run(format: &str, out: Option<PathBuf>) -> CliResult<()> {
     let graph = model::build(&index);
     let rendered = match format {
         Format::Mermaid => mermaid::render(&graph),
+        Format::Dot => dot::render(&graph),
     };
 
     match out {
@@ -91,6 +95,15 @@ pub(crate) fn run(format: &str, out: Option<PathBuf>) -> CliResult<()> {
                 graph.edges.len(),
                 path.display()
             );
+            // DOT output is opaque without a renderer — surface the
+            // standard Graphviz invocations so the user knows what to
+            // run next without consulting docs.
+            if format == Format::Dot {
+                eprintln!();
+                eprintln!("To render:");
+                eprintln!("  dot -Tsvg {0} -o {0}.svg", path.display());
+                eprintln!("  dot -Tpng {0} -o {0}.png", path.display());
+            }
         }
     }
     Ok(())

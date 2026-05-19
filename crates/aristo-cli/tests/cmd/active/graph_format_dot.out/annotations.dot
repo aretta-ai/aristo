@@ -1,0 +1,14 @@
+digraph aristo {
+    rankdir=TB;
+    node [fontname="Helvetica", fontsize=10];
+
+    // Intent nodes — rectangles, colored by verify level
+    "balance_no_duplicate_cells" [shape=box, style=filled, fillcolor="#bbf7d0", color="#15803d", label="balance_no_duplicate_cells/n(intent, verify=full)"];
+    "edit_page_writes_each_cell_once" [shape=box, style="filled,bold", fillcolor="#bbf7d0", color="#dc2626", penwidth=3, label="edit_page_writes_each_cell_once/n(intent, verify=full)"];
+
+    // Assume nodes — hexagons, gray
+    "storage_write_atomicity" [shape=hexagon, style=filled, fillcolor="#f3f4f6", color="#6b7280", label="storage_write_atomicity/n(assume)"];
+
+    // Parent edges: child -> parent
+    "edit_page_writes_each_cell_once" -> "balance_no_duplicate_cells";
+}
