@@ -8,6 +8,31 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [v0.0.8] — 2026-05-18
+
+Milestone G (Doc + graph) closes. Slice 28 (`aristo doc`) and slice 30
+(`aristo_doc` cargo feature) had already shipped via session B; slice
+29 (`aristo graph`) shipped in this session across 11 working commits.
+
+Five `_pending/` scenarios remain unpromoted with documented reasons:
+
+- **`graph_format_svg.md`** + **`graph_format_svg_no_dot.md`** — SVG
+  rendering exists and works (verified by `tests/graph_svg.rs`), but
+  output bytes differ across Graphviz versions (brew vs Debian) and
+  trycmd has no surface for faking `dot`'s absence. The two integration
+  tests in `tests/graph_svg.rs` cover both paths.
+- **`graph_filter_direct_children.md`** + **`graph_filter_subtree.md`** —
+  Use spec annotation IDs that don't match the shared 3-node fixture
+  AND express semantics for `--filter parent=` + `--depth=1` vs
+  `--filter id=` (default = subtree) that need a design clarification.
+  The `--depth=N` implementation (commit 7) handles both cases
+  correctly; the scenarios need rewriting before promotion.
+- **`lifecycle_ship_with_doc_and_graph.md`** — composite workflow uses
+  SVG output for the graph embedded in summary; slice 29 commit 10
+  intentionally went with Mermaid instead (no Graphviz dependency on
+  `aristo doc`). Reconciling the spec to Mermaid or implementing an
+  alternative SVG-embedding mode is a follow-up.
+
 ### Added
 - feat(cli): `aristo doc --include-graph` embeds the annotation graph in `_summary.md` (slice 29, commit 10 of 12). Composite flag that implies `--summary` and additionally appends the rendered annotation graph (Mermaid `flowchart TD` block) to `.aristo/doc/_summary.md` under a `## Annotation graph` heading. Mermaid renders inline in any markdown viewer that supports it (GitHub READMEs, Mermaid-aware rustdoc themes); no Graphviz dependency. Idempotent: re-runs always re-write the summary first then append the graph, so the final file has exactly one summary section + one graph section regardless of prior state. Conflicts with `--check` (read-only mode can't write the graph block). Intent `doc_include_graph_appends_idempotently` encodes the ordering rule. Promoted `doc_include_graph.md` scenario.
 - feat(cli): `aristo graph --include-status` switches color axis to B5b status (slice 29, commit 9 of 12). New `--include-status` flag swaps the rendered color axis from verify level (default; for documentation use) to current B5b status (for "what's still unverified" review meetings). New `ColorAxis` enum drives a unified `NodeClass` selection in both Mermaid and DOT emitters. Status palette covers all 10 Status variants — Verified (green), Tested (blue), Neural (yellow), Stale (orange), Orphan (purple), Forged (red border), Unknown / PendingDeepen (gray), Counterexample / Inconclusive (red/orange + bold border). In status mode the palette already differentiates critical states via its own borders, so the verify-mode "critical" overlay is suppressed to avoid double-stacking. Verify level moves to the in-node label suffix `(intent, verify=X)` so it's still legible. Promoted `graph_include_status.md`. `StatusClass::from_status` is the single source of truth for the verify-to-status enum mapping.

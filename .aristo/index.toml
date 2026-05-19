@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.7"
-generated_at = "2026-05-19T02:22:25.779044Z"
+generated_at = "2026-05-19T02:27:10.24511Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -320,7 +320,18 @@ status = "unknown"
 text_hash = "sha256:3cc6b6f80a32940876df91ee31516838f3bb73131119acede26e9cd0b04597df"
 body_hash = "sha256:af31a2d522c9ebf06ca6949061f29db7a3b547da3db61bc3b863b445cd546d8d"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_check (line 52)"
+site = "fn run_check (line 102)"
+covered_region = "function"
+
+[doc_include_graph_appends_idempotently]
+kind = "intent"
+text = "`aristo doc --include-graph` appends the rendered annotation graph (as a fenced ```mermaid block) to `_summary.md` AFTER the summary has been written. Order matters: appending after means a re-run with `--include-graph` produces the same file regardless of whether the prior run had the flag. A refactor that prepended or inserted-in-middle would make the output dependent on prior state, which makes `--check` brittle."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:683de2b8a762af7894a9ecc2e634a4145836562c2c94331a0ebb7ef3c02cc6b7"
+body_hash = "sha256:93351753adbeb7db08a9fe60759ddd810d5f7b9a4a01ab4435bbc093d7a0ce40"
+file = "crates/aristo-cli/src/commands/doc.rs"
+site = "fn append_graph_to_summary (line 62)"
 covered_region = "function"
 
 [doc_include_status_block_records_state_with_staleness_disclaimer]
@@ -331,7 +342,7 @@ status = "unknown"
 text_hash = "sha256:075cd098dafb817c34ce4f5559c0786a81c1b965011cb577d473ced64829be16"
 body_hash = "sha256:e7fe552006cfe040fe3a48c390cc08e6d90e0cb652f163105839c8954327a3f8"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn status_block_for_intent (line 271)"
+site = "fn status_block_for_intent (line 321)"
 covered_region = "function"
 
 [doc_output_shape_pivots_on_empty_doc_dir_not_per_run_counts]
@@ -342,7 +353,7 @@ status = "unknown"
 text_hash = "sha256:fa73ff92a6db515d1f783b1048c98f313712568308b8e33055b5598d997b6382"
 body_hash = "sha256:e44f81d271f2800f57b9d9ca0473c16bb2879ee3c4ac8aeaa7a77b51cb72f94d"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_per_annotation (line 115)"
+site = "fn run_per_annotation (line 165)"
 covered_region = "function"
 
 [doc_per_annotation_filename_uses_id_safe]
@@ -353,7 +364,7 @@ status = "unknown"
 text_hash = "sha256:37800ee178014cabf7dd805bf35e78affb3fec3fb1fa57d30648c66e9f386fe4"
 body_hash = "sha256:e44f81d271f2800f57b9d9ca0473c16bb2879ee3c4ac8aeaa7a77b51cb72f94d"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_per_annotation (line 103)"
+site = "fn run_per_annotation (line 153)"
 covered_region = "function"
 
 [doc_per_annotation_md_shape_locked_by_samples_mockup]
@@ -364,7 +375,7 @@ status = "unknown"
 text_hash = "sha256:b026ae240228658551323bfa60a7771cd828e85ded7764602fa8e83122de2de6"
 body_hash = "sha256:e672f6d1e657cc61436a108c729512cd0d0fa285a1cd31b4e3e7e48ea0f50a43"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn render_annotation_md (line 230)"
+site = "fn render_annotation_md (line 280)"
 covered_region = "function"
 
 [doc_summary_writes_summary_only]
@@ -375,7 +386,7 @@ status = "unknown"
 text_hash = "sha256:63bcb80f0391a30b7523d2444a3c6585e93967a39eebc30a0c30d00afc528eb7"
 body_hash = "sha256:cf0d617f7cde85b1a6457b91b241582d5dd0c8910d83092f04f781e99a4bf6b7"
 file = "crates/aristo-cli/src/commands/doc.rs"
-site = "fn run_summary (line 352)"
+site = "fn run_summary (line 402)"
 covered_region = "function"
 
 [drain_returns_items_then_deletes_file]
