@@ -1,0 +1,37 @@
+[__meta__]
+schema_version = 1
+
+[balance_no_duplicate_cells]
+kind = "intent"
+text = "Parent invariant: every balance op preserves the cell uniqueness contract."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/lib.rs"
+site = "fn balance_non_root (line 6)"
+covered_region = "function"
+
+[edit_page_writes_each_cell_once]
+kind = "intent"
+text = "Each cell is written exactly once during edit_page."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+body_hash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file = "src/lib.rs"
+site = "fn edit_page (line 14)"
+covered_region = "function"
+parent = "balance_no_duplicate_cells"
+
+[cell_array_indices_in_bounds]
+kind = "intent"
+text = "Cell array indices stay in bounds across rebalance operations."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+body_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+file = "src/lib.rs"
+site = "fn cell_array_indices (line 22)"
+covered_region = "function"
+parent = ["balance_no_duplicate_cells", "edit_page_writes_each_cell_once"]
