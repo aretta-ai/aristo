@@ -1,0 +1,2 @@
+[project]
+crate_root = "src/lib.rs"

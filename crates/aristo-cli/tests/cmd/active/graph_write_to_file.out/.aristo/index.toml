@@ -1,0 +1,35 @@
+[__meta__]
+schema_version = 1
+
+[balance_no_duplicate_cells]
+kind = "intent"
+text = "For all B-tree balance operations, no cells are duplicated."
+verify = "full"
+status = "verified"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "core/storage/btree.rs"
+site = "fn balance_non_root (line 3010)"
+covered_region = "function"
+
+[edit_page_writes_each_cell_once]
+kind = "intent"
+text = "Each cell is written exactly once during edit_page."
+verify = "full"
+status = "stale"
+text_hash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+body_hash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file = "core/storage/btree.rs"
+site = "fn edit_page (line 4520)"
+covered_region = "function"
+parent = "balance_no_duplicate_cells"
+
+[storage_write_atomicity]
+kind = "assume"
+text = "Storage layer atomicity: torn writes do not occur."
+status = "unknown"
+text_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+body_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+file = "core/storage/mod.rs"
+site = "mod storage (line 1)"
+covered_region = "module_inline_body"

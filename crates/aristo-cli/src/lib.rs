@@ -325,7 +325,18 @@ enum Commands {
     },
 
     /// Generate the annotation graph (Mermaid / DOT / SVG).
-    Graph,
+    Graph {
+        /// Output format. `mermaid` (default) emits a fenced
+        /// flowchart TD block; `dot` emits Graphviz DOT; `svg`
+        /// requires `dot` on PATH and shells out to render.
+        #[arg(long, default_value = "mermaid")]
+        format: String,
+        /// Write to this path instead of stdout. Atomic via
+        /// temp-file + rename. Relative paths resolve against the
+        /// invoking directory.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 
     /// Generate a shareable SVG verification badge for README / docs.
     Badge {
@@ -534,7 +545,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             include_status,
             check,
         } => commands::doc::run(summary, include_status, check),
-        Commands::Graph => commands::graph::run(),
+        Commands::Graph { format, out } => commands::graph::run(&format, out),
         Commands::Badge { out, style } => {
             let style =
                 commands::badge::Style::parse(&style).map_err(|message| CliError::Other {

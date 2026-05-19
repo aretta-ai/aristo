@@ -18,29 +18,81 @@
 //! - **Border** = red for critical status (stale / orphan / forged) so
 //!   the user notices what needs action.
 
+use std::path::PathBuf;
+
 use aristo_core::index::{AnnotationId, IndexEntry, Status, VerifyLevel, VerifyMethod};
 
-use crate::commands::index::workspace_or_error;
+use crate::commands::index::{atomic_write, workspace_or_error};
 use crate::commands::show::read_index;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
-use crate::CliResult;
+use crate::{CliError, CliResult};
 
 pub(crate) mod mermaid;
 pub(crate) mod model;
 
-pub(crate) fn run() -> CliResult<()> {
+/// Output format selected by `--format`. Default is Mermaid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Format {
+    Mermaid,
+}
+
+impl Format {
+    pub(crate) fn parse(raw: &str) -> Result<Self, String> {
+        match raw {
+            "mermaid" => Ok(Self::Mermaid),
+            // `dot` + `svg` formats land in commits 3 + 4. Parser
+            // rejects them now with a forward-pointing message so the
+            // user doesn't get an opaque "unknown format" error.
+            "dot" => Err("`--format=dot` ships in slice 29 commit 3; not yet available".into()),
+            "svg" => Err("`--format=svg` ships in slice 29 commit 4; not yet available".into()),
+            other => Err(format!(
+                "unknown --format `{other}`; expected `mermaid` (default), `dot`, or `svg`"
+            )),
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Mermaid => "Mermaid",
+        }
+    }
+}
+
+pub(crate) fn run(format: &str, out: Option<PathBuf>) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
 
+    let format = Format::parse(format).map_err(|message| CliError::Other {
+        message,
+        exit_code: 2,
+    })?;
+
     let graph = model::build(&index);
-    let mermaid = mermaid::render(&graph);
-    print!("{mermaid}");
-    eprintln!(
-        "ok: {} nodes, {} edges rendered. (Mermaid to stdout)",
-        graph.nodes.len(),
-        graph.edges.len()
-    );
+    let rendered = match format {
+        Format::Mermaid => mermaid::render(&graph),
+    };
+
+    match out {
+        None => {
+            print!("{rendered}");
+            eprintln!(
+                "ok: {} nodes, {} edges rendered. ({} to stdout)",
+                graph.nodes.len(),
+                graph.edges.len(),
+                format.label()
+            );
+        }
+        Some(path) => {
+            atomic_write(&path, &rendered)?;
+            eprintln!(
+                "ok: wrote {} nodes, {} edges to {}",
+                graph.nodes.len(),
+                graph.edges.len(),
+                path.display()
+            );
+        }
+    }
     Ok(())
 }
 
