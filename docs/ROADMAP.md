@@ -96,18 +96,22 @@ Originally five slices (22–26). Slices 24, 25, 26 (`verify="test"` and `verify
 | **29** | `aristo graph` | ✅ **Shipped 2026-05-18 (11 commits + v0.0.8 tag).** Mermaid (default stdout); DOT; SVG (via `dot` subprocess; friendly missing-binary error with three-platform install hints + two no-Graphviz alternatives); J2 `--filter` (id/file/parent/status, with line-range syntax `file=<path>:<LO>-<HI>` from slice 27.7); `--exclude-assumes`, `--include-orphans`, `--include-status`, `--depth`, `--out`, `--format`. Visual encoding per the mockup: shape distinguishes intent (rectangle) vs assume (hexagon); color encodes verify level OR B5b status (via `--include-status`); red border on critical states. Composes with `aristo doc --include-graph` (slice 29 commit 10). Promoted 7 of 12 `graph_*.md` scenarios; 5 stay in `_pending/` with documented reasons (SVG byte-mismatch across Graphviz versions covered imperatively by `tests/graph_svg.rs`; subtree / direct-children semantics need rewriting against shared fixture; lifecycle composite uses SVG-embedded graph which conflicts with the chosen Mermaid-embedded design). See CHANGELOG `[v0.0.8]` for the full per-commit notes. |
 | **30** | `aristo_doc` cargo feature in `aristo-macros` | ✅ **Shipped via session B (commit `73c95c7`).** Proc-macro injects `#[doc = include_str!("...")]` from `.aristo/doc/` when feature enabled. Off by default; explicit `id = "..."` required when feature on (the macro can't predict stamp's id assignment). Cargo-fixture imperative tests in `tests/aristo_doc_imperative.rs`. |
 
-## Milestone H — Auxiliary + audit → v0.1.0 (MVP)
+## Milestone H — MVP → v0.1.0
 
 Goal: feature-complete MVP. After this milestone the SDK is shippable as the first preview release on crates.io.
+
+**Scope adjustment 2026-05-18:** slice 33 (`aristo verify --audit-only`) deferred to Phase 2. Rationale: the offline shell would return all-zeros for every crate in existence today (no `verified_outcome` entries can be issued without server-side cert signing). The "ship a shell for forward-compat" argument is weak — any consumer CI gating on it would also be waiting for Phase 2. Punting alongside the real cert-validation behavior gives a coherent feature rather than a half-shipped surface.
 
 | Slice | Deliverable | Notes |
 |---|---|---|
 | **31** | `aristo badge` | ✅ **Shipped via session B (commit `d917cd5`).** Reads index, computes metrics (`aristos-count`, `verification-rate`); SVG output; `--out` or stdout; `--style={flat,flat-square,for-the-badge}`. **Offline-only — `--strict` is server-side and remains deferred to Phase 2.** |
 | **31.5** | tiered badge | ✅ **Shipped via session B (commit `c3971b9` and `2b3edf9`).** `aristo badge --metric={count,rate,tier}` defaults to `tier`. Adds `aristo_core::badge::compute_tier` (D7 score formula + D8 cutoffs + D4 Areté gate) and `aristo_core::walk::count_fns_per_module` (the coverage denominator walker, excludes `#[cfg(test)]` recursively, counts trait defaults). SVG picks up the D11 per-tier palette (#8a8378 / #c9a87c / #C0362C / #8c2913 / #d4a017) and embeds the locked bridge-as-Ω logo in every badge. Promoted `badge_tier_default.md`. |
-| **32** | `aristo rename` | Atomic across src + spec + index; `--dry-run`; cross-namespace rejection (per K1); readable→opaque rejection. Warns but allows on dirty tree. Promotes all `rename_*.md`. |
-| **33** | `aristo verify --audit-only` (offline shell) | Reports counts across `verified` / `stale` / `orphan` / `pending-deepen` / `forged`. On a free-tier-only project with no `verified_outcome` entries, reports all-zeros — useful so downstream consumers' CI scripts don't break when they pull a free-tier crate. Composes with `--check`. The `--strict` cross-check against `aretta.dev/registry/` remains deferred to Phase 2. Promotes `verify_audit_only.md`, `verify_audit_only_check.md`. |
+| **32** | `aristo rename` | **Next.** Atomic coordinated rename across source files + `.aristo/index.toml` + `.aristo/critiques/<id>.critique` + `.aristo/proofs/<id>.proof`. `--dry-run` plans without writing. Validation: target-collision rejection, readable→opaque-prefix rejection (`aret_*`), cross-namespace rejection (`aristos:` ↔ bare is unbind not rename — points at the future `aristo unbind`). **Scope trim for v0.1.0:** `aristos:`-namespace renames REJECTED entirely with a "deferred until Phase 2 sync ships" message — the server-binding warning + rebind flow is half-shipped without `aristo sync`, so v0.1.0 ships free-tier rename only (bare ids + `aret_*` ids). Promotes the three `rename_*.md` scenarios. |
+| ~~33~~ | ~~`aristo verify --audit-only`~~ | **Deferred to Phase 2.** Without server-side cert signing, no crate has `verified_outcome` entries that aren't local; the offline shell would return all-zeros for every project. Ships alongside the real cert-validation behavior in Phase 2. The two pending scenarios `verify_audit_only.md` + `verify_audit_only_check.md` stay in `_pending/` until then. |
 | **34** | CI gate composite scenario | Promotes `lifecycle_ci_gates.md`. Mostly integration verification — the per-command `--check` modes wired uniformly across slices 17/20/22/28 should already compose; this slice asserts that they do, end-to-end. |
 | **35** | v0.1.0 release prep | README polish; crates.io metadata (description, keywords, categories, repository, license, documentation links); `cargo publish --dry-run` for each crate (`aristo-core`, `aristo-macros`, `aristo-cli`, `aristo`); workspace version bump; `git tag v0.1.0`. |
+
+**MVP path from here**: slice 32 → 34 → 35 (≈ 10-14 commits, ~5-7 focused days).
 
 ---
 
@@ -133,7 +137,7 @@ These were the open questions at roadmap-design time. Settled answers:
 4. **`aristo init` and `Cargo.toml`.** Default behavior: print the `aristo = "..."` dependency line for the user to copy in. `-f` / `--force` actually modifies `Cargo.toml`.
 5. **Pre-commit hook.** Bash only. Windows users get a docs note for v0.1.0; cross-platform hook is post-MVP.
 6. **`aristo stamp` vs `aristo index`.** Keep both. The separation matters once server-side B5b classification lands in stamp (Phase 2).
-7. **`aristo verify --audit-only`.** Ship the offline shell in milestone H (slice 33) so downstream consumers' CI doesn't break on free-tier crates. Real cert-validation behavior lands with the server slice (Phase 2).
+7. **`aristo verify --audit-only`.** ~~Ship the offline shell in milestone H (slice 33) so downstream consumers' CI doesn't break on free-tier crates.~~ **Revised 2026-05-18: punted to Phase 2.** Without server-side cert signing, the offline shell would return all-zeros for every crate — nothing useful to ship. Bundled alongside the real cert-validation behavior in Phase 2.
 8. **Skill install scope (for our own dogfood setup).** `--user` scope. Surfaces UX issues with the cross-project install path early; works in any repo we touch.
 9. **Annotation density.** Aggressive. We can always relax later; we want to feel the full friction now. **Caveat:** intent is for high-level invariants and properties, **not** a replacement for normal Rust doc comments — it supplements them. (See "Annotation discipline" above.)
 10. **`aristo_check` cargo feature.** Pulled forward from milestone H to milestone A (slice 8). Anything that helps us write and check intent ships as early as possible.
@@ -146,8 +150,9 @@ These were the open questions at roadmap-design time. Settled answers:
 - `aristo suggestions {list, apply, reject}`
 - All paid-tier verify paths (`n_tier=Paid`, `t_tier=Paid`, `f_tier=Paid` per `03-verify-execution.mmd`)
 - B5b classification in `aristo stamp` (verified / stale / orphan / forged / pending-deepen)
-- Real `aristo verify --audit-only` cert validation against bundled public keys (slice 33 ships only the offline shell)
+- `aristo verify --audit-only` in full (cert validation against bundled public keys + the `--check` CI gate variant; slice 33 was originally scoped for v0.1.0 as an offline shell but punted entirely on 2026-05-18 — the shell with no server-side signing produces all-zeros output and there's no value in shipping it before the cert behavior is real)
 - `aristo verify --audit-only --strict` (publisher provenance via `aretta.dev/registry/`)
+- `aristos:`-namespace renames in `aristo rename` (slice 32 ships free-tier rename only for bare + `aret_*` ids; the `aristos:` path is rejected with a "deferred until `aristo sync` ships" message because the server-binding rebind flow makes no sense without `sync` to call afterward)
 - `aristo badge --strict`
 - The `aristos:` namespace prefix on source ids (only `aristo sync` writes it)
 - All 9 server-side `_pending/` scenarios catalogued in `WORKFLOW-COVERAGE.md` §2
