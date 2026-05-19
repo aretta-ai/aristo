@@ -1,0 +1,37 @@
+# Aristo CI gates — dogfood configuration for the aristo SDK itself.
+#
+# Sibling projects use the template `aristo init` writes (which calls
+# `cargo install aristo --locked` to fetch the published crate). This
+# repo can't install itself from crates.io pre-v0.1.0, so we build the
+# binary in-tree and invoke it via `cargo run --release --bin aristo`.
+#
+# Gate order (slice 34): stamp first (everything downstream reads the
+# index — fail fast on staleness), lint second (cheapest static check),
+# verify third (heaviest), doc last (purely derived from index). Each
+# `--check` mode is non-mutating and exits non-zero on drift.
+name: aristo
+on: [push, pull_request]
+jobs:
+  aristo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build (release, single shared rebuild for all gates)
+        run: cargo build --release --bin aristo
+      - name: stamp --check (index in sync with source)
+        run: cargo run --release --bin aristo -- stamp --check
+      - name: lint --check --strict (no warn/error findings)
+        run: cargo run --release --bin aristo -- lint --check --strict
+      - name: verify --check --strict (no stale/orphan/forged)
+        run: cargo run --release --bin aristo -- verify --check --strict
+      - name: doc --check (doc artifacts in sync with index)
+        run: cargo run --release --bin aristo -- doc --check
+      - name: status (per-pipeline rate + tier — informational)
+        run: cargo run --release --bin aristo -- status
+      - name: badge (regenerate SVG)
+        run: cargo run --release --bin aristo -- badge --out=docs/badge.svg
+      - name: upload badge artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aristo-badge
+          path: docs/badge.svg
