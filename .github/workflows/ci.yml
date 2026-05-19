@@ -1,0 +1,121 @@
+# Rust quality gates — runs on every PR and every push to main.
+#
+# Distinct from `.github/workflows/aristo.yml` (which runs the Aristo
+# annotation-pipeline checks: stamp/lint/verify/doc + badge). This
+# workflow handles the standard Rust toolchain gates: formatter,
+# linter, full test suite, release build.
+#
+# Both workflows must pass for a PR to be mergeable; the gating itself
+# is set in GitHub repository settings (Settings → Branches → Branch
+# protection rules → require status checks). See RELEASING.md
+# "Branch protection setup" for the one-time enable steps.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel an in-flight run when a new commit is pushed to the same PR /
+# branch. Saves CI minutes on rapid iteration; the latest commit's
+# result is the only one that matters for merge.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fail compilation on any warning. Workspace-level Cargo.toml already
+  # denies clippy::all; this catches warnings from the rustc side too
+  # (e.g. unused imports introduced by a refactor).
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: cargo fmt --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Default features only — `--all-features` would enable
+      # `aristo_doc` workspace-wide, which then triggers `include_str!`
+      # on `.aristo/doc/<id>.md` files that don't exist in CI's
+      # checkout (those files only exist after `aristo doc` runs).
+      # The default-feature path covers `aristo_check` (the load-bearing
+      # validation feature); `aristo_doc` is a downstream-user opt-in
+      # that docs.rs renders per-crate.
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # `--all-targets` runs unit tests, integration tests (under
+      # `tests/`), examples, and benches in one pass. trycmd-driven
+      # scenarios live under `tests/cmd/active/` and run via the
+      # `cli_scenarios` integration test, so they're included.
+      # Default features only — see the clippy job's comment.
+      - run: cargo test --workspace --all-targets
+
+  build-release:
+    name: cargo build --release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Release-mode build catches issues that only surface under
+      # opt-level=3 (rare but real: dead-code differences, integer
+      # overflow semantics, link-time optimizations).
+      - run: cargo build --workspace --release
+
+  docs:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # `--lib` only (skip the `aristo` bin doc — it collides with the
+      # `aristo` meta-crate's lib doc since both produce
+      # `target/doc/aristo/index.html`). Default features only — workspace
+      # `--all-features` would enable `aristo_doc` workspace-wide, which
+      # triggers `include_str!` on `.aristo/doc/<id>.md` files that don't
+      # exist outside the SDK's own dogfood layout (docs.rs handles this
+      # per-crate via `[package.metadata.docs.rs] all-features = true` on
+      # only the leaf crates that have no source annotations).
+      # `RUSTDOCFLAGS=-D warnings` catches broken intra-doc links,
+      # missing-doc warnings, and stale rustdoc syntax.
+      - run: cargo doc --workspace --lib --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  # MSRV check: ensure the code still compiles on the rust-version
+  # pinned in workspace.package. Catches accidental use of newer
+  # stdlib / lang features. We run cargo check (not test) because
+  # MSRV is about compilability, not behaviour — and several dev-deps
+  # may require newer toolchains than the published crates.
+  msrv:
+    name: cargo check (MSRV 1.75)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace

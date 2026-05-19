@@ -248,7 +248,7 @@ pub enum Ground {
     },
     Code {
         file: String,
-        /// Line range as "<start>-<end>" or "<line>" for a single line.
+        /// Line range as `"<start>-<end>"` or `"<line>"` for a single line.
         lines: String,
         /// Validator-stamped after first validation. See `Intent.at_text_hash`.
         #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -87,7 +87,7 @@ pub struct Meta {
 /// Cross-entry validation error: an annotation's id namespace must agree
 /// with its binding state. Within-entry shape (kind ↔ field set, binding-
 /// triple legality) is enforced by the type system + serde — see the
-/// [`entry`] module.
+/// `entry` module (private; re-exported via [`IndexEntry`]).
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ValidationError {
     #[error(
