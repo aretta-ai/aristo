@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T18:27:25.963614Z"
+generated_at = "2026-05-19T18:30:42.081322Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -679,7 +679,7 @@ text = """Plan computation reads each candidate source file ONCE, then defers al
 verify = "test"
 status = "unknown"
 text_hash = "sha256:4f89361fd9cb1718f8eb2c49fb618afa88c212a5b1b8f33d923d17d0dba52720"
-body_hash = "sha256:9f5da4fa9446eb101ef485413d6aaef9dfe7a82fadb4a0fba4411bbad422974c"
+body_hash = "sha256:51c3143c8da378b861811a6504ce8f20b1cf8749a8b088fbd41d24add102c165"
 file = "crates/aristo-cli/src/commands/rename.rs"
 site = "fn compute_plan (line 303)"
 covered_region = "function"
@@ -692,7 +692,7 @@ status = "unknown"
 text_hash = "sha256:e1ee9692fb157f489f14b14d645ee1d54ca50fe87d47b1280bea77987c65ac9f"
 body_hash = "sha256:899f61e1372fa93078a3459f4b3404243bd66285fbf89ff4449bc5a061d90f4e"
 file = "crates/aristo-cli/src/commands/rename.rs"
-site = "fn parse_and_validate (line 638)"
+site = "fn parse_and_validate (line 623)"
 covered_region = "function"
 
 [rename_writes_index_last_for_recoverable_partial_failure]
@@ -855,7 +855,7 @@ text = "Status's tier computation routes through `aristo_core::badge::compute_ti
 verify = "test"
 status = "unknown"
 text_hash = "sha256:4557673137fec2e0b57eec92b91fd80bc25ed78fbb9d03545de2d5382f27c406"
-body_hash = "sha256:6c96e8bcbad15ed7cc730c012be103bb42c596a0650bd95f45bf64bbd40d3099"
+body_hash = "sha256:15bef40e863bda4796d36fc8a2d78bb2559e7c9cd8d956e2f8f272847547c8f1"
 file = "crates/aristo-cli/src/commands/status.rs"
 site = "fn compute_project_tier (line 178)"
 covered_region = "function"
