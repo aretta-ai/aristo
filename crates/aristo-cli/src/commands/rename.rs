@@ -40,11 +40,167 @@ pub(crate) fn run(old_id: &str, new_id: &str, dry_run: bool) -> CliResult<()> {
         print!("{plan}");
         return Ok(());
     }
-    let _ = plan;
-    Err(CliError::NotImplemented {
-        what: "aristo rename (apply)",
-        slice: "slice 32 commit 4",
-    })
+    apply_plan(&ws, &index, plan)
+}
+
+// ─── Apply: source rewrite → artifact move → index write (last) ───────────
+
+#[aristo::intent(
+    "Apply order is load-bearing: source files first (in any order; each \
+     is a single atomic temp+rename), THEN artifact moves, THEN the new \
+     index.toml LAST (atomic). The reason: if source writes complete but \
+     artifact-move or index-write fails, source has the new ids but the \
+     index still references the old ones. `aristo stamp` detects this \
+     and refuses with structural drift — the user reverts or completes \
+     manually. The reverse order (index first, source last) would leave \
+     the user with an index pointing at ids the source doesn't define, \
+     making `aristo show` / `aristo list` lie. No real transactional \
+     rollback ships in slice 32 (out-of-scope per HANDOFF); 'best-effort \
+     recoverable' is the contract.",
+    verify = "test",
+    id = "rename_writes_index_last_for_recoverable_partial_failure"
+)]
+fn apply_plan(ws: &Workspace, index: &IndexFile, plan: RenamePlan) -> CliResult<()> {
+    // 1. Source files. Group edits by file; apply highest-byte-first so
+    // each substitution leaves earlier byte offsets stable.
+    let mut by_file: std::collections::BTreeMap<&str, Vec<&SourceEdit>> =
+        std::collections::BTreeMap::new();
+    for edit in &plan.source_edits {
+        by_file.entry(edit.file.as_str()).or_default().push(edit);
+    }
+    for (file_rel, edits) in &mut by_file {
+        edits.sort_by_key(|e| std::cmp::Reverse(e.byte_start));
+        let abs = ws.root.join(file_rel);
+        let mut bytes = fs::read(&abs).map_err(CliError::Io)?;
+        for edit in edits.iter() {
+            bytes.splice(edit.byte_start..edit.byte_end, plan.new_id.as_str().bytes());
+        }
+        atomic_write_bytes(&abs, &bytes)?;
+    }
+
+    // 2. Artifact moves. Each is a single rename — no atomic temp dance
+    // (the destination is a fresh id-safe filename; collisions were
+    // ruled out at validation since the new id wasn't in the index).
+    for mv in &plan.artifact_moves {
+        if let Some(parent) = mv.to.parent() {
+            fs::create_dir_all(parent).map_err(CliError::Io)?;
+        }
+        fs::rename(&mv.from, &mv.to).map_err(CliError::Io)?;
+    }
+
+    // 3. Index. Build the new IndexFile in memory, then atomic-write.
+    let new_index = rewrite_index(index, &plan);
+    let toml_text = toml::to_string_pretty(&new_index).map_err(|e| CliError::Other {
+        message: format!("rename: serializing new index: {e}"),
+        exit_code: 1,
+    })?;
+    let index_path = ws.index_path();
+    atomic_write_bytes(&index_path, toml_text.as_bytes())?;
+
+    print_apply_summary(&plan);
+    Ok(())
+}
+
+/// Build the post-rename IndexFile: walk every entry, swap the self-key
+/// for the renamed entry, and rewrite every child entry's `parent` link
+/// that references the old id.
+fn rewrite_index(index: &IndexFile, plan: &RenamePlan) -> IndexFile {
+    use aristo_core::index::IndexFile;
+    let mut new_entries = std::collections::BTreeMap::new();
+    for (id, entry) in &index.entries {
+        let new_id = if id == &plan.old_id {
+            plan.new_id.clone()
+        } else {
+            id.clone()
+        };
+        let new_entry = rewrite_entry_parent(entry, &plan.old_id, &plan.new_id);
+        new_entries.insert(new_id, new_entry);
+    }
+    IndexFile {
+        meta: index.meta.clone(),
+        entries: new_entries,
+    }
+}
+
+fn rewrite_entry_parent(entry: &IndexEntry, old: &AnnotationId, new: &AnnotationId) -> IndexEntry {
+    match entry {
+        IndexEntry::Intent(e) => {
+            let mut e = e.clone();
+            e.parent = e.parent.map(|p| rewrite_parent_link(p, old, new));
+            IndexEntry::Intent(e)
+        }
+        IndexEntry::Assume(e) => {
+            let mut e = e.clone();
+            e.parent = e.parent.map(|p| rewrite_parent_link(p, old, new));
+            IndexEntry::Assume(e)
+        }
+    }
+}
+
+fn rewrite_parent_link(p: ParentLink, old: &AnnotationId, new: &AnnotationId) -> ParentLink {
+    match p {
+        ParentLink::Single(id) if &id == old => ParentLink::Single(new.clone()),
+        ParentLink::Single(id) => ParentLink::Single(id),
+        ParentLink::Multiple(ids) => ParentLink::Multiple(
+            ids.into_iter()
+                .map(|id| if &id == old { new.clone() } else { id })
+                .collect(),
+        ),
+    }
+}
+
+fn print_apply_summary(plan: &RenamePlan) {
+    let edit_count = plan.source_edits.len();
+    let parent_updates = plan
+        .index_updates
+        .iter()
+        .filter(|u| !matches!(u.kind, IndexUpdateKind::SelfKey))
+        .count();
+    let artifact_count = plan.artifact_moves.len();
+    println!(
+        "ok: renamed `{}` → `{}` ({} source edits, {} parent references, {} artifact files)",
+        plan.old_id.as_str(),
+        plan.new_id.as_str(),
+        edit_count,
+        parent_updates,
+        artifact_count
+    );
+    if matches!(plan.shape, RenameShape::OpaquePromotion) {
+        println!(
+            "note: promoted opaque id → readable id. Future references to\n      \
+             `{}` will fail. Update any external dashboards / links.",
+            plan.old_id.as_str()
+        );
+    }
+}
+
+/// Atomic write for arbitrary file extensions: write `<path>.aristo-tmp`
+/// then rename over `<path>`. Differs from `commands::index::atomic_write`,
+/// which hardcodes a `.toml.tmp` suffix and only takes `&str` content.
+fn atomic_write_bytes(target: &Path, content: &[u8]) -> CliResult<()> {
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(CliError::Io)?;
+    }
+    let tmp_name = match target.file_name() {
+        Some(name) => {
+            let mut s = name.to_os_string();
+            s.push(".aristo-tmp");
+            s
+        }
+        None => {
+            return Err(CliError::Other {
+                message: format!(
+                    "rename: cannot atomic-write `{}` — path has no file name",
+                    target.display()
+                ),
+                exit_code: 1,
+            });
+        }
+    };
+    let tmp = target.with_file_name(tmp_name);
+    fs::write(&tmp, content).map_err(CliError::Io)?;
+    fs::rename(&tmp, target).map_err(CliError::Io)?;
+    Ok(())
 }
 
 /// Tagged outcome of validation. Each variant is a legal rename shape;
@@ -69,13 +225,12 @@ pub(crate) struct ParsedRename {
 // ─── Plan model ───────────────────────────────────────────────────────────
 
 /// What `aristo rename` would change. Computed once before either
-/// printing (dry-run) or applying (commit 4); the apply path consumes
-/// the same value.
+/// printing (dry-run) or applying; the apply path consumes the same
+/// value.
 #[derive(Debug, Clone)]
 pub(crate) struct RenamePlan {
     pub old_id: AnnotationId,
     pub new_id: AnnotationId,
-    #[allow(dead_code)] // commit 4's success-renderer reads `shape`
     pub shape: RenameShape,
     /// Byte-range edits across source files. Ordered: same file edits
     /// run highest-byte-first so earlier byte indexes stay stable.
@@ -88,9 +243,6 @@ pub(crate) struct RenamePlan {
     pub index_updates: Vec<IndexUpdate>,
 }
 
-// `byte_start` / `byte_end` are read by commit 4's applier; `before_array_text`
-// / `after_array_text` already serve the renderer in commit 3.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct SourceEdit {
     /// Workspace-relative path (matches the `file` field stored in the
@@ -119,9 +271,6 @@ pub(crate) enum SourceEditKind {
     ParentArrayElement,
 }
 
-// `from`/`to` are read by commit 4's mover; the labels already serve
-// the renderer in commit 3.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct ArtifactMove {
     pub from: PathBuf,
@@ -1042,6 +1191,141 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("source has drifted"), "msg: {msg}");
         assert!(msg.contains("aristo stamp"), "msg: {msg}");
+    }
+
+    // ─── Apply path (commit 4) ───────────────────────────────────────────
+
+    #[test]
+    fn apply_substitutes_id_byte_range_in_source_file() {
+        let src = "#[aristo::intent(\"x\", id = \"old_id\")] fn f() {}\n";
+        let (dir, ws) = ws_with_source(&[("src/lib.rs", src)]);
+        let index = build_index(&[("old_id", intent("src/lib.rs", "fn f (line 1)"))]);
+        let parsed = parse_and_validate("old_id", "new_id", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan");
+        apply_plan(&ws, &index, plan).expect("apply ok");
+        let post = fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+        assert!(post.contains("id = \"new_id\""), "post: {post}");
+        assert!(!post.contains("\"old_id\""), "post: {post}");
+    }
+
+    #[test]
+    fn apply_substitutes_parent_array_element_without_disturbing_siblings() {
+        let owner_src = "#[aristo::intent(\"p\", id = \"parent_id\")] fn p() {}\n";
+        let child_src =
+            "#[aristo::intent(\"c\", parent = [\"parent_id\", \"keep_me\"], id = \"child_id\")] fn c() {}\n";
+        let (dir, ws) =
+            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let index = build_index(&[
+            ("parent_id", intent("src/p.rs", "fn p (line 1)")),
+            ("keep_me", intent("src/p.rs", "fn k (line 1)")),
+            (
+                "child_id",
+                intent_with_parent(
+                    "src/c.rs",
+                    "fn c (line 1)",
+                    ParentLink::Multiple(vec![
+                        AnnotationId::parse("parent_id").unwrap(),
+                        AnnotationId::parse("keep_me").unwrap(),
+                    ]),
+                ),
+            ),
+        ]);
+        let parsed = parse_and_validate("parent_id", "new_parent", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan");
+        apply_plan(&ws, &index, plan).expect("apply ok");
+        let post = fs::read_to_string(dir.path().join("src/c.rs")).unwrap();
+        assert!(post.contains("\"new_parent\""), "post: {post}");
+        assert!(post.contains("\"keep_me\""), "sibling intact: {post}");
+        assert!(!post.contains("\"parent_id\""), "post: {post}");
+    }
+
+    #[test]
+    fn apply_preserves_whitespace_and_comments_around_id() {
+        // Span-based rewriting must leave the file otherwise byte-identical.
+        let src = "// leading comment\n\
+                   #[aristo::intent(\n    \"prose\",\n    verify = \"test\",\n    id = \"alpha\"\n)]\n\
+                   fn f() { /* body */ }\n";
+        let (dir, ws) = ws_with_source(&[("src/lib.rs", src)]);
+        let index = build_index(&[("alpha", intent("src/lib.rs", "fn f (line 6)"))]);
+        let parsed = parse_and_validate("alpha", "beta", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan");
+        apply_plan(&ws, &index, plan).expect("apply ok");
+        let post = fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+        let expected = src.replace("\"alpha\"", "\"beta\"");
+        assert_eq!(post, expected, "exactly-one-substitution; rest byte-identical");
+    }
+
+    #[test]
+    fn apply_writes_new_index_with_swapped_self_key_and_rewritten_parents() {
+        let owner_src = "#[aristo::intent(\"p\", id = \"parent_id\")] fn p() {}\n";
+        let child_src =
+            "#[aristo::intent(\"c\", parent = \"parent_id\", id = \"child_id\")] fn c() {}\n";
+        let (dir, ws) =
+            ws_with_source(&[("src/p.rs", owner_src), ("src/c.rs", child_src)]);
+        let index = build_index(&[
+            ("parent_id", intent("src/p.rs", "fn p (line 1)")),
+            (
+                "child_id",
+                intent_with_parent(
+                    "src/c.rs",
+                    "fn c (line 1)",
+                    ParentLink::Single(AnnotationId::parse("parent_id").unwrap()),
+                ),
+            ),
+        ]);
+        let parsed = parse_and_validate("parent_id", "new_parent", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan");
+        apply_plan(&ws, &index, plan).expect("apply ok");
+        let raw = fs::read_to_string(dir.path().join(".aristo/index.toml")).unwrap();
+        let post: IndexFile = toml::from_str(&raw).expect("parse rewritten index");
+        assert!(post.entries.contains_key(&AnnotationId::parse("new_parent").unwrap()));
+        assert!(!post.entries.contains_key(&AnnotationId::parse("parent_id").unwrap()));
+        // Child's parent link was rewritten.
+        match post
+            .entries
+            .get(&AnnotationId::parse("child_id").unwrap())
+            .unwrap()
+        {
+            IndexEntry::Intent(e) => match e.parent.as_ref().unwrap() {
+                ParentLink::Single(id) => assert_eq!(id.as_str(), "new_parent"),
+                _ => panic!("expected single-parent form"),
+            },
+            _ => panic!("expected intent"),
+        }
+    }
+
+    #[test]
+    fn apply_renames_artifact_files_when_present() {
+        let src = "#[aristo::intent(\"x\", id = \"alpha\")] fn f() {}\n";
+        let (dir, ws) = ws_with_source(&[("src/lib.rs", src)]);
+        let index = build_index(&[("alpha", intent("src/lib.rs", "fn f (line 1)"))]);
+        let crit_dir = dir.path().join(".aristo/critiques");
+        fs::create_dir_all(&crit_dir).unwrap();
+        fs::write(crit_dir.join("alpha.critique"), "critique-body").unwrap();
+        let parsed = parse_and_validate("alpha", "beta", &index).unwrap();
+        let plan = compute_plan(&ws, &index, &parsed).expect("plan");
+        apply_plan(&ws, &index, plan).expect("apply ok");
+        assert!(crit_dir.join("beta.critique").is_file());
+        assert!(!crit_dir.join("alpha.critique").is_file());
+        let body = fs::read_to_string(crit_dir.join("beta.critique")).unwrap();
+        assert_eq!(body, "critique-body");
+    }
+
+    #[test]
+    fn rewrite_parent_link_leaves_unrelated_arrays_intact() {
+        let old = AnnotationId::parse("foo").unwrap();
+        let new = AnnotationId::parse("baz").unwrap();
+        let parent = ParentLink::Multiple(vec![
+            AnnotationId::parse("a").unwrap(),
+            AnnotationId::parse("b").unwrap(),
+        ]);
+        match rewrite_parent_link(parent, &old, &new) {
+            ParentLink::Multiple(v) => {
+                let ids: Vec<&str> = v.iter().map(|id| id.as_str()).collect();
+                assert_eq!(ids, vec!["a", "b"]);
+            }
+            _ => panic!("expected multiple"),
+        }
     }
 
     #[test]
