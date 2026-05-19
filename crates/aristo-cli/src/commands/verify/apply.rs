@@ -133,7 +133,7 @@ pub(crate) fn run_apply_verdicts(
      Without this flag, stamped hashes act as freshness anchors and \
      mismatches are rejected as staleness — the strict default. The \
      flag is documented as migration-only to discourage routine use; \
-     routine `--apply-verdicts` should rely on the staleness check.",
+     routine `--apply-verdicts` relies on the staleness check.",
     verify = "test",
     id = "rewrite_hashes_flag_is_migration_only_strict_default"
 )]

@@ -13,7 +13,7 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/aretta-dev/aristo"
 homepage = "https://github.com/aretta-dev/aristo"
-rust-version = "1.75"
+rust-version = "1.85"
 authors = ["Aretta <hello@aretta.dev>"]
 # Workspace-level keywords inherited by all 4 crates via
 # `keywords.workspace = true`. Max 5 entries; lowercase, no spaces;

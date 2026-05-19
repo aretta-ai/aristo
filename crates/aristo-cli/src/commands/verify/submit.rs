@@ -66,7 +66,7 @@ use crate::{CliError, CliResult, Workspace};
      means the subagent's reported text diverged from what hit disk \
      (corrupted cache, fabricated response). The hash anchors the \
      write-acknowledgement so the orchestrator does not have to re-read \
-     the file just to validate the subagent's word.",
+     the file to validate the subagent's word.",
     verify = "neural",
     id = "submit_returns_sha256_of_written_file"
 )]

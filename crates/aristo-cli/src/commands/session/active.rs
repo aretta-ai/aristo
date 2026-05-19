@@ -13,7 +13,7 @@ use super::load_active;
 #[aristo::intent(
     "`aristo session active` is wired into Claude Code's \
      UserPromptSubmit hook (Layer 2). The hook fires on EVERY prompt \
-     across EVERY project, not just aristo workspaces. So `active` \
+     across EVERY project, not only aristo workspaces. So `active` \
      must exit 0 with empty stdout when run outside an aristo \
      workspace — a hard error would block every prompt in any \
      non-aristo project the user opens. The interactive form (no \

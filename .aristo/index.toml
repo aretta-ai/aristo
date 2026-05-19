@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
-generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T18:42:40.419938Z"
+generated_by = "aristo stamp 0.1.0"
+generated_at = "2026-05-19T22:36:07.312325Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -719,10 +719,10 @@ covered_region = "function"
 
 [rewrite_hashes_flag_is_migration_only_strict_default]
 kind = "intent"
-text = "Migration-only `--rewrite-hashes` clears every stored ground hash before validation so the staleness check is skipped, then the post-accept stamping pass repopulates them from current source. Without this flag, stamped hashes act as freshness anchors and mismatches are rejected as staleness — the strict default. The flag is documented as migration-only to discourage routine use; routine `--apply-verdicts` should rely on the staleness check."
+text = "Migration-only `--rewrite-hashes` clears every stored ground hash before validation so the staleness check is skipped, then the post-accept stamping pass repopulates them from current source. Without this flag, stamped hashes act as freshness anchors and mismatches are rejected as staleness — the strict default. The flag is documented as migration-only to discourage routine use; routine `--apply-verdicts` relies on the staleness check."
 verify = "test"
 status = "unknown"
-text_hash = "sha256:db4a42a4c2aa63e816ff743443caf38fd9387ff2f12199c9cbc4252d6449ba93"
+text_hash = "sha256:ed59d5fe7543727d0e262c0b24e37961b09b9320da5d1d7a3dec5985f2d79297"
 body_hash = "sha256:a375f28c18cbc1eeb7062793e71b92c2e40265d1c9b02841b40ed095101ec271"
 file = "crates/aristo-cli/src/commands/verify/apply.rs"
 site = "fn clear_ground_hashes (line 129)"
@@ -741,10 +741,10 @@ covered_region = "function"
 
 [session_active_is_noop_outside_workspace]
 kind = "intent"
-text = "`aristo session active` is wired into Claude Code's UserPromptSubmit hook (Layer 2). The hook fires on EVERY prompt across EVERY project, not just aristo workspaces. So `active` must exit 0 with empty stdout when run outside an aristo workspace — a hard error would block every prompt in any non-aristo project the user opens. The interactive form (no `--hook-format`) follows the same rule for symmetry: an active session can only exist within a workspace anyway, so no-workspace and no-session are observationally identical at the CLI surface."
+text = "`aristo session active` is wired into Claude Code's UserPromptSubmit hook (Layer 2). The hook fires on EVERY prompt across EVERY project, not only aristo workspaces. So `active` must exit 0 with empty stdout when run outside an aristo workspace — a hard error would block every prompt in any non-aristo project the user opens. The interactive form (no `--hook-format`) follows the same rule for symmetry: an active session can only exist within a workspace anyway, so no-workspace and no-session are observationally identical at the CLI surface."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:49db7b8093b9a759da49aee4b53b3b7331a1a9925be0eefb57e13a22b5f5d1d9"
+text_hash = "sha256:dcbbebc4afc9aadd6341a4160ca14ad9709eb4dfd1ca8e9c317529b6344f633e"
 body_hash = "sha256:82f934ae08215a99c0ecf03dad6b3ca7b682a9314ead7fcec5e6925ac0921fe6"
 file = "crates/aristo-cli/src/commands/session/active.rs"
 site = "fn run (line 13)"
@@ -840,10 +840,10 @@ covered_region = "function"
 
 [stamp_surfaces_counterexamples_loudly]
 kind = "intent"
-text = "Every `aristo stamp` run that finds a Counterexample-status entry emits a loud, unmissable warning enumerating each id, file, and site. There is no `aristo accept-counterexample` to silence this; a counterexample is a definite refutation and stays visible until either the code is fixed (→ body drift → Status::Stale → re-verify) or the intent text is changed to exclude the counterexample case. Treating counterexamples as quiet 'just a status' would let a refuted invariant sit in the index unnoticed and erode the trust calibration of `aristo status`."
+text = "Every `aristo stamp` run that finds a Counterexample-status entry emits a loud, unmissable warning enumerating each id, file, and site. There is no `aristo accept-counterexample` to silence this; a counterexample is a definite refutation and stays visible until either the code is fixed (→ body drift → Status::Stale → re-verify) or the intent text is changed to exclude the counterexample case. Treating counterexamples as a quiet status badge would let a refuted invariant sit in the index unnoticed and erode the trust calibration of `aristo status`."
 verify = "test"
 status = "unknown"
-text_hash = "sha256:9943c7d2092400e64549441f7d63887f9bb599db3a9b1a62fd1a4bf5129f64d4"
+text_hash = "sha256:fcc13e212642853f58685fda05d0dd533c4d41919c6af9750d46836cdb4606ef"
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn warn_on_counterexamples (line 171)"
@@ -895,10 +895,10 @@ covered_region = "function"
 
 [submit_returns_sha256_of_written_file]
 kind = "intent"
-text = "On accept, the SDK prints `accepted: sha256:<hex>` to stdout where <hex> is the sha256 of the on-disk TOML body. The orchestrator can compare this against body_hash(text_returned_by_subagent) for a cheap integrity check: SDK is the sole writer, so a mismatch means the subagent's reported text diverged from what hit disk (corrupted cache, fabricated response). The hash anchors the write-acknowledgement so the orchestrator does not have to re-read the file just to validate the subagent's word."
+text = "On accept, the SDK prints `accepted: sha256:<hex>` to stdout where <hex> is the sha256 of the on-disk TOML body. The orchestrator can compare this against body_hash(text_returned_by_subagent) for a cheap integrity check: SDK is the sole writer, so a mismatch means the subagent's reported text diverged from what hit disk (corrupted cache, fabricated response). The hash anchors the write-acknowledgement so the orchestrator does not have to re-read the file to validate the subagent's word."
 verify = "neural"
-status = "neural"
-text_hash = "sha256:1cd3494cdce2019142ec33788c70f98216ec0896cceb8b63b7343b1fd8487f84"
+status = "stale"
+text_hash = "sha256:f7051bb5093f3fbd39910218e484a485fb98beeda8d42aa2d31635342fbed8cf"
 body_hash = "sha256:476ab3733a15987f3ad0df829be69e009ac0afca3146a3a15bc875e645ad4367"
 file = "crates/aristo-cli/src/commands/verify/submit.rs"
 site = "fn run_submit_verdict (line 61)"

@@ -175,7 +175,7 @@ fn cascade_delete_orphan_proofs(ws: &crate::Workspace, summary: &StampSummary) -
      a counterexample is a definite refutation and stays visible until \
      either the code is fixed (→ body drift → Status::Stale → re-verify) \
      or the intent text is changed to exclude the counterexample case. \
-     Treating counterexamples as quiet 'just a status' would let a \
+     Treating counterexamples as a quiet status badge would let a \
      refuted invariant sit in the index unnoticed and erode the trust \
      calibration of `aristo status`.",
     verify = "test",
