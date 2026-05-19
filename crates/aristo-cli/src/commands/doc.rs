@@ -31,20 +31,70 @@ use crate::commands::show::read_index;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult, Workspace};
 
-pub(crate) fn run(summary: bool, include_status: bool, check: bool) -> CliResult<()> {
+pub(crate) fn run(
+    summary: bool,
+    include_status: bool,
+    check: bool,
+    include_graph: bool,
+) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
-
-    if summary {
-        return run_summary(&ws, &index);
-    }
 
     if check {
         return run_check(&ws, &index, include_status);
     }
 
+    // --include-graph implies --summary (the graph block is embedded
+    // in _summary.md; rendering the graph without writing summary
+    // would have nowhere to put it).
+    if summary || include_graph {
+        run_summary(&ws, &index)?;
+        if include_graph {
+            append_graph_to_summary(&ws, &index)?;
+        }
+        return Ok(());
+    }
+
     run_per_annotation(&ws, &index, include_status)
+}
+
+#[aristo::intent(
+    "`aristo doc --include-graph` appends the rendered annotation graph \
+     (as a fenced ```mermaid block) to `_summary.md` AFTER the \
+     summary has been written. Order matters: appending after means \
+     a re-run with `--include-graph` produces the same file regardless \
+     of whether the prior run had the flag. A refactor that prepended \
+     or inserted-in-middle would make the output dependent on prior \
+     state, which makes `--check` brittle.",
+    verify = "neural",
+    id = "doc_include_graph_appends_idempotently"
+)]
+fn append_graph_to_summary(ws: &Workspace, index: &IndexFile) -> CliResult<()> {
+    let summary_path = ws.root.join(".aristo").join("doc").join("_summary.md");
+    let graph = crate::commands::graph::model::build_with_axis(
+        index,
+        crate::commands::graph::ColorAxis::Verify,
+    );
+    let mermaid = crate::commands::graph::mermaid::render(&graph);
+
+    let existing = fs::read_to_string(&summary_path).unwrap_or_default();
+    let mut out = existing;
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push('\n');
+    out.push_str("## Annotation graph\n\n");
+    out.push_str(&mermaid);
+    fs::write(&summary_path, &out).map_err(CliError::Io)?;
+
+    println!("→ Appending annotation graph to .aristo/doc/_summary.md");
+    println!(
+        "  • {} nodes, {} edges (Mermaid, embedded inline)",
+        graph.nodes.len(),
+        graph.edges.len()
+    );
+    Ok(())
 }
 
 // ─── --check CI gate ───────────────────────────────────────────────────────

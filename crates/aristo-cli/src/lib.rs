@@ -322,6 +322,12 @@ enum Commands {
         /// writes.
         #[arg(long)]
         check: bool,
+        /// Composite: also generate the annotation graph (Mermaid)
+        /// and embed it inline in `_summary.md`. Implies `--summary`.
+        /// Conflicts with `--check` (read-only mode can't write the
+        /// graph block).
+        #[arg(long = "include-graph", conflicts_with = "check")]
+        include_graph: bool,
     },
 
     /// Generate the annotation graph (Mermaid / DOT / SVG).
@@ -580,7 +586,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             summary,
             include_status,
             check,
-        } => commands::doc::run(summary, include_status, check),
+            include_graph,
+        } => commands::doc::run(summary, include_status, check, include_graph),
         Commands::Graph {
             format,
             out,
