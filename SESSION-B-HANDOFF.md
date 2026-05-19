@@ -16,22 +16,15 @@ worth opening for the original session-B charter (slices 28 + 31).
 - Slice 28 (`aristo doc`) — 5 of 6 scenarios promoted, milestone G
 - Slice 30 (`aristo_doc` cargo feature in `aristo-macros`) — milestone G
 - Slice 31 (`aristo badge` v1) — milestone H opener
+- Slice 31.5 (tiered badge — D7 formula + D8 cutoffs + D4 Areté
+  gate + D11 visual treatment): `aristo_core::walk::count`,
+  `aristo_core::badge`, `aristo badge --metric={count,rate,tier}`.
+  Promoted `badge_tier_default.md` scenario, all 5 blocks green.
+  Dogfood result on the Aristo SDK itself: `score=0.15, tier=Apprentice`
+  — articulation floor exactly does its cold-start job.
 - Resolution-A spec amendments × 3 (logged in CLAUDE.md §12)
 
-**Locked but not yet implemented (decision doc only):**
-- Badge tier-scheme — D1–D11, COMPLETE. See
-  `docs/decisions/badge-tier-scheme.md`.
-- Tier names: **Aspirant / Apprentice / Adept / Ascendent / Areté**
-  (Areté hidden, paid-only).
-- Score formula: `max(articulation_floor, verification_ratio × coverage_score)`.
-- Cutoffs: 0.10 / 0.35 / 0.65.
-- Logo + palette: bridge-as-Ω SVG locked at
-  `docs/sketches/aristo-logo-v1.html` and inline in decision doc D11.
-- International Orange `#C0362C` as brand-anchor color.
-
 **Pending (next session's work):**
-- **Slice 31.5** — implement the tiered badge (the locked formula +
-  the locked logo). This is the next concrete coding task.
 - Slices 29, 32, 33, 34, 35 — remaining roadmap items toward
   `v0.1.0` MVP. Session A territory or future sessions.
 
@@ -58,39 +51,26 @@ decision-doc work post-merge.
 
 ---
 
-## Slice 31.5 — the next concrete task
+## Slice 31.5 — shipped 2026-05-18
 
-**Goal:** implement the tiered badge per the now-locked decision doc.
+Landed in 4 commits on `session-B-docs`:
 
-**Scope:**
-1. Compute `visible_score` per the D7 formula in
-   `crates/aristo-cli/src/commands/badge.rs` (or extract into a
-   reusable helper in `aristo-core` per D10's "live in `aristo-core`"
-   note).
-2. Add a `Tier` enum (Aspirant / Apprentice / Adept / Ascendent /
-   Areté) and a `score_to_tier()` function using D8's cutoffs.
-3. Wire D4 Areté gate (check for ≥1 `verify="full"` proof in clean
-   verified status AND `aristos:` server-bound).
-4. Add `--metric={count,rate,tier}` flag; default to `tier`.
-   `count` preserves slice 31's current visible value (total
-   annotation count).
-5. Update SVG generation to use the D11 palette (per-tier color)
-   and embed the locked logo.
-6. Promote new scenario(s) — likely `badge_shows_tier.md` or
-   similar; check `crates/aristo-cli/tests/cmd/_pending/` first.
-7. Walker extension in `aristo-core::walk`: enumerate `fn_count`
-   per module for the `coverage_score` calculation. This is the
-   biggest implementation lift — ~50 LOC + tests. Must exclude
-   `#[cfg(test)]`-gated items.
+1. `ce734a2` — test(cli): promote slice 31.5 RED scenario
+   `badge_tier_default.md` (§12A spec-before-impl)
+2. `c387d55` — feat(core): add `walk::count` for per-module fn
+   enumeration (the D7 coverage denominator walker; 19 unit tests)
+3. `2b3edf9` — feat(core): add `aristo_core::badge` tier scoring
+   (D7/D8/D11/D4; 23 unit tests covering every rule + 4 Areté
+   gate scenarios)
+4. `c3971b9` — feat(cli): `aristo badge --metric={count,rate,tier}`
+   GREEN (18 unit tests; scenario blocks green; baseline failure
+   fingerprint preserved)
 
-**Estimated commits:** 4-6 on the existing `session-B-docs` branch.
-Or cut a fresh branch — user's call.
-
-**Test discipline:**
-- Promote each scenario byte-for-byte per CLAUDE.md §12A.
-- Honor the delta-check protocol in `BASELINE-WAIVER.md` if it
-  still applies — verify baseline isn't fully green first.
-- Each new dogfood intent gets verify="neural" and explicit `id`.
+Dogfood result against the SDK itself (90 intents, ~20% Status::Neural
+post-text-drift sweep): `score=0.15, tier=Apprentice` — the
+articulation floor lifts the project out of Aspirant exactly as D7
+intended, and the score matches what D10 predicted for the "mostly
+unverified, large project" shape.
 
 ---
 
