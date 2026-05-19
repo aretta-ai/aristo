@@ -336,6 +336,12 @@ enum Commands {
         /// invoking directory.
         #[arg(long)]
         out: Option<PathBuf>,
+        /// J2 unified filter clause (`id=<id>`, `file=<path>[:<LO>-<HI>]`,
+        /// `parent=<id>`, `status=<state>`). Repeatable; multiple
+        /// `--filter` flags AND together. Default scope (no filter)
+        /// is the whole index.
+        #[arg(long = "filter", value_name = "key=value")]
+        filters: Vec<String>,
     },
 
     /// Generate a shareable SVG verification badge for README / docs.
@@ -545,7 +551,11 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             include_status,
             check,
         } => commands::doc::run(summary, include_status, check),
-        Commands::Graph { format, out } => commands::graph::run(&format, out),
+        Commands::Graph {
+            format,
+            out,
+            filters,
+        } => commands::graph::run(&format, out, &filters),
         Commands::Badge { out, style } => {
             let style =
                 commands::badge::Style::parse(&style).map_err(|message| CliError::Other {
