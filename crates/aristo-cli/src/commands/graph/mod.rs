@@ -62,7 +62,12 @@ impl Format {
     }
 }
 
-pub(crate) fn run(format: &str, out: Option<PathBuf>, filter_strings: &[String]) -> CliResult<()> {
+pub(crate) fn run(
+    format: &str,
+    out: Option<PathBuf>,
+    filter_strings: &[String],
+    exclude_assumes: bool,
+) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
@@ -73,11 +78,14 @@ pub(crate) fn run(format: &str, out: Option<PathBuf>, filter_strings: &[String])
     })?;
 
     let filters = parse_filters(filter_strings)?;
-    let scoped_index = if filters.is_empty() {
+    let mut scoped_index = if filters.is_empty() {
         index
     } else {
         filter_index(index, &filters)
     };
+    if exclude_assumes {
+        scoped_index = drop_assumes(scoped_index);
+    }
     let graph = model::build(&scoped_index);
     let rendered = match format {
         Format::Mermaid => mermaid::render(&graph),
@@ -191,6 +199,18 @@ fn filter_index(index: IndexFile, filters: &[Filter]) -> IndexFile {
         .entries
         .into_iter()
         .filter(|(id, entry)| filters.iter().all(|f| matches_filter(id, entry, f)))
+        .collect();
+    IndexFile {
+        meta: index.meta,
+        entries,
+    }
+}
+
+fn drop_assumes(index: IndexFile) -> IndexFile {
+    let entries = index
+        .entries
+        .into_iter()
+        .filter(|(_, entry)| matches!(entry, IndexEntry::Intent(_)))
         .collect();
     IndexFile {
         meta: index.meta,

@@ -342,6 +342,12 @@ enum Commands {
         /// is the whole index.
         #[arg(long = "filter", value_name = "key=value")]
         filters: Vec<String>,
+        /// Drop `assume` nodes from the rendered graph. Default is
+        /// to include them — assumes form the "ground" of the
+        /// property graph and dropping them by default would hide
+        /// load-bearing background facts.
+        #[arg(long = "exclude-assumes")]
+        exclude_assumes: bool,
     },
 
     /// Generate a shareable SVG verification badge for README / docs.
@@ -555,7 +561,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             format,
             out,
             filters,
-        } => commands::graph::run(&format, out, &filters),
+            exclude_assumes,
+        } => commands::graph::run(&format, out, &filters, exclude_assumes),
         Commands::Badge { out, style } => {
             let style =
                 commands::badge::Style::parse(&style).map_err(|message| CliError::Other {
