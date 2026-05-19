@@ -389,6 +389,12 @@ enum Commands {
         /// Badge style. Mirrors shields.io's three default forms.
         #[arg(long, default_value = "flat")]
         style: String,
+        /// Which metric the SVG value half displays. `tier` (default,
+        /// the locked D7 score → D8 tier) is the headline signal;
+        /// `count` and `rate` preserve the slice-31 surfaces for
+        /// projects that prefer the simpler counters.
+        #[arg(long, default_value = "tier")]
+        metric: String,
     },
 
     /// Atomic project-wide rename of an annotation id.
@@ -605,13 +611,18 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             include_orphans,
             include_status,
         ),
-        Commands::Badge { out, style } => {
+        Commands::Badge { out, style, metric } => {
             let style =
                 commands::badge::Style::parse(&style).map_err(|message| CliError::Other {
                     message,
                     exit_code: 2,
                 })?;
-            commands::badge::run(out, style)
+            let metric =
+                commands::badge::Metric::parse(&metric).map_err(|message| CliError::Other {
+                    message,
+                    exit_code: 2,
+                })?;
+            commands::badge::run(out, style, metric)
         }
         Commands::Rename => not_yet("aristo rename", "slice 32"),
         Commands::Session { action } => commands::session::run(action),

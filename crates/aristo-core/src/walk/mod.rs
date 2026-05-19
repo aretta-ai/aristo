@@ -13,9 +13,13 @@
 //! string fixtures (no tempdir gymnastics) while the filesystem layer gets
 //! its own focused tests for things like `target/` exclusion.
 
+pub mod count;
 pub mod extract;
 pub mod fs;
 
+pub use count::{
+    count_fns_in_source, count_fns_per_module, count_fns_per_module_with, FnCountByModule,
+};
 pub use extract::{
     extract_from_source, AnnotationForm, ExtractError, ExtractedAnnotation, ParentRaw,
 };
