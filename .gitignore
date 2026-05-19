@@ -47,3 +47,11 @@
 # block cleans it up on success. Orphans can survive if stamp cascades
 # the .proof deletion (text-drift); they're transient by design.
 .aristo/proofs/*.proof.bak
+
+# trycmd runs scenario commands in-place against `tests/cmd/active/*.in/`
+# (no temp-dir isolation). Commands that write outputs (e.g.
+# `aristo badge --out=docs/badge.svg`) leave artifacts behind. These
+# are runtime, not source — ignore so they don't show up in git status
+# after every `cargo test` run.
+crates/aristo-cli/tests/cmd/active/*.in/docs/
+crates/aristo-cli/tests/cmd/active/*.in/.aristo/verify-queue/
