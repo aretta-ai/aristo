@@ -4,6 +4,7 @@
 pub(crate) mod badge;
 pub(crate) mod critique;
 pub(crate) mod doc;
+pub(crate) mod graph;
 pub(crate) mod index;
 pub(crate) mod init;
 pub(crate) mod install_skills;

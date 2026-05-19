@@ -54,16 +54,16 @@ fn defined_but_unimplemented_subcommand_exits_64() {
     // Canary that the dispatch glue routes a known-but-unshipped command
     // to `CliError::NotImplemented` with a slice pointer. Re-point at
     // whichever command is currently stubbed when this one ships;
-    // `aristo graph` (slice 29) is the next on the roadmap now that
-    // slice 28 (`aristo doc`) has its first observable behavior shipped.
+    // `aristo rename` (slice 32) is the next on the roadmap now that
+    // slice 29 (`aristo graph`) has its first observable behavior shipped.
     Command::cargo_bin("aristo")
         .unwrap()
-        .arg("graph")
+        .arg("rename")
         .assert()
         .failure()
         .code(64)
         .stderr(contains("not yet implemented"))
-        .stderr(contains("slice 29"));
+        .stderr(contains("slice 32"));
 }
 
 #[test]

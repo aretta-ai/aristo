@@ -534,7 +534,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             include_status,
             check,
         } => commands::doc::run(summary, include_status, check),
-        Commands::Graph => not_yet("aristo graph", "slice 29"),
+        Commands::Graph => commands::graph::run(),
         Commands::Badge { out, style } => {
             let style =
                 commands::badge::Style::parse(&style).map_err(|message| CliError::Other {
@@ -580,27 +580,19 @@ mod tests {
     fn dispatch_returns_not_implemented_with_slice_pointer() {
         // Spot-check one not-yet-implemented variant; the implemented
         // ones are covered by their own tests.
-        let err = dispatch(Commands::Graph).unwrap_err();
+        let err = dispatch(Commands::Rename).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("aristo graph"), "msg: {msg}");
-        assert!(msg.contains("slice 29"), "msg: {msg}");
+        assert!(msg.contains("aristo rename"), "msg: {msg}");
+        assert!(msg.contains("slice 32"), "msg: {msg}");
     }
 
     #[test]
     fn every_unimplemented_subcommand_dispatches_to_a_distinct_slice() {
         // Catches the easy mistake of copy-pasting a stub and forgetting
         // to update the slice pointer. Implemented commands (Init, Lang,
-        // Index, Stamp, Show, List, Status, Lint, Verify, Critique, Doc)
-        // are tested elsewhere. `Doc` with no flags still returns
-        // NotImplemented during slice 28's incremental build-out (only
-        // `--summary` ships in the first slice-28 commit); that variant
-        // is exercised by `binary_smoke::defined_but_unimplemented_subcommand_exits_64`
-        // for now and migrates here once `aristo doc` (no flags) is
-        // fully implemented.
-        let variants = [
-            (Commands::Graph, "slice 29"),
-            (Commands::Rename, "slice 32"),
-        ];
+        // Index, Stamp, Show, List, Status, Lint, Verify, Critique, Doc,
+        // Graph) are tested elsewhere.
+        let variants = [(Commands::Rename, "slice 32")];
         for (cmd, expected_slice) in variants {
             let err = dispatch(cmd).unwrap_err();
             assert!(
