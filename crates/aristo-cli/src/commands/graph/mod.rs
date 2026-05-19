@@ -30,12 +30,14 @@ use crate::{CliError, CliResult};
 pub(crate) mod dot;
 pub(crate) mod mermaid;
 pub(crate) mod model;
+pub(crate) mod svg;
 
 /// Output format selected by `--format`. Default is Mermaid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Format {
     Mermaid,
     Dot,
+    Svg,
 }
 
 impl Format {
@@ -43,10 +45,7 @@ impl Format {
         match raw {
             "mermaid" => Ok(Self::Mermaid),
             "dot" => Ok(Self::Dot),
-            // `svg` lands in commit 4. Parser rejects it now with a
-            // forward-pointing message so the user doesn't get an
-            // opaque "unknown format" error.
-            "svg" => Err("`--format=svg` ships in slice 29 commit 4; not yet available".into()),
+            "svg" => Ok(Self::Svg),
             other => Err(format!(
                 "unknown --format `{other}`; expected `mermaid` (default), `dot`, or `svg`"
             )),
@@ -57,6 +56,7 @@ impl Format {
         match self {
             Self::Mermaid => "Mermaid",
             Self::Dot => "DOT",
+            Self::Svg => "SVG",
         }
     }
 }
@@ -75,6 +75,7 @@ pub(crate) fn run(format: &str, out: Option<PathBuf>) -> CliResult<()> {
     let rendered = match format {
         Format::Mermaid => mermaid::render(&graph),
         Format::Dot => dot::render(&graph),
+        Format::Svg => svg::render(&graph)?,
     };
 
     match out {
