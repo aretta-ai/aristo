@@ -1,0 +1,49 @@
+[__meta__]
+schema_version = 1
+
+[parent_id]
+kind = "intent"
+text = "A bare-id parent intent used as source for several error cases."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+body_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+file = "src/lib.rs"
+site = "fn parent_fn (line 6)"
+covered_region = "function"
+
+[taken_target]
+kind = "intent"
+text = "A bare-id intent that already occupies the `taken_target` slot."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+body_hash = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+file = "src/lib.rs"
+site = "fn taken_fn (line 13)"
+covered_region = "function"
+
+[aret_a1b2c3d4]
+kind = "intent"
+text = "An opaque stamp-assigned id; renaming to a readable id is the F1-c promotion path."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+body_hash = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+file = "src/lib.rs"
+site = "fn opaque_fn (line 20)"
+covered_region = "function"
+
+["aristos:server_bound_intent"]
+kind = "intent"
+text = "A server-bound intent used to exercise the slice-32 scope-trim rejection on aristos: sources."
+verify = "full"
+status = "verified"
+text_hash = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+body_hash = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+file = "core/storage/server.rs"
+site = "fn server_fn (line 10)"
+covered_region = "function"
+linked = "arta_aristosXyzQQ"
+verified_outcome = "v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+last_verified_at_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
