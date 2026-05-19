@@ -4,19 +4,27 @@
 
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
 
-use super::{is_critical, parent_ids, status_of, verify_label, VerifyClass};
+use super::{
+    is_critical, parent_ids, status_of, verify_label, ColorAxis, StatusClass, VerifyClass,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Graph {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub axis: ColorAxis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Node {
     pub id: AnnotationId,
     pub kind: Kind,
+    /// Verify-level class. Always computed; renderer only uses this
+    /// when `Graph.axis == ColorAxis::Verify`.
     pub verify_class: VerifyClass,
+    /// Status class. Always computed; renderer only uses this when
+    /// `Graph.axis == ColorAxis::Status`.
+    pub status_class: StatusClass,
     /// Mockup pattern: `<id><br/>(<kind>, <verify=X>)`. The renderer
     /// composes the actual escaping per format.
     pub label_kind_suffix: String,
@@ -37,7 +45,16 @@ pub(crate) struct Edge {
     pub to: AnnotationId,
 }
 
+/// Default builder — Verify color axis. Convenience for unit tests
+/// that don't care about the axis. Production code path goes through
+/// `build_with_axis` so the `--include-status` flag wires through
+/// cleanly.
+#[cfg(test)]
 pub(crate) fn build(index: &IndexFile) -> Graph {
+    build_with_axis(index, ColorAxis::Verify)
+}
+
+pub(crate) fn build_with_axis(index: &IndexFile, axis: ColorAxis) -> Graph {
     let mut nodes = Vec::with_capacity(index.entries.len());
     let mut edges = Vec::new();
     for (id, entry) in index.entries.iter() {
@@ -55,7 +72,7 @@ pub(crate) fn build(index: &IndexFile) -> Graph {
             }
         }
     }
-    Graph { nodes, edges }
+    Graph { nodes, edges, axis }
 }
 
 fn node_for(id: AnnotationId, entry: &IndexEntry) -> Node {
@@ -71,12 +88,14 @@ fn node_for(id: AnnotationId, entry: &IndexEntry) -> Node {
         Some(v) => format!("({kind_word}, {v})"),
         None => format!("({kind_word})"),
     };
+    let status = status_of(entry);
     Node {
         id,
         kind,
         verify_class: VerifyClass::from_entry(entry),
+        status_class: StatusClass::from_status(status),
         label_kind_suffix,
-        is_critical: is_critical(status_of(entry)),
+        is_critical: is_critical(status),
     }
 }
 

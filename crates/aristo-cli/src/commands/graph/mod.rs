@@ -69,6 +69,7 @@ pub(crate) fn run(
     exclude_assumes: bool,
     depth: Option<u32>,
     include_orphans: bool,
+    include_status: bool,
 ) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
@@ -93,15 +94,15 @@ pub(crate) fn run(
     if exclude_assumes {
         scoped_index = drop_assumes(scoped_index);
     }
-    // Orphan-omission only kicks in for the default (unfiltered) view.
-    // When --filter is present the user has explicitly asked for those
-    // nodes; dropping them post-filter as "orphans" would be a
-    // confusing footgun. --include-orphans is a no-op in the filtered
-    // case (since orphans are already kept).
     if !include_orphans && filters.is_empty() {
         scoped_index = drop_orphan_intents(scoped_index);
     }
-    let graph = model::build(&scoped_index);
+    let axis = if include_status {
+        ColorAxis::Status
+    } else {
+        ColorAxis::Verify
+    };
+    let graph = model::build_with_axis(&scoped_index, axis);
     let rendered = match format {
         Format::Mermaid => mermaid::render(&graph),
         Format::Dot => dot::render(&graph),
@@ -140,10 +141,18 @@ pub(crate) fn run(
     Ok(())
 }
 
-/// What color class a node belongs to. Drives the Mermaid / DOT
-/// fill+stroke pair. Verify-level coloring (the default mode); the
-/// status-axis mode (slice 29 commit 9, `--include-status`) will live
-/// in a sibling enum.
+/// Which axis drives node coloring. Default is `Verify` (matches the
+/// mockup). `Status` is the `--include-status` mode that re-colors by
+/// current B5b state instead — useful for "show me what's still
+/// unverified" review meetings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ColorAxis {
+    Verify,
+    Status,
+}
+
+/// Verify-level color class. One of the four `vFalse`/`vNeural`/`vTest`/
+/// `vFull` Mermaid + DOT classes from the mockup palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VerifyClass {
     /// `verify = false` — documentation-only intent. Also used for
@@ -151,13 +160,26 @@ pub(crate) enum VerifyClass {
     /// "background fact").
     False,
     /// `verify = true` (project default) OR `verify = "neural"`.
-    /// Project default usually resolves to neural for free-tier
-    /// projects; rendering as Neural here keeps the color stable for
-    /// the common case. A future commit could resolve to project
-    /// default before mapping.
     Neural,
     Test,
     Full,
+}
+
+/// Status-axis color class. Drives palette when `--include-status` is
+/// passed. Counterexample / Inconclusive share the Forged "red border"
+/// treatment because they're all terminal "needs action" states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StatusClass {
+    Verified,
+    Tested,
+    Neural,
+    Stale,
+    Orphan,
+    Forged,
+    Unknown,
+    PendingDeepen,
+    Counterexample,
+    Inconclusive,
 }
 
 impl VerifyClass {
@@ -171,6 +193,23 @@ impl VerifyClass {
                 VerifyLevel::Method(VerifyMethod::Test) => Self::Test,
                 VerifyLevel::Method(VerifyMethod::Full) => Self::Full,
             },
+        }
+    }
+}
+
+impl StatusClass {
+    pub(crate) fn from_status(s: Status) -> Self {
+        match s {
+            Status::Verified => Self::Verified,
+            Status::Tested => Self::Tested,
+            Status::Neural => Self::Neural,
+            Status::Stale => Self::Stale,
+            Status::Orphan => Self::Orphan,
+            Status::Forged => Self::Forged,
+            Status::Unknown => Self::Unknown,
+            Status::PendingDeepen => Self::PendingDeepen,
+            Status::Counterexample => Self::Counterexample,
+            Status::Inconclusive => Self::Inconclusive,
         }
     }
 }

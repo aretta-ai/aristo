@@ -7,13 +7,13 @@
 use std::fmt::Write;
 
 use super::model::{Edge, Graph, Kind, Node};
-use super::VerifyClass;
+use super::{ColorAxis, StatusClass, VerifyClass};
 
 pub(crate) fn render(g: &Graph) -> String {
     let mut out = String::new();
     out.push_str("```mermaid\n");
     out.push_str("flowchart TD\n");
-    push_class_defs(&mut out);
+    push_class_defs(&mut out, g.axis);
     out.push('\n');
 
     let id_for_node = node_ids(g);
@@ -26,7 +26,7 @@ pub(crate) fn render(g: &Graph) -> String {
     if !intents.is_empty() {
         out.push_str("    %% Intent nodes (rectangles)\n");
         for n in &intents {
-            push_node_line(&mut out, n, &id_for_node[n.id.as_str()]);
+            push_node_line(&mut out, n, &id_for_node[n.id.as_str()], g.axis);
         }
         if !assumes.is_empty() {
             out.push('\n');
@@ -35,7 +35,7 @@ pub(crate) fn render(g: &Graph) -> String {
     if !assumes.is_empty() {
         out.push_str("    %% Assume nodes (hexagons)\n");
         for n in &assumes {
-            push_node_line(&mut out, n, &id_for_node[n.id.as_str()]);
+            push_node_line(&mut out, n, &id_for_node[n.id.as_str()], g.axis);
         }
     }
 
@@ -47,13 +47,19 @@ pub(crate) fn render(g: &Graph) -> String {
         }
     }
 
-    let critical: Vec<&Node> = g.nodes.iter().filter(|n| n.is_critical).collect();
-    if !critical.is_empty() {
-        out.push('\n');
-        out.push_str("    %% Critical-status border\n");
-        for n in &critical {
-            writeln!(out, "    class {} critical", id_for_node[n.id.as_str()])
-                .expect("string write never fails");
+    // Critical-status border only applies in Verify mode. In Status
+    // mode the palette already encodes critical states (sForged,
+    // sCounterexample, sInconclusive all carry red borders + bold
+    // strokes), so stacking a second border would just clutter.
+    if g.axis == ColorAxis::Verify {
+        let critical: Vec<&Node> = g.nodes.iter().filter(|n| n.is_critical).collect();
+        if !critical.is_empty() {
+            out.push('\n');
+            out.push_str("    %% Critical-status border\n");
+            for n in &critical {
+                writeln!(out, "    class {} critical", id_for_node[n.id.as_str()])
+                    .expect("string write never fails");
+            }
         }
     }
 
@@ -61,26 +67,62 @@ pub(crate) fn render(g: &Graph) -> String {
     out
 }
 
-fn push_class_defs(out: &mut String) {
-    // Color palette is copied verbatim from the sample mockup so the
-    // rendered output matches the spec byte-for-byte.
-    out.push_str("    classDef vFalse  fill:#e5e5e5,stroke:#999\n");
-    out.push_str("    classDef vNeural fill:#fef3c7,stroke:#b45309\n");
-    out.push_str("    classDef vTest   fill:#dbeafe,stroke:#1d4ed8\n");
-    out.push_str("    classDef vFull   fill:#bbf7d0,stroke:#15803d\n");
-    out.push_str("    classDef critical stroke:#dc2626,stroke-width:3px\n");
+fn push_class_defs(out: &mut String, axis: ColorAxis) {
+    match axis {
+        ColorAxis::Verify => {
+            // Color palette copied verbatim from the sample mockup so
+            // the rendered output matches the spec byte-for-byte.
+            out.push_str("    classDef vFalse  fill:#e5e5e5,stroke:#999\n");
+            out.push_str("    classDef vNeural fill:#fef3c7,stroke:#b45309\n");
+            out.push_str("    classDef vTest   fill:#dbeafe,stroke:#1d4ed8\n");
+            out.push_str("    classDef vFull   fill:#bbf7d0,stroke:#15803d\n");
+            out.push_str("    classDef critical stroke:#dc2626,stroke-width:3px\n");
+        }
+        ColorAxis::Status => {
+            out.push_str("    classDef sVerified       fill:#bbf7d0,stroke:#15803d\n");
+            out.push_str("    classDef sTested         fill:#dbeafe,stroke:#1d4ed8\n");
+            out.push_str("    classDef sNeural         fill:#fef3c7,stroke:#b45309\n");
+            out.push_str("    classDef sStale          fill:#fed7aa,stroke:#c2410c\n");
+            out.push_str("    classDef sOrphan         fill:#e9d5ff,stroke:#7e22ce\n");
+            out.push_str(
+                "    classDef sForged         fill:#fecaca,stroke:#dc2626,stroke-width:3px\n",
+            );
+            out.push_str("    classDef sUnknown        fill:#e5e5e5,stroke:#9ca3af\n");
+            out.push_str("    classDef sPendingDeepen  fill:#e5e5e5,stroke:#9ca3af\n");
+            out.push_str(
+                "    classDef sCounterexample fill:#fecaca,stroke:#dc2626,stroke-width:3px\n",
+            );
+            out.push_str(
+                "    classDef sInconclusive   fill:#fed7aa,stroke:#c2410c,stroke-width:3px\n",
+            );
+        }
+    }
 }
 
-fn push_node_line(out: &mut String, n: &Node, node_id: &str) {
+fn push_node_line(out: &mut String, n: &Node, node_id: &str, axis: ColorAxis) {
     let (open, close) = match n.kind {
         Kind::Intent => ("[\"", "\"]"),
         Kind::Assume => ("{{\"", "\"}}"),
     };
-    let class = match n.verify_class {
-        VerifyClass::False => "vFalse",
-        VerifyClass::Neural => "vNeural",
-        VerifyClass::Test => "vTest",
-        VerifyClass::Full => "vFull",
+    let class = match axis {
+        ColorAxis::Verify => match n.verify_class {
+            VerifyClass::False => "vFalse",
+            VerifyClass::Neural => "vNeural",
+            VerifyClass::Test => "vTest",
+            VerifyClass::Full => "vFull",
+        },
+        ColorAxis::Status => match n.status_class {
+            StatusClass::Verified => "sVerified",
+            StatusClass::Tested => "sTested",
+            StatusClass::Neural => "sNeural",
+            StatusClass::Stale => "sStale",
+            StatusClass::Orphan => "sOrphan",
+            StatusClass::Forged => "sForged",
+            StatusClass::Unknown => "sUnknown",
+            StatusClass::PendingDeepen => "sPendingDeepen",
+            StatusClass::Counterexample => "sCounterexample",
+            StatusClass::Inconclusive => "sInconclusive",
+        },
     };
     let label_id = escape_label(n.id.as_str());
     let label_suffix = escape_label(&n.label_kind_suffix);
@@ -159,6 +201,7 @@ mod tests {
             id: id(s),
             kind: Kind::Intent,
             verify_class: vc,
+            status_class: StatusClass::Unknown,
             label_kind_suffix: format!(
                 "(intent, verify={})",
                 match vc {
@@ -177,6 +220,7 @@ mod tests {
             id: id(s),
             kind: Kind::Assume,
             verify_class: VerifyClass::False,
+            status_class: StatusClass::Unknown,
             label_kind_suffix: "(assume)".to_string(),
             is_critical: false,
         }
@@ -187,6 +231,7 @@ mod tests {
         let g = Graph {
             nodes: vec![],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.starts_with("```mermaid\nflowchart TD\n"));
@@ -204,6 +249,7 @@ mod tests {
         let g = Graph {
             nodes: vec![intent_node("foo", VerifyClass::Neural, false)],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("foo[\"foo<br/>(intent, verify=neural)\"]:::vNeural"));
@@ -214,6 +260,7 @@ mod tests {
         let g = Graph {
             nodes: vec![assume_node("bar")],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("bar{{\"bar<br/>(assume)\"}}:::vFalse"));
@@ -224,6 +271,7 @@ mod tests {
         let g = Graph {
             nodes: vec![intent_node("foo", VerifyClass::Full, true)],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("class foo critical"));
@@ -241,6 +289,7 @@ mod tests {
                 from: id("child"),
                 to: id("parent"),
             }],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("child --> parent"));
@@ -254,6 +303,7 @@ mod tests {
         let g = Graph {
             nodes: vec![intent_node("aristos:foo", VerifyClass::Full, false)],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("aristos__foo[\"aristos:foo<br/>"));
@@ -287,6 +337,7 @@ mod tests {
                 assume_node("bar"),
             ],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("%% Intent nodes (rectangles)"));

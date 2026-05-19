@@ -363,6 +363,15 @@ enum Commands {
         /// `--exclude-assumes` for that opt-out).
         #[arg(long = "include-orphans")]
         include_orphans: bool,
+        /// Swap the color axis from verify level to current B5b
+        /// status (verified=green / tested=blue / neural=yellow /
+        /// stale=orange / orphan=purple / forged=red+border /
+        /// unknown=gray / counterexample=red+border /
+        /// inconclusive=red+border / pending-deepen=gray). Verify
+        /// level moves to the in-node label. Use when the dominant
+        /// question is "what's still unverified".
+        #[arg(long = "include-status")]
+        include_status: bool,
     },
 
     /// Generate a shareable SVG verification badge for README / docs.
@@ -579,6 +588,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             exclude_assumes,
             depth,
             include_orphans,
+            include_status,
         } => commands::graph::run(
             &format,
             out,
@@ -586,6 +596,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             exclude_assumes,
             depth,
             include_orphans,
+            include_status,
         ),
         Commands::Badge { out, style } => {
             let style =

@@ -7,7 +7,7 @@
 use std::fmt::Write;
 
 use super::model::{Edge, Graph, Kind, Node};
-use super::VerifyClass;
+use super::{ColorAxis, StatusClass, VerifyClass};
 
 pub(crate) fn render(g: &Graph) -> String {
     let mut out = String::new();
@@ -18,10 +18,18 @@ pub(crate) fn render(g: &Graph) -> String {
     let intents: Vec<&Node> = g.nodes.iter().filter(|n| n.kind == Kind::Intent).collect();
     let assumes: Vec<&Node> = g.nodes.iter().filter(|n| n.kind == Kind::Assume).collect();
 
+    let axis_comment = match g.axis {
+        ColorAxis::Verify => "verify level",
+        ColorAxis::Status => "B5b status",
+    };
     if !intents.is_empty() {
-        out.push_str("    // Intent nodes — rectangles, colored by verify level\n");
+        writeln!(
+            &mut out,
+            "    // Intent nodes — rectangles, colored by {axis_comment}"
+        )
+        .expect("string write never fails");
         for n in &intents {
-            push_node(&mut out, n);
+            push_node(&mut out, n, g.axis);
         }
     }
     if !assumes.is_empty() {
@@ -30,7 +38,7 @@ pub(crate) fn render(g: &Graph) -> String {
         }
         out.push_str("    // Assume nodes — hexagons, gray\n");
         for n in &assumes {
-            push_node(&mut out, n);
+            push_node(&mut out, n, g.axis);
         }
     }
 
@@ -46,14 +54,17 @@ pub(crate) fn render(g: &Graph) -> String {
     out
 }
 
-fn push_node(out: &mut String, n: &Node) {
+fn push_node(out: &mut String, n: &Node, axis: ColorAxis) {
     let id = escape_dot_id(n.id.as_str());
     let label = format!("{}\\n{}", n.id.as_str(), n.label_kind_suffix);
     let label = escape_dot_label(&label);
 
-    let (shape, fillcolor, stroke) = node_style(n);
-    let style_parts = if n.is_critical {
-        // Critical: red 3px border, fillcolor preserved.
+    let (shape, fillcolor, stroke) = node_style(n, axis);
+    let style_parts = if n.is_critical && axis == ColorAxis::Verify {
+        // Critical: red 3px border, fillcolor preserved. In Status
+        // mode the status palette already encodes severity via its own
+        // border (sForged / sCounterexample / sInconclusive) so we
+        // don't double-stack.
         format!("shape={shape}, style=\"filled,bold\", fillcolor=\"{fillcolor}\", color=\"#dc2626\", penwidth=3")
     } else {
         format!("shape={shape}, style=filled, fillcolor=\"{fillcolor}\", color=\"{stroke}\"")
@@ -71,20 +82,34 @@ fn push_edge(out: &mut String, e: &Edge) {
 
 /// (shape, fillcolor, stroke) for a node. Matches the sample mockup's
 /// color palette so users get visual parity across formats.
-fn node_style(n: &Node) -> (&'static str, &'static str, &'static str) {
+fn node_style(n: &Node, axis: ColorAxis) -> (&'static str, &'static str, &'static str) {
     let shape = match n.kind {
         Kind::Intent => "box",
         Kind::Assume => "hexagon",
     };
-    // Assumes always use the neutral gray palette regardless of class.
+    // Assumes always use the neutral gray palette regardless of axis.
     if n.kind == Kind::Assume {
         return ("hexagon", "#f3f4f6", "#6b7280");
     }
-    let (fill, stroke) = match n.verify_class {
-        VerifyClass::False => ("#e5e5e5", "#999999"),
-        VerifyClass::Neural => ("#fef3c7", "#b45309"),
-        VerifyClass::Test => ("#dbeafe", "#1d4ed8"),
-        VerifyClass::Full => ("#bbf7d0", "#15803d"),
+    let (fill, stroke) = match axis {
+        ColorAxis::Verify => match n.verify_class {
+            VerifyClass::False => ("#e5e5e5", "#999999"),
+            VerifyClass::Neural => ("#fef3c7", "#b45309"),
+            VerifyClass::Test => ("#dbeafe", "#1d4ed8"),
+            VerifyClass::Full => ("#bbf7d0", "#15803d"),
+        },
+        ColorAxis::Status => match n.status_class {
+            StatusClass::Verified => ("#bbf7d0", "#15803d"),
+            StatusClass::Tested => ("#dbeafe", "#1d4ed8"),
+            StatusClass::Neural => ("#fef3c7", "#b45309"),
+            StatusClass::Stale => ("#fed7aa", "#c2410c"),
+            StatusClass::Orphan => ("#e9d5ff", "#7e22ce"),
+            StatusClass::Forged => ("#fecaca", "#dc2626"),
+            StatusClass::Unknown => ("#e5e5e5", "#9ca3af"),
+            StatusClass::PendingDeepen => ("#e5e5e5", "#9ca3af"),
+            StatusClass::Counterexample => ("#fecaca", "#dc2626"),
+            StatusClass::Inconclusive => ("#fed7aa", "#c2410c"),
+        },
     };
     (shape, fill, stroke)
 }
@@ -126,6 +151,7 @@ mod tests {
             id: id(s),
             kind: Kind::Intent,
             verify_class: vc,
+            status_class: StatusClass::Unknown,
             label_kind_suffix: format!(
                 "(intent, verify={})",
                 match vc {
@@ -144,6 +170,7 @@ mod tests {
             id: id(s),
             kind: Kind::Assume,
             verify_class: VerifyClass::False,
+            status_class: StatusClass::Unknown,
             label_kind_suffix: "(assume)".to_string(),
             is_critical: false,
         }
@@ -154,6 +181,7 @@ mod tests {
         let g = Graph {
             nodes: vec![],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.starts_with("digraph aristo {\n"));
@@ -169,6 +197,7 @@ mod tests {
         let g = Graph {
             nodes: vec![intent_node("foo", VerifyClass::Full, false)],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("shape=box"));
@@ -182,6 +211,7 @@ mod tests {
         let g = Graph {
             nodes: vec![assume_node("bar")],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("shape=hexagon"));
@@ -194,6 +224,7 @@ mod tests {
         let g = Graph {
             nodes: vec![intent_node("foo", VerifyClass::Full, true)],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("color=\"#dc2626\""));
@@ -213,6 +244,7 @@ mod tests {
                 from: id("child"),
                 to: id("parent"),
             }],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         assert!(out.contains("\"child\" -> \"parent\";"));
@@ -223,6 +255,7 @@ mod tests {
         let g = Graph {
             nodes: vec![intent_node("aristos:foo", VerifyClass::Full, false)],
             edges: vec![],
+            axis: ColorAxis::Verify,
         };
         let out = render(&g);
         // DOT quoted strings tolerate `:` directly; no transformation needed.
