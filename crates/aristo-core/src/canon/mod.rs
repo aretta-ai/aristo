@@ -17,7 +17,12 @@
 //! - [`mock_client`]: [`MockCanonClient`] — fixture-driven for
 //!   tests; reads canned TOML from `ARISTO_CANON_FIXTURE` or an
 //!   explicit path.
-//! - `http_client` (PR #3): the real `reqwest`-backed impl.
+//! - [`auth`]: token resolution and persistence — env var
+//!   (`ARETTA_TOKEN`) → `~/.config/aristo/credentials` →
+//!   [`AuthError::NoToken`]. The [`Token`](auth::Token) newtype
+//!   redacts itself in `Debug` output to prevent accidental
+//!   logging of credentials.
+//! - `http_client` (next commit): the real HTTP-backed impl.
 //!
 //! **Phase 1 scope**: no verification execution. The `verification`
 //! block on [`CanonMatch`](types::CanonMatch) is informational
@@ -25,11 +30,13 @@
 //! it. See
 //! `../aretta-sdk/docs/mockups/13-canon-and-matching/_deferred/verification-execution.md`.
 
+pub mod auth;
 pub mod client;
 pub mod mock_client;
 pub mod noop_client;
 pub mod types;
 
+pub use auth::Token;
 pub use client::{AuthError, CanonClient, CanonError};
 pub use mock_client::MockCanonClient;
 pub use noop_client::NoopCanonClient;
