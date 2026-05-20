@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T22:39:38.433166Z"
+generated_at = "2026-05-20T16:17:29.386767Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -285,7 +285,7 @@ text = "The critique validator gates writes on schema integrity: enum values for
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:99cfdad751e9510f74daf9939cf6eeb9b6334fbd3e4965b8132837345be55f78"
-body_hash = "sha256:e230347d683970d990deaff4ce08b7b23c12d8a3a459046cc5bdfd91b6d5d774"
+body_hash = "sha256:ef6edf38f7b51475e19267c3ba6c0b3f1d06f6da994832bc8f6b1798181a21f9"
 file = "crates/aristo-cli/src/commands/critique/validator.rs"
 site = "fn validate (line 52)"
 covered_region = "function"
@@ -474,7 +474,7 @@ status = "unknown"
 text_hash = "sha256:0522fae6676189ff629bf6295ecc0cc883b20f8a4c3303fbcb6723d487d70be7"
 body_hash = "sha256:ec3e41b43d8ba9c1dafb159ec3cbdc042bb160339567a4ac8512407d1adb0cad"
 file = "crates/aristo-cli/src/commands/init.rs"
-site = "fn run (line 89)"
+site = "fn run (line 96)"
 covered_region = "function"
 
 [install_claude_hook_is_idempotent]
