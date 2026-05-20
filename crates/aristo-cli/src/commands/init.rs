@@ -20,26 +20,36 @@ use crate::{CliError, CliResult};
 
 /// The shipped pre-commit hook (slice 21).
 ///
-/// Runs `aristo stamp` to refresh the index against currently-staged
-/// source, then `aristo lint --check` to fail-fast on annotation
-/// quality issues. Mirrors J6's default `pre_commit = "check"` mode.
+/// Runs three steps in order:
+///
+/// 1. `aristo stamp` — refresh `.aristo/index.toml` against
+///    currently-staged source.
+/// 2. `aristo doc` — regenerate `.aristo/doc/<id>.md` files so they
+///    stay in sync with the index (CI's `doc --check` gate fails
+///    without this step on every annotation-text edit).
+/// 3. `aristo lint --check` — fail-fast on annotation quality
+///    issues. Mirrors J6's default `pre_commit = "check"` mode.
 ///
 /// `aristo` must be on `PATH` for the hook to execute — `cargo install
 /// aristo` satisfies this for end users. The hook echoes each command
 /// to stderr before running so commit-time output makes the gate
 /// visible in the user's terminal.
 ///
-/// The `-e` shell option propagates any non-zero exit from `stamp` or
-/// `lint --check` as the hook's exit code, which aborts the commit.
+/// The `-e` shell option propagates any non-zero exit from `stamp`,
+/// `doc`, or `lint --check` as the hook's exit code, which aborts the
+/// commit.
 const PRE_COMMIT_HOOK: &str = "\
 #!/usr/bin/env bash
 # Aristo pre-commit hook. Installed by `aristo init`.
-# Refreshes .aristo/index.toml, then runs lint --check on the index.
-# Non-zero exit aborts the commit.
+# Refreshes .aristo/index.toml + .aristo/doc/<id>.md files, then runs
+# lint --check on the index. Non-zero exit aborts the commit.
 set -e
 
 echo \"-> aristo stamp\" >&2
 aristo stamp >&2
+
+echo \"-> aristo doc\" >&2
+aristo doc >&2
 
 echo \"-> aristo lint --check\" >&2
 aristo lint --check >&2
