@@ -4,6 +4,18 @@
   "description": "Top-level `aristo.toml` document. Every field defaults; an empty file produces a `ConfigFile` with each section at its default.",
   "type": "object",
   "properties": {
+    "canon": {
+      "default": {
+        "enabled": true,
+        "threshold_critique": 0.65,
+        "threshold_stamp": 0.85
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/CanonConfig"
+        }
+      ]
+    },
     "corpus": {
       "default": {
         "contribute": false
@@ -98,6 +110,30 @@
           ]
         }
       ]
+    },
+    "CanonConfig": {
+      "description": "§13 canon-and-matching tunables (Pro/Enterprise tiers only — the free tier ignores this section and surfaces an upgrade nudge).\n\n`enabled` is the project-level opt-out: regulated buyers and air-gapped CI set `enabled = false` to skip canon API calls unconditionally. Default is `true`; tier-gating is server-side (the API returns the upgrade nudge for free-tier tokens).\n\nThe two threshold knobs control which match candidates surface. Server enforces a floor of `0.5` (HTTP 400 below that). Defaults match `docs/mockups/13-canon-and-matching/README.md` §L3: - `threshold_stamp = 0.85` — stamp surfaces only high-confidence matches (the daily-loop default; minimizes noise). - `threshold_critique = 0.65` — critique surfaces broader candidates (the deliberate review pass; user is reviewing).\n\nNo `flavor` field: scope membership is server-resolved from repo identity per canon-strategy.md §CS8.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Project-level opt-out. Default `true`. When `false`, canon API calls are skipped unconditionally; cached matches remain readable but no new matches are surfaced and no accept-path runs.",
+          "default": true,
+          "type": "boolean"
+        },
+        "threshold_critique": {
+          "description": "Confidence threshold for matches surfaced by `aristo critique`. Honored above the server-enforced `0.5` floor. Default `0.65`.",
+          "default": 0.65,
+          "type": "number",
+          "format": "double"
+        },
+        "threshold_stamp": {
+          "description": "Confidence threshold for matches surfaced by `aristo stamp`. Honored above the server-enforced `0.5` floor. Default `0.85`.",
+          "default": 0.85,
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false
     },
     "CorpusConfig": {
       "type": "object",

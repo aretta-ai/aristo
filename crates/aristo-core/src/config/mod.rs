@@ -60,6 +60,8 @@ pub struct ConfigFile {
     pub doc: DocConfig,
     #[serde(default)]
     pub index: IndexConfig,
+    #[serde(default)]
+    pub canon: CanonConfig,
 }
 
 // ─── [verify] ──────────────────────────────────────────────────────────────
@@ -369,6 +371,65 @@ pub struct IndexConfig {
     pub exclude: Vec<String>,
 }
 
+// ─── [canon] ──────────────────────────────────────────────────────────────
+
+/// §13 canon-and-matching tunables (Pro/Enterprise tiers only — the
+/// free tier ignores this section and surfaces an upgrade nudge).
+///
+/// `enabled` is the project-level opt-out: regulated buyers and
+/// air-gapped CI set `enabled = false` to skip canon API calls
+/// unconditionally. Default is `true`; tier-gating is server-side
+/// (the API returns the upgrade nudge for free-tier tokens).
+///
+/// The two threshold knobs control which match candidates surface.
+/// Server enforces a floor of `0.5` (HTTP 400 below that). Defaults
+/// match `docs/mockups/13-canon-and-matching/README.md` §L3:
+///   - `threshold_stamp = 0.85` — stamp surfaces only high-confidence
+///     matches (the daily-loop default; minimizes noise).
+///   - `threshold_critique = 0.65` — critique surfaces broader
+///     candidates (the deliberate review pass; user is reviewing).
+///
+/// No `flavor` field: scope membership is server-resolved from
+/// repo identity per canon-strategy.md §CS8.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CanonConfig {
+    /// Project-level opt-out. Default `true`. When `false`, canon
+    /// API calls are skipped unconditionally; cached matches remain
+    /// readable but no new matches are surfaced and no accept-path
+    /// runs.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Confidence threshold for matches surfaced by `aristo stamp`.
+    /// Honored above the server-enforced `0.5` floor. Default `0.85`.
+    #[serde(default = "default_threshold_stamp")]
+    pub threshold_stamp: f64,
+    /// Confidence threshold for matches surfaced by `aristo critique`.
+    /// Honored above the server-enforced `0.5` floor. Default `0.65`.
+    #[serde(default = "default_threshold_critique")]
+    pub threshold_critique: f64,
+}
+
+impl Default for CanonConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold_stamp: default_threshold_stamp(),
+            threshold_critique: default_threshold_critique(),
+        }
+    }
+}
+
+impl Eq for CanonConfig {}
+
+fn default_threshold_stamp() -> f64 {
+    0.85
+}
+
+fn default_threshold_critique() -> f64 {
+    0.65
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────
 
 fn default_true() -> bool {
@@ -402,6 +463,62 @@ mod tests {
         assert!(!config.corpus.contribute);
         assert!(config.doc.commit_artifacts);
         assert_eq!(config.doc.position, DocPosition::Before);
+        assert!(config.canon.enabled);
+        assert!((config.canon.threshold_stamp - 0.85).abs() < f64::EPSILON);
+        assert!((config.canon.threshold_critique - 0.65).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn canon_section_round_trips() {
+        let toml_text = "\
+            [canon]\n\
+            enabled = true\n\
+            threshold_stamp = 0.9\n\
+            threshold_critique = 0.7\n\
+        ";
+        let config: ConfigFile = toml::from_str(toml_text).unwrap();
+        assert!(config.canon.enabled);
+        assert!((config.canon.threshold_stamp - 0.9).abs() < f64::EPSILON);
+        assert!((config.canon.threshold_critique - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn canon_enabled_false_is_the_opt_out_for_regulated_buyers() {
+        // canon-strategy.md §CS5 + README L3: project-level opt-out
+        // via `[canon] enabled = false`.
+        let toml_text = "[canon]\nenabled = false\n";
+        let config: ConfigFile = toml::from_str(toml_text).unwrap();
+        assert!(!config.canon.enabled);
+        // Thresholds still default when unspecified.
+        assert!((config.canon.threshold_stamp - 0.85).abs() < f64::EPSILON);
+        assert!((config.canon.threshold_critique - 0.65).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn canon_section_rejects_flavor_field() {
+        // Per canon-strategy.md §CS8: NO user-side flavor declaration
+        // anywhere. Scope membership is server-resolved from repo
+        // identity. A `flavor` field in [canon] must be rejected by
+        // serde's `deny_unknown_fields`.
+        let toml_text = "[canon]\nflavor = \"turso\"\n";
+        let result: Result<ConfigFile, _> = toml::from_str(toml_text);
+        assert!(result.is_err(), "expected deny_unknown_fields rejection");
+    }
+
+    #[test]
+    fn canon_partial_section_keeps_other_defaults() {
+        // Only enabled set; thresholds keep their defaults.
+        let toml_text = "[canon]\nenabled = false\n";
+        let config: ConfigFile = toml::from_str(toml_text).unwrap();
+        assert!(!config.canon.enabled);
+        assert_eq!(
+            config.canon.threshold_stamp,
+            CanonConfig::default().threshold_stamp
+        );
+        assert_eq!(
+            config.canon.threshold_critique,
+            CanonConfig::default().threshold_critique
+        );
     }
 
     #[test]
