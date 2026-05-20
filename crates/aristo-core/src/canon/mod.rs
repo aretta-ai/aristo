@@ -12,8 +12,12 @@
 //!   (fixtures + on-disk cache).
 //! - [`client`]: the [`CanonClient`] trait + [`CanonError`] +
 //!   [`AuthError`].
-//! - `noop_client`, `mock_client`, `http_client` (added in
-//!   subsequent commits / PRs): concrete impls.
+//! - [`noop_client`]: [`NoopCanonClient`] — free-tier / opt-out
+//!   path; every method returns [`CanonError::NotEnabled`].
+//! - [`mock_client`]: [`MockCanonClient`] — fixture-driven for
+//!   tests; reads canned TOML from `ARISTO_CANON_FIXTURE` or an
+//!   explicit path.
+//! - `http_client` (PR #3): the real `reqwest`-backed impl.
 //!
 //! **Phase 1 scope**: no verification execution. The `verification`
 //! block on [`CanonMatch`](types::CanonMatch) is informational
@@ -22,9 +26,13 @@
 //! `../aretta-sdk/docs/mockups/13-canon-and-matching/_deferred/verification-execution.md`.
 
 pub mod client;
+pub mod mock_client;
+pub mod noop_client;
 pub mod types;
 
 pub use client::{AuthError, CanonClient, CanonError};
+pub use mock_client::MockCanonClient;
+pub use noop_client::NoopCanonClient;
 pub use types::{
     AnnotationMatchInput, CanonEntry, CanonMatch, CanonMatchRequest, CanonMatchResponse,
     PrefixTier, References, RelatedEntry, RequestVerifyBody, RequestVerifyResponse,
