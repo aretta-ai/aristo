@@ -51,8 +51,17 @@ const GH_WORKFLOW_STARTER: &str = "\
 #
 # Gate order (slice 34): stamp first (everything downstream reads the
 # index — fail fast on staleness), lint second (cheapest static check),
-# verify third (heaviest), doc last (purely derived from index). Each
-# `--check` mode is non-mutating and exits non-zero on drift.
+# doc third (purely derived from index). Each `--check` mode is
+# non-mutating and exits non-zero on drift.
+#
+# NOTE: the `verify --check --strict` step is intentionally omitted
+# until the `verify=\"test\"` (free-tier test path) ships post-MVP.
+# `aristo verify` exits non-zero when any entry uses `verify=\"test\"`
+# or `verify=\"full\"` (both pipelines are post-MVP per
+# `docs/deferred/verify-test-design.md`). Once the free-tier test
+# path ships, add this step BEFORE `doc --check`:
+#     - name: verify --check --strict (no stale/orphan/forged)
+#       run: aristo verify --check --strict
 #
 # The badge step generates a fresh SVG on every push and uploads it as
 # a workflow artifact. The artifact URL is per-build (GH-Actions
@@ -71,8 +80,6 @@ jobs:
         run: aristo stamp --check
       - name: lint --check --strict (no warn/error findings)
         run: aristo lint --check --strict
-      - name: verify --check --strict (no stale/orphan/forged)
-        run: aristo verify --check --strict
       - name: doc --check (doc artifacts in sync with index)
         run: aristo doc --check
       - name: status (per-pipeline rate + tier — informational)

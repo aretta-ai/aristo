@@ -6,26 +6,30 @@ The CI sequence the starter workflow runs on every push. Any non-zero
 exit fails the build. This scenario captures the happy path (all
 green); the per-command scenarios cover individual failure modes.
 
-**Gate order (slice 34, load-bearing):**
+**Gate order (load-bearing):**
 
 1. `aristo stamp --check` — index in sync with source. Fail fast if
    stale, since everything downstream reads the index.
 2. `aristo lint --check --strict` — cheapest static check; no LLM.
-3. `aristo verify --check --strict` — heaviest read-only check;
-   reports any annotations in non-clean status states. Neural
-   verification has a side-effect that this gate ENQUEUES pending
-   entries under `.aristo/verify-queue/pending/` for the
-   `aristo-neural-verify` skill to drain — the gate itself exits
-   0; the message is informational ("CI passes, but you have work
-   to do locally").
-4. `aristo doc --check` — purely derived from index; closes the loop.
+3. `aristo doc --check` — purely derived from index; closes the loop.
 
 Then two informational steps (no exit-code gating):
 
-5. `aristo status` — emits the per-pipeline verification rate +
+4. `aristo status` — emits the per-pipeline verification rate +
    tier + visible score in human-readable form.
-6. `aristo badge --out=docs/badge.svg` — regenerates the SVG so the
+5. `aristo badge --out=docs/badge.svg` — regenerates the SVG so the
    CI workflow can upload it as an artifact.
+
+**Note on `verify --check`:** slice 34 originally included
+`aristo verify --check --strict` as the third gate, between `lint`
+and `doc`. It was removed from CI on 2026-05-19 because
+`aristo verify` surfaces `CliError::NotImplemented` whenever the
+workspace has any `verify="test"` or `verify="full"` annotation —
+both pipelines are post-MVP per `docs/deferred/verify-test-design.md`.
+The command itself still works for neural-only workspaces (verified
+below); CI just can't gate on it universally. Re-add the step to
+both the `aristo.yml` workflow and this scenario once slice 24 (free-
+tier test path) ships.
 
 ```console
 $ aristo stamp --check

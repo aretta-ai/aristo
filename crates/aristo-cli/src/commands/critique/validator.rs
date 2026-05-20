@@ -109,7 +109,7 @@ pub(crate) fn validate(
         if matches!(f.category, aristo_core::critique::Category::Rephrasing)
             && f.suggested_text
                 .as_ref()
-                .map_or(true, |s| s.trim().is_empty())
+                .is_none_or(|s| s.trim().is_empty())
         {
             // Soft warning encoded as a hard reject: rephrasing without
             // a suggested replacement is the most common low-value

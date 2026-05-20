@@ -7,8 +7,16 @@
 #
 # Gate order (slice 34): stamp first (everything downstream reads the
 # index — fail fast on staleness), lint second (cheapest static check),
-# verify third (heaviest), doc last (purely derived from index). Each
-# `--check` mode is non-mutating and exits non-zero on drift.
+# doc third (purely derived from index). Each `--check` mode is
+# non-mutating and exits non-zero on drift.
+#
+# The `verify --check --strict` step is intentionally OMITTED. The
+# verify command surfaces `CliError::NotImplemented` whenever the
+# workspace has any `verify="test"` annotation — the test pipeline
+# is post-MVP per `docs/deferred/verify-test-design.md`. Including it
+# would make this workflow fail on the SDK's own code (many test
+# annotations) AND on any downstream project that uses `verify="test"`.
+# Re-add this step once slice 24 (free-tier test path) ships.
 name: aristo
 on: [push, pull_request]
 jobs:
@@ -22,8 +30,6 @@ jobs:
         run: cargo run --release --bin aristo -- stamp --check
       - name: lint --check --strict (no warn/error findings)
         run: cargo run --release --bin aristo -- lint --check --strict
-      - name: verify --check --strict (no stale/orphan/forged)
-        run: cargo run --release --bin aristo -- verify --check --strict
       - name: doc --check (doc artifacts in sync with index)
         run: cargo run --release --bin aristo -- doc --check
       - name: status (per-pipeline rate + tier — informational)
