@@ -2,14 +2,20 @@
 //! source files, `.aristo/index.toml`, and per-id artifact files
 //! (`.aristo/critiques/<id>.critique`, `.aristo/proofs/<id>.proof`).
 //!
-//! Slice 32 scope (locked 2026-05-18, per `HANDOFF-SLICE-32.md`):
+//! Slice 32 scope (locked 2026-05-18, per `HANDOFF-SLICE-32.md`),
+//! updated for §13 canon-and-matching (canon-strategy.md §CS13,
+//! locked 2026-05-19):
 //!
 //! - **In:** bare → bare; `aret_*` → bare (with promotion note); target
 //!   collision rejection; reserved-prefix (`aret_*`) target rejection
-//!   (F1-b); `aristos:` namespace rejection (deferred-to-Phase-2 message);
-//!   cross-namespace rejection (`aristos:foo` → `bar`).
-//! - **Out (deferred to Phase 2 sync):** `aristos:` ↔ `aristos:` renames,
-//!   server-binding warning, `aristo unbind`, transactional rollback.
+//!   (F1-b); canon-bound namespace (`aristos:` and `kanon:`) rejection
+//!   in either direction (canon prefixes are applied / removed via the
+//!   canon accept path + `aristo canon unbind`, never via rename).
+//! - **Out (per §CS13: subsumed by canon accept path; no Phase 2
+//!   `aristo sync`):** canon prefix application, canon binding
+//!   removal, transactional rollback. Use
+//!   `aristo critique --apply-findings` to apply a canon binding and
+//!   `aristo canon unbind` to remove one.
 //!
 //! Commit 2 shipped the dispatch + validation skeleton. Commit 3 (THIS
 //! commit) ships the dry-run plan + renderer. Commit 4 (next) applies
@@ -622,8 +628,10 @@ fn id_safe(id: &str) -> String {
 
 #[aristo::intent(
     "Rename validation rejects three classes BEFORE any plan computation: \
-     (1) `aristos:` in either old or new id — server-bound renames are \
-     deferred to Phase 2 alongside `aristo sync`, so the surface lies; \
+     (1) canon-bound prefix (`aristos:` or `kanon:`) in either old or \
+     new id — canon prefixes are applied exclusively by the canon \
+     accept path and removed by `aristo canon unbind` per CS13, so the \
+     surface lies; \
      (2) cross-namespace renames (`aristos:foo` → bare) — that's an \
      unbind, not a rename, and ships with sync; (3) reserved `aret_*` \
      prefix in the target — opaque ids are stamp-assigned only (F1-b); \
@@ -648,8 +656,11 @@ pub(crate) fn parse_and_validate(
             )));
         }
     };
-    if old_id.namespace() == IdNamespace::Aristos {
-        return Err(reject_aristos_deferred(old_raw));
+    if matches!(
+        old_id.namespace(),
+        IdNamespace::Aristos | IdNamespace::Kanon
+    ) {
+        return Err(reject_canon_bound_id(old_raw));
     }
     if !index.entries.contains_key(&old_id) {
         return Err(reject(format!(
@@ -674,14 +685,15 @@ pub(crate) fn parse_and_validate(
             return Err(reject(format!(
                 "id `{new_raw}` uses the reserved `aret_` prefix (stamp-assigned only).\n       \
                  Renaming a readable id to an opaque one is not supported.\n       \
-                 Note: `aristos:` is also reserved; it may only appear via\n       \
-                 `aristo sync` binding, never via `aristo rename`.\n       \
+                 Note: `aristos:` and `kanon:` are also reserved; they may only appear\n       \
+                 via the canon accept path (`aristo critique --apply-findings`),\n       \
+                 never via `aristo rename`.\n       \
                  If you intended to make this annotation unaliased, delete the `id` arg\n       \
                  in source and re-run `aristo stamp` — stamp will assign an opaque id."
             )));
         }
-        IdNamespace::Aristos => {
-            return Err(reject_aristos_deferred(new_raw));
+        IdNamespace::Aristos | IdNamespace::Kanon => {
+            return Err(reject_canon_bound_id(new_raw));
         }
         IdNamespace::Local => {}
     }
@@ -695,7 +707,9 @@ pub(crate) fn parse_and_validate(
     let shape = match old_id.namespace() {
         IdNamespace::Local => RenameShape::LocalToLocal,
         IdNamespace::Opaque => RenameShape::OpaquePromotion,
-        IdNamespace::Aristos => unreachable!(),
+        // Canon-bound ids (aristos: and kanon:) are rejected upstream
+        // — they're removed via `aristo canon unbind`, not renamed.
+        IdNamespace::Aristos | IdNamespace::Kanon => unreachable!(),
     };
     Ok(ParsedRename {
         old_id,
@@ -704,23 +718,28 @@ pub(crate) fn parse_and_validate(
     })
 }
 
-fn reject_aristos_deferred(raw: &str) -> CliError {
-    if raw.starts_with("aristos:") {
-        reject(
-            "the `aristos:` namespace is reserved for server-bound ids\n       \
-             (Phase 2). `aristo rename` is local-only in this release; the\n       \
-             rebind / unbind surface ships with `aristo sync`.\n       \
-             For bare → bare or `aret_*` → bare renames, use this command.\n       \
-             For aristos: ids, wait for Phase 2 sync."
-                .to_string(),
-        )
+fn reject_canon_bound_id(raw: &str) -> CliError {
+    let prefix = if raw.starts_with("aristos:") {
+        "aristos:"
+    } else if raw.starts_with("kanon:") {
+        "kanon:"
     } else {
-        reject(format!(
-            "id `{raw}` looks like a misformed `aristos:` reference.\n       \
-             The `aristos:` namespace is reserved for server-bound ids\n       \
-             (Phase 2) and may not appear as a rename source or target."
-        ))
-    }
+        // Defensive: caller checked the namespace; fall back to a
+        // generic message if somehow the raw doesn't match.
+        return reject(format!(
+            "id `{raw}` looks like a misformed canon-bound reference.\n       \
+             The `aristos:` and `kanon:` namespaces are reserved for canon-bound\n       \
+             ids and may not appear as a rename source or target."
+        ));
+    };
+    reject(format!(
+        "the `{prefix}` namespace is reserved for canon-bound ids and may not\n       \
+         appear as a rename source or target. `aristo rename` is for bare → bare\n       \
+         or `aret_*` → bare renames only.\n       \
+         To remove a canon binding, use `aristo canon unbind <{prefix}<id>>`.\n       \
+         Canon prefixes are applied exclusively by the canon accept path\n       \
+         (`aristo critique --apply-findings`)."
+    ))
 }
 
 fn reject(message: String) -> CliError {
@@ -909,10 +928,10 @@ mod tests {
         assert!(msg.contains("aristo stamp"), "msg: {msg}");
     }
 
-    // ─── aristos: rejection (scope trim) ─────────────────────────────────
+    // ─── canon-bound rejection (aristos: + kanon:, per §CS13) ──────────
 
     #[test]
-    fn source_aristos_id_rejected_as_deferred_to_phase_2() {
+    fn source_aristos_id_rejected_as_canon_bound() {
         let index = build_index(&[(
             "aristos:foo",
             intent("src/x.rs", "fn aristos_site (line 1)"),
@@ -921,20 +940,20 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("aristos:"), "msg: {msg}");
         assert!(msg.contains("reserved"), "msg: {msg}");
-        assert!(msg.contains("Phase 2"), "msg: {msg}");
+        assert!(msg.contains("aristo canon unbind"), "msg: {msg}");
     }
 
     #[test]
-    fn target_aristos_id_rejected_as_deferred_to_phase_2() {
+    fn target_aristos_id_rejected_as_canon_bound() {
         let index = build_index(&[("foo", intent("src/x.rs", "fn foo_site (line 1)"))]);
         let err = parse_and_validate("foo", "aristos:foo", &index).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("aristos:"), "msg: {msg}");
-        assert!(msg.contains("Phase 2"), "msg: {msg}");
+        assert!(msg.contains("aristo canon unbind"), "msg: {msg}");
     }
 
     #[test]
-    fn cross_namespace_aristos_to_bare_rejected_with_phase_2_message() {
+    fn cross_namespace_aristos_to_bare_rejected_as_canon_bound() {
         let index = build_index(&[(
             "aristos:foo",
             intent("src/x.rs", "fn aristos_site (line 1)"),
@@ -942,7 +961,25 @@ mod tests {
         let err = parse_and_validate("aristos:foo", "bar_local", &index).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("aristos:"), "msg: {msg}");
-        assert!(msg.contains("Phase 2"), "msg: {msg}");
+        assert!(msg.contains("aristo canon unbind"), "msg: {msg}");
+    }
+
+    #[test]
+    fn source_kanon_id_rejected_as_canon_bound() {
+        let index = build_index(&[("kanon:foo", intent("src/x.rs", "fn kanon_site (line 1)"))]);
+        let err = parse_and_validate("kanon:foo", "bar", &index).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("kanon:"), "msg: {msg}");
+        assert!(msg.contains("aristo canon unbind"), "msg: {msg}");
+    }
+
+    #[test]
+    fn target_kanon_id_rejected_as_canon_bound() {
+        let index = build_index(&[("foo", intent("src/x.rs", "fn foo_site (line 1)"))]);
+        let err = parse_and_validate("foo", "kanon:foo", &index).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("kanon:"), "msg: {msg}");
+        assert!(msg.contains("aristo canon unbind"), "msg: {msg}");
     }
 
     // ─── Plan computation + rendering ────────────────────────────────────

@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
-generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-20T16:18:06.693298Z"
+generated_by = "aristo stamp 0.1.0"
+generated_at = "2026-05-20T22:38:33.474199Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -474,7 +474,7 @@ status = "unknown"
 text_hash = "sha256:0522fae6676189ff629bf6295ecc0cc883b20f8a4c3303fbcb6723d487d70be7"
 body_hash = "sha256:ec3e41b43d8ba9c1dafb159ec3cbdc042bb160339567a4ac8512407d1adb0cad"
 file = "crates/aristo-cli/src/commands/init.rs"
-site = "fn run (line 96)"
+site = "fn run (line 106)"
 covered_region = "function"
 
 [install_claude_hook_is_idempotent]
@@ -681,18 +681,18 @@ status = "unknown"
 text_hash = "sha256:4f89361fd9cb1718f8eb2c49fb618afa88c212a5b1b8f33d923d17d0dba52720"
 body_hash = "sha256:51c3143c8da378b861811a6504ce8f20b1cf8749a8b088fbd41d24add102c165"
 file = "crates/aristo-cli/src/commands/rename.rs"
-site = "fn compute_plan (line 303)"
+site = "fn compute_plan (line 309)"
 covered_region = "function"
 
 [rename_validation_rejects_aristos_reserved_prefix_and_collision]
 kind = "intent"
-text = "Rename validation rejects three classes BEFORE any plan computation: (1) `aristos:` in either old or new id — server-bound renames are deferred to Phase 2 alongside `aristo sync`, so the surface lies; (2) cross-namespace renames (`aristos:foo` → bare) — that's an unbind, not a rename, and ships with sync; (3) reserved `aret_*` prefix in the target — opaque ids are stamp-assigned only (F1-b); a readable id renaming TO an opaque slot would let a user manually mint identities the stamp pipeline reserves. The fourth check, target collision against the live index, is the only one that depends on the workspace; the others can be tested in isolation."
+text = "Rename validation rejects three classes BEFORE any plan computation: (1) canon-bound prefix (`aristos:` or `kanon:`) in either old or new id — canon prefixes are applied exclusively by the canon accept path and removed by `aristo canon unbind` per CS13, so the surface lies; (2) cross-namespace renames (`aristos:foo` → bare) — that's an unbind, not a rename, and ships with sync; (3) reserved `aret_*` prefix in the target — opaque ids are stamp-assigned only (F1-b); a readable id renaming TO an opaque slot would let a user manually mint identities the stamp pipeline reserves. The fourth check, target collision against the live index, is the only one that depends on the workspace; the others can be tested in isolation."
 verify = "test"
 status = "unknown"
-text_hash = "sha256:e1ee9692fb157f489f14b14d645ee1d54ca50fe87d47b1280bea77987c65ac9f"
-body_hash = "sha256:899f61e1372fa93078a3459f4b3404243bd66285fbf89ff4449bc5a061d90f4e"
+text_hash = "sha256:c1d5da81a9fa697f4b75251f85ec56b1bd906c6b2ee5fa2f498696fccf5034ca"
+body_hash = "sha256:a20e2175055febb28842127a1873985fb6e000d4c150d658b6bea0731d6f9117"
 file = "crates/aristo-cli/src/commands/rename.rs"
-site = "fn parse_and_validate (line 623)"
+site = "fn parse_and_validate (line 629)"
 covered_region = "function"
 
 [rename_writes_index_last_for_recoverable_partial_failure]
@@ -703,7 +703,7 @@ status = "unknown"
 text_hash = "sha256:de8de94212398db06a0df045e6f19fa178571bd33fc2f7201c7d23efab8b4f30"
 body_hash = "sha256:cddd1228c7f046d83f35fc5359a7aecfeec82b20c52dda52a135383661b01aaa"
 file = "crates/aristo-cli/src/commands/rename.rs"
-site = "fn apply_plan (line 48)"
+site = "fn apply_plan (line 54)"
 covered_region = "function"
 
 [requeue_moves_claimed_back_to_pending]

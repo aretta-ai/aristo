@@ -2,11 +2,13 @@
 
 Source: `../aretta-sdk/docs/mockups/06-cross-cutting-cli/examples.md` § F1 → "Dry-run preview".
 
-Per the slice-32 scope trim (HANDOFF-SLICE-32.md, locked 2026-05-18),
-`aristos:`-namespace renames are deferred to Phase 2 sync; this scenario
-uses bare ids end-to-end. Demonstrates that `--dry-run` plans the full
-coordinated rename (source edits across single-id + single-parent +
-array-parent forms, plus index updates) and writes nothing.
+Per the slice-32 scope trim (HANDOFF-SLICE-32.md, locked 2026-05-18)
+and §CS13 (canon-strategy.md, locked 2026-05-19), canon-bound
+prefixes (`aristos:` and `kanon:`) are reserved for the canon accept
+path and rejected by rename; this scenario uses bare ids end-to-end.
+Demonstrates that `--dry-run` plans the full coordinated rename
+(source edits across single-id + single-parent + array-parent forms,
+plus index updates) and writes nothing.
 
 The fixture contains 3 annotations in a single file: a parent intent,
 a child with `parent = "..."`, and a third with `parent = [.., ..]`.

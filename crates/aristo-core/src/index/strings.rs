@@ -295,6 +295,7 @@ string_newtype! {
 // ─── AnnotationId ───────────────────────────────────────────────────────────
 
 const ARISTOS_PREFIX: &str = "aristos:";
+const KANON_PREFIX: &str = "kanon:";
 const ARET_PREFIX: &str = "aret_";
 const READABLE_MIN: usize = 1;
 const READABLE_MAX: usize = 128;
@@ -308,8 +309,18 @@ pub enum IdNamespace {
     Local,
     /// Stamp-assigned opaque id (e.g., `aret_a1b2c3d4`).
     Opaque,
-    /// Server-bound (e.g., `aristos:balance_no_dups`).
+    /// Server-bound, backed by a verification mechanism (e.g.,
+    /// `aristos:balance_no_dups`). Per canon-strategy.md §CS13 this is
+    /// the "backed" tier — the canon entry has a populated `backed_by`
+    /// field for the user's scope.
     Aristos,
+    /// Server-bound, no verification backing yet (e.g.,
+    /// `kanon:checkout_total_non_negative`). Per canon-strategy.md
+    /// §CS13 this is the "bound but unbacked" tier — canonical text
+    /// plus `linked`, but no `backed_by` and no scheduled
+    /// verification. Users signal demand for a backing via
+    /// `aristo canon request-verify`.
+    Kanon,
 }
 
 /// Allowable charset for the body of a readable id (after any namespace
@@ -345,8 +356,13 @@ fn parse_annotation_id(s: &str) -> Result<String, ParseError> {
     if s.is_empty() {
         return Err(ParseError::Empty);
     }
-    // Server-bound: `aristos:` + readable body
+    // Server-bound, backed: `aristos:` + readable body
     if let Some(body) = s.strip_prefix(ARISTOS_PREFIX) {
+        validate_readable_body(body)?;
+        return Ok(s.to_owned());
+    }
+    // Server-bound, unbacked: `kanon:` + readable body
+    if let Some(body) = s.strip_prefix(KANON_PREFIX) {
         validate_readable_body(body)?;
         return Ok(s.to_owned());
     }
@@ -379,23 +395,32 @@ fn parse_annotation_id(s: &str) -> Result<String, ParseError> {
 }
 
 string_newtype! {
-    /// Annotation identity. Three accepted forms:
+    /// Annotation identity. Four accepted forms:
     ///
     /// - Local readable: `snake_case` (e.g., `balance_no_dups`).
     /// - Stamp-assigned opaque: `aret_<alphanumeric>` (e.g., `aret_a1b2c3d4`).
-    /// - Server-bound: `aristos:<readable>` (e.g., `aristos:balance_no_dups`).
+    /// - Server-bound, backed: `aristos:<readable>` (e.g.,
+    ///   `aristos:balance_no_dups`) — canon entry has a populated
+    ///   `backed_by` for the user's scope per canon-strategy.md §CS13.
+    /// - Server-bound, unbacked: `kanon:<readable>` (e.g.,
+    ///   `kanon:checkout_total_non_negative`) — canon entry has no
+    ///   `backed_by` yet; user signals demand via `aristo canon
+    ///   request-verify`.
     ///
-    /// The `aristos:` namespace is reserved — `aristo stamp` rejects
-    /// user-written ids in that namespace; the prefix may only appear
-    /// via `aristo sync` binding. Same rule applies to the `aret_*`
-    /// stamp-assigned-opaque space.
+    /// All three reserved namespaces (`aristos:`, `kanon:`, `aret_*`)
+    /// are not user-writable — `aristo stamp` rejects user-written
+    /// ids in those namespaces. Canon prefixes are applied
+    /// exclusively by the canon accept path
+    /// (`aristo critique --apply-findings`); opaque ids are
+    /// stamp-assigned only.
     pub AnnotationId,
     parse_fn = parse_annotation_id,
     schema_pattern =
-        r"^(aristos:)?[a-z_][a-z0-9_]{0,127}$|^aret_[A-Za-z0-9]{4,64}$",
+        r"^(aristos:|kanon:)?[a-z_][a-z0-9_]{0,127}$|^aret_[A-Za-z0-9]{4,64}$",
     schema_description =
         "Annotation id: local snake_case, stamp-assigned `aret_<alphanumeric>`, \
-         or server-bound `aristos:<snake_case>`.",
+         server-bound backed `aristos:<snake_case>`, or server-bound unbacked \
+         `kanon:<snake_case>`.",
 }
 
 impl AnnotationId {
@@ -403,11 +428,20 @@ impl AnnotationId {
     pub fn namespace(&self) -> IdNamespace {
         if self.0.starts_with(ARISTOS_PREFIX) {
             IdNamespace::Aristos
+        } else if self.0.starts_with(KANON_PREFIX) {
+            IdNamespace::Kanon
         } else if self.0.starts_with(ARET_PREFIX) {
             IdNamespace::Opaque
         } else {
             IdNamespace::Local
         }
+    }
+
+    /// True iff this id is bound to a canon entry (either tier).
+    /// Convenience for callers that need to gate on "canon-bound"
+    /// regardless of whether a backing exists.
+    pub fn is_canon_bound(&self) -> bool {
+        matches!(self.namespace(), IdNamespace::Aristos | IdNamespace::Kanon)
     }
 }
 
@@ -588,6 +622,41 @@ mod tests {
     fn annotation_id_accepts_aristos_namespace() {
         let id = AnnotationId::parse("aristos:balance_no_duplicate_cells").unwrap();
         assert_eq!(id.namespace(), IdNamespace::Aristos);
+        assert!(id.is_canon_bound());
+    }
+
+    #[test]
+    fn annotation_id_accepts_kanon_namespace() {
+        let id = AnnotationId::parse("kanon:checkout_total_non_negative").unwrap();
+        assert_eq!(id.namespace(), IdNamespace::Kanon);
+        assert!(id.is_canon_bound());
+    }
+
+    #[test]
+    fn annotation_id_rejects_kanon_uppercase_body() {
+        // kanon: bodies follow the same readable-body grammar as
+        // local + aristos: ids — lowercase only.
+        assert!(matches!(
+            AnnotationId::parse("kanon:Foo"),
+            Err(ParseError::InvalidCharset { .. })
+        ));
+    }
+
+    #[test]
+    fn annotation_id_rejects_kanon_empty_body() {
+        // Bare `kanon:` with no body must error like bare `aristos:`.
+        assert!(matches!(
+            AnnotationId::parse("kanon:"),
+            Err(ParseError::Empty)
+        ));
+    }
+
+    #[test]
+    fn annotation_id_local_is_not_canon_bound() {
+        let id = AnnotationId::parse("balance_no_duplicate_cells").unwrap();
+        assert!(!id.is_canon_bound());
+        let id = AnnotationId::parse("aret_a1b2c3d4").unwrap();
+        assert!(!id.is_canon_bound());
     }
 
     #[test]

@@ -400,16 +400,19 @@ enum Commands {
     /// Atomic project-wide rename of an annotation id.
     ///
     /// Scope (slice 32): bare → bare and stamp-assigned opaque
-    /// (`aret_*`) → bare. The `aristos:` server-bound namespace is
-    /// rejected in either direction with a "deferred to Phase 2 sync"
-    /// message; opaque-target ids are rejected per F1-b (stamp-assigned
-    /// only). See `docs/decisions/...` (slice 32 design doc).
+    /// (`aret_*`) → bare. The canon-bound namespaces (`aristos:` and
+    /// `kanon:`) are rejected in either direction per §CS13 — canon
+    /// prefixes are applied by the canon accept path and removed by
+    /// `aristo canon unbind`. Opaque-target ids are rejected per F1-b
+    /// (stamp-assigned only). See `docs/decisions/...` (slice 32) and
+    /// `../aretta-sdk/docs/launch/canon-strategy.md` §CS13.
     Rename {
         /// Annotation id to rename FROM. Must exist in the current
         /// `.aristo/index.toml`.
         old_id: String,
         /// Annotation id to rename TO. Must not already exist and must
-        /// not use the reserved `aret_*` / `aristos:` prefixes.
+        /// not use the reserved `aret_*` / `aristos:` / `kanon:`
+        /// prefixes.
         new_id: String,
         /// Compute and print the rename plan (source edits + per-id
         /// artifact moves + index updates) without writing anything.
