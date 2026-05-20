@@ -15,6 +15,7 @@
 //! via `schemars` (see the `dump-schemas` example in a later slice).
 
 pub mod badge;
+pub mod canon;
 pub mod config;
 pub mod critique;
 pub mod cycle;

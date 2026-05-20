@@ -1,0 +1,473 @@
+//! Wire types for the canon API contract.
+//!
+//! Mirrors `../aretta-sdk/docs/mockups/13-canon-and-matching/README.md` §L3
+//! byte-for-byte for `POST /canon/match`, `GET /canon/entry/<id>`,
+//! `POST /canon/request-verify`. Slice 3 (aretta-code) consumes the
+//! same shapes; cross-slice drift here breaks both ends.
+//!
+//! All types serialize to JSON (the wire format) and can also be
+//! deserialized from TOML (for mock-client fixtures and the
+//! `.aristo/canon-matches.toml` cache). Wire JSON uses `snake_case`
+//! field names (per the README L3 examples: `canon_id`,
+//! `canonical_text`, `prefix_tier`, `effective_scopes`); serde's
+//! default field-name behavior is the correct match.
+//!
+//! ## What's user-visible vs. server-side-only
+//!
+//! The full canon entry has a `verification_artifacts` field
+//! containing formal models / neural prompts / test corpora. Per
+//! canon-strategy.md §CS10 ("what the card deliberately hides"),
+//! that field is server-side only and **never** reaches the user.
+//! [`CanonEntry`] below does not have a field for it.
+//!
+//! ## Phase 1 scope (per `_deferred/verification-execution.md`)
+//!
+//! - The `verification` block in [`CanonMatch`] is **informational**
+//!   metadata about what Phase 2 will eventually run. It is not an
+//!   execution trigger in Phase 1. Field stays in the contract
+//!   because Slice 3 surfaces it from coverage.yaml; the SDK ignores
+//!   it until Phase 2.
+//! - There is no `verified_outcome` field anywhere in the wire
+//!   types — that surface lands in Phase 2 alongside the
+//!   verification execution endpoint.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+// ─── POST /canon/match ─────────────────────────────────────────────────────
+
+/// Request body for `POST /canon/match`. Batched: a single call
+/// covers all annotations the SDK wants matched.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CanonMatchRequest {
+    /// One entry per annotation to match. Server returns
+    /// [`CanonMatchResponse::results`] aligned to this list by
+    /// index. Empty list is a valid request that returns an empty
+    /// `results` list.
+    pub annotations: Vec<AnnotationMatchInput>,
+    /// Client-sent confidence floor. Honored above the server's
+    /// enforced floor of `0.5` (below that, server responds HTTP 400).
+    /// `stamp` sends `0.85`; `critique` sends `0.65`; tunable via
+    /// `aristo.toml [canon] threshold_*`.
+    pub confidence_threshold: f64,
+}
+
+/// One annotation-shaped input to the batched match call.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AnnotationMatchInput {
+    /// The annotation's text-to-match. Sent verbatim — server-side
+    /// matching against `match_signals.required_terms` /
+    /// `synonym_sets` happens against this string.
+    pub annotation_text: String,
+    /// The annotation's `applies_to` set (`fn`, `method`, `mod`,
+    /// `struct`, `trait`). Used by the server to filter candidate
+    /// entries (a fn-only canon entry shouldn't match a struct-level
+    /// annotation).
+    pub applies_to: Vec<String>,
+}
+
+/// Response body for `POST /canon/match`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CanonMatchResponse {
+    /// Aligned to [`CanonMatchRequest::annotations`] by index.
+    /// Each inner list is the top-N candidates for that annotation
+    /// (top-3 if `(max - 3rd_max) < 0.10`, else top-1, per the
+    /// multi-match policy in canon-strategy.md / README.md L3).
+    pub results: Vec<Vec<CanonMatch>>,
+    /// The set of canon scopes that produced matches for the
+    /// requesting repo. Always contains `":vanilla"`; DP/Enterprise
+    /// repos additionally see their named flavors here.
+    pub effective_scopes: Vec<String>,
+    /// Catalog-level snapshot tag from canon-strategy.md §CS12.
+    /// Informational; per-entry version (`CanonMatch::version`) is
+    /// the load-bearing cache key.
+    pub canon_version: String,
+    /// ISO-8601 timestamp of when the server computed this response.
+    pub matched_at: String,
+}
+
+/// One match candidate for one annotation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CanonMatch {
+    /// Canonical id (the readable suffix, without prefix). The
+    /// `prefix_tier` field determines which prefix the SDK applies
+    /// on accept (`aristos:<canon_id>` or `kanon:<canon_id>`).
+    pub canon_id: String,
+    /// Per-entry version pinned at match time per canon-strategy.md
+    /// §CS12. Cache key for `.aristo/canon-matches.toml`.
+    pub version: String,
+    /// The canonical phrasing. On accept, the SDK rewrites the
+    /// annotation's source text to this string.
+    pub canonical_text: String,
+    /// Match score in `[0.0, 1.0]`. Above the request's
+    /// `confidence_threshold` by construction; the server filters
+    /// candidates server-side.
+    pub confidence: f64,
+    /// Which scope the candidate came from. Always one of
+    /// [`CanonMatchResponse::effective_scopes`]; usually
+    /// `":vanilla"`, sometimes a named flavor for DP/Enterprise.
+    pub scope: String,
+    /// Which prefix tier this match graduates to on accept.
+    pub prefix_tier: PrefixTier,
+    /// The canon entry's declared verification mechanism for the
+    /// user's scope. `Some(_)` when `prefix_tier ==
+    /// PrefixTier::Aristos`; `None` when `prefix_tier ==
+    /// PrefixTier::Kanon`. The freeform string vocabulary is
+    /// documented in canon-strategy.md §CS10 ("Backed by" — initial
+    /// freeform vocabulary).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backed_by: Option<String>,
+    /// Opaque internal ref. Surfaced for the SDK's index entry
+    /// (`BindingState::Bound { linked }`); the trust card hides it
+    /// per canon-strategy.md §CS10 ("what the card deliberately
+    /// hides").
+    pub linked: String,
+    /// Scope-aware verification metadata from `coverage.yaml`.
+    /// **Informational only in Phase 1** — Phase 2's verification
+    /// execution endpoint reads this to route the test binary, but
+    /// the Phase 1 SDK ignores it. See
+    /// `_deferred/verification-execution.md`.
+    pub verification: VerificationMetadata,
+}
+
+/// Which prefix tier a canon match graduates to on accept. Per
+/// canon-strategy.md §CS13.
+///
+/// Wire-form is the prefix string with the colon
+/// (`"aristos:"` / `"kanon:"`) — matching the source-code form and
+/// the sample-matches.toml `prefix_tier` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum PrefixTier {
+    /// Backed — canon entry has populated `backed_by` for the user's
+    /// scope. Source id gains `aristos:` prefix on accept.
+    #[serde(rename = "aristos:")]
+    Aristos,
+    /// Unbacked — canon entry has no `backed_by` for the user's
+    /// scope yet. Source id gains `kanon:` prefix on accept.
+    #[serde(rename = "kanon:")]
+    Kanon,
+}
+
+impl PrefixTier {
+    /// Returns the source-form prefix string with trailing colon.
+    pub fn as_prefix(self) -> &'static str {
+        match self {
+            PrefixTier::Aristos => "aristos:",
+            PrefixTier::Kanon => "kanon:",
+        }
+    }
+}
+
+/// Scope-aware verification metadata surfaced by the match response.
+/// Mirrors the coverage.yaml routing manifest's per-entry fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VerificationMetadata {
+    /// `"tight"` | `"partial"` | `"informal"` | `"none"` per
+    /// canon-strategy.md (the `relation` field on coverage entries).
+    pub coverage_level: String,
+    /// Names of test binaries the server would run for this match
+    /// in Phase 2. Phase 1 ignores this list.
+    pub test_binaries: Vec<String>,
+}
+
+// ─── GET /canon/entry/<id>?version=<v> ─────────────────────────────────────
+
+/// Full per-entry detail surfaced by `GET /canon/entry/<canon_id>`.
+/// Used to render the bound-annotation trust card.
+///
+/// Per canon-strategy.md §CS10, this excludes the server-side-only
+/// `verification_artifacts` (formal models, neural prompts, test
+/// corpora). The user only sees pedagogical / cross-reference
+/// fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CanonEntry {
+    /// Canonical id (readable, no prefix).
+    pub id: String,
+    /// Per-entry version (`v<minor>.<patch>`).
+    pub version: String,
+    /// The natural-language statement. Source-of-truth field for
+    /// the trust card's statement paragraph.
+    pub canonical_text: String,
+    /// Where the entry applies (`fn`, `method`, `mod`, `struct`,
+    /// `trait`).
+    pub applies_to: Vec<String>,
+    /// `concurrency` | `validation` | `lifecycle` | `error-handling`
+    /// | `invariants` | `resources` | `other`.
+    pub category: String,
+    /// `safety` | `liveness` | `functional-correctness` |
+    /// `termination`.
+    pub property_type: String,
+    /// Which scope the entry was matched against for the requesting
+    /// repo. `":vanilla"` for the bulk of the corpus; named flavors
+    /// for DP/Enterprise overlays.
+    pub scope: String,
+    /// Declared verification mechanism for the user's effective
+    /// scope. `Some(_)` for `aristos:` tier; `None` for `kanon:`
+    /// tier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backed_by: Option<String>,
+    /// Longer pedagogical description, free-form prose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Abstract example shapes. The trust card surfaces
+    /// `examples[0]` labeled "abstract — not your code."
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<String>,
+    /// Cross-references for the trust card's References block.
+    #[serde(default)]
+    pub references: References,
+}
+
+/// Cross-references surfaced on the trust card.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct References {
+    /// Citations (e.g., academic papers, books).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub literature: Vec<String>,
+    /// Related canon entries **filtered to the user's effective
+    /// scopes** server-side. Each entry includes the prefix tier so
+    /// the trust card can show `aristos:other_id (aristos:, backed)`
+    /// vs `kanon:other_id (kanon:, unbacked)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related_entries: Vec<RelatedEntry>,
+    /// External URLs (e.g., blog posts, design docs).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external: Vec<String>,
+}
+
+/// A cross-referenced canon entry. Carries the prefix tier so the
+/// trust card renderer can show the tier alongside each related id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelatedEntry {
+    pub canon_id: String,
+    pub prefix_tier: PrefixTier,
+}
+
+// ─── POST /canon/request-verify ───────────────────────────────────────────
+
+/// Request body for `POST /canon/request-verify`. Idempotent on
+/// `(canon_id, repo_full_name, user_id)` per canon-strategy.md
+/// §CS11.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RequestVerifyBody {
+    /// The canon entry the user is signaling demand for.
+    pub canon_id: String,
+    /// Optional free-text context from the user (e.g., "critical
+    /// for our financial-tx audit"). On repeat calls with a new
+    /// note, replaces the previous note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
+/// Response for `POST /canon/request-verify`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RequestVerifyResponse {
+    /// `"submitted"` for first-time requests; `"updated"` for
+    /// repeat requests (idempotency surface).
+    pub status: String,
+    pub canon_id: String,
+    /// The canon entry's current `backed_by` value, if any. Mirrors
+    /// what the user sees on the trust card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_backing: Option<String>,
+    /// ISO-8601 timestamp of the prior submission, when `status ==
+    /// "updated"`. `None` for first-time requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previously_submitted_at: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefix_tier_serializes_with_colon() {
+        // Source-form prefix string — matches `prefix_tier` field in
+        // sample-matches.toml verbatim.
+        let v = serde_json::to_value(PrefixTier::Aristos).unwrap();
+        assert_eq!(v, serde_json::json!("aristos:"));
+        let v = serde_json::to_value(PrefixTier::Kanon).unwrap();
+        assert_eq!(v, serde_json::json!("kanon:"));
+    }
+
+    #[test]
+    fn prefix_tier_deserializes_with_colon() {
+        let v: PrefixTier = serde_json::from_str("\"aristos:\"").unwrap();
+        assert_eq!(v, PrefixTier::Aristos);
+        let v: PrefixTier = serde_json::from_str("\"kanon:\"").unwrap();
+        assert_eq!(v, PrefixTier::Kanon);
+    }
+
+    #[test]
+    fn prefix_tier_rejects_unknown() {
+        assert!(serde_json::from_str::<PrefixTier>("\"aristos\"").is_err());
+        assert!(serde_json::from_str::<PrefixTier>("\"backed\"").is_err());
+        assert!(serde_json::from_str::<PrefixTier>("\"\"").is_err());
+    }
+
+    #[test]
+    fn prefix_tier_as_prefix_matches_serialized_form() {
+        assert_eq!(PrefixTier::Aristos.as_prefix(), "aristos:");
+        assert_eq!(PrefixTier::Kanon.as_prefix(), "kanon:");
+    }
+
+    #[test]
+    fn match_request_round_trips_via_json() {
+        let req = CanonMatchRequest {
+            annotations: vec![AnnotationMatchInput {
+                annotation_text: "each cell should be written exactly once per page edit".into(),
+                applies_to: vec!["fn".into(), "method".into()],
+            }],
+            confidence_threshold: 0.85,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let back: CanonMatchRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn match_response_aristos_tier_round_trips() {
+        let resp = CanonMatchResponse {
+            results: vec![vec![CanonMatch {
+                canon_id: "cell_written_exactly_once_per_page_edit".into(),
+                version: "v0.2.1".into(),
+                canonical_text: "edit_page writes each cell exactly once".into(),
+                confidence: 0.92,
+                scope: ":vanilla".into(),
+                prefix_tier: PrefixTier::Aristos,
+                backed_by: Some("specialized neural checker".into()),
+                linked: "arta_a1b2c3d4".into(),
+                verification: VerificationMetadata {
+                    coverage_level: "tight".into(),
+                    test_binaries: vec!["monotonicity_property".into()],
+                },
+            }]],
+            effective_scopes: vec![":vanilla".into()],
+            canon_version: "v0.2.0".into(),
+            matched_at: "2026-06-15T09:14:22Z".into(),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: CanonMatchResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, resp);
+    }
+
+    #[test]
+    fn match_response_kanon_tier_omits_backed_by() {
+        // When prefix_tier == Kanon, backed_by is None; serialized
+        // form should omit the field per skip_serializing_if.
+        let m = CanonMatch {
+            canon_id: "checkout_total_non_negative".into(),
+            version: "v0.1.0".into(),
+            canonical_text: "checkout total is non-negative".into(),
+            confidence: 0.94,
+            scope: ":vanilla".into(),
+            prefix_tier: PrefixTier::Kanon,
+            backed_by: None,
+            linked: "arta_b2c3d4e5".into(),
+            verification: VerificationMetadata {
+                coverage_level: "none".into(),
+                test_binaries: vec![],
+            },
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        // backed_by should NOT appear in the JSON.
+        assert!(
+            !json.contains("backed_by"),
+            "expected backed_by to be omitted, got: {json}"
+        );
+        // Round-trip still works.
+        let back: CanonMatch = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, m);
+        assert_eq!(back.prefix_tier, PrefixTier::Kanon);
+    }
+
+    #[test]
+    fn canon_entry_round_trips_with_references() {
+        let entry = CanonEntry {
+            id: "cell_written_exactly_once_per_page_edit".into(),
+            version: "v0.2.1".into(),
+            canonical_text: "a page-edit operation writes each cell exactly once".into(),
+            applies_to: vec!["fn".into(), "method".into()],
+            category: "invariants".into(),
+            property_type: "safety".into(),
+            scope: ":vanilla".into(),
+            backed_by: Some("specialized neural checker".into()),
+            description: Some("Standard concurrency invariant".into()),
+            examples: vec!["fn edit(...) { ... }".into()],
+            references: References {
+                literature: vec!["Lamport (CACM 20:11, 1977)".into()],
+                related_entries: vec![
+                    RelatedEntry {
+                        canon_id: "balance_no_duplicate_cells".into(),
+                        prefix_tier: PrefixTier::Aristos,
+                    },
+                    RelatedEntry {
+                        canon_id: "edit_atomicity_per_page".into(),
+                        prefix_tier: PrefixTier::Kanon,
+                    },
+                ],
+                external: vec![],
+            },
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: CanonEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, entry);
+    }
+
+    #[test]
+    fn request_verify_body_omits_optional_notes() {
+        let body = RequestVerifyBody {
+            canon_id: "foo".into(),
+            notes: None,
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        assert!(!json.contains("notes"), "expected notes to be omitted");
+        let back: RequestVerifyBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, body);
+    }
+
+    #[test]
+    fn request_verify_response_first_time_omits_previous_timestamp() {
+        let resp = RequestVerifyResponse {
+            status: "submitted".into(),
+            canon_id: "foo".into(),
+            current_backing: Some("specialized neural checker".into()),
+            previously_submitted_at: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(!json.contains("previously_submitted_at"));
+        let back: RequestVerifyResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, resp);
+    }
+
+    #[test]
+    fn request_verify_response_repeat_includes_timestamp() {
+        let resp = RequestVerifyResponse {
+            status: "updated".into(),
+            canon_id: "foo".into(),
+            current_backing: Some("specialized neural checker".into()),
+            previously_submitted_at: Some("2026-06-15T09:14:22Z".into()),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("previously_submitted_at"));
+        let back: RequestVerifyResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, resp);
+    }
+
+    #[test]
+    fn match_request_serializes_with_snake_case_keys() {
+        // Important: server and SDK both expect snake_case wire form.
+        // Field rename to camelCase here would break Slice 3.
+        let req = CanonMatchRequest {
+            annotations: vec![AnnotationMatchInput {
+                annotation_text: "x".into(),
+                applies_to: vec!["fn".into()],
+            }],
+            confidence_threshold: 0.85,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("annotation_text"), "got: {json}");
+        assert!(json.contains("applies_to"), "got: {json}");
+        assert!(json.contains("confidence_threshold"), "got: {json}");
+    }
+}
