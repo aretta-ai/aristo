@@ -461,34 +461,48 @@ enum Commands {
 
 /// Subcommands under `aristo auth`. Each operates on the persistent
 /// credentials store under `$XDG_CONFIG_HOME/aristo/credentials`
-/// (or the platform default per `aristo_core::canon::auth`).
+/// (or the platform default per `aristo_core::auth`).
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum AuthAction {
-    /// Authenticate by accepting a Bearer token.
+    /// Authenticate against the Aretta proxy.
     ///
-    /// Three input modes (mutually exclusive):
+    /// **Default mode (GitHub OAuth):** the CLI fetches the GitHub
+    /// authorization URL from the proxy, tries to open it in your
+    /// browser, and prompts you to paste the code shown on the
+    /// proxy's callback page. The proxy then mints an `arta_*`
+    /// token scoped to your `(user, repo)` pair.
     ///
-    /// - **interactive (default):** print a prompt, then read the token
-    ///   from stdin (one line). Suitable for human terminal use.
-    /// - **`--stdin`:** read the entire stdin and use it as the token.
-    ///   Useful for piping (`echo "$TOKEN" | aristo auth login --stdin`).
-    /// - **`--token=<T>`:** use the literal value as the token. NOT
-    ///   recommended for interactive use — the token appears in shell
-    ///   history. Provided for scripting and tests.
+    /// **Bypass modes (for CI / scripting):**
+    ///
+    /// - **`--stdin`** — read the raw token from stdin
+    ///   (`echo "$TOKEN" | aristo auth login --stdin`).
+    /// - **`--token=<T>`** — use the literal token value.
     ///
     /// The token is persisted to `$XDG_CONFIG_HOME/aristo/credentials`
-    /// with `0600` Unix permissions; the same file is read by every
-    /// canon API call on subsequent runs.
+    /// with `0600` Unix permissions.
     Login {
-        /// Read the token from stdin (consumes entire stdin).
-        /// Useful for piped credential input in CI.
+        /// Read the token from stdin (consumes entire stdin). Skips
+        /// the OAuth flow.
         #[arg(long, conflicts_with = "token")]
         stdin: bool,
-        /// Use this token directly (bypasses prompt and stdin).
-        /// Provided for scripting / tests; not recommended for
-        /// interactive use because the value appears in shell history.
+        /// Use this token directly. Skips the OAuth flow.
         #[arg(long, value_name = "TOKEN")]
         token: Option<String>,
+        /// Aretta server to authenticate against. Accepts:
+        /// `prod` / `production` (= https://code.aretta.ai, default),
+        /// `dev` / `development` / `staging` (= https://dev.aretta.ai),
+        /// or a full URL for self-hosted deployments
+        /// (`https://aretta.example.com`).
+        #[arg(long, default_value = "prod")]
+        server: String,
+        /// Repo to scope the OAuth-minted token to (`owner/repo`).
+        /// Defaults to auto-deriving from `<cwd>/.git/config`'s
+        /// `remote.origin.url`. Required for non-git directories or
+        /// when the remote isn't a GitHub URL. Ignored in `--stdin` /
+        /// `--token` bypass modes (where the token is supplied
+        /// directly with its server-side scope already set).
+        #[arg(long, value_name = "OWNER/REPO")]
+        repo: Option<String>,
     },
     /// Show the current authentication state (does NOT print the
     /// token, only its source: env var / credentials file / none).

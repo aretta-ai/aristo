@@ -27,15 +27,19 @@
 
 use std::io::Read;
 
-use aristo_core::canon::auth::{self, Token};
-use aristo_core::canon::AuthError;
+use aristo_core::auth::{self, derive_repo_full_name, AuthError, ServerUrl, Token};
 
 use crate::{AuthAction, CliError, CliResult};
 
 /// Dispatcher for `aristo auth` subcommands.
 pub(crate) fn run(action: AuthAction) -> CliResult<()> {
     match action {
-        AuthAction::Login { stdin, token } => login(stdin, token),
+        AuthAction::Login {
+            stdin,
+            token,
+            server,
+            repo,
+        } => login(stdin, token, &server, repo),
         AuthAction::Status => status(),
         AuthAction::Logout => logout(),
     }
@@ -43,14 +47,82 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
 
 // ─── login ─────────────────────────────────────────────────────────────────
 
-fn login(read_stdin: bool, token_flag: Option<String>) -> CliResult<()> {
-    let token_raw = collect_token(read_stdin, token_flag)?;
+fn login(
+    read_stdin: bool,
+    token_flag: Option<String>,
+    server_spec: &str,
+    repo_flag: Option<String>,
+) -> CliResult<()> {
+    let server = ServerUrl::parse(server_spec);
+
+    // Bypass modes — caller supplied a raw token directly.
+    if read_stdin || token_flag.is_some() {
+        return login_with_raw_token(read_stdin, token_flag);
+    }
+
+    // Default: GitHub OAuth flow.
+    login_via_oauth(&server, repo_flag)
+}
+
+fn login_via_oauth(server: &ServerUrl, repo_flag: Option<String>) -> CliResult<()> {
+    let repo_full_name = resolve_repo_full_name(repo_flag)?;
+
+    // 1. Fetch the GitHub OAuth URL from the proxy.
+    let init = auth::oauth_start(server).map_err(auth_error_to_cli)?;
+
+    // 2. Show the URL + try to open the browser.
+    eprintln!();
+    eprintln!("Authenticating against {server}");
+    eprintln!("Scoping token to repo: {repo_full_name}");
+    eprintln!();
+    eprintln!("Open this URL to authorize with GitHub:");
+    eprintln!();
+    eprintln!("    {}", init.authorize_url);
+    eprintln!();
+    let _ = try_open_browser(&init.authorize_url);
+    eprintln!("After authorizing, the page will display a code. Paste it here:");
+
+    // 3. Read the code from stdin (one line).
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .map_err(CliError::Io)?;
+    let code = line.trim();
+    if code.is_empty() {
+        return Err(CliError::Other {
+            message: "no OAuth code provided. Re-run `aristo auth login` and paste the code from the callback page.".into(),
+            exit_code: 2,
+        });
+    }
+
+    // 4. Exchange the code for an arta_* token.
+    let resp = auth::oauth_exchange(server, code, &repo_full_name, Some("aristo-cli"))
+        .map_err(auth_error_to_cli)?;
+
+    // 5. Persist the token. (Commit 4 of the plan addendum will extend
+    //    the credentials file to also persist server + user + repo;
+    //    for now we save just the bare token.)
+    let token = Token::new(&resp.arta_token);
+    auth::save(&token).map_err(CliError::Io)?;
+
+    let path = auth::credentials_path().map_err(auth_error_to_cli)?;
+    println!(
+        "ok: authenticated as {} for {}",
+        resp.user.login, resp.repo_full_name
+    );
+    println!("    token saved to {}", path.display());
+    println!("    `aristo auth status` to verify; `aristo auth logout` to remove.");
+    Ok(())
+}
+
+fn login_with_raw_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<()> {
+    let token_raw = collect_raw_token(read_stdin, token_flag)?;
     let trimmed = token_raw.trim();
     if trimmed.is_empty() {
         return Err(CliError::Other {
             message: "no token provided.\n\
                      Get an API token at https://code.aretta.ai/dashboard/settings/tokens, then run\n  \
-                       `aristo auth login` (paste interactively),\n  \
+                       `aristo auth login` (OAuth flow, default),\n  \
                        `aristo auth login --stdin` (pipe), or\n  \
                        `aristo auth login --token <TOKEN>` (scripting)."
                 .into(),
@@ -60,29 +132,14 @@ fn login(read_stdin: bool, token_flag: Option<String>) -> CliResult<()> {
     let token = Token::new(trimmed);
     auth::save(&token).map_err(CliError::Io)?;
 
-    // Resolve the path back from canon::auth so the success message
-    // points at the actual location used (honors XDG_CONFIG_HOME).
-    let path = match auth::credentials_path() {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(CliError::Other {
-                message: format!("token saved, but couldn't resolve credentials path: {e}"),
-                exit_code: 1,
-            })
-        }
-    };
+    let path = auth::credentials_path().map_err(auth_error_to_cli)?;
     println!("ok: authenticated. token saved to {}", path.display());
     println!("   `aristo auth status` to verify; `aristo auth logout` to remove.");
     Ok(())
 }
 
-/// Determine where the token comes from and read it. Three sources:
-///
-/// - `--token=<T>` → use `T` verbatim (no prompt, no stdin).
-/// - `--stdin` → consume all of stdin (typical CI pattern:
-///   `echo "$T" | aristo auth login --stdin`).
-/// - neither → print a prompt and read one line from stdin.
-fn collect_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<String> {
+/// Determine where the raw token comes from in bypass modes.
+fn collect_raw_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<String> {
     if let Some(t) = token_flag {
         return Ok(t);
     }
@@ -93,17 +150,55 @@ fn collect_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<Stri
             .map_err(CliError::Io)?;
         return Ok(buf);
     }
-    // Interactive prompt. Use stderr for the prompt so stdout stays
-    // pipe-clean (some users will pipe stdout to grep or similar).
-    eprintln!(
-        "To authenticate, get an API token at https://code.aretta.ai/dashboard/settings/tokens"
-    );
-    eprintln!("Paste the token below and press Enter:");
-    let mut line = String::new();
-    std::io::stdin()
-        .read_line(&mut line)
-        .map_err(CliError::Io)?;
-    Ok(line)
+    // Should not be reached — caller checks the flags first.
+    Err(CliError::Other {
+        message: "internal: collect_raw_token called without --stdin or --token".into(),
+        exit_code: 1,
+    })
+}
+
+fn resolve_repo_full_name(repo_flag: Option<String>) -> CliResult<String> {
+    if let Some(r) = repo_flag {
+        let trimmed = r.trim();
+        if trimmed.is_empty() {
+            return Err(CliError::Other {
+                message: "--repo must be `owner/repo` (got empty string)".into(),
+                exit_code: 2,
+            });
+        }
+        if !trimmed.contains('/') {
+            return Err(CliError::Other {
+                message: format!("--repo `{trimmed}` is not in `owner/repo` form"),
+                exit_code: 2,
+            });
+        }
+        return Ok(trimmed.to_string());
+    }
+    let cwd = std::env::current_dir().map_err(CliError::Io)?;
+    derive_repo_full_name(&cwd).map_err(auth_error_to_cli)
+}
+
+fn try_open_browser(url: &str) -> std::io::Result<()> {
+    let cmd = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "start"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(cmd)
+        .arg(url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+}
+
+fn auth_error_to_cli(e: AuthError) -> CliError {
+    CliError::Other {
+        message: e.to_string(),
+        exit_code: 1,
+    }
 }
 
 // ─── status ────────────────────────────────────────────────────────────────

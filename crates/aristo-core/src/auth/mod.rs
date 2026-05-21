@@ -35,12 +35,16 @@
 //! of mutating process state.
 
 pub mod error;
+pub mod git;
+pub mod oauth;
 pub mod resolve;
 pub mod server;
 pub mod store;
 pub mod token;
 
 pub use error::AuthError;
+pub use git::derive_repo_full_name;
+pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
 pub use resolve::{resolve, resolve_with, ENV_VAR};
 pub use server::ServerUrl;
 pub use store::{
