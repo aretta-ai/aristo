@@ -27,6 +27,11 @@
 //!   http_client::map_response)) are split from the transport so
 //!   every status-code branch is unit-testable without a real
 //!   network call.
+//! - [`cache`]: [`CanonMatchesFile`] — schema + atomic I/O for
+//!   `.aristo/canon-matches.toml`. Three buckets per annotation:
+//!   `pending_matches` (surfaced, not reviewed), `accepted_matches`
+//!   (bound), `rejected_matches` (suppressed until text changes).
+//!   Cache-hit semantics per L5's invalidation rules.
 //!
 //! **Phase 1 scope**: no verification execution. The `verification`
 //! block on [`CanonMatch`](types::CanonMatch) is informational
@@ -35,6 +40,7 @@
 //! `../aretta-sdk/docs/mockups/13-canon-and-matching/_deferred/verification-execution.md`.
 
 pub mod auth;
+pub mod cache;
 pub mod client;
 pub mod http_client;
 pub mod mock_client;
@@ -42,6 +48,10 @@ pub mod noop_client;
 pub mod types;
 
 pub use auth::Token;
+pub use cache::{
+    AcceptedMatch, CacheEntry, CacheMeta, CanonMatchesFile, Disposition, PendingMatch,
+    RejectedMatch,
+};
 pub use client::{AuthError, CanonClient, CanonError};
 pub use http_client::{HttpCanonClient, DEFAULT_BASE_URL};
 pub use mock_client::MockCanonClient;
