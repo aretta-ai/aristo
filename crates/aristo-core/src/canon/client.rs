@@ -127,39 +127,10 @@ impl std::error::Error for CanonError {
     }
 }
 
-/// Why an auth-token resolution failed. Cleaved so the SDK can
-/// surface the right user hint (login vs token-expired vs CI-token-missing).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AuthError {
-    /// No `ARETTA_TOKEN` env var, no `~/.config/aristo/credentials`.
-    /// Hint: run `aristo auth login` (or set `ARETTA_TOKEN` for CI).
-    NoToken,
-    /// Token present but server rejected it (401). Likely expired
-    /// or revoked.
-    Invalid,
-    /// Token present but the resolution code couldn't read /
-    /// parse it (filesystem error, malformed credentials file).
-    Malformed(String),
-}
-
-impl fmt::Display for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AuthError::NoToken => write!(
-                f,
-                "no canon auth token configured \
-                 (run `aristo auth login` or set ARETTA_TOKEN)"
-            ),
-            AuthError::Invalid => write!(
-                f,
-                "canon auth token rejected by server (expired or revoked)"
-            ),
-            AuthError::Malformed(msg) => write!(f, "canon credentials malformed: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for AuthError {}
+// `AuthError` moved to `aristo_core::auth::error` as part of the
+// auth-extraction refactor. Re-exported here for backward compat;
+// new code should import from `crate::auth::AuthError` directly.
+pub use crate::auth::AuthError;
 
 #[cfg(test)]
 mod tests {
