@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-21T17:23:39.276065Z"
+generated_at = "2026-05-21T17:28:38.528566Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -904,6 +904,17 @@ file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn warn_on_counterexamples (line 219)"
 covered_region = "function"
 
+[status_canon_health_is_offline_only]
+kind = "intent"
+text = "`aristo status` includes a canon-health block sourced from local state only — credentials presence (no token print), the [canon] config flag, last_fetched + canon_version + effective_scopes from `.aristo/canon-matches.toml`'s meta, and pending/accepted/rejected counts across all annotations. The block must NOT make a network call: status is the offline daily-loop summary; coupling it to canon API state would break the offline-friendly invariant."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:34cbe84f528f563a97b1dd8885f164f6c5438c0f02d501fa9d3d86ce2987d2d0"
+body_hash = "sha256:eb3e9428e2631ace2f09d016f51ae83c4c64b08e8aa1d5cc04c2d104340ca643"
+file = "crates/aristo-cli/src/commands/status.rs"
+site = "fn print_canon_health (line 124)"
+covered_region = "function"
+
 [status_tier_call_matches_badge_command_call]
 kind = "intent"
 text = "Status's tier computation routes through `aristo_core::badge::compute_tier` with the same `count_fns_per_module_with(WalkOptions::none())` denominator that `aristo badge` uses. Drift between the two would produce a project where the badge SVG and `aristo status` report different tiers — a contradiction the user can't reconcile. Sharing the call site (not the formula) is the load-bearing invariant."
@@ -912,7 +923,7 @@ status = "unknown"
 text_hash = "sha256:4557673137fec2e0b57eec92b91fd80bc25ed78fbb9d03545de2d5382f27c406"
 body_hash = "sha256:15bef40e863bda4796d36fc8a2d78bb2559e7c9cd8d956e2f8f272847547c8f1"
 file = "crates/aristo-cli/src/commands/status.rs"
-site = "fn compute_project_tier (line 178)"
+site = "fn compute_project_tier (line 247)"
 covered_region = "function"
 
 [stmt_form_intents_use_open_visit_descent_not_whitelist]

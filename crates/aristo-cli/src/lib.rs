@@ -609,6 +609,16 @@ pub(crate) enum CanonAction {
         #[arg(long = "notes")]
         notes: Option<String>,
     },
+
+    /// Report per-binding version drift between the local cache and
+    /// the canon API per canon-strategy.md §CS12. Surfaces three
+    /// classes: `current` (no change), `patch-bump` (same canon_id,
+    /// newer version — recommended action: `aristo canon refresh`),
+    /// and `minor-bump` (canon_id retired — recommended action:
+    /// `aristo canon unbind <id>` then re-stamp). Phase 1 is
+    /// diagnostic-only; Phase 2 auto-applies patch bumps and surfaces
+    /// minor bumps as critique findings.
+    Migrate,
 }
 
 /// Subcommands under `aristo session`. Each maps to one substrate
@@ -856,6 +866,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             CanonAction::RequestVerify { canon_id, notes } => {
                 commands::canon::request_verify::run(&canon_id, notes)
             }
+            CanonAction::Migrate => commands::canon::migrate::run(),
         },
     }
 }

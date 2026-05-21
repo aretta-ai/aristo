@@ -11,6 +11,7 @@
 
 pub(crate) mod accept;
 pub(crate) mod list;
+pub(crate) mod migrate;
 pub(crate) mod refresh;
 pub(crate) mod reject;
 pub(crate) mod request_verify;
