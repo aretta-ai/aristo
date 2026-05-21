@@ -5,5 +5,9 @@
 //! user-facing `aristo canon {show, list, refresh, unbind,
 //! request-verify}` subcommands land in PR #8/#9 alongside the
 //! trust-card renderer.
+//!
+//! `accept` lands PR #7's atomic source rewrite + index rebind +
+//! cache pending → accepted move for an accepted canon match.
 
+pub(crate) mod accept;
 pub(crate) mod runner;

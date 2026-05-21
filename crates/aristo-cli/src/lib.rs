@@ -448,6 +448,15 @@ enum Commands {
         #[command(subcommand)]
         action: AuthAction,
     },
+
+    /// Canon-binding operations on the SDK side. The user-facing
+    /// surface for the §13 canon-and-matching design — accept a
+    /// pending match (PR #7); show / list / refresh / unbind /
+    /// request-verify subcommands land in PR #8/#9.
+    Canon {
+        #[command(subcommand)]
+        action: CanonAction,
+    },
 }
 
 /// Subcommands under `aristo auth`. Each operates on the persistent
@@ -488,6 +497,34 @@ pub(crate) enum AuthAction {
     /// Remove the stored credentials file. Idempotent — running
     /// `logout` when not logged in is not an error.
     Logout,
+}
+
+/// Subcommands under `aristo canon`. Phase-1 lands `accept` only;
+/// `show` / `list` / `refresh` / `unbind` / `request-verify` follow
+/// in PR #8 + PR #9.
+#[derive(clap::Subcommand, Debug)]
+pub(crate) enum CanonAction {
+    /// Accept a pending canon match: rewrite source to use the
+    /// canonical text + apply the `aristos:` / `kanon:` prefix to
+    /// the annotation id, update the index entry's binding state
+    /// to `Bound`, and move the cache entry from `pending_matches`
+    /// to `accepted_matches`.
+    ///
+    /// Both arguments are required: the bare annotation id as it
+    /// appears in `.aristo/index.toml` (NOT prefixed; the prefix
+    /// is applied by accept) and the bare canon id from the
+    /// pending match (e.g. `cell_written_exactly_once_per_page_edit`).
+    Accept {
+        /// Annotation id whose pending match you're accepting. Use
+        /// the bare form (no `aristos:` / `kanon:` prefix); the
+        /// prefix is applied by the accept itself based on the
+        /// pending match's `prefix_tier`.
+        annotation_id: String,
+        /// Canon id from the pending match (also bare — no
+        /// prefix). The pair `(annotation_id, canon_id)` locates
+        /// the exact pending match in `.aristo/canon-matches.toml`.
+        canon_id: String,
+    },
 }
 
 /// Subcommands under `aristo session`. Each maps to one substrate
@@ -716,6 +753,12 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         } => commands::rename::run(&old_id, &new_id, dry_run),
         Commands::Session { action } => commands::session::run(action),
         Commands::Auth { action } => commands::auth::run(action),
+        Commands::Canon { action } => match action {
+            CanonAction::Accept {
+                annotation_id,
+                canon_id,
+            } => commands::canon::accept::run(&annotation_id, &canon_id),
+        },
     }
 }
 
