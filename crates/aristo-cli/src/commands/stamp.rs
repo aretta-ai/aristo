@@ -26,10 +26,14 @@
 
 use std::fs;
 
+use aristo_core::canon::CanonMatchesFile;
 use aristo_core::cycle::detect_cycles;
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Meta, Status};
 use aristo_core::walk::walk_directory_with;
 
+use crate::commands::canon::runner::{
+    print_stamp_summary, run_canon_step, CanonStepOutcome, RunnerArgs,
+};
 use crate::commands::index::{
     atomic_write, build_entries, now_rfc3339, walk_options_from_workspace, workspace_or_error,
 };
@@ -43,7 +47,7 @@ use crate::{CliError, CliResult};
     verify = "test",
     id = "stamp_check_never_writes"
 )]
-pub(crate) fn run(check: bool) -> CliResult<()> {
+pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
     // `--check` is read-only (no writes), so it bypasses the
     // session guard. Mutating runs refuse while a session is active.
@@ -118,6 +122,11 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
 
     atomic_write(&ws.index_path(), &toml_text)?;
 
+    // ── Canon-match step (post-index write so the cache is keyed
+    //    against the freshly-stamped ids). Skipped under --check so
+    //    CI doesn't make outbound network calls. ─────────────────────
+    run_canon_step_for_stamp(&ws, &index, skip_canon, refresh_canon)?;
+
     println!();
     println!(
         "ok: stamped {} annotations into {}",
@@ -128,6 +137,45 @@ pub(crate) fn run(check: bool) -> CliResult<()> {
             .display()
     );
     warn_on_counterexamples(&index);
+    Ok(())
+}
+
+#[aristo::intent(
+    "Canon-match runs AFTER index write so the freshly-stamped ids \
+     are what get cached. Running it before would mean re-stamping \
+     a body-drifted entry could cache against the *prior* id (the \
+     stamp-assigned opaque). Order is load-bearing — flipping it \
+     would silently surface canon findings on stale ids.",
+    verify = "test",
+    id = "stamp_runs_canon_step_after_index_write"
+)]
+fn run_canon_step_for_stamp(
+    ws: &crate::Workspace,
+    index: &IndexFile,
+    skip_canon: bool,
+    refresh_canon: bool,
+) -> CliResult<()> {
+    let config = ws.load_config();
+    let outcome = run_canon_step(RunnerArgs {
+        ws,
+        index,
+        config: &config.canon,
+        threshold: config.canon.threshold_stamp,
+        skip_flag: skip_canon,
+        refresh_flag: refresh_canon,
+        found_by: "aristo stamp",
+    })?;
+    // Re-read cache for the summary printer (it may have been
+    // re-written by the step; this read is a tiny disk hit but
+    // keeps the printer pure).
+    let cache = CanonMatchesFile::read(&ws.canon_matches_path()).map_err(|e| CliError::Other {
+        message: format!("re-read {}: {e}", ws.canon_matches_path().display()),
+        exit_code: 1,
+    })?;
+    print_stamp_summary(&outcome, &cache, ws);
+    if matches!(outcome, CanonStepOutcome::Degraded { .. }) {
+        // Non-fatal — daily loop continues.
+    }
     Ok(())
 }
 

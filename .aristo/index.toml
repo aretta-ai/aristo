@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.1.0"
-generated_at = "2026-05-21T00:28:04.577417Z"
+generated_at = "2026-05-21T00:45:05.820908Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -167,6 +167,39 @@ text_hash = "sha256:e263b091886cb4c609e53a9967e731cb3c967aa28163a64f90b6d5f93c48
 body_hash = "sha256:cd90679da5a4b2be67dab24d0af844740a795916a5d7634477e3a204e2b0aaf4"
 file = "crates/aristo-cli/src/skills/mod.rs"
 site = "fn bundled (line 53)"
+covered_region = "function"
+
+[canon_batch_collection_honors_l5_cache_skip]
+kind = "intent"
+text = "An annotation is added to the canon-match batch when (a) the user passed --refresh-canon, OR (b) no cached entry exists yet, OR (c) the cached entry's last_match_text_hash differs from the current annotation text_hash. A fresh cache hit produces no API traffic — load-bearing for the daily-loop UX where most stamps touch nothing canon-relevant."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:d05709d79213543e866fd09811badd17d17df0d57152946b2c66498693254199"
+body_hash = "sha256:4fe4adc3a2cba99ae202933b7a666b3037c3c7dc525f2f9920792874109b80ef"
+file = "crates/aristo-cli/src/commands/canon/runner.rs"
+site = "fn collect_batch (line 220)"
+covered_region = "function"
+
+[canon_client_selection_test_mode_wins]
+kind = "intent"
+text = "Client selection order is load-bearing: ARISTO_CANON_FIXTURE wins outright (test mode beats everything, including auth), then auth-token resolution decides between HttpCanonClient and the free-tier Noop. Reversing — e.g. checking auth first — would make integration tests need a fake token to work, coupling test setup to the auth substrate unnecessarily."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:033c97f2a4d696b548b44bbef0ada3a08f923198db4ad69b8d62951b350f404d"
+body_hash = "sha256:60e443217ca1749ca14b2eb76b1d03912e625aa5c80f755900738a067b703939"
+file = "crates/aristo-cli/src/commands/canon/runner.rs"
+site = "fn build_client (line 180)"
+covered_region = "function"
+
+[canon_merge_response_preserves_user_decisions]
+kind = "intent"
+text = "Merging match response into cache is per-annotation idempotent: each batched annotation's candidate list replaces ONLY that annotation's `pending_matches`; `accepted_matches` and `rejected_matches` for the same annotation are untouched (user decisions survive). A regression that overwrote accepted/rejected here would silently undo the user's review work on every stamp."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:231001cb3b7f6d75fe746347c26fdb396c793ecc1fca2a72d1de808a97db03fb"
+body_hash = "sha256:8737e1f46bb364aa176f3711bef40e680ff511235c41ea3c0c6f46a31ccd5247"
+file = "crates/aristo-cli/src/commands/canon/runner.rs"
+site = "fn merge_response_into_cache (line 290)"
 covered_region = "function"
 
 [clear_active_pointer_is_idempotent_and_load_bearing_for_exit]
@@ -551,7 +584,7 @@ status = "unknown"
 text_hash = "sha256:a0ac0dfb85cc50c166523567c4bfd7d2cc183ecc395958d41da9aa6e244a2528"
 body_hash = "sha256:0ad71651760b091640468ba31f1cea494e3dd98388b1617a7ebc7682da274e58"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn merge_status_from_prev (line 267)"
+site = "fn merge_status_from_prev (line 315)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
@@ -813,7 +846,7 @@ status = "unknown"
 text_hash = "sha256:d03b32ef9843b1113f8100e2416538a428fddb56edd67b4fba971f58041b5b65"
 body_hash = "sha256:f4b85e3430910f576b56f53491d48206f8710025adb6edfa42a1ba24beab271e"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn cascade_delete_orphan_proofs (line 134)"
+site = "fn cascade_delete_orphan_proofs (line 182)"
 covered_region = "function"
 
 [stamp_check_never_writes]
@@ -822,9 +855,9 @@ text = "When `--check` is set, `aristo stamp` never writes the index. CI relies 
 verify = "test"
 status = "unknown"
 text_hash = "sha256:46c84821843266195127e5ae086761da1c7aaefddb116c6ba041da7c7aa993e0"
-body_hash = "sha256:85580bce2249ffb2c3574085d539b0b8d6a6fc555d624bf82fe36f019ae017bb"
+body_hash = "sha256:d8fc4a7ce835c69eb46d72223b33bfb30744ad27cf081b53fab886829eb546a3"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn run (line 38)"
+site = "fn run (line 42)"
 covered_region = "function"
 
 [stamp_disposition_uses_atomic_write]
@@ -838,6 +871,17 @@ file = "crates/aristo-cli/src/commands/critique/session_kind.rs"
 site = "fn stamp_disposition (line 197)"
 covered_region = "function"
 
+[stamp_runs_canon_step_after_index_write]
+kind = "intent"
+text = "Canon-match runs AFTER index write so the freshly-stamped ids are what get cached. Running it before would mean re-stamping a body-drifted entry could cache against the *prior* id (the stamp-assigned opaque). Order is load-bearing — flipping it would silently surface canon findings on stale ids."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:b800bc5d89327791c0954b686837a79920ecad7fd633fa8171db9400a2c99f37"
+body_hash = "sha256:15d4e147afb93aa5d8e1205860cdb240fcc6b1057d7496bb457566d6408c6485"
+file = "crates/aristo-cli/src/commands/stamp.rs"
+site = "fn run_canon_step_for_stamp (line 143)"
+covered_region = "function"
+
 [stamp_surfaces_counterexamples_loudly]
 kind = "intent"
 text = "Every `aristo stamp` run that finds a Counterexample-status entry emits a loud, unmissable warning enumerating each id, file, and site. There is no `aristo accept-counterexample` to silence this; a counterexample is a definite refutation and stays visible until either the code is fixed (→ body drift → Status::Stale → re-verify) or the intent text is changed to exclude the counterexample case. Treating counterexamples as a quiet status badge would let a refuted invariant sit in the index unnoticed and erode the trust calibration of `aristo status`."
@@ -846,7 +890,7 @@ status = "unknown"
 text_hash = "sha256:fcc13e212642853f58685fda05d0dd533c4d41919c6af9750d46836cdb4606ef"
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn warn_on_counterexamples (line 171)"
+site = "fn warn_on_counterexamples (line 219)"
 covered_region = "function"
 
 [status_tier_call_matches_badge_command_call]
@@ -1110,5 +1154,5 @@ status = "neural"
 text_hash = "sha256:7dea8fbc1b236a0e3295c3d981ab61891cd213a335288052488a6aae09f0ef61"
 body_hash = "sha256:77bd66ccd1707698327bed561db8685eba167255e2cce8bc338e15ba23f912e9"
 file = "crates/aristo-cli/src/workspace.rs"
-site = "impl Workspace::load_config (line 130)"
+site = "impl Workspace::load_config (line 139)"
 covered_region = "function"

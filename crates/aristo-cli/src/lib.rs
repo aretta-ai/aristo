@@ -101,9 +101,22 @@ enum Commands {
     /// Index + ID assignment + drift detection + (Phase 2) B5b classification.
     Stamp {
         /// CI mode: report whether stamp would change the index, but
-        /// don't write. Exits non-zero if changes are needed.
+        /// don't write. Exits non-zero if changes are needed. Also
+        /// suppresses the canon-match step (CI doesn't need to make
+        /// outbound network calls).
         #[arg(long)]
         check: bool,
+        /// Skip the canon-match step for this invocation. Doesn't
+        /// disable canon globally — see `aristo.toml [canon] enabled
+        /// = false` for the project-level opt-out. Useful for local
+        /// stamps when offline or for snappy iteration.
+        #[arg(long = "skip-canon")]
+        skip_canon: bool,
+        /// Invalidate the local canon-match cache and re-query every
+        /// annotation on this run. Equivalent to
+        /// `aristo canon refresh && aristo stamp`.
+        #[arg(long = "refresh-canon", conflicts_with = "skip_canon")]
+        refresh_canon: bool,
     },
 
     /// Look up an annotation by id, fn / mod / struct name, or file:line.
@@ -595,7 +608,11 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             commands::install_skills::uninstall(agent, user, force)
         }
         Commands::Index { all } => commands::index::run(all),
-        Commands::Stamp { check } => commands::stamp::run(check),
+        Commands::Stamp {
+            check,
+            skip_canon,
+            refresh_canon,
+        } => commands::stamp::run(check, skip_canon, refresh_canon),
         Commands::Show {
             selector,
             json,

@@ -72,6 +72,15 @@ impl Workspace {
         self.aristo_dir().join("index.toml")
     }
 
+    /// Path to `.aristo/canon-matches.toml` — the per-repo cache of
+    /// server-side canon match responses (committed by default).
+    /// See `aristo_core::canon::cache` for the schema and
+    /// `../aretta-sdk/docs/mockups/13-canon-and-matching/README.md`
+    /// §L5 for the design.
+    pub fn canon_matches_path(&self) -> PathBuf {
+        self.aristo_dir().join("canon-matches.toml")
+    }
+
     /// Path to `.aristo/specs/`.
     pub fn specs_dir(&self) -> PathBuf {
         self.aristo_dir().join("specs")

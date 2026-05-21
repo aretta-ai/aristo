@@ -3,6 +3,7 @@
 
 pub(crate) mod auth;
 pub(crate) mod badge;
+pub(crate) mod canon;
 pub(crate) mod critique;
 pub(crate) mod doc;
 pub(crate) mod graph;
