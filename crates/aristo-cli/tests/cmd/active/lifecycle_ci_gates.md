@@ -94,6 +94,14 @@ Tier:
 Index health:
   schema_version: 1 (current)
 
+Canon binding (§13):
+  Auth:              no token (free-tier mode)
+  Last fetched:      never
+  Catalog version:   —
+  Pending:           0
+  Accepted (bound):  0
+  Rejected:          0
+
 [INFO] For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`).
 
 ```
