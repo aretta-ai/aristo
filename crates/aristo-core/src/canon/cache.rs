@@ -160,8 +160,9 @@ pub struct PendingMatch {
 
 impl Eq for PendingMatch {}
 
-/// Review state of a `PendingMatch`. Open until the user accepts /
-/// rejects via the critique session.
+/// Review state of a `PendingMatch`. Open until the user decides
+/// (accept / skip / reject). Rejection moves the match into
+/// [`RejectedMatch`] — it doesn't linger here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Disposition {
@@ -171,6 +172,15 @@ pub enum Disposition {
     /// stays open but the next critique session moves it back to
     /// the top of the queue.
     Skipped,
+    /// User has accepted the match. The pending entry stays in
+    /// `pending_matches[..]` with `disposition = "accepted"` only
+    /// transiently — `aristo canon accept` immediately rewrites
+    /// source, mutates the index, and moves the entry to
+    /// `accepted_matches[..]`. A pending match observed in this
+    /// state on disk means the apply step was interrupted; the
+    /// next accept (or stamp) reconciles. See PR #7 (the accept
+    /// path) for the atomic ordering contract.
+    Accepted,
 }
 
 /// An accepted (bound) canon match.
@@ -364,6 +374,46 @@ mod tests {
         let back: CanonMatchesFile = toml::from_str(&s).unwrap();
         assert_eq!(back, f);
         assert_eq!(back.meta.schema_version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn disposition_all_variants_round_trip_as_kebab_case() {
+        // Three legal Dispositions; serialize-as-kebab-case is load-bearing
+        // because `aristo canon accept` writes `"accepted"` to disk and the
+        // critique apply path filters by string match in trycmd scenarios.
+        for (variant, wire) in [
+            (Disposition::Open, "\"open\""),
+            (Disposition::Skipped, "\"skipped\""),
+            (Disposition::Accepted, "\"accepted\""),
+        ] {
+            let s = serde_json::to_string(&variant).unwrap();
+            assert_eq!(s, wire, "variant {variant:?} should serialize as {wire}");
+            let back: Disposition = serde_json::from_str(wire).unwrap();
+            assert_eq!(back, variant);
+        }
+    }
+
+    #[test]
+    fn pending_match_with_accepted_disposition_round_trips() {
+        // PR #7's transient state: a pending match whose disposition is
+        // `Accepted` but whose source/index/cache application is pending.
+        let mut p = sample_pending();
+        p.disposition = Disposition::Accepted;
+        let mut f = CanonMatchesFile::default();
+        f.entries.insert(
+            aid("edit_page_cell_write_invariant"),
+            CacheEntry {
+                last_match_text_hash: "blake3:7f3a9e2c".into(),
+                canon_fetched_at: "2026-06-15T09:14:22Z".into(),
+                pending_matches: vec![p],
+                accepted_matches: vec![],
+                rejected_matches: vec![],
+            },
+        );
+        let s = toml::to_string(&f).unwrap();
+        assert!(s.contains("disposition = \"accepted\""), "got: {s}");
+        let back: CanonMatchesFile = toml::from_str(&s).unwrap();
+        assert_eq!(back, f);
     }
 
     #[test]

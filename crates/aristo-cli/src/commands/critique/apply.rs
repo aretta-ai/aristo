@@ -142,13 +142,21 @@ fn print_canonicalize_findings(ws: &Workspace, include_closed: bool) {
 
     // Render in two passes for consistency with print_summary's
     // open-vs-closed view: collect first, then decide what to print.
+    //
+    // `Accepted` is intentionally counted as closed even though it's
+    // a transient state — `aristo canon accept` writes the pending
+    // entry as Accepted only between the source rewrite and the cache
+    // move (pending → accepted_matches). A pending match observed as
+    // Accepted here means the apply was interrupted; the next accept
+    // (or stamp) reconciles. Either way, it should NOT re-surface as
+    // an open finding.
     let mut open_findings: Vec<(&AnnotationId, &aristo_core::canon::PendingMatch)> = Vec::new();
     let mut closed_count: usize = 0;
     for (id, entry) in &cache.entries {
         for m in &entry.pending_matches {
             match m.disposition {
                 CanonDisposition::Open => open_findings.push((id, m)),
-                CanonDisposition::Skipped => closed_count += 1,
+                CanonDisposition::Skipped | CanonDisposition::Accepted => closed_count += 1,
             }
         }
     }
