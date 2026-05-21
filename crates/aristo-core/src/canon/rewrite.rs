@@ -44,6 +44,7 @@
 //! an assume annotation returns [`RewriteError::AnnotationKindNotSupported`].
 
 use proc_macro2::LineColumn;
+use syn::spanned::Spanned;
 use syn::visit::Visit;
 
 use super::types::PrefixTier;
@@ -51,10 +52,12 @@ use super::types::PrefixTier;
 /// Inputs to a canon-accept source rewrite.
 #[derive(Debug, Clone)]
 pub struct AcceptRewriteRequest {
-    /// 1-indexed line of the function (or item) the attribute is attached
-    /// to. Matches the line embedded in `IntentEntry::site`
-    /// (`"fn name (line N)"`) — that's how the caller finds the right
-    /// annotation in the file.
+    /// 1-indexed line of the **attribute's first token** (the `#`). This
+    /// matches `IntentEntry::line` (the per-annotation line that `aristo
+    /// stamp` records during extraction). If the user authored a
+    /// multi-line attribute, this is the line carrying the `#`, NOT
+    /// the line of the attribute's closing `)]` or the line of the
+    /// item it's attached to.
     pub item_line: usize,
     /// Bare canon id (no prefix), e.g.
     /// `"cell_written_exactly_once_per_page_edit"`. The prefix is
@@ -252,73 +255,20 @@ struct AttrFinder<'ast> {
     found: Option<AttrMatch<'ast>>,
 }
 
-impl<'ast> AttrFinder<'ast> {
-    fn try_match_item(&mut self, item_line: usize, attrs: &'ast [syn::Attribute]) {
-        if self.found.is_some() || item_line != self.target_line {
+impl<'ast> Visit<'ast> for AttrFinder<'ast> {
+    fn visit_attribute(&mut self, attr: &'ast syn::Attribute) {
+        if self.found.is_some() {
             return;
         }
-        for attr in attrs {
-            if let Some(kind) = classify_aristo_attr(attr) {
-                self.found = Some(AttrMatch { attr, kind });
-                return;
-            }
+        let Some(kind) = classify_aristo_attr(attr) else {
+            return;
+        };
+        // The `#` token is the first byte of the attribute span — same
+        // line that `aristo stamp` records via `attr.span().start().line`
+        // (per `walk::extract`).
+        if attr.span().start().line == self.target_line {
+            self.found = Some(AttrMatch { attr, kind });
         }
-    }
-}
-
-impl<'ast> Visit<'ast> for AttrFinder<'ast> {
-    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        let line = node.sig.fn_token.span.start().line;
-        self.try_match_item(line, &node.attrs);
-        syn::visit::visit_block(self, &node.block);
-    }
-
-    fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
-        let line = node.struct_token.span.start().line;
-        self.try_match_item(line, &node.attrs);
-    }
-
-    fn visit_item_enum(&mut self, node: &'ast syn::ItemEnum) {
-        let line = node.enum_token.span.start().line;
-        self.try_match_item(line, &node.attrs);
-    }
-
-    fn visit_item_trait(&mut self, node: &'ast syn::ItemTrait) {
-        let line = node.trait_token.span.start().line;
-        self.try_match_item(line, &node.attrs);
-        for item in &node.items {
-            if let syn::TraitItem::Fn(method) = item {
-                let line = method.sig.fn_token.span.start().line;
-                self.try_match_item(line, &method.attrs);
-            }
-        }
-    }
-
-    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
-        let line = node.impl_token.span.start().line;
-        self.try_match_item(line, &node.attrs);
-        for item in &node.items {
-            if let syn::ImplItem::Fn(method) = item {
-                let line = method.sig.fn_token.span.start().line;
-                self.try_match_item(line, &method.attrs);
-                syn::visit::visit_block(self, &method.block);
-            }
-        }
-    }
-
-    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
-        let line = node.mod_token.span.start().line;
-        self.try_match_item(line, &node.attrs);
-        if let Some((_, items)) = &node.content {
-            for item in items {
-                self.visit_item(item);
-            }
-        }
-    }
-
-    fn visit_item_type(&mut self, node: &'ast syn::ItemType) {
-        let line = node.type_token.span.start().line;
-        self.try_match_item(line, &node.attrs);
     }
 }
 
@@ -483,7 +433,7 @@ mod tests {
         let req = aristos_req(
             "cell_written_exactly_once_per_page_edit",
             "edit_page writes each cell exactly once",
-            2,
+            1,
         );
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
@@ -509,7 +459,7 @@ mod tests {
         let req = kanon_req(
             "checkout_total_non_negative",
             "checkout total is non-negative",
-            2,
+            1,
         );
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
@@ -523,7 +473,7 @@ mod tests {
     #[test]
     fn existing_verify_arg_is_preserved() {
         let src = "#[aristo::intent(\"x\", verify = \"test\")]\nfn f() {}\n";
-        let req = aristos_req("foo", "y", 2);
+        let req = aristos_req("foo", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         assert!(post.contains(r#"verify = "test""#), "post: {post}");
@@ -536,7 +486,7 @@ mod tests {
         // `verify = true` / `verify = false` are valid expressions; the
         // rewrite must round-trip them as bare keywords, not as strings.
         let src = "#[aristo::intent(\"x\", verify = false)]\nfn f() {}\n";
-        let req = aristos_req("foo", "y", 2);
+        let req = aristos_req("foo", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         assert!(
@@ -548,7 +498,7 @@ mod tests {
     #[test]
     fn existing_id_arg_is_replaced_by_canon_id() {
         let src = "#[aristo::intent(\"x\", id = \"my_local_invariant\")]\nfn f() {}\n";
-        let req = aristos_req("foo_bar", "y", 2);
+        let req = aristos_req("foo_bar", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         assert!(post.contains(r#"id = "aristos:foo_bar""#), "post: {post}");
@@ -558,7 +508,7 @@ mod tests {
     #[test]
     fn existing_parent_single_arg_is_preserved() {
         let src = "#[aristo::intent(\"x\", parent = \"my_ancestor\")]\nfn f() {}\n";
-        let req = aristos_req("foo", "y", 2);
+        let req = aristos_req("foo", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         assert!(post.contains(r#"parent = "my_ancestor""#), "post: {post}");
@@ -567,7 +517,7 @@ mod tests {
     #[test]
     fn existing_parent_array_is_preserved_with_all_elements() {
         let src = "#[aristo::intent(\"x\", parent = [\"a\", \"b\", \"c\"])]\nfn f() {}\n";
-        let req = aristos_req("foo", "y", 2);
+        let req = aristos_req("foo", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         assert!(post.contains(r#"parent = ["a", "b", "c"]"#), "post: {post}");
@@ -583,10 +533,11 @@ mod tests {
 )]
 fn edit_page() {}
 ";
+        // The `#` token sits on line 1; line 1 is the attr line.
         let req = aristos_req(
             "cell_written_exactly_once_per_page_edit",
             "edit_page writes each cell exactly once",
-            6,
+            1,
         );
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
@@ -605,8 +556,9 @@ fn edit_page() {}
 
     #[test]
     fn bare_imported_intent_attribute_form_is_recognized() {
+        // Line 1: `use aristo::intent;`; Line 2: `#[intent("hi")]`.
         let src = "use aristo::intent;\n#[intent(\"hi\")]\nfn f() {}\n";
-        let req = aristos_req("foo", "hello", 3);
+        let req = aristos_req("foo", "hello", 2);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         assert!(post.contains(r#"id = "aristos:foo""#), "post: {post}");
@@ -615,10 +567,10 @@ fn edit_page() {}
     #[test]
     fn assume_annotation_is_explicitly_rejected() {
         let src = "#[aristo::assume(\"x\")]\nfn f() {}\n";
-        let req = aristos_req("foo", "y", 2);
+        let req = aristos_req("foo", "y", 1);
         let err = compute_rewrite(src, &req).expect_err("must reject assume");
         assert!(
-            matches!(err, RewriteError::AnnotationKindNotSupported { line: 2 }),
+            matches!(err, RewriteError::AnnotationKindNotSupported { line: 1 }),
             "got: {err:?}"
         );
     }
@@ -643,16 +595,19 @@ fn edit_page() {}
     }
 
     #[test]
-    fn impl_method_annotation_is_found_via_method_fn_line() {
+    fn impl_method_annotation_is_found_via_attribute_line() {
         let src = "\
 impl Holder {
     #[aristo::intent(\"x\")]
     fn ctor(v: i32) -> Self { Self { v } }
 }
 ";
-        // The fn keyword for `ctor` is on line 3 of the source string
-        // above (with the leading line being line 1: `impl Holder {`).
-        let req = aristos_req("foo", "y", 3);
+        // Line 2 of the source carries the `#[aristo::intent(...)]`
+        // attribute. The default `Visit` traversal descends into impl
+        // methods and emits `visit_attribute` for each method-level
+        // attribute, so the line-match works the same way as a
+        // top-level fn.
+        let req = aristos_req("foo", "y", 2);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         assert!(post.contains(r#"id = "aristos:foo""#), "post: {post}");
@@ -663,7 +618,7 @@ impl Holder {
         // The canon entry could theoretically carry a quote in its
         // canonical_text. Verify the rewrite escapes correctly.
         let src = "#[aristo::intent(\"plain\")]\nfn f() {}\n";
-        let req = aristos_req("foo", r#"says "hello" loudly"#, 2);
+        let req = aristos_req("foo", r#"says "hello" loudly"#, 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
         // The escaped form must re-parse.
@@ -674,7 +629,7 @@ impl Holder {
     #[test]
     fn byte_range_covers_outer_parentheses_inclusive() {
         let src = "#[aristo::intent(\"x\")]\nfn f() {}\n";
-        let req = aristos_req("foo", "y", 2);
+        let req = aristos_req("foo", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         // The replacement starts and ends with `(` / `)`.
         assert!(rw.replacement.starts_with('('), "got: {}", rw.replacement);
