@@ -171,13 +171,29 @@ pub fn compute_rewrite(
             })?;
 
     // Build the replacement string.
+    //
+    // **Arg shape:** positional canonical_text first, then named
+    // `id = ...` (canon-prefixed), then preserved verify / parent.
+    //
+    // The §13 mockup shows an all-named-args form
+    // (`intent(id = ..., text = ..., verify = ...)`), but the macro
+    // grammar + walk extractor + scan_id_occurrences all expect the
+    // canonical positional-text-first shape (a positional `LitStr`
+    // followed by named keyword args). Emitting `text = ...` as a
+    // named arg would silently drop the annotation from the index
+    // walk because the parser falls into a `parse_args` failure
+    // (no positional LitStr). Phase 1 keeps the positional shape; a
+    // future PR could relax the parsers to accept both forms if the
+    // mockup's all-named-args style proves valuable.
     let prefixed_id = match request.prefix_tier {
         PrefixTier::Aristos => format!("aristos:{}", request.canon_id),
         PrefixTier::Kanon => format!("kanon:{}", request.canon_id),
     };
     let mut args: Vec<String> = Vec::with_capacity(4);
+    // Positional canonical text first (this slot is the macro's
+    // documented `text` arg).
+    args.push(escape_string(&request.canonical_text));
     args.push(format!("id = {}", escape_string(&prefixed_id)));
-    args.push(format!("text = {}", escape_string(&request.canonical_text)));
     if let Some(verify) = &parsed.verify_tokens {
         args.push(format!("verify = {verify}"));
     }
@@ -428,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn aristos_tier_rewrites_positional_text_into_named_args() {
+    fn aristos_tier_rewrites_positional_text_and_applies_prefix() {
         let src = "#[aristo::intent(\"each cell should be written exactly once per page edit\")]\nfn edit_page() {}\n";
         let req = aristos_req(
             "cell_written_exactly_once_per_page_edit",
@@ -441,8 +457,9 @@ mod tests {
             post.contains(r#"id = "aristos:cell_written_exactly_once_per_page_edit""#),
             "post: {post}"
         );
+        // Canonical text appears as the positional first arg.
         assert!(
-            post.contains(r#"text = "edit_page writes each cell exactly once""#),
+            post.contains(r#""edit_page writes each cell exactly once""#),
             "post: {post}"
         );
         // Original prose is gone — replaced.
@@ -546,7 +563,7 @@ fn edit_page() {}
             "post: {post}"
         );
         assert!(
-            post.contains(r#"text = "edit_page writes each cell exactly once""#),
+            post.contains(r#""edit_page writes each cell exactly once""#),
             "post: {post}"
         );
         assert!(post.contains(r#"verify = "test""#), "post: {post}");

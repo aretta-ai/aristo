@@ -156,7 +156,7 @@ fn accept_aristos_tier_rewrites_source_and_applies_prefix() {
         "expected aristos: prefix in source; got:\n{post}"
     );
     assert!(
-        post.contains(r#"text = "edit_page writes each cell exactly once""#),
+        post.contains(r#""edit_page writes each cell exactly once""#),
         "expected canonical text in source; got:\n{post}"
     );
     // Original prose is gone.
@@ -195,7 +195,7 @@ fn accept_kanon_tier_rewrites_source_and_applies_kanon_prefix() {
     );
     assert!(!post.contains("aristos:"), "post: {post}");
     assert!(
-        post.contains(r#"text = "checkout total is non-negative""#),
+        post.contains(r#""checkout total is non-negative""#),
         "expected canonical text; got:\n{post}"
     );
 }

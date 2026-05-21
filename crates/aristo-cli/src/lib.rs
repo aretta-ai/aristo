@@ -579,6 +579,36 @@ pub(crate) enum CanonAction {
     /// no index rewrite). Useful when the user knows a new catalog
     /// version has shipped and wants fresh matches without a stamp.
     Refresh,
+
+    /// Reverse of `aristo canon accept`: strip the `aristos:` /
+    /// `kanon:` prefix from a canon-bound annotation, revert its
+    /// binding to `Local`, and drop the accepted_matches cache
+    /// entry. Source is rewritten in place (only the `id =` value
+    /// changes; canonical text + verify + parent are preserved).
+    /// The next `aristo stamp` may re-pull a fresh pending match
+    /// against the same annotation text.
+    Unbind {
+        /// Canon-bound annotation id including the prefix (e.g.
+        /// `aristos:cell_written_exactly_once_per_page_edit`).
+        prefixed_id: String,
+    },
+
+    /// Record a verification demand signal against a canon entry.
+    /// Idempotent on `(canon_id, repo, user)` per canon-strategy.md
+    /// §CS11. Use when an annotation is bound at the `kanon:` tier
+    /// and the user wants Aretta to invest in a verifier for that
+    /// canon entry.
+    RequestVerify {
+        /// Canon id (no prefix). The same id the trust card surfaces
+        /// or that `aristo canon list` shows.
+        canon_id: String,
+        /// Optional free-text rationale to attach to the demand
+        /// signal (e.g., "critical for our financial-tx audit"). On
+        /// repeat calls with a new note, replaces the previous one
+        /// server-side.
+        #[arg(long = "notes")]
+        notes: Option<String>,
+    },
 }
 
 /// Subcommands under `aristo session`. Each maps to one substrate
@@ -822,6 +852,10 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 commands::canon::show::run(&canon_id, version)
             }
             CanonAction::Refresh => commands::canon::refresh::run(),
+            CanonAction::Unbind { prefixed_id } => commands::canon::unbind::run(&prefixed_id),
+            CanonAction::RequestVerify { canon_id, notes } => {
+                commands::canon::request_verify::run(&canon_id, notes)
+            }
         },
     }
 }
