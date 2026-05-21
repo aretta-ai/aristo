@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-21T16:15:21.036772Z"
+generated_at = "2026-05-21T16:31:59.948878Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -65,7 +65,7 @@ text = "Canonicalize findings are surfaced alongside agentic critique findings i
 verify = "test"
 status = "unknown"
 text_hash = "sha256:238a8a86699a9fc251976c0661a4b7da1b4277830c96b0346bdf19fd4ad05f06"
-body_hash = "sha256:b02f35a28000ec6810874c3ad735e5ad965c617ecc97a2bc2744ef5ef3c5ffb3"
+body_hash = "sha256:40f90526809a4016706d7c0aa880e11252e68079ca27d5d93661d96a904ecd56"
 file = "crates/aristo-cli/src/commands/critique/apply.rs"
 site = "fn print_canonicalize_findings (line 113)"
 covered_region = "function"
@@ -243,7 +243,7 @@ status = "unknown"
 text_hash = "sha256:0f0612b48b5498ce64b74e80ff95eb22016dee585fca7c9f299ca030de16c482"
 body_hash = "sha256:b2884768e6c38a7837b55624c433b3a728c76e9755ea558f407f1839837f64b0"
 file = "crates/aristo-cli/src/commands/critique/apply.rs"
-site = "fn stamp_critique_cache (line 300)"
+site = "fn stamp_critique_cache (line 308)"
 covered_region = "function"
 
 [critique_derived_fields_stamped_by_sdk_not_agent]

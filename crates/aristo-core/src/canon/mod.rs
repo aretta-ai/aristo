@@ -45,6 +45,7 @@ pub mod client;
 pub mod http_client;
 pub mod mock_client;
 pub mod noop_client;
+pub mod rewrite;
 pub mod types;
 
 pub use auth::Token;
@@ -56,6 +57,7 @@ pub use client::{AuthError, CanonClient, CanonError};
 pub use http_client::{HttpCanonClient, DEFAULT_BASE_URL};
 pub use mock_client::MockCanonClient;
 pub use noop_client::NoopCanonClient;
+pub use rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError};
 pub use types::{
     AnnotationMatchInput, CanonEntry, CanonMatch, CanonMatchRequest, CanonMatchResponse,
     PrefixTier, References, RelatedEntry, RequestVerifyBody, RequestVerifyResponse,
