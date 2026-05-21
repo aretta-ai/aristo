@@ -13,15 +13,16 @@
 
 use std::fs;
 
+use aristo_core::canon::cache::CanonMatchesFile;
 use aristo_core::index::{
-    AnnotationId, AssumeEntry, BindingState, IndexEntry, IndexFile, IntentEntry, ParentLink,
-    Status, VerifyLevel, VerifyMethod,
+    AnnotationId, AssumeEntry, BindingState, IdNamespace, IndexEntry, IndexFile, IntentEntry,
+    ParentLink, Status, VerifyLevel, VerifyMethod,
 };
 use serde::Serialize;
 
 use crate::commands::index::workspace_or_error;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
-use crate::{CliError, CliResult};
+use crate::{CliError, CliResult, Workspace};
 
 /// How to render a found entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,9 +38,9 @@ pub(crate) fn run(selector: &str, mode: OutputMode) -> CliResult<()> {
     let index = read_index(&ws.index_path())?;
     let parsed = parse_selector(selector);
     match parsed {
-        Selector::Id(raw) => show_by_id(&index, &raw, mode),
-        Selector::Item { kind, name } => show_by_item(&index, kind, &name, mode),
-        Selector::FileLine { file, line } => show_by_file_line(&index, &file, line, mode),
+        Selector::Id(raw) => show_by_id(&ws, &index, &raw, mode),
+        Selector::Item { kind, name } => show_by_item(&ws, &index, kind, &name, mode),
+        Selector::FileLine { file, line } => show_by_file_line(&ws, &index, &file, line, mode),
     }
 }
 
@@ -133,16 +134,22 @@ pub(crate) fn read_index(path: &std::path::Path) -> CliResult<IndexFile> {
 
 // ─── Lookup paths ──────────────────────────────────────────────────────────
 
-fn show_by_id(index: &IndexFile, raw: &str, mode: OutputMode) -> CliResult<()> {
+fn show_by_id(ws: &Workspace, index: &IndexFile, raw: &str, mode: OutputMode) -> CliResult<()> {
     let parsed = AnnotationId::parse(raw).ok();
     let entry = parsed.as_ref().and_then(|id| index.entries.get(id));
     match (parsed, entry) {
-        (Some(id), Some(entry)) => emit_one(&id, entry, index, mode),
+        (Some(id), Some(entry)) => emit_one(ws, &id, entry, index, mode),
         _ => Err(no_id_error(index, raw)),
     }
 }
 
-fn show_by_item(index: &IndexFile, kind: ItemKind, name: &str, mode: OutputMode) -> CliResult<()> {
+fn show_by_item(
+    ws: &Workspace,
+    index: &IndexFile,
+    kind: ItemKind,
+    name: &str,
+    mode: OutputMode,
+) -> CliResult<()> {
     let matches: Vec<(&AnnotationId, &IndexEntry)> = index
         .entries
         .iter()
@@ -163,13 +170,19 @@ fn show_by_item(index: &IndexFile, kind: ItemKind, name: &str, mode: OutputMode)
         }),
         1 => {
             let (id, entry) = matches[0];
-            emit_one(id, entry, index, mode)
+            emit_one(ws, id, entry, index, mode)
         }
         n => emit_disambiguation(kind, name, n, &matches, mode),
     }
 }
 
-fn show_by_file_line(index: &IndexFile, file: &str, line: u32, mode: OutputMode) -> CliResult<()> {
+fn show_by_file_line(
+    ws: &Workspace,
+    index: &IndexFile,
+    file: &str,
+    line: u32,
+    mode: OutputMode,
+) -> CliResult<()> {
     let matches: Vec<(&AnnotationId, &IndexEntry)> = index
         .entries
         .iter()
@@ -188,7 +201,7 @@ fn show_by_file_line(index: &IndexFile, file: &str, line: u32, mode: OutputMode)
     }
     if matches.len() == 1 {
         let (id, entry) = matches[0];
-        return emit_one(id, entry, index, mode);
+        return emit_one(ws, id, entry, index, mode);
     }
     // Multiple annotations sharing one source line — list all.
     emit_disambiguation(
@@ -308,6 +321,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
 // ─── Output formatting ─────────────────────────────────────────────────────
 
 fn emit_one(
+    ws: &Workspace,
     id: &AnnotationId,
     entry: &IndexEntry,
     index: &IndexFile,
@@ -316,6 +330,7 @@ fn emit_one(
     match mode {
         OutputMode::Text => {
             print!("{}", format_text(id, entry, index));
+            print!("{}", format_canon_binding(ws, id, entry));
             Ok(())
         }
         OutputMode::Json => {
@@ -730,6 +745,124 @@ fn intent_facets(e: &IntentEntry) -> EntryFacets {
 fn assume_facets(e: &AssumeEntry) -> EntryFacets {
     let linked = e.linked.as_ref().map(|l| l.to_string());
     ("assume", None, linked, None, None)
+}
+
+// ─── Trust card (PR #10) ──────────────────────────────────────────────────
+//
+// When `aristo show` displays a canon-bound annotation (id namespace is
+// `aristos:` or `kanon:`), append a trust-card block. The card sources
+// everything from local state (the index entry + the cache's
+// `accepted_matches[..]` for this id) — no network call. The user can
+// run `aristo canon show <bare_id>` to fetch the full canon-side
+// description / examples / references from the API.
+//
+// Visual contract per cli-sessions.md "Cross-cutting: aristo show":
+// - `aristos:` tier: heavy box-drawing header (═) marking "backed".
+// - `kanon:` tier:   light box-drawing header (─) marking "unbacked".
+// - Renders `backed_by` for `aristos:`; renders the demand-signal
+//   prompt + `aristo canon request-verify <id>` hint for `kanon:`.
+// - Phase 1: no per-user Verification block — that lands in Phase 2
+//   alongside the verification execution endpoint (see
+//   `_deferred/verification-execution.md`).
+
+fn format_canon_binding(ws: &Workspace, id: &AnnotationId, entry: &IndexEntry) -> String {
+    let ns = id.namespace();
+    if !matches!(ns, IdNamespace::Aristos | IdNamespace::Kanon) {
+        return String::new();
+    }
+    // Only intent entries can be canon-bound (assumes don't have a
+    // binding state). Skip for assumes — though the namespace check
+    // upstream should prevent this.
+    let IndexEntry::Intent(intent) = entry else {
+        return String::new();
+    };
+    // Read the canon cache for the accepted_matches entry under this id.
+    let cache_path = ws.canon_matches_path();
+    let cache = CanonMatchesFile::read(&cache_path).unwrap_or_default();
+    let accepted = cache
+        .entries
+        .get(id)
+        .and_then(|e| e.accepted_matches.first());
+
+    let (rule_char, tier_label) = match ns {
+        IdNamespace::Aristos => ('═', "aristos:  (backed for your scope)"),
+        IdNamespace::Kanon => (
+            '─',
+            "kanon:    (no verification backing yet for :vanilla scope)",
+        ),
+        _ => unreachable!(),
+    };
+    let rule: String = std::iter::repeat_n(rule_char, 70).collect();
+
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str(&rule);
+    out.push('\n');
+    out.push_str(&format!("  Canon binding — {tier_label}\n"));
+    out.push_str(&rule);
+    out.push('\n');
+    out.push_str(&format!("    id:           {}\n", id.as_str()));
+    if let Some(a) = accepted {
+        out.push_str(&format!("    canon_id:     {}\n", a.canon_id));
+        out.push_str(&format!(
+            "    version:      {} (canon {})\n",
+            a.version, a.canon_version
+        ));
+        out.push_str(&format!("    confidence:   {:.2}\n", a.confidence));
+        out.push_str(&format!("    bound_at:     {}\n", a.bound_at));
+    }
+    if let aristo_core::index::BindingState::Bound { linked } = &intent.binding {
+        out.push_str(&format!("    linked:       {linked}\n"));
+    }
+    match ns {
+        IdNamespace::Aristos => {
+            let backed = accepted
+                .and_then(|a| a.backed_by.clone())
+                .unwrap_or_else(|| "—".to_string());
+            out.push_str(&format!("    backed by:    {backed}\n"));
+            out.push('\n');
+            out.push_str(
+                "    Aretta has committed to a verification mechanism for this\n    \
+                 property. Verification execution itself lands in Phase 2 — `aristo\n    \
+                 verify` will run it then; see _deferred/verification-execution.md.\n",
+            );
+        }
+        IdNamespace::Kanon => {
+            out.push_str("    backed by:    — (no backing yet for your scope)\n");
+            out.push('\n');
+            out.push_str(
+                "    This property is canonically recognized but has no verification\n    \
+                 mechanism behind it. Aretta invests in verifiers by demand; tell us\n    \
+                 this property matters to you:\n\n        \
+                 aristo canon request-verify {bare}\n",
+            );
+            // Best-effort: substitute the bare canon id into the hint.
+            if let Some(a) = accepted {
+                out = out.replace("{bare}", &a.canon_id);
+            } else {
+                // Fall back to stripping the prefix from the id ourselves.
+                let bare = id.as_str().split_once(':').map(|(_, b)| b).unwrap_or("");
+                out = out.replace("{bare}", bare);
+            }
+        }
+        _ => unreachable!(),
+    }
+    out.push('\n');
+    let bare_for_hint = accepted.map(|a| a.canon_id.clone()).unwrap_or_else(|| {
+        id.as_str()
+            .split_once(':')
+            .map(|(_, b)| b.to_string())
+            .unwrap_or_default()
+    });
+    if !bare_for_hint.is_empty() {
+        out.push_str(&format!(
+            "    For the full canon entry detail (description, examples, references),\n    \
+             run: `aristo canon show {bare_for_hint}`\n",
+        ));
+    }
+    out.push_str(&rule);
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]
