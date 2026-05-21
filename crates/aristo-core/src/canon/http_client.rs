@@ -31,9 +31,10 @@ use super::types::{
 use super::Token;
 
 /// Default base URL for the canon API. Points at production
-/// (`api.aretta.ai`); tests + staging override via
-/// [`HttpCanonClient::new`].
-pub const DEFAULT_BASE_URL: &str = "https://api.aretta.ai";
+/// (`code.aretta.ai`); tests + staging override via
+/// [`HttpCanonClient::new`]. See [`crate::auth::ServerUrl`] for the
+/// dev/prod/custom enum that owns the well-known URL constants.
+pub const DEFAULT_BASE_URL: &str = crate::auth::ServerUrl::PROD;
 
 /// L3 graceful-degradation timeout. Applies to each individual
 /// request (not the whole operation).

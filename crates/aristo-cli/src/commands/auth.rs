@@ -49,7 +49,7 @@ fn login(read_stdin: bool, token_flag: Option<String>) -> CliResult<()> {
     if trimmed.is_empty() {
         return Err(CliError::Other {
             message: "no token provided.\n\
-                     Get an API token at https://aretta.ai/account/tokens, then run\n  \
+                     Get an API token at https://code.aretta.ai/dashboard/settings/tokens, then run\n  \
                        `aristo auth login` (paste interactively),\n  \
                        `aristo auth login --stdin` (pipe), or\n  \
                        `aristo auth login --token <TOKEN>` (scripting)."
@@ -95,7 +95,9 @@ fn collect_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<Stri
     }
     // Interactive prompt. Use stderr for the prompt so stdout stays
     // pipe-clean (some users will pipe stdout to grep or similar).
-    eprintln!("To authenticate, get an API token at https://aretta.ai/account/tokens");
+    eprintln!(
+        "To authenticate, get an API token at https://code.aretta.ai/dashboard/settings/tokens"
+    );
     eprintln!("Paste the token below and press Enter:");
     let mut line = String::new();
     std::io::stdin()
