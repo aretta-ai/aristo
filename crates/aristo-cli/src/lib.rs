@@ -525,6 +525,28 @@ pub(crate) enum CanonAction {
         /// the exact pending match in `.aristo/canon-matches.toml`.
         canon_id: String,
     },
+
+    /// Reject a pending canon match: move the entry from
+    /// `pending_matches` to `rejected_matches`, pinned by the
+    /// current annotation `text_hash`. The rejection suppresses
+    /// re-surfacing the same `(canon_id, text_hash)` tuple on
+    /// future `aristo stamp` runs; once the annotation text
+    /// changes, the rejection no longer applies and the match
+    /// is re-evaluated. Source and index are NOT touched —
+    /// rejection is a cache-only operation. Closes Flow 7 from
+    /// cli-sessions.md.
+    Reject {
+        /// Annotation id whose pending match you're rejecting.
+        annotation_id: String,
+        /// Canon id from the pending match.
+        canon_id: String,
+        /// Optional free-text rationale recorded in the cache
+        /// entry's `reason` field. Useful for documenting
+        /// "this canon entry is too broad" / "wrong category"
+        /// decisions for future reviewers.
+        #[arg(long = "reason")]
+        reason: Option<String>,
+    },
 }
 
 /// Subcommands under `aristo session`. Each maps to one substrate
@@ -758,6 +780,11 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 annotation_id,
                 canon_id,
             } => commands::canon::accept::run(&annotation_id, &canon_id),
+            CanonAction::Reject {
+                annotation_id,
+                canon_id,
+                reason,
+            } => commands::canon::reject::run(&annotation_id, &canon_id, reason),
         },
     }
 }

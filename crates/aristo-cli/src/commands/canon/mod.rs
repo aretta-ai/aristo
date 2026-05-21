@@ -10,4 +10,5 @@
 //! cache pending → accepted move for an accepted canon match.
 
 pub(crate) mod accept;
+pub(crate) mod reject;
 pub(crate) mod runner;
