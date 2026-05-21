@@ -284,6 +284,7 @@ fn category_str(c: aristo_core::critique::Category) -> &'static str {
         Vocabulary => "vocabulary",
         Scope => "scope",
         Clarity => "clarity",
+        Canonicalize => "canonicalize",
     }
 }
 

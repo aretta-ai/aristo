@@ -12,6 +12,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use aristo_core::canon::{CanonMatchesFile, Disposition as CanonDisposition};
 use aristo_core::critique::{CritiqueFile, Disposition, Finding, Severity};
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
 
@@ -95,10 +96,90 @@ pub(crate) fn run_apply_findings(_ws: &Workspace, include_closed: bool) -> CliRe
 
     print_summary(&accepted, &rejected, &parse_errors, include_closed);
 
+    // Synthesize canonicalize findings from `.aristo/canon-matches.toml`
+    // per README L4 — these are surfaced alongside the agentic
+    // critique findings even though they live in a different file.
+    // PR #7's accept path will turn user-accepted canonicalize
+    // findings into the source-rewrite + prefix-application binding.
+    print_canonicalize_findings(&ws, include_closed);
+
     if !rejected.is_empty() || !parse_errors.is_empty() {
         Err(CliError::Silent { exit_code: 1 })
     } else {
         Ok(())
+    }
+}
+
+#[aristo::intent(
+    "Canonicalize findings are surfaced alongside agentic critique \
+     findings in `aristo critique --apply-findings` per README L4 — \
+     they originate from `.aristo/canon-matches.toml::pending_matches`, \
+     not from the `.critique` files the other five categories live in. \
+     A regression that read only the .critique files would silently \
+     hide every canon match the user has open for review.",
+    verify = "test",
+    id = "apply_findings_surfaces_canonicalize_from_canon_matches"
+)]
+fn print_canonicalize_findings(ws: &Workspace, include_closed: bool) {
+    let cache_path = ws.canon_matches_path();
+    if !cache_path.exists() {
+        return;
+    }
+    let cache = match CanonMatchesFile::read(&cache_path) {
+        Ok(c) => c,
+        Err(_) => {
+            // Mirror the .critique parse-error policy: don't fail
+            // the apply just because the cache is malformed; surface
+            // a stderr note. Stamp will re-write the cache on its
+            // next successful run.
+            eprintln!(
+                "warning: {} is unreadable; canonicalize findings skipped.",
+                cache_path.display()
+            );
+            return;
+        }
+    };
+
+    // Render in two passes for consistency with print_summary's
+    // open-vs-closed view: collect first, then decide what to print.
+    let mut open_findings: Vec<(&AnnotationId, &aristo_core::canon::PendingMatch)> = Vec::new();
+    let mut closed_count: usize = 0;
+    for (id, entry) in &cache.entries {
+        for m in &entry.pending_matches {
+            match m.disposition {
+                CanonDisposition::Open => open_findings.push((id, m)),
+                CanonDisposition::Skipped => closed_count += 1,
+            }
+        }
+    }
+    if open_findings.is_empty() && (!include_closed || closed_count == 0) {
+        return;
+    }
+
+    println!();
+    println!(
+        "canonicalize: {} open{}",
+        open_findings.len(),
+        if closed_count > 0 && include_closed {
+            format!(", {closed_count} skipped")
+        } else if closed_count > 0 {
+            format!(" ({closed_count} skipped, hidden)")
+        } else {
+            String::new()
+        }
+    );
+    for (id, m) in open_findings {
+        let tier = match m.prefix_tier {
+            aristo_core::canon::PrefixTier::Aristos => "aristos:",
+            aristo_core::canon::PrefixTier::Kanon => "kanon:",
+        };
+        println!(
+            "  {id}  → {} {} (conf {:.2}, {tier} tier)",
+            m.canon_id, m.version, m.confidence
+        );
+        if let Some(b) = &m.backed_by {
+            println!("    backed by: {b}");
+        }
     }
 }
 
@@ -292,6 +373,7 @@ fn category_label(c: aristo_core::critique::Category) -> &'static str {
         Vocabulary => "vocabulary",
         Scope => "scope",
         Clarity => "clarity",
+        Canonicalize => "canonicalize",
     }
 }
 

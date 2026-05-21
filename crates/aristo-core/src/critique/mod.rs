@@ -131,6 +131,18 @@ pub enum Category {
     Scope,
     /// Ambiguous, vague, or weasel-worded prose.
     Clarity,
+    /// Canonicalization suggestion from the §13 canon-and-matching
+    /// flow. Produced by `aristo stamp` / `aristo critique` when the
+    /// annotation's prose is close to a canon entry. Unlike the
+    /// other five categories — which the agentic critique skill
+    /// writes into `.aristo/critiques/<id>.critique` — `canonicalize`
+    /// findings are synthesized from `.aristo/canon-matches.toml`
+    /// pending entries at session-load time. The unified review
+    /// session UI presents them alongside the other categories;
+    /// on accept, source rewrite + prefix application happens in
+    /// PR #7's accept path (writes back to canon-matches.toml +
+    /// updates index, NOT to a .critique file).
+    Canonicalize,
 }
 
 /// Critique finding severity. v0 locks three values; additions require a

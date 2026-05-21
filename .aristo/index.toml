@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.1.0"
-generated_at = "2026-05-21T00:45:05.820908Z"
+generated_at = "2026-05-21T16:02:57.12613Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -54,9 +54,20 @@ text = """`aristo critique --apply-findings` defaults to listing only findings w
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:f5d4795d9ecf51391849d08e8a50341d24dcddaaf54736d36774e8ae2e8c8aa7"
-body_hash = "sha256:db8bf2510d834d50d0f90154c4bb495220e0440324d4dca9717e6ea3593e12ac"
+body_hash = "sha256:097f7425b4bf709051ac57c7bf810b510b81061c6ce21617c0c89177d9004435"
 file = "crates/aristo-cli/src/commands/critique/apply.rs"
-site = "fn run_apply_findings (line 23)"
+site = "fn run_apply_findings (line 24)"
+covered_region = "function"
+
+[apply_findings_surfaces_canonicalize_from_canon_matches]
+kind = "intent"
+text = "Canonicalize findings are surfaced alongside agentic critique findings in `aristo critique --apply-findings` per README L4 — they originate from `.aristo/canon-matches.toml::pending_matches`, not from the `.critique` files the other five categories live in. A regression that read only the .critique files would silently hide every canon match the user has open for review."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:238a8a86699a9fc251976c0661a4b7da1b4277830c96b0346bdf19fd4ad05f06"
+body_hash = "sha256:b02f35a28000ec6810874c3ad735e5ad965c617ecc97a2bc2744ef5ef3c5ffb3"
+file = "crates/aristo-cli/src/commands/critique/apply.rs"
+site = "fn print_canonicalize_findings (line 113)"
 covered_region = "function"
 
 [apply_sweeps_queue_stragglers_after_accept]
@@ -232,7 +243,7 @@ status = "unknown"
 text_hash = "sha256:0f0612b48b5498ce64b74e80ff95eb22016dee585fca7c9f299ca030de16c482"
 body_hash = "sha256:b2884768e6c38a7837b55624c433b3a728c76e9755ea558f407f1839837f64b0"
 file = "crates/aristo-cli/src/commands/critique/apply.rs"
-site = "fn stamp_critique_cache (line 219)"
+site = "fn stamp_critique_cache (line 300)"
 covered_region = "function"
 
 [critique_derived_fields_stamped_by_sdk_not_agent]
