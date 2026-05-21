@@ -547,6 +547,38 @@ pub(crate) enum CanonAction {
         #[arg(long = "reason")]
         reason: Option<String>,
     },
+
+    /// List the current canon match state: one line per annotation
+    /// with pending / accepted / rejected counts, plus per-bucket
+    /// detail lines for each match. Read-only over
+    /// `.aristo/canon-matches.toml`.
+    List,
+
+    /// Fetch the canon entry detail for `<canon_id>` via the canon
+    /// API and render the longer description + example + references.
+    /// The user-facing trust card (which combines this data with the
+    /// local index entry's site / binding) lives at `aristo show
+    /// <bound_id>` (PR #10).
+    Show {
+        /// Bare canon id (no `aristos:` / `kanon:` prefix). The
+        /// server's `GET /canon/entry/<canon_id>` endpoint returns
+        /// the same entry regardless of which tier you'd bind into;
+        /// the prefix is a per-user, per-scope attribute.
+        canon_id: String,
+        /// Optional explicit version (`v<minor>.<patch>`). Omit to
+        /// get the catalog's active version per CS12.
+        #[arg(long = "version")]
+        version: Option<String>,
+    },
+
+    /// Force-refresh the canon match cache: re-run the
+    /// `POST /canon/match` call for every annotation in the index
+    /// regardless of cached `last_match_text_hash`. Equivalent to
+    /// `aristo stamp --refresh-canon`, but without re-running the
+    /// stamp pipeline (no source walk, no body-hash drift check,
+    /// no index rewrite). Useful when the user knows a new catalog
+    /// version has shipped and wants fresh matches without a stamp.
+    Refresh,
 }
 
 /// Subcommands under `aristo session`. Each maps to one substrate
@@ -785,6 +817,11 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 canon_id,
                 reason,
             } => commands::canon::reject::run(&annotation_id, &canon_id, reason),
+            CanonAction::List => commands::canon::list::run(),
+            CanonAction::Show { canon_id, version } => {
+                commands::canon::show::run(&canon_id, version)
+            }
+            CanonAction::Refresh => commands::canon::refresh::run(),
         },
     }
 }
