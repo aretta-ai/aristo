@@ -22,7 +22,11 @@
 //!   [`AuthError::NoToken`]. The [`Token`](auth::Token) newtype
 //!   redacts itself in `Debug` output to prevent accidental
 //!   logging of credentials.
-//! - `http_client` (next commit): the real HTTP-backed impl.
+//! - [`http_client`]: [`HttpCanonClient`] — `ureq`-backed
+//!   blocking impl. Pure response-mapping helpers ([`map_response`](
+//!   http_client::map_response)) are split from the transport so
+//!   every status-code branch is unit-testable without a real
+//!   network call.
 //!
 //! **Phase 1 scope**: no verification execution. The `verification`
 //! block on [`CanonMatch`](types::CanonMatch) is informational
@@ -32,12 +36,14 @@
 
 pub mod auth;
 pub mod client;
+pub mod http_client;
 pub mod mock_client;
 pub mod noop_client;
 pub mod types;
 
 pub use auth::Token;
 pub use client::{AuthError, CanonClient, CanonError};
+pub use http_client::{HttpCanonClient, DEFAULT_BASE_URL};
 pub use mock_client::MockCanonClient;
 pub use noop_client::NoopCanonClient;
 pub use types::{
