@@ -64,6 +64,10 @@ pub fn save_with(
         aretta: AretaCredentials {
             token: token.as_str().to_string(),
             issued_at: now_iso8601(),
+            server: None,
+            user_login: None,
+            user_id: None,
+            repo: None,
         },
     };
     let toml_text = toml::to_string_pretty(&body)
@@ -178,12 +182,84 @@ pub(super) struct CredentialsFile {
     pub(super) aretta: AretaCredentials,
 }
 
+/// On-disk credentials. Extended in commit 4 of the auth-extraction
+/// plan: in addition to the raw `token`, we now persist the server
+/// URL the token was minted against, the GitHub user identity, and
+/// the repo scope. All four new fields are optional so old bare-
+/// token files still parse cleanly.
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct AretaCredentials {
     pub(super) token: String,
     #[serde(default)]
     #[allow(dead_code)] // Persisted for audit + future expiry checks.
     pub(super) issued_at: String,
+    /// Aretta proxy this token was minted against
+    /// (e.g. `"https://code.aretta.ai"`). Optional for back-compat —
+    /// missing → assume production.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) server: Option<String>,
+    /// GitHub login at mint time. Display-only — pair with
+    /// `user_id` for stable identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) user_login: Option<String>,
+    /// Numeric GitHub user id at mint time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) user_id: Option<u64>,
+    /// `owner/repo` the token is scoped to server-side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) repo: Option<String>,
+}
+
+/// Full credentials record carried by the OAuth login flow into
+/// [`save_full_with`]. Mirrors the fields persisted on disk.
+#[derive(Debug, Clone)]
+pub struct CredentialsRecord {
+    pub token: Token,
+    pub server: super::server::ServerUrl,
+    pub user_login: Option<String>,
+    pub user_id: Option<u64>,
+    pub repo: Option<String>,
+}
+
+/// Persist a full credentials record (token + server + user + repo).
+/// Reads env vars for path resolution; see [`save_full_with`] for the
+/// explicit-overrides variant used by tests.
+pub fn save_full(creds: &CredentialsRecord) -> io::Result<()> {
+    save_full_with(
+        creds,
+        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        home_dir().as_deref(),
+    )
+}
+
+/// Persist a full credentials record with explicit path overrides.
+pub fn save_full_with(
+    creds: &CredentialsRecord,
+    xdg_config_home: Option<&str>,
+    home_override: Option<&Path>,
+) -> io::Result<()> {
+    let path = credentials_path_with(xdg_config_home, home_override).map_err(io_from_auth_error)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let body = CredentialsFile {
+        aretta: AretaCredentials {
+            token: creds.token.as_str().to_string(),
+            issued_at: now_iso8601(),
+            server: Some(creds.server.as_str().to_string()),
+            user_login: creds.user_login.clone(),
+            user_id: creds.user_id,
+            repo: creds.repo.clone(),
+        },
+    };
+    let toml_text = toml::to_string_pretty(&body)
+        .map_err(|e| io::Error::other(format!("serialize credentials: {e}")))?;
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, toml_text.as_bytes())?;
+    #[cfg(unix)]
+    set_unix_owner_only(&tmp)?;
+    fs::rename(&tmp, &path)?;
+    Ok(())
 }
 
 #[cfg(test)]

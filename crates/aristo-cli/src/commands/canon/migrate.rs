@@ -31,8 +31,8 @@ use std::fs;
 
 use aristo_core::canon::cache::CanonMatchesFile;
 use aristo_core::canon::{
-    auth, AnnotationMatchInput, CanonClient, CanonError, CanonMatchRequest, HttpCanonClient,
-    MockCanonClient, DEFAULT_BASE_URL,
+    AnnotationMatchInput, CanonClient, CanonError, CanonMatchRequest, HttpCanonClient,
+    MockCanonClient,
 };
 use aristo_core::index::{BindingState, IdNamespace, IndexEntry, IndexFile};
 
@@ -105,11 +105,11 @@ pub(crate) fn run() -> CliResult<()> {
     let client: Box<dyn CanonClient> = if let Some(mock) = MockCanonClient::from_env() {
         Box::new(mock)
     } else {
-        match auth::resolve() {
-            Ok(token) => {
+        match aristo_core::auth::resolve_full() {
+            Ok(creds) => {
                 let base_url = std::env::var("ARETTA_API_URL")
-                    .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
-                Box::new(HttpCanonClient::new(base_url, &token))
+                    .unwrap_or_else(|_| creds.server.as_str().to_string());
+                Box::new(HttpCanonClient::new(base_url, &creds.token))
             }
             Err(_) => {
                 return Err(CliError::Other {

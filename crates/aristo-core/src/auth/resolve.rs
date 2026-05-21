@@ -13,8 +13,29 @@ use std::fs;
 use std::path::Path;
 
 use super::error::AuthError;
+use super::server::ServerUrl;
 use super::store::{credentials_path_with, home_dir, CredentialsFile};
 use super::token::Token;
+
+/// Full resolved-credentials record. Returned by [`resolve_full`] for
+/// callers that need the server URL + user identity alongside the
+/// token. Plain [`resolve`] returns only the [`Token`] for callers
+/// that don't.
+#[derive(Debug, Clone)]
+pub struct ResolvedCreds {
+    pub token: Token,
+    /// Aretta server this token was minted against. Defaults to
+    /// [`ServerUrl::Prod`] when the source is `ARETTA_TOKEN` or an
+    /// old bare-token file with no `server` field.
+    pub server: ServerUrl,
+    /// `Some(login)` when sourced from a credentials file with a
+    /// recorded user. `None` for env-var source.
+    pub user_login: Option<String>,
+    /// Numeric GitHub user id at mint time.
+    pub user_id: Option<u64>,
+    /// Repo the token is scoped to server-side.
+    pub repo: Option<String>,
+}
 
 /// Environment variable that overrides the on-disk credentials.
 pub const ENV_VAR: &str = "ARETTA_TOKEN";
@@ -39,11 +60,38 @@ pub fn resolve_with(
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
 ) -> Result<Token, AuthError> {
-    // 1. Env var first — CI-friendly precedence.
+    Ok(resolve_full_with(env_token, xdg_config_home, home_override)?.token)
+}
+
+/// Like [`resolve`] but returns the full credentials record (server,
+/// user, repo) when available. Use this from canon command call
+/// sites that need the server URL paired with the token.
+pub fn resolve_full() -> Result<ResolvedCreds, AuthError> {
+    resolve_full_with(
+        std::env::var(ENV_VAR).ok().as_deref(),
+        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        home_dir().as_deref(),
+    )
+}
+
+/// Resolve a full credentials record with explicit overrides.
+pub fn resolve_full_with(
+    env_token: Option<&str>,
+    xdg_config_home: Option<&str>,
+    home_override: Option<&Path>,
+) -> Result<ResolvedCreds, AuthError> {
+    // 1. Env var first — CI-friendly precedence. No metadata
+    //    available; default to Prod server, no user/repo.
     if let Some(t) = env_token {
         let t = t.trim();
         if !t.is_empty() {
-            return Ok(Token::new(t));
+            return Ok(ResolvedCreds {
+                token: Token::new(t),
+                server: ServerUrl::Prod,
+                user_login: None,
+                user_id: None,
+                repo: None,
+            });
         }
     }
     // 2. On-disk credentials file.
@@ -53,8 +101,32 @@ pub fn resolve_with(
     }
     let raw = fs::read_to_string(&path)
         .map_err(|e| AuthError::Malformed(format!("read {}: {e}", path.display())))?;
-    let parsed: CredentialsFile = toml::from_str(&raw)
-        .map_err(|e| AuthError::Malformed(format!("parse {}: {e}", path.display())))?;
+    // Try TOML first. If it doesn't parse and the file looks like a
+    // bare-token (old format pre-commit-4), accept that for back-compat.
+    let parsed: CredentialsFile = match toml::from_str(&raw) {
+        Ok(p) => p,
+        Err(_) => {
+            // Back-compat: maybe it's a bare token (no TOML structure).
+            // The OLD format was the [aretta] TOML shape; a plain text
+            // file with no `[aretta]` header would only come from a
+            // pre-PR-1 ancestor or a hand-edited file. Treat as a bare
+            // token if it's a single non-empty line.
+            let token = raw.trim();
+            if token.is_empty() || token.contains('=') || token.contains('[') {
+                return Err(AuthError::Malformed(format!(
+                    "credentials file at {} is not parseable",
+                    path.display()
+                )));
+            }
+            return Ok(ResolvedCreds {
+                token: Token::new(token),
+                server: ServerUrl::Prod,
+                user_login: None,
+                user_id: None,
+                repo: None,
+            });
+        }
+    };
     let token = parsed.aretta.token.trim();
     if token.is_empty() {
         return Err(AuthError::Malformed(format!(
@@ -62,7 +134,19 @@ pub fn resolve_with(
             path.display()
         )));
     }
-    Ok(Token::new(token))
+    let server = parsed
+        .aretta
+        .server
+        .as_deref()
+        .map(ServerUrl::parse)
+        .unwrap_or(ServerUrl::Prod);
+    Ok(ResolvedCreds {
+        token: Token::new(token),
+        server,
+        user_login: parsed.aretta.user_login.clone(),
+        user_id: parsed.aretta.user_id,
+        repo: parsed.aretta.repo.clone(),
+    })
 }
 
 #[cfg(test)]

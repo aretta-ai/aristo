@@ -14,9 +14,7 @@
 //! "your scope or a public scope" filter on `related_entries` so the
 //! card never leaks the IP of overlay scopes the user doesn't have.
 
-use aristo_core::canon::{
-    auth, CanonClient, CanonError, HttpCanonClient, MockCanonClient, DEFAULT_BASE_URL,
-};
+use aristo_core::canon::{CanonClient, CanonError, HttpCanonClient, MockCanonClient};
 
 use crate::{CliError, CliResult};
 
@@ -27,11 +25,14 @@ pub(crate) fn run(canon_id: &str, version: Option<String>) -> CliResult<()> {
     let client: Box<dyn CanonClient> = if let Some(mock) = MockCanonClient::from_env() {
         Box::new(mock)
     } else {
-        match auth::resolve() {
-            Ok(token) => {
+        match aristo_core::auth::resolve_full() {
+            Ok(creds) => {
+                // ARETTA_API_URL still wins as an explicit override
+                // (useful for tests); otherwise use the server URL
+                // persisted with the token.
                 let base_url = std::env::var("ARETTA_API_URL")
-                    .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
-                Box::new(HttpCanonClient::new(base_url, &token))
+                    .unwrap_or_else(|_| creds.server.as_str().to_string());
+                Box::new(HttpCanonClient::new(base_url, &creds.token))
             }
             Err(_) => {
                 return Err(CliError::Other {

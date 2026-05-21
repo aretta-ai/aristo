@@ -37,7 +37,7 @@ use std::time::SystemTime;
 use aristo_core::canon::{
     AnnotationMatchInput, CacheEntry, CanonClient, CanonError, CanonMatchRequest,
     CanonMatchResponse, CanonMatchesFile, Disposition, HttpCanonClient, MockCanonClient,
-    NoopCanonClient, PendingMatch, DEFAULT_BASE_URL,
+    NoopCanonClient, PendingMatch,
 };
 use aristo_core::config::CanonConfig;
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
@@ -197,11 +197,14 @@ fn build_client(_config: &CanonConfig) -> (Box<dyn CanonClient>, bool) {
 
     // Production / staging: resolve auth token. If unresolved →
     // free tier (Noop, with the nudge).
-    match aristo_core::canon::auth::resolve() {
-        Ok(token) => {
-            let base_url =
-                std::env::var("ARETTA_API_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
-            (Box::new(HttpCanonClient::new(base_url, &token)), false)
+    match aristo_core::auth::resolve_full() {
+        Ok(creds) => {
+            let base_url = std::env::var("ARETTA_API_URL")
+                .unwrap_or_else(|_| creds.server.as_str().to_string());
+            (
+                Box::new(HttpCanonClient::new(base_url, &creds.token)),
+                false,
+            )
         }
         Err(_) => (Box::new(NoopCanonClient), true),
     }

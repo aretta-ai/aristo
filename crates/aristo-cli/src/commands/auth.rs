@@ -99,11 +99,16 @@ fn login_via_oauth(server: &ServerUrl, repo_flag: Option<String>) -> CliResult<(
     let resp = auth::oauth_exchange(server, code, &repo_full_name, Some("aristo-cli"))
         .map_err(auth_error_to_cli)?;
 
-    // 5. Persist the token. (Commit 4 of the plan addendum will extend
-    //    the credentials file to also persist server + user + repo;
-    //    for now we save just the bare token.)
+    // 5. Persist the full credentials record (token + server + user + repo).
     let token = Token::new(&resp.arta_token);
-    auth::save(&token).map_err(CliError::Io)?;
+    let creds = aristo_core::auth::CredentialsRecord {
+        token,
+        server: server.clone(),
+        user_login: Some(resp.user.login.clone()),
+        user_id: Some(resp.user.id),
+        repo: Some(resp.repo_full_name.clone()),
+    };
+    aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
 
     let path = auth::credentials_path().map_err(auth_error_to_cli)?;
     println!(
@@ -204,10 +209,11 @@ fn auth_error_to_cli(e: AuthError) -> CliError {
 // ─── status ────────────────────────────────────────────────────────────────
 
 fn status() -> CliResult<()> {
-    match auth::resolve() {
-        Ok(_token) => {
-            // Don't print the token. Just identify its source so the
-            // user can confirm what's wired up.
+    match aristo_core::auth::resolve_full() {
+        Ok(creds) => {
+            // Don't print the token. Just identify its source + the
+            // associated server / user / repo so the user can confirm
+            // what's wired up.
             let from_env = std::env::var(auth::ENV_VAR)
                 .ok()
                 .is_some_and(|v| !v.trim().is_empty());
@@ -223,6 +229,13 @@ fn status() -> CliResult<()> {
                     exit_code: 1,
                 })?;
                 println!("ok: authenticated via {}", path.display());
+            }
+            println!("    server: {}", creds.server);
+            if let Some(login) = &creds.user_login {
+                println!("    user:   {login}");
+            }
+            if let Some(repo) = &creds.repo {
+                println!("    repo:   {repo}");
             }
             Ok(())
         }

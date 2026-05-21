@@ -12,8 +12,7 @@
 //! to inform the verifier-investment roadmap.
 
 use aristo_core::canon::{
-    auth, CanonClient, CanonError, HttpCanonClient, MockCanonClient, RequestVerifyBody,
-    DEFAULT_BASE_URL,
+    CanonClient, CanonError, HttpCanonClient, MockCanonClient, RequestVerifyBody,
 };
 
 use crate::{CliError, CliResult};
@@ -22,11 +21,11 @@ pub(crate) fn run(canon_id: &str, notes: Option<String>) -> CliResult<()> {
     let client: Box<dyn CanonClient> = if let Some(mock) = MockCanonClient::from_env() {
         Box::new(mock)
     } else {
-        match auth::resolve() {
-            Ok(token) => {
+        match aristo_core::auth::resolve_full() {
+            Ok(creds) => {
                 let base_url = std::env::var("ARETTA_API_URL")
-                    .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
-                Box::new(HttpCanonClient::new(base_url, &token))
+                    .unwrap_or_else(|_| creds.server.as_str().to_string());
+                Box::new(HttpCanonClient::new(base_url, &creds.token))
             }
             Err(_) => {
                 return Err(CliError::Other {
