@@ -1,6 +1,7 @@
 //! Subcommand handlers. One module per command. Each module's `run` fn
 //! is the entry point invoked from `lib::dispatch`.
 
+pub(crate) mod auth;
 pub(crate) mod badge;
 pub(crate) mod critique;
 pub(crate) mod doc;

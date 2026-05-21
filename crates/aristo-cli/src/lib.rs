@@ -427,6 +427,54 @@ enum Commands {
         #[command(subcommand)]
         action: SessionAction,
     },
+
+    /// Authenticate against the Aretta canon API. Required for
+    /// `aristo stamp` / `aristo critique` to surface canon matches on
+    /// Pro / Enterprise tiers. See canon-strategy.md §CS1.
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+}
+
+/// Subcommands under `aristo auth`. Each operates on the persistent
+/// credentials store under `$XDG_CONFIG_HOME/aristo/credentials`
+/// (or the platform default per `aristo_core::canon::auth`).
+#[derive(clap::Subcommand, Debug)]
+pub(crate) enum AuthAction {
+    /// Authenticate by accepting a Bearer token.
+    ///
+    /// Three input modes (mutually exclusive):
+    ///
+    /// - **interactive (default):** print a prompt, then read the token
+    ///   from stdin (one line). Suitable for human terminal use.
+    /// - **`--stdin`:** read the entire stdin and use it as the token.
+    ///   Useful for piping (`echo "$TOKEN" | aristo auth login --stdin`).
+    /// - **`--token=<T>`:** use the literal value as the token. NOT
+    ///   recommended for interactive use — the token appears in shell
+    ///   history. Provided for scripting and tests.
+    ///
+    /// The token is persisted to `$XDG_CONFIG_HOME/aristo/credentials`
+    /// with `0600` Unix permissions; the same file is read by every
+    /// canon API call on subsequent runs.
+    Login {
+        /// Read the token from stdin (consumes entire stdin).
+        /// Useful for piped credential input in CI.
+        #[arg(long, conflicts_with = "token")]
+        stdin: bool,
+        /// Use this token directly (bypasses prompt and stdin).
+        /// Provided for scripting / tests; not recommended for
+        /// interactive use because the value appears in shell history.
+        #[arg(long, value_name = "TOKEN")]
+        token: Option<String>,
+    },
+    /// Show the current authentication state (does NOT print the
+    /// token, only its source: env var / credentials file / none).
+    /// Useful for sanity-checking before running `aristo stamp`.
+    Status,
+    /// Remove the stored credentials file. Idempotent — running
+    /// `logout` when not logged in is not an error.
+    Logout,
 }
 
 /// Subcommands under `aristo session`. Each maps to one substrate
@@ -650,6 +698,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             dry_run,
         } => commands::rename::run(&old_id, &new_id, dry_run),
         Commands::Session { action } => commands::session::run(action),
+        Commands::Auth { action } => commands::auth::run(action),
     }
 }
 

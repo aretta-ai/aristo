@@ -130,12 +130,22 @@ pub fn resolve_with(
 ///
 /// Overwrites any existing file (the typical case for re-login
 /// after token rotation).
+///
+/// Reads `$XDG_CONFIG_HOME` and `$HOME` from the process env to
+/// determine the destination path — same precedence as
+/// [`resolve`] so that `aristo auth login` and the next canon
+/// API call agree on which file to touch.
 pub fn save(token: &Token) -> io::Result<()> {
-    save_with_home(token, home_dir().as_deref())
+    save_with(
+        token,
+        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        home_dir().as_deref(),
+    )
 }
 
-/// Persist with explicit env-var and home-dir overrides. Tests use
-/// this to avoid mutating process state.
+/// Persist with explicit home-dir override (no XDG override). Used
+/// by tests that want to pin behavior to a particular `$HOME`
+/// without touching `$XDG_CONFIG_HOME`.
 pub fn save_with_home(token: &Token, home_override: Option<&Path>) -> io::Result<()> {
     save_with(token, None, home_override)
 }
@@ -172,11 +182,18 @@ pub fn save_with(
 
 /// Remove the credentials file, if it exists. Idempotent — missing
 /// file is not an error.
+///
+/// Reads `$XDG_CONFIG_HOME` and `$HOME` from the process env to
+/// determine which file to remove — same precedence as [`save`]
+/// and [`resolve`].
 pub fn clear() -> io::Result<()> {
-    clear_with_home(home_dir().as_deref())
+    clear_with(
+        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        home_dir().as_deref(),
+    )
 }
 
-/// Clear with an explicit home-dir override.
+/// Clear with an explicit home-dir override (no XDG override).
 pub fn clear_with_home(home_override: Option<&Path>) -> io::Result<()> {
     clear_with(None, home_override)
 }
