@@ -116,7 +116,7 @@ pub(crate) fn run() -> CliResult<()> {
 
     println!();
     println!(
-        "[INFO] For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`)."
+        "For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`)."
     );
     Ok(())
 }

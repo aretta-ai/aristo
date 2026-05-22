@@ -46,10 +46,9 @@ pub(crate) fn run(_all: bool) -> CliResult<()> {
     })?;
     println!("→ Found {} annotations", discovered.len());
 
-    println!("→ Building index entries");
     let (entries, parents_map) = build_entries(&discovered, &ws.root)?;
 
-    println!("→ Detecting cycles in parent graph");
+    println!("→ Checking for parent-link cycles");
     detect_cycles(&parents_map).map_err(|e| CliError::Other {
         message: format!("{e}\n\nNo files modified. Fix the cycle and re-run `aristo index`."),
         exit_code: 2,
@@ -81,7 +80,12 @@ pub(crate) fn run(_all: bool) -> CliResult<()> {
         .display();
     println!("→ Writing {rel_path} … ok ({entry_count} entries, {bytes_written} bytes)");
     println!();
-    println!("ok: index regenerated ({entry_count} annotations).");
+    let noun = if entry_count == 1 {
+        "annotation"
+    } else {
+        "annotations"
+    };
+    println!("ok: index regenerated ({entry_count} {noun}).");
     Ok(())
 }
 

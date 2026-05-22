@@ -46,7 +46,7 @@ const RUST_CHEAT_SHEET: &str = "\
   `aristos:` and `kanon:` prefixes are applied by `aristo canon accept`
   when you accept a pending canon match. NEVER write them manually.
 
-## Cargo features (consumer-side)
+## Cargo features (in your `Cargo.toml`)
   aristo_verify | injects mined assertions during `aristo verify --filter ...`
   aristo_check  | compile-time per-annotation validation
   aristo_doc    | rustdoc integration via include_str!

@@ -35,8 +35,7 @@ tier test path) ships.
 $ aristo stamp --check
 → Walking source from [..] …
 → Found 2 annotations
-→ Building index entries
-→ Detecting cycles in parent graph
+→ Checking for parent-link cycles
   new: 0, unchanged: 2, body-drifted: 0, text-changed: 0, removed: 0
 
 ok: index is up to date (no rewrite needed).
@@ -51,7 +50,7 @@ ok: 0 lint findings.
 
 ```console
 $ aristo verify --check --strict
-ok: 0 annotations verified, 0 skipped (documentation only).
+ok: 0 annotations verified, 0 skipped (documentation-only).
 → 2 entries pending neural verification — enqueued under .aristo/verify-queue/pending/.
   In Claude Code (or another agent with the aristo-neural-verify skill installed), run:
     /aristo-neural-verify

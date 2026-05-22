@@ -216,10 +216,13 @@ struct Stats {
 }
 
 fn emit_summary(stats: &Stats, pending_neural: usize, pending_test: usize, pending_full: usize) {
-    println!(
-        "ok: 0 annotations verified, {} skipped (documentation only).",
-        stats.skipped_doc_only + stats.skipped_clean
-    );
+    let total_skipped = stats.skipped_doc_only + stats.skipped_clean;
+    let reason: String = match (stats.skipped_doc_only, stats.skipped_clean) {
+        (_, 0) => "documentation-only".to_string(),
+        (0, _) => "already in a clean verified state".to_string(),
+        (d, c) => format!("{d} documentation-only, {c} already clean"),
+    };
+    println!("ok: 0 annotations verified, {total_skipped} skipped ({reason}).");
     if pending_neural > 0 {
         let word = if pending_neural == 1 {
             "entry"
