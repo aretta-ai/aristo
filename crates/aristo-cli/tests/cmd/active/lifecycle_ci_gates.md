@@ -94,7 +94,7 @@ Tier:
 Index health:
   schema_version: 1 (current)
 
-Canon binding (§13):
+Canon binding:
   Auth:              no token (free-tier mode)
   Last fetched:      never
   Catalog version:   —
@@ -113,6 +113,6 @@ $ aristo badge --out=docs/badge.svg
 → Writing docs/badge.svg ([..] style)
 ok: badge written. Embed in README:
 
-  ![aristo verified](https://aretta.dev/[..]/badge.svg)
+  ![aristo verified](docs/badge.svg)
 
 ```

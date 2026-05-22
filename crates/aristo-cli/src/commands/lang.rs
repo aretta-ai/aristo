@@ -43,15 +43,13 @@ const RUST_CHEAT_SHEET: &str = "\
   true       | resolves to project default in aristo.toml [verify] default_method
 
 ## Namespace prefix
-  `aristos:` prefix appears on id after `aristo sync` binds the annotation
-  to the Aristo server. NEVER write `aristos:` manually.
+  `aristos:` and `kanon:` prefixes are applied by `aristo canon accept`
+  when you accept a pending canon match. NEVER write them manually.
 
 ## Cargo features (consumer-side)
   aristo_verify | injects mined assertions during `aristo verify --filter ...`
   aristo_check  | compile-time per-annotation validation
   aristo_doc    | rustdoc integration via include_str!
-
-For full reference: https://aristo.ai/docs/lang/rust
 ";
 
 #[aristo::intent(
@@ -105,8 +103,7 @@ fn unsupported_error() -> CliError {
     CliError::Other {
         message: "Cannot detect a supported language in this repository.\n       \
                   Aristo supports: Rust.\n       \
-                  Planned: Python, Go, TypeScript.\n       \
-                  For unsupported languages, see https://aristo.ai/docs/languages"
+                  Planned: Python, Go, TypeScript."
             .to_string(),
         exit_code: 2,
     }

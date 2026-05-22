@@ -34,14 +34,12 @@ Detected language: Rust (from Cargo.toml at [..]/Cargo.toml)
   true       | resolves to project default in aristo.toml [verify] default_method
 
 ## Namespace prefix
-  `aristos:` prefix appears on id after `aristo sync` binds the annotation
-  to the Aristo server. NEVER write `aristos:` manually.
+  `aristos:` and `kanon:` prefixes are applied by `aristo canon accept`
+  when you accept a pending canon match. NEVER write them manually.
 
 ## Cargo features (consumer-side)
   aristo_verify | injects mined assertions during `aristo verify --filter ...`
   aristo_check  | compile-time per-annotation validation
   aristo_doc    | rustdoc integration via include_str!
-
-For full reference: https://aristo.ai/docs/lang/rust
 
 ```

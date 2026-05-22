@@ -823,8 +823,9 @@ fn format_canon_binding(ws: &Workspace, id: &AnnotationId, entry: &IndexEntry) -
             out.push('\n');
             out.push_str(
                 "    Aretta has committed to a verification mechanism for this\n    \
-                 property. Verification execution itself lands in Phase 2 — `aristo\n    \
-                 verify` will run it then; see _deferred/verification-execution.md.\n",
+                 property. Verification execution against this canon binding is\n    \
+                 not yet wired up — the binding is recognized but no verifier has\n    \
+                 been attached to it.\n",
             );
         }
         IdNamespace::Kanon => {

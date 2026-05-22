@@ -138,7 +138,7 @@ fn print_canon_health(ws: &crate::Workspace) {
     use aristo_core::canon::cache::CanonMatchesFile;
 
     println!();
-    println!("Canon binding (§13):");
+    println!("Canon binding:");
 
     // Config: enabled?
     let config = ws.load_config();
