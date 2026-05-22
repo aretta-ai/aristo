@@ -1,9 +1,8 @@
 //! CLI error type and exit-code mapping.
 //!
-//! Slice 9A defines the shell; new variants are added by their first
-//! concrete user. Exit codes follow loose `sysexits.h` precedent where
-//! reasonable: 0 success, 1 general failure, 2 misuse / clap rejection, 64
-//! not-yet-implemented.
+//! New variants are added by their first concrete user. Exit codes
+//! follow loose `sysexits.h` precedent where reasonable: 0 success,
+//! 1 general failure, 2 misuse / clap rejection, 64 not-yet-implemented.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -13,11 +12,12 @@ pub type CliResult<T> = Result<T, CliError>;
 /// Top-level CLI failure mode.
 #[derive(Debug)]
 pub enum CliError {
-    /// A defined subcommand whose body has not yet landed. Carries the
-    /// roadmap pointer so the message tells the user when to expect it.
+    /// A defined subcommand whose body has not yet landed. The `hint`
+    /// field is appended to the message so the user knows where to
+    /// look for the planned design / when to expect it.
     NotImplemented {
         what: &'static str,
-        slice: &'static str,
+        hint: &'static str,
     },
     /// The current working directory is not inside an Aristo workspace
     /// (no `aristo.toml` found by walking upward).
@@ -39,8 +39,8 @@ pub enum CliError {
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CliError::NotImplemented { what, slice } => {
-                write!(f, "{what} is not yet implemented (planned for {slice})")
+            CliError::NotImplemented { what, hint } => {
+                write!(f, "{what} is not implemented yet — {hint}")
             }
             CliError::NotInWorkspace { searched_from } => {
                 write!(
@@ -99,14 +99,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn not_implemented_message_includes_slice_pointer() {
+    fn not_implemented_message_includes_what_and_hint() {
         let e = CliError::NotImplemented {
             what: "aristo init",
-            slice: "slice 10",
+            hint: "see docs/deferred/...",
         };
         let msg = e.to_string();
         assert!(msg.contains("aristo init"), "msg: {msg}");
-        assert!(msg.contains("slice 10"), "msg: {msg}");
+        assert!(msg.contains("see docs/deferred/..."), "msg: {msg}");
+        assert!(msg.contains("not implemented yet"), "msg: {msg}");
     }
 
     #[test]
@@ -123,7 +124,7 @@ mod tests {
     fn exit_codes_are_distinct_per_class() {
         let ni = CliError::NotImplemented {
             what: "x",
-            slice: "y",
+            hint: "y",
         }
         .exit_code();
         let nw = CliError::NotInWorkspace {

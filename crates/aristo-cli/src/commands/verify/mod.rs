@@ -148,13 +148,13 @@ pub(crate) fn run(
     if pending_test > 0 {
         return Err(CliError::NotImplemented {
             what: "aristo verify (verify=\"test\")",
-            slice: "post-MVP (see docs/deferred/verify-test-design.md)",
+            hint: "post-MVP — see docs/deferred/verify-test-design.md",
         });
     }
     if pending_full > 0 {
         return Err(CliError::NotImplemented {
             what: "aristo verify (verify=\"full\")",
-            slice: "post-MVP (depends on verify=\"test\"; see docs/deferred/verify-test-design.md)",
+            hint: "post-MVP — depends on verify=\"test\"; see docs/deferred/verify-test-design.md",
         });
     }
     Ok(())
