@@ -34,5 +34,31 @@
 
 #[test]
 fn cli_scenarios() {
-    trycmd::TestCases::new().case("tests/cmd/active/*.md");
+    // Isolate spawned binaries from developer-machine credentials.
+    // Without this, a developer who has logged in to dev.aretta.ai
+    // via `aristo auth login --server dev` sees `lifecycle_ci_gates.md`
+    // fail: their real credentials at
+    // `$HOME/Library/Application Support/aristo/credentials` (macOS) or
+    // `$XDG_CONFIG_HOME/aristo/credentials` leak into trycmd's spawned
+    // `aristo` process via inherited HOME, flipping `aristo status`'s
+    // canon-binding block from "no token (free-tier mode)" (the spec)
+    // to "authenticated (token present)". The token never reaches the
+    // wire — it just changes the local rendering — but the byte-exact
+    // trycmd assertion sees the difference.
+    //
+    // The auth E2E tests (`auth_oauth_login.rs`) use the same pattern
+    // per-Command via `c.env_clear()`. Here the spawn happens inside
+    // trycmd, so we set the env defaults at the TestCases level
+    // instead. `TestCases::env` was added in trycmd 0.15.
+    //
+    // The tempdir lives until end of scope; `TestCases::case` doesn't
+    // run the cases — they run in `TestCases::drop`, which fires
+    // before `_isolated_home` drops (reverse declaration order).
+    let _isolated_home = tempfile::tempdir().expect("isolated HOME for cli_scenarios");
+    let home = _isolated_home.path().display().to_string();
+    let xdg = _isolated_home.path().join("xdg").display().to_string();
+    let cases = trycmd::TestCases::new();
+    cases.env("HOME", home);
+    cases.env("XDG_CONFIG_HOME", xdg);
+    cases.case("tests/cmd/active/*.md");
 }
