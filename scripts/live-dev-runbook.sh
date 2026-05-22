@@ -102,19 +102,20 @@ path = "src/lib.rs"
 EOF
 
 cat > src/lib.rs <<'EOF'
-#[aristo::intent(
-    "Waste no more time arguing what a good man should be. Be one.",
-    id = "be_one"
-)]
+// Single-line `#[aristo::intent(...)]` form is deliberate. Multi-line
+// form would expose a Phase 1 SDK bug: `aristo canon accept` rewrites
+// the multi-line attribute to a one-liner, shifting sibling
+// annotations' line numbers in the file, but doesn't re-stamp the
+// index — so the second `accept` in this runbook would fail with
+// "no attribute found at line N". Filed as a known issue against
+// canon accept; until it's fixed, runbook input stays single-line.
+#[aristo::intent("Waste no more time arguing what a good man should be. Be one.", id = "be_one")]
 pub fn be_one() {
     // Marcus Aurelius, Meditations 10.16 — Annotation #1.
     // Expected to bind to the `kanon:` tier (unbacked) on dev.
 }
 
-#[aristo::intent(
-    "What stands in the way becomes the way.",
-    id = "obstacle_path"
-)]
+#[aristo::intent("What stands in the way becomes the way.", id = "obstacle_path")]
 pub fn obstacle_path() {
     // Marcus Aurelius, Meditations 5.20 — Annotation #2.
     // Expected to bind to the `aristos:` tier (backed) on dev.
