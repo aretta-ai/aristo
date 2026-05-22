@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- cli: subcommand help text rewritten to drop internal slice / phase / PR / decision-doc-§ markers. `aristo --help` and every `aristo <cmd> --help` blurb now reads as user-facing product copy — no more `(slice 17+)`, `(Phase 2) B5b classification`, `PR #7`, `§CS13`, `design Q4` leaks. Behavior unchanged.
+
 ### Fixed
 - core+cli: `aristo auth login` against `dev.aretta.ai` was getting `"redirect_uri is not associated with this application"` from GitHub. Two bugs in one fix: (1) `oauth_start` was calling `GET <server>/auth/login` without a `redirect_uri` query param, so the proxy fell back to deriving one from `c.req.url` — which carries the internal `http://` scheme (Caddy terminates TLS at the edge, talks plain HTTP to the upstream proxy). GitHub's OAuth App has only the public `https://...` callback registered, so the derived `http://` URI got rejected. **Fix:** pass `redirect_uri=<server>/auth/callback` explicitly with the proper `https://` scheme — matches what `aretta-code/packages/tui/src/hooks/useAuth.ts` already does. (2) The OAuth-mode CLI e2e tests were spawning the real `aristo` binary which then called `try_open_browser()` → actually launching the developer's browser on every `cargo test` run. **Fix:** new `ARISTO_NO_BROWSER` env var that suppresses the spawn; tests set it via the existing `isolated()` env-clear helper. Also adds a minimal hand-rolled `url_encode` for the redirect-URI query param (no new deps; only encodes the reserved chars we actually emit). E2E test assertions updated to verify the explicit `redirect_uri` query param. (Plan addendum follow-up; 952 tests still passing.)
 

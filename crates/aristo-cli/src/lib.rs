@@ -25,14 +25,12 @@ use std::process::ExitCode;
 
 /// Aristo annotation SDK CLI.
 ///
-/// Subcommands map 1:1 to the surface defined in `docs/TOOLS.md` (offline
-/// scope only — server-side commands `auth` / `sync` / `unbind` /
-/// `suggestions` are deferred to Phase 2 and not declared here).
-///
-/// Each variant's body is a stub returning [`CliError::NotImplemented`]
-/// with the roadmap slice it lands in. Future slices replace the stub
-/// with the real handler in the same commit that promotes the matching
-/// `_pending/` scenarios into `active/` per the testing convention.
+/// Each subcommand handles one stage of the annotation lifecycle:
+/// authoring (`init`, `lang`, `install-skills`), indexing and stamping
+/// (`index`, `stamp`, `rename`), inspection (`show`, `list`, `status`,
+/// `graph`, `doc`, `badge`), quality gates (`lint`, `verify`,
+/// `critique`), review-session management (`session`), and canon
+/// binding against the Aretta server (`auth`, `canon`).
 #[derive(Parser, Debug)]
 #[command(
     name = "aristo",
@@ -57,7 +55,8 @@ enum Commands {
 
     /// Print a syntax cheat sheet for the detected language.
     Lang {
-        /// Per-file detection (Phase 2+ — Phase 1 errors on non-Rust extensions).
+        /// Detect language for a specific file. Currently only Rust
+        /// (`.rs`) is supported; other extensions error out.
         #[arg(long)]
         file: Option<PathBuf>,
     },
@@ -91,14 +90,16 @@ enum Commands {
         force: bool,
     },
 
-    /// Walk source, parse via syn, write .aristo/index.toml.
+    /// Walk source, parse annotations, write `.aristo/index.toml`.
     Index {
-        /// Force a full re-walk, ignoring the per-file mtime cache (slice 17+).
+        /// Force a full re-walk, ignoring the per-file mtime cache.
         #[arg(long)]
         all: bool,
     },
 
-    /// Index + ID assignment + drift detection + (Phase 2) B5b classification.
+    /// Refresh the index: walk source, assign ids to new annotations,
+    /// detect drift, and (when authenticated) match against the
+    /// Aretta canon.
     Stamp {
         /// CI mode: report whether stamp would change the index, but
         /// don't write. Exits non-zero if changes are needed. Also
@@ -153,7 +154,8 @@ enum Commands {
         /// `warn` with `--strict`); never modifies source.
         #[arg(long)]
         check: bool,
-        /// Apply auto-fixable rules to source files in place (slice 20 C2).
+        /// Apply auto-fixable lint rules (whitespace only) to source
+        /// files in place.
         #[arg(long, conflicts_with = "check")]
         fix: bool,
         /// Treat `warn` severity as failure too (only meaningful with `--check`).
@@ -238,12 +240,12 @@ enum Commands {
     /// findings with severity tags — not neutral inspection. Avoids
     /// the false analogy to PR / code review where humans sign off.)
     Critique {
-        /// J2 unified filter clause (`id=<id>[,<id>,...]`,
+        /// Unified filter clause (`id=<id>[,<id>,...]`,
         /// `file=<path>`, `parent=<id>`, `status=<state>`). Repeatable;
         /// multiple `--filter` flags AND together; values may be
         /// comma-separated. **REQUIRED** — `aristo critique` with no
-        /// filter errors with usage. (No implicit codebase sweep per
-        /// `docs/decisions/critique-and-pipeline-architecture.md` §D6.)
+        /// filter errors with usage. To sweep every annotation in the
+        /// index, opt in explicitly with `--all --yes`.
         #[arg(long = "filter", value_name = "key=value")]
         filters: Vec<String>,
         /// Apply pending critique files in `.aristo/critiques/` —
@@ -412,13 +414,12 @@ enum Commands {
 
     /// Atomic project-wide rename of an annotation id.
     ///
-    /// Scope (slice 32): bare → bare and stamp-assigned opaque
-    /// (`aret_*`) → bare. The canon-bound namespaces (`aristos:` and
-    /// `kanon:`) are rejected in either direction per §CS13 — canon
-    /// prefixes are applied by the canon accept path and removed by
-    /// `aristo canon unbind`. Opaque-target ids are rejected per F1-b
-    /// (stamp-assigned only). See `docs/decisions/...` (slice 32) and
-    /// `../aretta-sdk/docs/launch/canon-strategy.md` §CS13.
+    /// Supported renames: bare → bare, and stamp-assigned opaque
+    /// (`aret_*`) → bare. Canon-bound prefixes (`aristos:` / `kanon:`)
+    /// are rejected in either direction — those prefixes are applied
+    /// by `aristo canon accept` and removed by `aristo canon unbind`.
+    /// The new id cannot itself be an opaque `aret_*` id (those are
+    /// stamp-assigned only).
     Rename {
         /// Annotation id to rename FROM. Must exist in the current
         /// `.aristo/index.toml`.
@@ -433,9 +434,9 @@ enum Commands {
         dry_run: bool,
     },
 
-    /// Stateful review-session substrate — start / inspect / decide /
-    /// exit on the in-flight review of a pipeline's reviewable
-    /// artifacts. See `docs/decisions/review-sessions.md`.
+    /// Manage a stateful review session: start, inspect, decide, or
+    /// exit the in-flight review of a pipeline's reviewable artifacts
+    /// (critique findings, proof verdicts, etc.).
     Session {
         #[command(subcommand)]
         action: SessionAction,
@@ -443,16 +444,15 @@ enum Commands {
 
     /// Authenticate against the Aretta canon API. Required for
     /// `aristo stamp` / `aristo critique` to surface canon matches on
-    /// Pro / Enterprise tiers. See canon-strategy.md §CS1.
+    /// the Pro / Enterprise tiers.
     Auth {
         #[command(subcommand)]
         action: AuthAction,
     },
 
-    /// Canon-binding operations on the SDK side. The user-facing
-    /// surface for the §13 canon-and-matching design — accept a
-    /// pending match (PR #7); show / list / refresh / unbind /
-    /// request-verify subcommands land in PR #8/#9.
+    /// Manage canon bindings on the SDK side: accept or reject
+    /// pending matches, list / show / refresh the local match cache,
+    /// unbind canon-bound ids, and record verifier-demand signals.
     Canon {
         #[command(subcommand)]
         action: CanonAction,
@@ -513,9 +513,7 @@ pub(crate) enum AuthAction {
     Logout,
 }
 
-/// Subcommands under `aristo canon`. Phase-1 lands `accept` only;
-/// `show` / `list` / `refresh` / `unbind` / `request-verify` follow
-/// in PR #8 + PR #9.
+/// Subcommands under `aristo canon`.
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum CanonAction {
     /// Accept a pending canon match: rewrite source to use the
@@ -570,9 +568,8 @@ pub(crate) enum CanonAction {
 
     /// Fetch the canon entry detail for `<canon_id>` via the canon
     /// API and render the longer description + example + references.
-    /// The user-facing trust card (which combines this data with the
-    /// local index entry's site / binding) lives at `aristo show
-    /// <bound_id>` (PR #10).
+    /// For the full trust card (server description + local binding
+    /// state combined), use `aristo show <bound_id>` instead.
     Show {
         /// Bare canon id (no `aristos:` / `kanon:` prefix). The
         /// server's `GET /canon/entry/<canon_id>` endpoint returns
@@ -608,10 +605,10 @@ pub(crate) enum CanonAction {
     },
 
     /// Record a verification demand signal against a canon entry.
-    /// Idempotent on `(canon_id, repo, user)` per canon-strategy.md
-    /// §CS11. Use when an annotation is bound at the `kanon:` tier
-    /// and the user wants Aretta to invest in a verifier for that
-    /// canon entry.
+    /// Idempotent on `(canon_id, repo, user)` — repeated calls don't
+    /// pile up. Use when an annotation is bound at the `kanon:` tier
+    /// and you want Aretta to invest in a verifier for that canon
+    /// entry.
     RequestVerify {
         /// Canon id (no prefix). The same id the trust card surfaces
         /// or that `aristo canon list` shows.
@@ -625,13 +622,12 @@ pub(crate) enum CanonAction {
     },
 
     /// Report per-binding version drift between the local cache and
-    /// the canon API per canon-strategy.md §CS12. Surfaces three
-    /// classes: `current` (no change), `patch-bump` (same canon_id,
-    /// newer version — recommended action: `aristo canon refresh`),
-    /// and `minor-bump` (canon_id retired — recommended action:
-    /// `aristo canon unbind <id>` then re-stamp). Phase 1 is
-    /// diagnostic-only; Phase 2 auto-applies patch bumps and surfaces
-    /// minor bumps as critique findings.
+    /// the canon API. Surfaces three classes: `current` (no change),
+    /// `patch-bump` (same canon_id, newer version — recommended
+    /// action: `aristo canon refresh`), and `minor-bump` (canon_id
+    /// retired — recommended action: `aristo canon unbind <id>` then
+    /// re-stamp). Currently diagnostic-only; automatic patch-bump
+    /// application is planned.
     Migrate,
 }
 
@@ -652,9 +648,9 @@ pub(crate) enum SessionAction {
         /// `proof:balance_no_duplicate_cells`).
         #[arg(long = "subject")]
         subject: String,
-        /// Override the kind's default nesting policy. v0 ships
-        /// `Disallow` as the only policy; the flag is reserved for
-        /// future per-kind opt-ins (design Q4).
+        /// Override the kind's default nesting policy. Currently only
+        /// `Disallow` is implemented; the flag is reserved for future
+        /// per-kind opt-ins.
         #[arg(long = "allow-nesting", default_value_t = false)]
         allow_nesting: bool,
     },
@@ -689,8 +685,7 @@ pub(crate) enum SessionAction {
     Exit {
         /// Move open items to the per-kind backlog instead of
         /// erroring. Items are NEVER silently dropped; the next
-        /// session of this kind surfaces them via the backlog menu
-        /// (design doc D7).
+        /// session of this kind surfaces them via the backlog menu.
         #[arg(long = "defer-undecided", default_value_t = false)]
         defer_undecided: bool,
     },
@@ -736,9 +731,7 @@ pub fn run() -> ExitCode {
     }
 }
 
-/// Maps a parsed `Commands` variant to its handler. Slice 9 wires every
-/// subcommand to a stub returning the roadmap slice it lands in; future
-/// slices replace each stub.
+/// Maps a parsed `Commands` variant to its handler.
 fn dispatch(cmd: Commands) -> CliResult<()> {
     match cmd {
         Commands::Init { force } => commands::init::run(force),
