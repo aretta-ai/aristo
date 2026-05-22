@@ -125,18 +125,22 @@ run "$ARISTO" init
 
 # Drop the canon thresholds so dev's `obstacle_is_the_way` match
 # (conf ~0.85 against our shorter text variant) still surfaces.
-# dev's catalog stores the fuller Marcus Aurelius quote
+# Dev's catalog stores the fuller Marcus Aurelius quote
 # ("The impediment to action advances action. What stands in the
 #  way becomes the way."), so our shorter input lands at the edge
 # of the default stamp threshold (0.85). Lowering both thresholds
 # is a runbook-only convenience — production aristo.toml stays
 # at the documented defaults.
-cat >> aristo.toml <<'EOF'
-
-[canon]
-threshold_stamp = 0.65
-threshold_critique = 0.65
-EOF
+#
+# IMPORTANT: edit the existing `[canon]` block in-place — appending
+# a second one is silently shadowed by the first (TOML
+# duplicate-section semantics in our parser take the first
+# occurrence). Use sed since both threshold lines have known
+# default values written by `aristo init`.
+sed -i.bak \
+    -e 's/^threshold_stamp = 0\.85$/threshold_stamp = 0.65/' \
+    aristo.toml
+rm -f aristo.toml.bak
 echo
 say "workspace ready. src/lib.rs:"
 echo
