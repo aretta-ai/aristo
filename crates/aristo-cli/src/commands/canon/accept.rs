@@ -122,15 +122,26 @@ pub(crate) fn apply_acceptance(
             exit_code: 1,
         });
     }
-    let linked: ArtaId = ArtaId::parse(&pending.linked).map_err(|e| CliError::Other {
-        message: format!(
-            "pending match's `linked` field `{}` is not a valid arta_* id ({e}). \
-             The canon API returned a malformed identifier; rerun \
-             `aristo stamp` to refresh, or report the bug.",
-            pending.linked
-        ),
-        exit_code: 1,
-    })?;
+    // Resolve the ArtaId for the binding. Phase 1 carve-out: the dev /
+    // prod proxy may omit `linked` from /canon/match (see
+    // canon::types::CanonMatch::linked rationale). When that happens
+    // we synthesize a deterministic placeholder; Phase 2's
+    // verified_outcome plumbing will reject placeholders and force
+    // a rebind via a future migration step.
+    let linked: ArtaId = match &pending.linked {
+        Some(s) => ArtaId::parse(s).map_err(|e| CliError::Other {
+            message: format!(
+                "pending match's `linked` field `{s}` is not a valid arta_* id ({e}). \
+                 The canon API returned a malformed identifier; rerun \
+                 `aristo stamp` to refresh, or report the bug.",
+            ),
+            exit_code: 1,
+        })?,
+        None => aristo_core::canon::synthesize_phase1_linked(&pending.canon_id, &pending.version),
+    };
+    // Snapshot the user-facing form before `linked` is moved into the
+    // BindingState below.
+    let linked_str = linked.as_str().to_string();
 
     // 4. Compute the prefixed id + check it isn't already taken.
     let prefixed_str = match pending.prefix_tier {
@@ -233,7 +244,7 @@ pub(crate) fn apply_acceptance(
         "ok: accepted canon match for `{}` → `{}` (linked: {}).",
         ann_id.as_str(),
         prefixed_id.as_str(),
-        pending.linked
+        linked_str
     );
     Ok(())
 }

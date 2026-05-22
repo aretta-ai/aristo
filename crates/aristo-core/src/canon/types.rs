@@ -117,11 +117,32 @@ pub struct CanonMatch {
     /// freeform vocabulary).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backed_by: Option<String>,
-    /// Opaque internal ref. Surfaced for the SDK's index entry
-    /// (`BindingState::Bound { linked }`); the trust card hides it
-    /// per canon-strategy.md §CS10 ("what the card deliberately
-    /// hides").
-    pub linked: String,
+    /// Opaque server-issued binding handle. Per canon-strategy.md
+    /// §CS10 + `DECISIONS.md` §B5b, this is a 128-bit-random
+    /// `arta_<base32>` ref that uniquely identifies *this binding
+    /// event* server-side — distinct from `canon_id` (which is shared
+    /// across every user that binds to the same catalog entry) and
+    /// from the source-level `annotation_id` (which is user-chosen
+    /// and unknown to the server). Phase 2 includes `linked` inside
+    /// the signed `verified_outcome` tuple, so a signed outcome
+    /// cannot be lifted between bindings.
+    ///
+    /// **Phase 1 carve-out.** Optional on the wire because the current
+    /// dev/prod proxy doesn't emit it yet (see the
+    /// `match_response_decodes_when_server_omits_linked` test for the
+    /// production fixture). When the server omits it, the SDK
+    /// synthesizes a deterministic placeholder at accept time in
+    /// `canon/accept.rs` so the `BindingState::Bound { linked }`
+    /// invariant downstream still holds. The trust card hides this
+    /// field either way per CS10's "what the card deliberately hides".
+    ///
+    /// **Phase 2 must restore the required contract.** See
+    /// `../docs/mockups/13-canon-and-matching/_deferred/verification-execution.md`
+    /// — when `verified_outcome` lands, the signed-tuple integrity
+    /// check needs a server-issued (high-entropy) `linked`, not a
+    /// client-derived placeholder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked: Option<String>,
     /// Scope-aware verification metadata from `coverage.yaml`.
     /// **Informational only in Phase 1** — Phase 2's verification
     /// execution endpoint reads this to route the test binary, but
@@ -156,6 +177,53 @@ impl PrefixTier {
             PrefixTier::Kanon => "kanon:",
         }
     }
+}
+
+/// Synthesize a Phase 1 placeholder [`ArtaId`] from `(canon_id, version)`
+/// when the canon server omits the `linked` field from `/canon/match`.
+///
+/// **Phase 1 carve-out.** Per the `linked` rationale on
+/// [`CanonMatch::linked`], the server-issued opaque ref is meant to be
+/// a 128-bit-random handle that uniquely identifies this binding event.
+/// The current dev/prod proxy doesn't emit it yet, but the SDK still
+/// needs *some* `ArtaId` to fill the index entry's
+/// `BindingState::Bound { linked }` slot. We synthesize a deterministic
+/// placeholder from `sha256(canon_id, version)` — Phase 1 never reads
+/// `linked`, so the value is informational; Phase 2's verified_outcome
+/// signing pipeline requires the server-issued value and will reject
+/// any placeholder it can identify as client-derived.
+///
+/// **Determinism.** Two callers binding the same `(canon_id, version)`
+/// pair get the same synthesized id — useful for idempotency, but
+/// **not** unique per binding instance. That's the property Phase 2's
+/// server-issued `linked` provides; synthesized placeholders don't.
+///
+/// **Migration plan.** When the server starts emitting `linked`, the
+/// SDK keeps reading it from the wire (the `Option<String>` field).
+/// Existing cache + index entries created with synthesized placeholders
+/// stay valid for `BindingState::Bound` — they'll only be invalidated
+/// if/when the user runs a future `aristo canon refresh` that surfaces
+/// the real server-issued id, OR when Phase 2's verified_outcome lands
+/// and rebinding becomes a separate user-driven step.
+pub fn synthesize_phase1_linked(canon_id: &str, version: &str) -> crate::index::ArtaId {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"aristo-phase1-linked-synth\0");
+    h.update(canon_id.as_bytes());
+    h.update(b"\0");
+    h.update(version.as_bytes());
+    let digest = h.finalize();
+    // ArtaId schema is `arta_<8-64 alphanumeric>`. Use the first 16
+    // bytes of the digest as 32 lowercase-hex chars → 128 bits of
+    // derived entropy fits the format.
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut body = String::with_capacity(32);
+    for byte in &digest[..16] {
+        body.push(HEX[(byte >> 4) as usize] as char);
+        body.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    crate::index::ArtaId::parse(&format!("arta_{body}"))
+        .expect("synthesized arta_ id must satisfy ArtaId schema")
 }
 
 /// Scope-aware verification metadata surfaced by the match response.
@@ -336,7 +404,7 @@ mod tests {
                 scope: ":vanilla".into(),
                 prefix_tier: PrefixTier::Aristos,
                 backed_by: Some("specialized neural checker".into()),
-                linked: "arta_a1b2c3d4".into(),
+                linked: Some("arta_a1b2c3d4".into()),
                 verification: VerificationMetadata {
                     coverage_level: "tight".into(),
                     test_binaries: vec!["monotonicity_property".into()],
@@ -363,7 +431,7 @@ mod tests {
             scope: ":vanilla".into(),
             prefix_tier: PrefixTier::Kanon,
             backed_by: None,
-            linked: "arta_b2c3d4e5".into(),
+            linked: Some("arta_b2c3d4e5".into()),
             verification: VerificationMetadata {
                 coverage_level: "none".into(),
                 test_binaries: vec![],
@@ -379,6 +447,101 @@ mod tests {
         let back: CanonMatch = serde_json::from_str(&json).unwrap();
         assert_eq!(back, m);
         assert_eq!(back.prefix_tier, PrefixTier::Kanon);
+    }
+
+    #[test]
+    fn match_response_decodes_when_server_omits_linked() {
+        // Phase 1 carve-out — see canon-strategy.md §CS10 plus
+        // ../docs/mockups/13-canon-and-matching/_deferred/verification-execution.md
+        // for the Phase 2 plan that restores `linked` to required.
+        //
+        // Production fixture: copy of the JSON dev.aretta.ai actually
+        // returns for `POST /canon/match` today (no `linked` in any
+        // per-match record). Verified by curl on 2026-05-22 during
+        // the live-dev runbook's first run.
+        let raw = r#"{
+            "results": [
+                [
+                    {
+                        "canon_id": "waste_no_time_arguing_be_a_good_man",
+                        "version": "v0.1.0",
+                        "canonical_text": "Waste no more time arguing what a good man should be. Be one.",
+                        "confidence": 0.9999999999999998,
+                        "scope": ":vanilla",
+                        "prefix_tier": "kanon:",
+                        "backed_by": null,
+                        "verification": {
+                            "coverage_level": "none",
+                            "test_binaries": []
+                        }
+                    }
+                ]
+            ],
+            "effective_scopes": [":vanilla"],
+            "canon_version": "v0.1.0",
+            "matched_at": "2026-05-22T18:04:51.080Z"
+        }"#;
+        let resp: CanonMatchResponse =
+            serde_json::from_str(raw).expect("dev's real /canon/match response should decode");
+        assert_eq!(resp.results.len(), 1);
+        assert_eq!(resp.results[0].len(), 1);
+        let m = &resp.results[0][0];
+        assert_eq!(m.canon_id, "waste_no_time_arguing_be_a_good_man");
+        assert_eq!(m.prefix_tier, PrefixTier::Kanon);
+        // The Phase 1 contract: `linked` is optional, server may omit
+        // it. When omitted, decode succeeds with `linked = None`; the
+        // SDK synthesizes a deterministic placeholder at accept time.
+        assert!(
+            m.linked.is_none(),
+            "expected linked to be None when server omits it, got: {:?}",
+            m.linked
+        );
+    }
+
+    #[test]
+    fn synthesize_phase1_linked_is_deterministic_and_well_formed() {
+        let a = synthesize_phase1_linked("waste_no_time_arguing_be_a_good_man", "v0.1.0");
+        let b = synthesize_phase1_linked("waste_no_time_arguing_be_a_good_man", "v0.1.0");
+        let c = synthesize_phase1_linked("waste_no_time_arguing_be_a_good_man", "v0.1.1");
+        let d = synthesize_phase1_linked("obstacle_is_the_way", "v0.1.0");
+        assert_eq!(a, b, "same (canon_id, version) → same arta_ id");
+        assert_ne!(a, c, "version difference must change the synthesized id");
+        assert_ne!(a, d, "canon_id difference must change the synthesized id");
+        // Schema check: 32 lowercase hex chars after the `arta_` prefix.
+        let s = a.as_str();
+        assert!(s.starts_with("arta_"), "must start with arta_");
+        assert_eq!(s.len(), 5 + 32, "body should be 32 hex chars");
+        assert!(s[5..]
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn match_response_omits_linked_field_when_none() {
+        // Serialization side: if the SDK ever holds a CanonMatch with
+        // linked = None (e.g. round-tripping a decoded dev response),
+        // re-serializing should not emit the field at all — keeps the
+        // wire shape clean and compatible with the proxy's redaction
+        // logic for the /canon/entry sibling endpoint.
+        let m = CanonMatch {
+            canon_id: "checkout_total_non_negative".into(),
+            version: "v0.1.0".into(),
+            canonical_text: "checkout total is non-negative".into(),
+            confidence: 0.94,
+            scope: ":vanilla".into(),
+            prefix_tier: PrefixTier::Kanon,
+            backed_by: None,
+            linked: None,
+            verification: VerificationMetadata {
+                coverage_level: "none".into(),
+                test_binaries: vec![],
+            },
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(
+            !json.contains("\"linked\""),
+            "expected linked to be omitted when None, got: {json}"
+        );
     }
 
     #[test]

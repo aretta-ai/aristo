@@ -132,7 +132,7 @@ fn match_annotations_happy_path_round_trips() {
             scope: ":vanilla".into(),
             prefix_tier: PrefixTier::Aristos,
             backed_by: Some("specialized neural checker".into()),
-            linked: "arta_a1b2c3d4".into(),
+            linked: Some("arta_a1b2c3d4".into()),
             verification: VerificationMetadata {
                 coverage_level: "tight".into(),
                 test_binaries: vec!["monotonicity_property".into()],

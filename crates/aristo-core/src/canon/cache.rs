@@ -146,9 +146,15 @@ pub struct PendingMatch {
     /// `Some(_)` for `aristos:` tier; `None` for `kanon:` tier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backed_by: Option<String>,
-    /// Opaque internal ref (surfaced for accept-routing into the
-    /// index entry's `BindingState::Bound { linked }`).
-    pub linked: String,
+    /// Opaque server-issued binding handle. Carried verbatim from
+    /// the `/canon/match` response so accept-time logic can route it
+    /// into `BindingState::Bound { linked }`. **Phase 1 carve-out:**
+    /// the field is `Option<String>` because the current dev/prod
+    /// proxy doesn't emit `linked` yet — see
+    /// [`canon::types::CanonMatch::linked`] for the full rationale and
+    /// the Phase 2 plan that restores it to required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked: Option<String>,
     /// Review state — `"open"` until the user decides.
     pub disposition: Disposition,
     /// RFC 3339 timestamp of when stamp/critique surfaced this match.
@@ -334,7 +340,7 @@ mod tests {
             confidence: 0.92,
             prefix_tier: PrefixTier::Aristos,
             backed_by: Some("specialized neural checker".into()),
-            linked: "arta_a1b2c3d4".into(),
+            linked: Some("arta_a1b2c3d4".into()),
             disposition: Disposition::Open,
             found_at: "2026-06-15T09:14:22Z".into(),
             found_by: "aristo stamp".into(),

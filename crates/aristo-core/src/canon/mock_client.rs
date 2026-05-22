@@ -314,7 +314,7 @@ current_backing = "specialized neural checker"
                 scope: ":vanilla".into(),
                 prefix_tier: PrefixTier::Kanon,
                 backed_by: None,
-                linked: "arta_xyz1".into(),
+                linked: Some("arta_xyz1".into()),
                 verification: VerificationMetadata {
                     coverage_level: "none".into(),
                     test_binaries: vec![],

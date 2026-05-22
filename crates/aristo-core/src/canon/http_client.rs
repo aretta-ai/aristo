@@ -281,7 +281,7 @@ mod tests {
                 scope: ":vanilla".into(),
                 prefix_tier: PrefixTier::Kanon,
                 backed_by: None,
-                linked: "arta_xyz".into(),
+                linked: Some("arta_xyz".into()),
                 verification: VerificationMetadata {
                     coverage_level: "none".into(),
                     test_binaries: vec![],
