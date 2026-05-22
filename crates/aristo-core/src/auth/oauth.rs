@@ -90,15 +90,49 @@ pub struct GitHubUser {
 /// Start the OAuth flow: call `GET <server>/auth/login` and return
 /// the GitHub authorization URL.
 ///
-/// The caller is responsible for opening the URL in a browser (or
-/// printing it for the user) and prompting for the code that the
-/// proxy's `/auth/callback` page displays.
+/// **Why we pass `redirect_uri` explicitly:** the proxy's
+/// `/auth/login` handler falls back to deriving the redirect URI
+/// from its own incoming `c.req.url`. Behind a reverse proxy
+/// (Caddy terminates TLS at the edge, talks plain HTTP to the
+/// upstream proxy), `c.req.url` has the **internal** `http://`
+/// scheme. The OAuth App at GitHub has only the public `https://`
+/// callback registered, so the derived redirect URI gets rejected
+/// with "redirect_uri is not associated with this application."
+/// Passing `redirect_uri=<server>/auth/callback` with the proper
+/// `https://` scheme bypasses the fallback and matches GitHub's
+/// allowlist. Same fix that `aretta-code/packages/tui/src/hooks/useAuth.ts`
+/// applies.
+///
+/// The caller is responsible for opening the returned URL in a
+/// browser (or printing it for the user) and prompting for the code
+/// that the proxy's `/auth/callback` page displays.
 pub fn oauth_start(server: &ServerUrl) -> Result<OAuthInit, AuthError> {
-    let url = format!("{}/auth/login", server.as_str());
+    let redirect_uri = format!("{}/auth/callback", server.as_str());
+    let url = format!(
+        "{}/auth/login?redirect_uri={}",
+        server.as_str(),
+        url_encode(&redirect_uri),
+    );
     let agent = build_agent();
     let result = agent.get(&url).call();
     let body = consume_response::<OAuthInit>(result)?;
     Ok(body)
+}
+
+/// Minimal URL-encoder for query-param values. Hand-rolled instead
+/// of pulling a dep — only encodes the reserved chars we actually
+/// emit (`:` `/`).
+fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
 }
 
 /// Exchange an OAuth `code` (returned by the proxy's `/auth/callback`

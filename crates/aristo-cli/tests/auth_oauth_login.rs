@@ -39,6 +39,10 @@ fn isolated(workspace: &Path) -> Command {
     std::fs::create_dir_all(&home).unwrap();
     c.env("HOME", &home);
     c.env("XDG_CONFIG_HOME", home.join("xdg"));
+    // Suppress the OAuth flow's browser-open spawn during tests —
+    // otherwise every test run pops a browser tab on the dev's
+    // machine.
+    c.env("ARISTO_NO_BROWSER", "1");
     c.current_dir(workspace);
     c
 }
@@ -176,7 +180,11 @@ fn auth_login_oauth_persists_arta_token_on_happy_path() {
 
     let (rec1, rec2) = handle.join().unwrap();
     assert_eq!(rec1.method, "GET");
-    assert_eq!(rec1.path, "/auth/login");
+    assert!(
+        rec1.path.starts_with("/auth/login?redirect_uri="),
+        "expected explicit redirect_uri query; got: {}",
+        rec1.path
+    );
     assert_eq!(rec2.method, "POST");
     assert_eq!(rec2.path, "/auth/cli-token");
     let body: serde_json::Value = serde_json::from_str(&rec2.body).expect("body parses as JSON");

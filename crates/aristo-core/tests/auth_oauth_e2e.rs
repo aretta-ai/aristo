@@ -118,7 +118,18 @@ fn oauth_start_decodes_authorize_url_from_proxy_response() {
 
     let record = handle.join().unwrap();
     assert_eq!(record.method, "GET");
-    assert_eq!(record.path, "/auth/login");
+    assert!(
+        record.path.starts_with("/auth/login?redirect_uri="),
+        "expected /auth/login with redirect_uri query; got: {}",
+        record.path
+    );
+    // Verify the redirect_uri carries an https:// URL (the whole
+    // point of the bugfix — defeat the proxy's http:// fallback).
+    let decoded = record.path.replace("%3A", ":").replace("%2F", "/");
+    assert!(
+        decoded.contains("https://") || decoded.contains("http://127.0.0.1"),
+        "expected https or test-host redirect_uri; got: {decoded}"
+    );
 }
 
 #[test]

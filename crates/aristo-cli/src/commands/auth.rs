@@ -184,6 +184,13 @@ fn resolve_repo_full_name(repo_flag: Option<String>) -> CliResult<String> {
 }
 
 fn try_open_browser(url: &str) -> std::io::Result<()> {
+    // Test mode: e2e tests spawn the real aristo binary and would
+    // otherwise launch the developer's browser on every test run.
+    // The `ARISTO_NO_BROWSER` env var suppresses the spawn. Set it
+    // in tests + any CI that doesn't want browser pop-ups.
+    if std::env::var("ARISTO_NO_BROWSER").is_ok() {
+        return Ok(());
+    }
     let cmd = if cfg!(target_os = "macos") {
         "open"
     } else if cfg!(target_os = "windows") {
