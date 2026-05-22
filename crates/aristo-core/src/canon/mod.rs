@@ -60,6 +60,6 @@ pub use noop_client::NoopCanonClient;
 pub use rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError};
 pub use types::{
     synthesize_phase1_linked, AnnotationMatchInput, CanonEntry, CanonMatch, CanonMatchRequest,
-    CanonMatchResponse, PrefixTier, References, RelatedEntry, RequestVerifyBody,
-    RequestVerifyResponse, VerificationMetadata,
+    CanonMatchResponse, PrefixTier, References, RequestVerifyBody, RequestVerifyResponse,
+    VerificationMetadata,
 };

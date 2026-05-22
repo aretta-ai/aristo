@@ -62,23 +62,32 @@ results = [
 fn write_entry_fixture(fixture_dir: &Path) {
     let entry_dir = fixture_dir.join("entry/cell_written_exactly_once_per_page_edit");
     std::fs::create_dir_all(&entry_dir).unwrap();
+    // Per-scope wire shape (README §L2 "backed_by map per scope"):
     let body = r#"
-id = "cell_written_exactly_once_per_page_edit"
+canon_id = "cell_written_exactly_once_per_page_edit"
 version = "v0.2.1"
+active_version = "v0.2.1"
+is_deprecated = false
+canon_version = "v0.2.0"
 canonical_text = "edit_page writes each cell exactly once"
 applies_to = ["fn", "method"]
 category = "concurrency"
 property_type = "safety"
-scope = ":vanilla"
-backed_by = "specialized neural checker"
 description = "Standard concurrency invariant for page-edit code paths."
+invariant_sketch = ""
 examples = ["fn edit(target: &mut Page) {}"]
+effective_scopes = [":vanilla"]
+
+[backed_by]
+":vanilla" = "specialized neural checker"
+
+[prefix_tier_by_scope]
+":vanilla" = "aristos:"
 
 [references]
 literature = ["Lamport, \"Concurrent Reading and Writing\" (CACM 20:11, 1977)"]
-related_entries = [
-    { canon_id = "balance_no_duplicate_cells", prefix_tier = "aristos:" },
-]
+related_entries = ["balance_no_duplicate_cells"]
+external = []
 "#;
     std::fs::write(entry_dir.join("active.toml"), body).unwrap();
     std::fs::write(entry_dir.join("v0.2.1.toml"), body).unwrap();
@@ -224,7 +233,7 @@ fn show_renders_canon_entry_detail_from_fixture() {
         "expected literature reference; got: {stdout}"
     );
     assert!(
-        stdout.contains("aristos:balance_no_duplicate_cells"),
+        stdout.contains("balance_no_duplicate_cells"),
         "expected related entry; got: {stdout}"
     );
 }

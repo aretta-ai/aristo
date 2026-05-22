@@ -31,6 +31,8 @@
 //!   types — that surface lands in Phase 2 alongside the
 //!   verification execution endpoint.
 
+use std::collections::BTreeMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -241,18 +243,40 @@ pub struct VerificationMetadata {
 // ─── GET /canon/entry/<id>?version=<v> ─────────────────────────────────────
 
 /// Full per-entry detail surfaced by `GET /canon/entry/<canon_id>`.
-/// Used to render the bound-annotation trust card.
+/// Used to render the bound-annotation trust card + the
+/// `aristo canon show <id>` drill-down.
 ///
-/// Per canon-strategy.md §CS10, this excludes the server-side-only
-/// `verification_artifacts` (formal models, neural prompts, test
-/// corpora). The user only sees pedagogical / cross-reference
-/// fields.
+/// Shape pinned by §13 README L2 — "**`backed_by` map per scope**"
+/// is the locked spec, not flat. Closed-IP fields are deliberately
+/// absent (canon-strategy.md §CS10): `alternative_phrasings`,
+/// `verification_artifacts`, internal spec IDs, the opaque server
+/// `linked` ref.
+///
+/// The server-side projection (toolsaurus's `buildEntryCard`) is
+/// scope-aware: `backed_by` + `prefix_tier_by_scope` are filtered to
+/// the caller's effective scopes, and `references.related_entries`
+/// is filtered to canon_ids known to be active.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CanonEntry {
     /// Canonical id (readable, no prefix).
-    pub id: String,
-    /// Per-entry version (`v<minor>.<patch>`).
+    pub canon_id: String,
+    /// Per-entry version requested (`v<minor>.<patch>`). May differ
+    /// from [`active_version`](Self::active_version) when the caller
+    /// passes `?version=<v>` to inspect a deprecated entry.
     pub version: String,
+    /// The current active version for this `canon_id` per the
+    /// canon-strategy.md §CS12 immutability model. When
+    /// `version != active_version`, this entry is the deprecated
+    /// version surfaced via the explicit `?version=` query.
+    pub active_version: String,
+    /// True when [`version`](Self::version) is not the active
+    /// version. Trust card UI should signal "deprecated; pinning to
+    /// active recommended."
+    pub is_deprecated: bool,
+    /// Catalog snapshot tag from canon-strategy.md §CS12.
+    /// Informational; matches the `canon_version` in the parent
+    /// match response that surfaced this entry.
+    pub canon_version: String,
     /// The natural-language statement. Source-of-truth field for
     /// the trust card's statement paragraph.
     pub canonical_text: String,
@@ -265,25 +289,45 @@ pub struct CanonEntry {
     /// `safety` | `liveness` | `functional-correctness` |
     /// `termination`.
     pub property_type: String,
-    /// Which scope the entry was matched against for the requesting
-    /// repo. `":vanilla"` for the bulk of the corpus; named flavors
-    /// for DP/Enterprise overlays.
-    pub scope: String,
-    /// Declared verification mechanism for the user's effective
-    /// scope. `Some(_)` for `aristos:` tier; `None` for `kanon:`
-    /// tier.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backed_by: Option<String>,
-    /// Longer pedagogical description, free-form prose.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    /// Declared verification mechanism, **per effective scope** (per
+    /// README §L2). Keyed by scope string (`":vanilla"`, `"turso"`,
+    /// etc.); value is `Some(_)` when the entry has a backing for
+    /// that scope (`aristos:` tier — see
+    /// [`prefix_tier_by_scope`](Self::prefix_tier_by_scope)) and
+    /// `None` for an unbacked scope (`kanon:` tier).
+    ///
+    /// Filtered server-side to the caller's effective scopes — keys
+    /// outside the caller's scope set never appear.
+    #[serde(default)]
+    pub backed_by: BTreeMap<String, Option<String>>,
+    /// Prefix tier for each scope present in
+    /// [`backed_by`](Self::backed_by). `kanon:` when the scope's
+    /// `backed_by` value is `None`; `aristos:` when populated.
+    /// Mirrors what the SDK applies as the source-level id prefix on
+    /// `aristo canon accept`.
+    #[serde(default)]
+    pub prefix_tier_by_scope: BTreeMap<String, PrefixTier>,
+    /// Longer pedagogical description, free-form prose. Empty string
+    /// when the catalog entry doesn't set one.
+    #[serde(default)]
+    pub description: String,
     /// Abstract example shapes. The trust card surfaces
     /// `examples[0]` labeled "abstract — not your code."
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub examples: Vec<String>,
+    /// Informal pseudo-code / mathematical sketch of the invariant.
+    /// Empty string when the catalog entry doesn't set one.
+    #[serde(default)]
+    pub invariant_sketch: String,
     /// Cross-references for the trust card's References block.
     #[serde(default)]
     pub references: References,
+    /// The set of scopes the server used to compute this card. The
+    /// keys of [`backed_by`](Self::backed_by) and
+    /// [`prefix_tier_by_scope`](Self::prefix_tier_by_scope) are a
+    /// subset of this set.
+    #[serde(default)]
+    pub effective_scopes: Vec<String>,
 }
 
 /// Cross-references surfaced on the trust card.
@@ -293,22 +337,15 @@ pub struct References {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub literature: Vec<String>,
     /// Related canon entries **filtered to the user's effective
-    /// scopes** server-side. Each entry includes the prefix tier so
-    /// the trust card can show `aristos:other_id (aristos:, backed)`
-    /// vs `kanon:other_id (kanon:, unbacked)`.
+    /// scopes** server-side. Bare canon_id strings — to render with
+    /// prefix tier, the renderer needs to call
+    /// [`get_entry`](crate::canon::client::CanonClient::get_entry)
+    /// per id (or surface them as bare ids). Phase 1 renders bare.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub related_entries: Vec<RelatedEntry>,
+    pub related_entries: Vec<String>,
     /// External URLs (e.g., blog posts, design docs).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub external: Vec<String>,
-}
-
-/// A cross-referenced canon entry. Carries the prefix tier so the
-/// trust card renderer can show the tier alongside each related id.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct RelatedEntry {
-    pub canon_id: String,
-    pub prefix_tier: PrefixTier,
 }
 
 // ─── POST /canon/request-verify ───────────────────────────────────────────
@@ -545,36 +582,89 @@ mod tests {
     }
 
     #[test]
-    fn canon_entry_round_trips_with_references() {
+    fn canon_entry_round_trips_with_per_scope_backed_by() {
+        let mut backed_by = BTreeMap::new();
+        backed_by.insert(
+            ":vanilla".to_string(),
+            Some("specialized neural checker".to_string()),
+        );
+        backed_by.insert(
+            "turso".to_string(),
+            Some("golden model + differential testing".to_string()),
+        );
+        let mut prefix_tier_by_scope = BTreeMap::new();
+        prefix_tier_by_scope.insert(":vanilla".to_string(), PrefixTier::Aristos);
+        prefix_tier_by_scope.insert("turso".to_string(), PrefixTier::Aristos);
         let entry = CanonEntry {
-            id: "cell_written_exactly_once_per_page_edit".into(),
+            canon_id: "cell_written_exactly_once_per_page_edit".into(),
             version: "v0.2.1".into(),
+            active_version: "v0.2.1".into(),
+            is_deprecated: false,
+            canon_version: "v0.2.0".into(),
             canonical_text: "a page-edit operation writes each cell exactly once".into(),
             applies_to: vec!["fn".into(), "method".into()],
             category: "invariants".into(),
             property_type: "safety".into(),
-            scope: ":vanilla".into(),
-            backed_by: Some("specialized neural checker".into()),
-            description: Some("Standard concurrency invariant".into()),
+            backed_by,
+            prefix_tier_by_scope,
+            description: "Standard concurrency invariant".into(),
             examples: vec!["fn edit(...) { ... }".into()],
+            invariant_sketch: "forall e, |writes(e)| == |cells(page)|".into(),
             references: References {
                 literature: vec!["Lamport (CACM 20:11, 1977)".into()],
                 related_entries: vec![
-                    RelatedEntry {
-                        canon_id: "balance_no_duplicate_cells".into(),
-                        prefix_tier: PrefixTier::Aristos,
-                    },
-                    RelatedEntry {
-                        canon_id: "edit_atomicity_per_page".into(),
-                        prefix_tier: PrefixTier::Kanon,
-                    },
+                    "balance_no_duplicate_cells".into(),
+                    "edit_atomicity_per_page".into(),
                 ],
                 external: vec![],
             },
+            effective_scopes: vec![":vanilla".into(), "turso".into()],
         };
         let json = serde_json::to_string(&entry).unwrap();
         let back: CanonEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(back, entry);
+    }
+
+    #[test]
+    fn canon_entry_decodes_live_dev_fixture() {
+        // Production fixture: copy of what dev.aretta.ai returns for
+        // GET /canon/entry/waste_no_time_arguing_be_a_good_man on
+        // 2026-05-22, post the entry-endpoint migration to
+        // toolsaurus. Pins the spec-locked "backed_by map per scope"
+        // shape from README §L2.
+        let raw = r#"{
+            "canon_id": "waste_no_time_arguing_be_a_good_man",
+            "version": "v0.1.0",
+            "active_version": "v0.1.0",
+            "is_deprecated": false,
+            "canon_version": "v0.1.0",
+            "canonical_text": "Waste no more time arguing what a good man should be. Be one.",
+            "applies_to": ["fn", "method"],
+            "category": "other",
+            "property_type": "safety",
+            "backed_by": { ":vanilla": null },
+            "prefix_tier_by_scope": { ":vanilla": "kanon:" },
+            "description": "Aurelian easter-egg entry exercising the kanon: tier under :vanilla scope.",
+            "examples": [],
+            "invariant_sketch": "",
+            "references": {
+                "literature": ["Aurelius, Marcus. Meditations, Book X.16."],
+                "related_entries": ["obstacle_is_the_way"],
+                "external": []
+            },
+            "effective_scopes": [":vanilla"]
+        }"#;
+        let entry: CanonEntry = serde_json::from_str(raw).expect("live-dev fixture must decode");
+        assert_eq!(entry.canon_id, "waste_no_time_arguing_be_a_good_man");
+        assert_eq!(entry.backed_by.get(":vanilla"), Some(&None));
+        assert_eq!(
+            entry.prefix_tier_by_scope.get(":vanilla"),
+            Some(&PrefixTier::Kanon)
+        );
+        assert_eq!(
+            entry.references.related_entries,
+            vec!["obstacle_is_the_way"]
+        );
     }
 
     #[test]

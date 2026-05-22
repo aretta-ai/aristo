@@ -502,18 +502,31 @@ mod tests {
 
     #[test]
     fn map_response_round_trip_via_canon_entry() {
+        use std::collections::BTreeMap;
+        let mut backed_by = BTreeMap::new();
+        backed_by.insert(
+            ":vanilla".to_string(),
+            Some("specialized neural checker".to_string()),
+        );
+        let mut prefix_tier_by_scope = BTreeMap::new();
+        prefix_tier_by_scope.insert(":vanilla".to_string(), PrefixTier::Aristos);
         let entry = CanonEntry {
-            id: "foo".into(),
+            canon_id: "foo".into(),
             version: "v0.2.1".into(),
+            active_version: "v0.2.1".into(),
+            is_deprecated: false,
+            canon_version: "v0.2.0".into(),
             canonical_text: "the canonical phrasing".into(),
             applies_to: vec!["fn".into()],
             category: "invariants".into(),
             property_type: "safety".into(),
-            scope: ":vanilla".into(),
-            backed_by: Some("specialized neural checker".into()),
-            description: None,
+            backed_by,
+            prefix_tier_by_scope,
+            description: String::new(),
             examples: vec![],
+            invariant_sketch: String::new(),
             references: References::default(),
+            effective_scopes: vec![":vanilla".into()],
         };
         let body = serde_json::to_string(&entry).unwrap();
         let got: CanonEntry = map_response(200, &body).unwrap();

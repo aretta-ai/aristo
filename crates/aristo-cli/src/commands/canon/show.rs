@@ -51,25 +51,53 @@ pub(crate) fn run(canon_id: &str, version: Option<String>) -> CliResult<()> {
         .get_entry(canon_id, version.as_deref())
         .map_err(canon_error_to_cli)?;
 
+    // Pick the primary scope for single-value rendering. `:vanilla`
+    // is always in the effective set; named flavors come second. We
+    // intentionally don't sum across scopes — the trust card shows
+    // the verification commitment for the user's *current* scope.
+    let primary_scope = entry
+        .effective_scopes
+        .iter()
+        .find(|s| *s != ":vanilla")
+        .cloned()
+        .unwrap_or_else(|| ":vanilla".to_string());
+
     println!();
-    println!("canon entry: {}", entry.id);
-    println!("version:     {}", entry.version);
-    println!("scope:       {}", entry.scope);
+    println!("canon entry: {}", entry.canon_id);
+    if entry.is_deprecated {
+        println!(
+            "version:     {} (deprecated; active is {})",
+            entry.version, entry.active_version
+        );
+    } else {
+        println!("version:     {}", entry.version);
+    }
+    println!("scope:       {}", entry.effective_scopes.join(", "));
     println!("category:    {}", entry.category);
     println!("property:    {}", entry.property_type);
     println!("applies to:  {}", entry.applies_to.join(", "));
-    if let Some(backed_by) = &entry.backed_by {
-        println!("backed by:   {backed_by}");
-    } else {
-        println!("backed by:   — (kanon: tier; no verification backing yet for your scope)");
+    match entry.backed_by.get(&primary_scope) {
+        Some(Some(backing)) => {
+            println!("backed by:   {backing}  (scope {primary_scope})");
+        }
+        Some(None) | None => {
+            println!("backed by:   — (kanon: tier; no verification backing yet for your scope)");
+        }
     }
     println!();
     println!("statement:");
     println!("  {}", entry.canonical_text);
-    if let Some(desc) = &entry.description {
+    if !entry.description.is_empty() {
         println!();
         println!("description:");
-        for line in desc.lines() {
+        for line in entry.description.lines() {
+            println!("  {line}");
+        }
+    }
+    if !entry.invariant_sketch.is_empty() {
+        println!();
+        println!("invariant sketch:");
+        for line in entry.invariant_sketch.lines() {
             println!("  {line}");
         }
     }
@@ -91,16 +119,12 @@ pub(crate) fn run(canon_id: &str, version: Option<String>) -> CliResult<()> {
         for url in &refs.external {
             println!("  • {url}");
         }
-        for rel in &refs.related_entries {
-            let backed = match rel.prefix_tier {
-                aristo_core::canon::PrefixTier::Aristos => "backed",
-                aristo_core::canon::PrefixTier::Kanon => "unbacked",
-            };
-            println!(
-                "  • {prefix}{id}  ({prefix} {backed})",
-                prefix = rel.prefix_tier.as_prefix(),
-                id = rel.canon_id,
-            );
+        // Related entries are bare canon_id strings — the wire
+        // doesn't carry per-entry prefix tiers (would require a
+        // follow-up call per related id). Phase 1 renders bare; a
+        // future "show --enrich" mode could fetch tier per related.
+        for related_id in &refs.related_entries {
+            println!("  • {related_id}");
         }
     }
     println!();

@@ -188,21 +188,70 @@ fn match_annotations_happy_path_round_trips() {
 
 // ─── End-to-end: GET /canon/entry/<id>?version=<v> ────────────────────────
 
-#[test]
-fn get_entry_with_version_sends_query_param() {
-    let canned_entry = CanonEntry {
-        id: "foo".into(),
+fn aristos_entry(canon_id: &str) -> CanonEntry {
+    use std::collections::BTreeMap;
+    let mut backed_by = BTreeMap::new();
+    backed_by.insert(
+        ":vanilla".to_string(),
+        Some("specialized neural checker".to_string()),
+    );
+    let mut prefix_tier_by_scope = BTreeMap::new();
+    prefix_tier_by_scope.insert(
+        ":vanilla".to_string(),
+        aristo_core::canon::PrefixTier::Aristos,
+    );
+    CanonEntry {
+        canon_id: canon_id.to_string(),
         version: "v0.2.1".into(),
+        active_version: "v0.2.1".into(),
+        is_deprecated: false,
+        canon_version: "v0.2.0".into(),
         canonical_text: "the canonical phrasing".into(),
         applies_to: vec!["fn".into()],
         category: "invariants".into(),
         property_type: "safety".into(),
-        scope: ":vanilla".into(),
-        backed_by: Some("specialized neural checker".into()),
-        description: None,
+        backed_by,
+        prefix_tier_by_scope,
+        description: String::new(),
         examples: vec![],
+        invariant_sketch: String::new(),
         references: References::default(),
-    };
+        effective_scopes: vec![":vanilla".into()],
+    }
+}
+
+fn kanon_entry(canon_id: &str) -> CanonEntry {
+    use std::collections::BTreeMap;
+    let mut backed_by = BTreeMap::new();
+    backed_by.insert(":vanilla".to_string(), None);
+    let mut prefix_tier_by_scope = BTreeMap::new();
+    prefix_tier_by_scope.insert(
+        ":vanilla".to_string(),
+        aristo_core::canon::PrefixTier::Kanon,
+    );
+    CanonEntry {
+        canon_id: canon_id.to_string(),
+        version: "v0.1.0".into(),
+        active_version: "v0.1.0".into(),
+        is_deprecated: false,
+        canon_version: "v0.1.0".into(),
+        canonical_text: "x".into(),
+        applies_to: vec!["fn".into()],
+        category: "invariants".into(),
+        property_type: "safety".into(),
+        backed_by,
+        prefix_tier_by_scope,
+        description: String::new(),
+        examples: vec![],
+        invariant_sketch: String::new(),
+        references: References::default(),
+        effective_scopes: vec![":vanilla".into()],
+    }
+}
+
+#[test]
+fn get_entry_with_version_sends_query_param() {
+    let canned_entry = aristos_entry("foo");
     let body = serde_json::to_string(&canned_entry).unwrap();
     let (base, server) = spawn_mock(CannedResponse {
         status_line: "HTTP/1.1 200 OK",
@@ -221,19 +270,7 @@ fn get_entry_with_version_sends_query_param() {
 
 #[test]
 fn get_entry_without_version_omits_query_param() {
-    let canned_entry = CanonEntry {
-        id: "bar".into(),
-        version: "v0.1.0".into(),
-        canonical_text: "x".into(),
-        applies_to: vec!["fn".into()],
-        category: "invariants".into(),
-        property_type: "safety".into(),
-        scope: ":vanilla".into(),
-        backed_by: None,
-        description: None,
-        examples: vec![],
-        references: References::default(),
-    };
+    let canned_entry = kanon_entry("bar");
     let body = serde_json::to_string(&canned_entry).unwrap();
     let (base, server) = spawn_mock(CannedResponse {
         status_line: "HTTP/1.1 200 OK",

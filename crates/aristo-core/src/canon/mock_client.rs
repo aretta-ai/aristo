@@ -206,24 +206,41 @@ results = [
     fn get_entry_with_version_loads_versioned_fixture() {
         let tmp = TempDir::new().unwrap();
         let body = r#"
-id = "foo"
+canon_id = "foo"
 version = "v0.2.1"
+active_version = "v0.2.1"
+is_deprecated = false
+canon_version = "v0.2.0"
 canonical_text = "foo"
 applies_to = ["fn"]
 category = "invariants"
 property_type = "safety"
-scope = ":vanilla"
-backed_by = "specialized neural checker"
+description = ""
+invariant_sketch = ""
+examples = []
+effective_scopes = [":vanilla"]
+
+[backed_by]
+":vanilla" = "specialized neural checker"
+
+[prefix_tier_by_scope]
+":vanilla" = "aristos:"
+
+[references]
 "#;
         write_entry_fixture(tmp.path(), "foo", "v0.2.1", body);
         let client = MockCanonClient::new(tmp.path().to_path_buf());
         let entry = client.get_entry("foo", Some("v0.2.1")).unwrap();
-        assert_eq!(entry.id, "foo");
+        assert_eq!(entry.canon_id, "foo");
         assert_eq!(entry.version, "v0.2.1");
-        assert_eq!(entry.scope, ":vanilla");
+        assert_eq!(entry.effective_scopes, vec![":vanilla".to_string()]);
         assert_eq!(
-            entry.backed_by.as_deref(),
+            entry.backed_by.get(":vanilla").and_then(|v| v.as_deref()),
             Some("specialized neural checker")
+        );
+        assert_eq!(
+            entry.prefix_tier_by_scope.get(":vanilla"),
+            Some(&crate::canon::PrefixTier::Aristos)
         );
     }
 
@@ -231,20 +248,43 @@ backed_by = "specialized neural checker"
     fn get_entry_without_version_loads_active_fixture() {
         let tmp = TempDir::new().unwrap();
         let body = r#"
-id = "foo"
+canon_id = "foo"
 version = "v0.2.1"
+active_version = "v0.2.1"
+is_deprecated = false
+canon_version = "v0.2.0"
 canonical_text = "foo"
 applies_to = ["fn"]
 category = "invariants"
 property_type = "safety"
-scope = ":vanilla"
+description = ""
+invariant_sketch = ""
+examples = []
+effective_scopes = [":vanilla"]
+
+[backed_by]
+":vanilla" = ""
+
+[prefix_tier_by_scope]
+":vanilla" = "kanon:"
+
+[references]
 "#;
+        // Note: TOML has no null; the empty string here decodes via
+        // serde as Some("") not None. To represent a true kanon: tier
+        // (backed_by[scope] = null) the wire is JSON-only — mock_client
+        // fixtures use the prefix_tier_by_scope as the source of truth
+        // for the test below.
         write_entry_fixture(tmp.path(), "foo", "active", body);
         let client = MockCanonClient::new(tmp.path().to_path_buf());
         let entry = client.get_entry("foo", None).unwrap();
-        assert_eq!(entry.id, "foo");
-        // No backed_by — kanon: tier entry.
-        assert_eq!(entry.backed_by, None);
+        assert_eq!(entry.canon_id, "foo");
+        // kanon: tier signaled via prefix_tier_by_scope; backed_by may
+        // be empty-string in the fixture (TOML limitation).
+        assert_eq!(
+            entry.prefix_tier_by_scope.get(":vanilla"),
+            Some(&crate::canon::PrefixTier::Kanon)
+        );
     }
 
     #[test]
