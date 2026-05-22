@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Changed
+- cli: subcommand help text rewritten for voice and clarity. Pass-2 sweep against the documented voice register (precise / generous / plain-spoken / craft-aware). The biggest change: the `aristo critique` summary used to lead with internal naming rationale ("Named 'critique' rather than 'review' because..."); it now reads "Run the critique skill against annotation prose — opinionated suggestions, severity-tagged findings." Smaller cuts across every subcommand: `--filter` flags drop the "J2" design-doc anchor; `aristo graph`'s `--include-status` drops the "B5b" phase code (pass-1 missed it); `--submit-verdict` / `--pop-next` change "Subagent write-path" / "Worker-facing API" to "**Internal — invoked by the X skill.**"; engineery framings like "Flat enumeration of all annotations", "Atomic project-wide rename", "Destructive cancel" become user-facing prose. Behavior unchanged.
 - cli: subcommand help text rewritten to drop internal slice / phase / PR / decision-doc-§ markers. `aristo --help` and every `aristo <cmd> --help` blurb now reads as user-facing product copy — no more `(slice 17+)`, `(Phase 2) B5b classification`, `PR #7`, `§CS13`, `design Q4` leaks. Behavior unchanged.
 
 ### Fixed
