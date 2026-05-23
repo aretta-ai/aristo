@@ -25,14 +25,12 @@ use std::process::ExitCode;
 
 /// Aristo annotation SDK CLI.
 ///
-/// Subcommands map 1:1 to the surface defined in `docs/TOOLS.md` (offline
-/// scope only — server-side commands `auth` / `sync` / `unbind` /
-/// `suggestions` are deferred to Phase 2 and not declared here).
-///
-/// Each variant's body is a stub returning [`CliError::NotImplemented`]
-/// with the roadmap slice it lands in. Future slices replace the stub
-/// with the real handler in the same commit that promotes the matching
-/// `_pending/` scenarios into `active/` per the testing convention.
+/// Each subcommand handles one stage of the annotation lifecycle:
+/// authoring (`init`, `lang`, `install-skills`), indexing and stamping
+/// (`index`, `stamp`, `rename`), inspection (`show`, `list`, `status`,
+/// `graph`, `doc`, `badge`), quality gates (`lint`, `verify`,
+/// `critique`), review-session management (`session`), and canon
+/// binding against the Aretta server (`auth`, `canon`).
 #[derive(Parser, Debug)]
 #[command(
     name = "aristo",
@@ -47,7 +45,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Bootstrap a project for Aristo (creates aristo.toml, .aristo/, pre-commit hook, CI workflow).
+    /// Set up Aristo in this repo (creates `aristo.toml`, `.aristo/`,
+    /// pre-commit hook, CI workflow).
     Init {
         /// Modify Cargo.toml to add `aristo` as a dependency. Default
         /// behavior just prints the dep line for the user to paste in.
@@ -57,7 +56,8 @@ enum Commands {
 
     /// Print a syntax cheat sheet for the detected language.
     Lang {
-        /// Per-file detection (Phase 2+ — Phase 1 errors on non-Rust extensions).
+        /// Detect language for a specific file. Currently only Rust
+        /// (`.rs`) is supported; other extensions error out.
         #[arg(long)]
         file: Option<PathBuf>,
     },
@@ -91,25 +91,26 @@ enum Commands {
         force: bool,
     },
 
-    /// Walk source, parse via syn, write .aristo/index.toml.
+    /// Scan source for annotations and write the index (`.aristo/index.toml`).
     Index {
-        /// Force a full re-walk, ignoring the per-file mtime cache (slice 17+).
+        /// Force a full re-walk, ignoring the per-file mtime cache.
         #[arg(long)]
         all: bool,
     },
 
-    /// Index + ID assignment + drift detection + (Phase 2) B5b classification.
+    /// Refresh the annotation index — pick up new annotations, detect
+    /// drift, and (when signed in) match against the Aretta canon.
     Stamp {
-        /// CI mode: report whether stamp would change the index, but
-        /// don't write. Exits non-zero if changes are needed. Also
-        /// suppresses the canon-match step (CI doesn't need to make
-        /// outbound network calls).
+        /// CI mode: report whether `stamp` would change the index,
+        /// without writing. Exits non-zero if it would. Skips the
+        /// canon-match step too (no outbound network calls in this
+        /// mode).
         #[arg(long)]
         check: bool,
-        /// Skip the canon-match step for this invocation. Doesn't
-        /// disable canon globally — see `aristo.toml [canon] enabled
-        /// = false` for the project-level opt-out. Useful for local
-        /// stamps when offline or for snappy iteration.
+        /// Skip the canon-match step for this run. Doesn't disable
+        /// canon globally — set `[canon] enabled = false` in
+        /// `aristo.toml` for that. Useful when you're offline or want
+        /// a fast local stamp.
         #[arg(long = "skip-canon")]
         skip_canon: bool,
         /// Invalidate the local canon-match cache and re-query every
@@ -132,9 +133,9 @@ enum Commands {
         toml_out: bool,
     },
 
-    /// Flat enumeration of all annotations.
+    /// List every annotation in the index.
     List {
-        /// J2 unified filter clause (`id=<id>`, `file=<path>`,
+        /// Unified filter clause (`id=<id>`, `file=<path>`,
         /// `parent=<id>`, `status=<state>`). Repeatable; multiple
         /// `--filter` flags AND together.
         #[arg(long = "filter", value_name = "key=value")]
@@ -147,13 +148,14 @@ enum Commands {
     /// Project-level summary (tier, counts, freshness).
     Status,
 
-    /// Static text-quality pass over annotations (rule-based; no LLM).
+    /// Check annotation prose for quality issues (rule-based; no LLM).
     Lint {
         /// Read-only mode: exit non-zero on `error` findings (or
         /// `warn` with `--strict`); never modifies source.
         #[arg(long)]
         check: bool,
-        /// Apply auto-fixable rules to source files in place (slice 20 C2).
+        /// Apply auto-fixable lint rules (whitespace only) to source
+        /// files in place.
         #[arg(long, conflicts_with = "check")]
         fix: bool,
         /// Treat `warn` severity as failure too (only meaningful with `--check`).
@@ -163,87 +165,86 @@ enum Commands {
 
     /// Run verification for every annotation that opted in.
     Verify {
-        /// J2 unified filter clause (`id=<id>`, `file=<path>`,
+        /// Unified filter clause (`id=<id>`, `file=<path>`,
         /// `parent=<id>`, `status=<state>`). Repeatable; multiple
         /// `--filter` flags AND together.
         #[arg(long = "filter", value_name = "key=value")]
         filters: Vec<String>,
-        /// Re-verify entries already in a clean verified state.
-        /// Default is to skip clean entries; `--rerun` overrides for
-        /// post-key-rotation sweeps.
+        /// Re-verify entries that are already in a clean verified
+        /// state. By default they're skipped; pass `--rerun` to force
+        /// a re-check.
         #[arg(long)]
         rerun: bool,
-        /// CI mode: report whether any status would change but do not
-        /// write the index. Exits non-zero if any changes are needed.
+        /// CI mode: report whether any status would change, without
+        /// writing the index. Exits non-zero if any change is needed.
         #[arg(long)]
         check: bool,
         /// Treat warn-severity verification outcomes as failure too.
         #[arg(long)]
         strict: bool,
-        /// Apply pending verdict files in `.aristo/proofs/` to the index.
-        /// Reads every `<id>.proof`, runs the mechanical validator, and
-        /// (if it passes) flips the entry's status. Skips dispatch of
-        /// new verifications when set.
+        /// Apply pending verdict files in `.aristo/proofs/` to the
+        /// index. Reads every `<id>.proof`, runs the mechanical
+        /// validator, and (if it passes) flips the entry's status.
+        /// Skips dispatch of new verifications when set.
         #[arg(long = "apply-verdicts", conflicts_with = "submit_verdict")]
         apply_verdicts: bool,
-        /// Migration-only: ignore any agent-stamped ground hashes in the
-        /// `.proof` files and recompute them from the cited file ranges
-        /// and index entries. Use this to migrate proofs written under
-        /// the pre-validator-fills-hashes schema. Without this flag, a
-        /// stamped hash that mismatches the current source is reported
-        /// as staleness and the proof is rejected. Only meaningful with
+        /// Migration only: ignore any agent-stamped ground hashes in
+        /// the `.proof` files and recompute them from the cited file
+        /// ranges and index entries. Use this once when migrating
+        /// from older proof files that recorded hashes the SDK now
+        /// fills in itself. Without this flag, a stamped hash that
+        /// mismatches the current source is reported as staleness
+        /// and the proof is rejected. Only meaningful with
         /// `--apply-verdicts`.
         #[arg(long = "rewrite-hashes", requires = "apply_verdicts")]
         rewrite_hashes: bool,
-        /// Subagent write-path for a single verdict: parse the JSON
-        /// payload, run the mechanical validator, and (on pass) write
-        /// `.aristo/proofs/<id>.proof` atomically. Prints
-        /// `accepted: sha256:<hex>` to stdout on success; structured
-        /// errors to stderr on reject. The SDK is the sole writer of
-        /// `.proof` files — agents never write them directly.
+        /// **Internal — invoked by the verification skill.** Submit
+        /// a single verdict: parse the JSON payload, validate it,
+        /// and (on pass) atomically write `.aristo/proofs/<id>.proof`.
+        /// Prints `accepted: sha256:<hex>` on success; structured
+        /// errors on reject. Agents never write `.proof` files
+        /// directly — the SDK is the sole writer.
         #[arg(long = "submit-verdict", requires = "id", requires = "json")]
         submit_verdict: bool,
-        /// Annotation id that this verdict is about. Required with
+        /// Annotation id this verdict is about. Required with
         /// `--submit-verdict`. The `.proof` file lands at
-        /// `.aristo/proofs/<id>.proof` (with `:` → `__`).
+        /// `.aristo/proofs/<id>.proof` (with `:` rewritten to `__`).
         #[arg(long = "id", requires = "submit_verdict")]
         id: Option<String>,
         /// JSON-serialized ProofFile body. Required with
         /// `--submit-verdict`. Pass as a single-quoted shell string;
         /// the SDK parses it into a ProofFile and rejects anything
         /// the validator would reject. Same schema as the TOML body
-        /// that gets written on accept.
+        /// written on accept.
         #[arg(long = "json", requires = "submit_verdict")]
         json: Option<String>,
-        /// Worker-facing API: atomically claim one task from the
-        /// pending queue and print its TOML body to stdout. Empty
-        /// stdout means the queue is drained (still exits 0). Verify
-        /// workers are ONE-SHOT (call once, process the task, exit)
-        /// to avoid context pollution across verifications. The
-        /// orchestrator waves N workers in parallel and uses
-        /// `--queue-status` to decide whether to spawn the next wave.
+        /// **Internal — invoked by the verification skill.**
+        /// Atomically claim one task from the pending queue and
+        /// print its TOML body to stdout. Empty stdout means the
+        /// queue is drained (exit 0 either way). Verify workers are
+        /// single-shot — call once, process the task, exit — so
+        /// context doesn't carry between verifications. The
+        /// orchestrator runs N workers in parallel and uses
+        /// `--queue-status` to decide when to spawn the next wave.
         #[arg(long = "pop-next", conflicts_with_all = ["apply_verdicts", "submit_verdict", "queue_status"])]
         pop_next: bool,
         /// Peek at queue state without claiming. Prints `pending: N`,
         /// `claimed: M` to stdout, exit 0. Used by the orchestrator
         /// to decide whether to dispatch another wave of workers.
-        /// Non-destructive — multiple callers do not race.
+        /// Safe to call concurrently.
         #[arg(long = "queue-status", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
         queue_status: bool,
     },
 
-    /// Agentic prose-improvement pass via the critique skill.
-    /// (Named "critique" rather than "review" because the output is
-    /// opinionated suggestions on annotation prose — categorized
-    /// findings with severity tags — not neutral inspection. Avoids
-    /// the false analogy to PR / code review where humans sign off.)
+    /// Run the critique skill against annotation prose — opinionated
+    /// suggestions, severity-tagged findings.
     Critique {
-        /// J2 unified filter clause (`id=<id>[,<id>,...]`,
+        /// Unified filter clause (`id=<id>[,<id>,...]`,
         /// `file=<path>`, `parent=<id>`, `status=<state>`). Repeatable;
         /// multiple `--filter` flags AND together; values may be
         /// comma-separated. **REQUIRED** — `aristo critique` with no
-        /// filter errors with usage. (No implicit codebase sweep per
-        /// `docs/decisions/critique-and-pipeline-architecture.md` §D6.)
+        /// filter errors with usage. To sweep every annotation in the
+        /// index, opt in explicitly with `--all --yes`.
         #[arg(long = "filter", value_name = "key=value")]
         filters: Vec<String>,
         /// Apply pending critique files in `.aristo/critiques/` —
@@ -256,10 +257,9 @@ enum Commands {
         apply_findings: bool,
         /// Include findings whose `disposition` has been set (Accepted /
         /// Rejected / Deferred) in the `--apply-findings` summary.
-        /// Default is to filter to open findings only — closed findings
-        /// stop re-surfacing on every apply, which is how the review
-        /// substrate closes the loop. Only meaningful with
-        /// `--apply-findings`.
+        /// By default only open findings are listed — closed ones
+        /// stop re-surfacing on every apply, which is how a review
+        /// closes the loop. Only meaningful with `--apply-findings`.
         #[arg(long = "include-closed", requires = "apply_findings")]
         include_closed: bool,
         /// Force re-enqueue of every matched annotation, bypassing the
@@ -277,35 +277,36 @@ enum Commands {
         /// `--filter` and appear in the staged set).
         #[arg(long = "staged")]
         staged: bool,
-        /// Opt-in sweep over every IntentEntry with a real verify
-        /// method (excludes documentation-only `verify = false`).
-        /// Loud: prints `(this will enqueue N annotations; ~$X cost
-        /// — proceed with --all --yes?)` and exits 2 unless `--yes`
-        /// is also passed. The cost gate is load-bearing: a sweep
-        /// without confirmation lets the agent accidentally fire
-        /// hundreds of LLM calls in one bash invocation.
+        /// Sweep every intent annotation that has a real `verify`
+        /// method (skips documentation-only `verify = false`). Loud
+        /// on purpose: prints `(this will enqueue N annotations;
+        /// ~$X cost — proceed with --all --yes?)` and exits 2 unless
+        /// you also pass `--yes`. Without the confirmation, an agent
+        /// could accidentally fire hundreds of LLM calls in one go.
         #[arg(long = "all", conflicts_with_all = ["filters", "staged"])]
         all: bool,
-        /// Skip the confirmation prompt for `--all`. Required alongside
-        /// `--all` to actually enqueue the sweep; without it `--all`
-        /// just prints the cost estimate and exits 2.
+        /// Skip the confirmation prompt for `--all`. Required
+        /// alongside `--all` to actually enqueue the sweep; without
+        /// it `--all` just prints the cost estimate and exits 2.
         #[arg(long = "yes", requires = "all")]
         yes: bool,
-        /// Worker-facing API: atomically claim one task from the
-        /// critique queue and print its TOML body to stdout. Empty
-        /// stdout means the queue is drained (still exits 0). Critique
-        /// workers loop on this call (shallow tasks; vocabulary
-        /// alignment benefits from cross-task context).
+        /// **Internal — invoked by the critique skill.** Atomically
+        /// claim one task from the critique queue and print its TOML
+        /// body to stdout. Empty stdout means the queue is drained
+        /// (exit 0 either way). Unlike verify, critique workers loop
+        /// on this call — the tasks are shallow and vocabulary stays
+        /// consistent when one worker handles several.
         #[arg(long = "pop-next", conflicts_with_all = ["apply_findings", "submit_findings", "queue_status"])]
         pop_next: bool,
         /// Peek at queue state without claiming. Prints `pending: N`
         /// + `claimed: M` to stdout, exit 0.
         #[arg(long = "queue-status", conflicts_with_all = ["apply_findings", "submit_findings"])]
         queue_status: bool,
-        /// Subagent write-path for a single critique: parse the JSON
-        /// payload, run the schema validator, write
-        /// `.aristo/critiques/<id>.critique` atomically on accept.
-        /// Prints `accepted: sha256:<hex>` to stdout.
+        /// **Internal — invoked by the critique skill.** Submit a
+        /// single critique: parse the JSON payload, validate it, and
+        /// (on accept) atomically write
+        /// `.aristo/critiques/<id>.critique`. Prints
+        /// `accepted: sha256:<hex>` on success.
         #[arg(long = "submit-findings", requires = "id", requires = "json")]
         submit_findings: bool,
         /// Annotation id this submission is about. Required with
@@ -324,10 +325,10 @@ enum Commands {
         /// per-annotation pass.
         #[arg(long)]
         summary: bool,
-        /// Bake current B5b verification status into rendered MD. Status
-        /// is a build-time fact and will go stale as code evolves; the
-        /// default omits it so doc artifacts stay reproducible on a
-        /// clean checkout.
+        /// Include each annotation's current verification status in
+        /// the rendered markdown. Status is a build-time snapshot
+        /// that drifts as code evolves; the default omits it so doc
+        /// artifacts stay reproducible on a clean checkout.
         #[arg(long = "include-status")]
         include_status: bool,
         /// CI mode: recompute expected per-annotation MD from the index,
@@ -355,40 +356,40 @@ enum Commands {
         /// invoking directory.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// J2 unified filter clause (`id=<id>`, `file=<path>[:<LO>-<HI>]`,
+        /// Unified filter clause (`id=<id>`, `file=<path>[:<LO>-<HI>]`,
         /// `parent=<id>`, `status=<state>`). Repeatable; multiple
-        /// `--filter` flags AND together. Default scope (no filter)
+        /// `--filter` flags AND together. With no filter, the scope
         /// is the whole index.
         #[arg(long = "filter", value_name = "key=value")]
         filters: Vec<String>,
-        /// Drop `assume` nodes from the rendered graph. Default is
-        /// to include them — assumes form the "ground" of the
-        /// property graph and dropping them by default would hide
-        /// load-bearing background facts.
+        /// Drop `assume` nodes from the rendered graph. They're
+        /// included by default because assumes describe the
+        /// background facts your intents rely on — dropping them by
+        /// default would hide those.
         #[arg(long = "exclude-assumes")]
         exclude_assumes: bool,
         /// Walk N hops from each filter-matched node in both
         /// directions (ancestors + descendants) and include them in
-        /// the rendered graph. Useful for "show me this annotation +
-        /// some context". Only meaningful with `--filter`; without
-        /// a filter, the default scope is already the whole index.
+        /// the rendered graph. Useful for "show me this annotation
+        /// plus some context". Only meaningful with `--filter`;
+        /// without a filter, the scope is already the whole index.
         #[arg(long, value_name = "N")]
         depth: Option<u32>,
-        /// Include intent nodes that are graph-orphans (no parent
-        /// link AND no child links). Default OMITS them — they're
-        /// usually atomic load-bearing claims that don't add visual
-        /// structure to the graph. Assumes are always included
-        /// regardless (they're contextual "ground"; see
-        /// `--exclude-assumes` for that opt-out).
+        /// Include intent nodes that have no parent and no children.
+        /// They're omitted by default — usually they're standalone
+        /// claims that don't add structure to the rendered graph.
+        /// Assumes are always included (see `--exclude-assumes` for
+        /// that opt-out).
         #[arg(long = "include-orphans")]
         include_orphans: bool,
-        /// Swap the color axis from verify level to current B5b
-        /// status (verified=green / tested=blue / neural=yellow /
-        /// stale=orange / orphan=purple / forged=red+border /
-        /// unknown=gray / counterexample=red+border /
-        /// inconclusive=red+border / pending-deepen=gray). Verify
-        /// level moves to the in-node label. Use when the dominant
-        /// question is "what's still unverified".
+        /// Color nodes by their current verification status instead
+        /// of by `verify` level (verified=green / tested=blue /
+        /// neural=yellow / stale=orange / orphan=purple /
+        /// forged=red+border / unknown=gray /
+        /// counterexample=red+border / inconclusive=red+border /
+        /// pending-deepen=gray). The `verify` level moves to the
+        /// in-node label. Use when you want to see what's still
+        /// unverified.
         #[arg(long = "include-status")]
         include_status: bool,
     },
@@ -410,15 +411,15 @@ enum Commands {
         metric: String,
     },
 
-    /// Atomic project-wide rename of an annotation id.
+    /// Rename an annotation id everywhere it appears — source files,
+    /// index, and doc artifacts. Either every change lands or none do.
     ///
-    /// Scope (slice 32): bare → bare and stamp-assigned opaque
-    /// (`aret_*`) → bare. The canon-bound namespaces (`aristos:` and
-    /// `kanon:`) are rejected in either direction per §CS13 — canon
-    /// prefixes are applied by the canon accept path and removed by
-    /// `aristo canon unbind`. Opaque-target ids are rejected per F1-b
-    /// (stamp-assigned only). See `docs/decisions/...` (slice 32) and
-    /// `../aretta-sdk/docs/launch/canon-strategy.md` §CS13.
+    /// Supported renames: bare → bare, and stamp-assigned opaque
+    /// (`aret_*`) → bare. Canon-bound prefixes (`aristos:` / `kanon:`)
+    /// are rejected in either direction — those prefixes are applied
+    /// by `aristo canon accept` and removed by `aristo canon unbind`.
+    /// The new id cannot itself be an opaque `aret_*` id (those are
+    /// stamp-assigned only).
     Rename {
         /// Annotation id to rename FROM. Must exist in the current
         /// `.aristo/index.toml`.
@@ -433,26 +434,25 @@ enum Commands {
         dry_run: bool,
     },
 
-    /// Stateful review-session substrate — start / inspect / decide /
-    /// exit on the in-flight review of a pipeline's reviewable
-    /// artifacts. See `docs/decisions/review-sessions.md`.
+    /// Run a review session over a pipeline's open artifacts —
+    /// critique findings, proof verdicts, and so on. Start it,
+    /// inspect bucket counts, record decisions, and close out.
     Session {
         #[command(subcommand)]
         action: SessionAction,
     },
 
-    /// Authenticate against the Aretta canon API. Required for
-    /// `aristo stamp` / `aristo critique` to surface canon matches on
-    /// Pro / Enterprise tiers. See canon-strategy.md §CS1.
+    /// Sign in to the Aretta canon API. Required for `aristo stamp`
+    /// and `aristo critique` to see canon matches on the Pro /
+    /// Enterprise tiers.
     Auth {
         #[command(subcommand)]
         action: AuthAction,
     },
 
-    /// Canon-binding operations on the SDK side. The user-facing
-    /// surface for the §13 canon-and-matching design — accept a
-    /// pending match (PR #7); show / list / refresh / unbind /
-    /// request-verify subcommands land in PR #8/#9.
+    /// Manage canon bindings: accept or reject pending matches,
+    /// inspect or refresh the local cache, unbind bound ids, and
+    /// request a verifier for a canon entry.
     Canon {
         #[command(subcommand)]
         action: CanonAction,
@@ -504,18 +504,16 @@ pub(crate) enum AuthAction {
         #[arg(long, value_name = "OWNER/REPO")]
         repo: Option<String>,
     },
-    /// Show the current authentication state (does NOT print the
-    /// token, only its source: env var / credentials file / none).
-    /// Useful for sanity-checking before running `aristo stamp`.
+    /// Show the current authentication state. Never prints the token
+    /// itself — only its source (env var, credentials file, or none).
+    /// Handy for sanity-checking before running `aristo stamp`.
     Status,
     /// Remove the stored credentials file. Idempotent — running
     /// `logout` when not logged in is not an error.
     Logout,
 }
 
-/// Subcommands under `aristo canon`. Phase-1 lands `accept` only;
-/// `show` / `list` / `refresh` / `unbind` / `request-verify` follow
-/// in PR #8 + PR #9.
+/// Subcommands under `aristo canon`.
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum CanonAction {
     /// Accept a pending canon match: rewrite source to use the
@@ -541,38 +539,35 @@ pub(crate) enum CanonAction {
     },
 
     /// Reject a pending canon match: move the entry from
-    /// `pending_matches` to `rejected_matches`, pinned by the
-    /// current annotation `text_hash`. The rejection suppresses
-    /// re-surfacing the same `(canon_id, text_hash)` tuple on
-    /// future `aristo stamp` runs; once the annotation text
-    /// changes, the rejection no longer applies and the match
-    /// is re-evaluated. Source and index are NOT touched —
-    /// rejection is a cache-only operation. Closes Flow 7 from
-    /// cli-sessions.md.
+    /// `pending_matches` to `rejected_matches`, pinned to the
+    /// current annotation `text_hash`. The rejection keeps the same
+    /// `(canon_id, text_hash)` pair from re-surfacing on future
+    /// `aristo stamp` runs; once the annotation text changes, the
+    /// rejection no longer applies and the match is re-evaluated.
+    /// Source and index are not touched — rejection is a cache-only
+    /// operation.
     Reject {
         /// Annotation id whose pending match you're rejecting.
         annotation_id: String,
         /// Canon id from the pending match.
         canon_id: String,
-        /// Optional free-text rationale recorded in the cache
-        /// entry's `reason` field. Useful for documenting
-        /// "this canon entry is too broad" / "wrong category"
-        /// decisions for future reviewers.
+        /// Optional note recorded with the rejection. Useful for
+        /// capturing the *why* (e.g. "this canon entry is too broad",
+        /// "wrong category") for whoever revisits it later.
         #[arg(long = "reason")]
         reason: Option<String>,
     },
 
     /// List the current canon match state: one line per annotation
     /// with pending / accepted / rejected counts, plus per-bucket
-    /// detail lines for each match. Read-only over
-    /// `.aristo/canon-matches.toml`.
+    /// detail lines for each match. Reads `.aristo/canon-matches.toml`;
+    /// does not call the canon API.
     List,
 
     /// Fetch the canon entry detail for `<canon_id>` via the canon
     /// API and render the longer description + example + references.
-    /// The user-facing trust card (which combines this data with the
-    /// local index entry's site / binding) lives at `aristo show
-    /// <bound_id>` (PR #10).
+    /// For the full trust card (server description + local binding
+    /// state combined), use `aristo show <bound_id>` instead.
     Show {
         /// Bare canon id (no `aristos:` / `kanon:` prefix). The
         /// server's `GET /canon/entry/<canon_id>` endpoint returns
@@ -580,18 +575,17 @@ pub(crate) enum CanonAction {
         /// the prefix is a per-user, per-scope attribute.
         canon_id: String,
         /// Optional explicit version (`v<minor>.<patch>`). Omit to
-        /// get the catalog's active version per CS12.
+        /// get the catalog's currently active version.
         #[arg(long = "version")]
         version: Option<String>,
     },
 
-    /// Force-refresh the canon match cache: re-run the
-    /// `POST /canon/match` call for every annotation in the index
-    /// regardless of cached `last_match_text_hash`. Equivalent to
-    /// `aristo stamp --refresh-canon`, but without re-running the
-    /// stamp pipeline (no source walk, no body-hash drift check,
-    /// no index rewrite). Useful when the user knows a new catalog
-    /// version has shipped and wants fresh matches without a stamp.
+    /// Re-query the canon API for every annotation in the index,
+    /// bypassing the local match cache. Equivalent to
+    /// `aristo stamp --refresh-canon` without the rest of the stamp
+    /// pipeline — no source walk, no drift check, no index rewrite.
+    /// Useful when you know a new catalog version has shipped and
+    /// want fresh matches without a full stamp.
     Refresh,
 
     /// Reverse of `aristo canon accept`: strip the `aristos:` /
@@ -607,31 +601,29 @@ pub(crate) enum CanonAction {
         prefixed_id: String,
     },
 
-    /// Record a verification demand signal against a canon entry.
-    /// Idempotent on `(canon_id, repo, user)` per canon-strategy.md
-    /// §CS11. Use when an annotation is bound at the `kanon:` tier
-    /// and the user wants Aretta to invest in a verifier for that
-    /// canon entry.
+    /// Record a verification-demand signal against a canon entry.
+    /// Idempotent on `(canon_id, repo, user)` — repeated calls don't
+    /// pile up. Use when an annotation is bound at the `kanon:` tier
+    /// and you'd like Aretta to invest in a verifier for that canon
+    /// entry.
     RequestVerify {
-        /// Canon id (no prefix). The same id the trust card surfaces
-        /// or that `aristo canon list` shows.
+        /// Canon id (no prefix). The same id the trust card shows,
+        /// or that `aristo canon list` reports.
         canon_id: String,
-        /// Optional free-text rationale to attach to the demand
-        /// signal (e.g., "critical for our financial-tx audit"). On
-        /// repeat calls with a new note, replaces the previous one
-        /// server-side.
+        /// Optional note to attach to the demand signal (e.g.
+        /// "critical for our financial-tx audit"). A repeat call
+        /// with a new note replaces the previous one server-side.
         #[arg(long = "notes")]
         notes: Option<String>,
     },
 
     /// Report per-binding version drift between the local cache and
-    /// the canon API per canon-strategy.md §CS12. Surfaces three
-    /// classes: `current` (no change), `patch-bump` (same canon_id,
-    /// newer version — recommended action: `aristo canon refresh`),
-    /// and `minor-bump` (canon_id retired — recommended action:
-    /// `aristo canon unbind <id>` then re-stamp). Phase 1 is
-    /// diagnostic-only; Phase 2 auto-applies patch bumps and surfaces
-    /// minor bumps as critique findings.
+    /// the canon API. Reports three classes: `current` (no change),
+    /// `patch-bump` (same canon_id, newer version — recommended
+    /// action: `aristo canon refresh`), and `minor-bump` (canon_id
+    /// retired — recommended action: `aristo canon unbind <id>` then
+    /// re-stamp). Currently diagnostic-only; automatic patch-bump
+    /// application is planned.
     Migrate,
 }
 
@@ -641,20 +633,20 @@ pub(crate) enum CanonAction {
 /// step 5.
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum SessionAction {
-    /// Begin a fresh review session of the given kind. Fails if a
-    /// session is already active and `--allow-nesting` was not
-    /// permitted by the kind.
+    /// Begin a new review session of the given kind. Fails if a
+    /// session is already active — pass `--allow-nesting` to override
+    /// (currently no kind allows nesting).
     Start {
         /// Session kind (`critique-review`, `proof-review`).
         kind: String,
-        /// Free-form display label for the focal artifact under review
-        /// (e.g. `src/critique/pending.rs` or
+        /// Display label for the artifact under review (e.g.
+        /// `src/critique/pending.rs` or
         /// `proof:balance_no_duplicate_cells`).
         #[arg(long = "subject")]
         subject: String,
-        /// Override the kind's default nesting policy. v0 ships
-        /// `Disallow` as the only policy; the flag is reserved for
-        /// future per-kind opt-ins (design Q4).
+        /// Override the kind's default nesting policy. Currently only
+        /// `Disallow` is implemented; the flag is reserved for future
+        /// per-kind opt-ins.
         #[arg(long = "allow-nesting", default_value_t = false)]
         allow_nesting: bool,
     },
@@ -680,7 +672,7 @@ pub(crate) enum SessionAction {
         /// Which bucket the item lands in.
         #[arg(long = "bucket", value_enum)]
         bucket: BucketArg,
-        /// Optional free-text reason captured with the decision.
+        /// Optional note recorded with the decision.
         #[arg(long = "note")]
         note: Option<String>,
     },
@@ -688,15 +680,13 @@ pub(crate) enum SessionAction {
     /// any items are still in the open bucket.
     Exit {
         /// Move open items to the per-kind backlog instead of
-        /// erroring. Items are NEVER silently dropped; the next
-        /// session of this kind surfaces them via the backlog menu
-        /// (design doc D7).
+        /// erroring. Items are never silently dropped; the next
+        /// session of this kind surfaces them via the backlog menu.
         #[arg(long = "defer-undecided", default_value_t = false)]
         defer_undecided: bool,
     },
-    /// Destructive cancel: drop the session entirely with no
-    /// decisions recorded. Requires `--yes` to skip the
-    /// confirmation prompt.
+    /// Cancel the session and discard every decision recorded so far.
+    /// Requires `--yes` to skip the confirmation prompt.
     Abort {
         /// Skip the confirmation prompt.
         #[arg(long = "yes", default_value_t = false)]
@@ -736,9 +726,7 @@ pub fn run() -> ExitCode {
     }
 }
 
-/// Maps a parsed `Commands` variant to its handler. Slice 9 wires every
-/// subcommand to a stub returning the roadmap slice it lands in; future
-/// slices replace each stub.
+/// Maps a parsed `Commands` variant to its handler.
 fn dispatch(cmd: Commands) -> CliResult<()> {
     match cmd {
         Commands::Init { force } => commands::init::run(force),

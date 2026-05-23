@@ -254,6 +254,11 @@ fn no_id_error(index: &IndexFile, raw: &str) -> CliError {
         for (id, entry) in suggestions {
             message.push_str(&format!("\n  * {id}  ({})", entry_file(entry)));
         }
+    } else {
+        message.push_str(
+            "\nTry `aristo list` to see what's indexed, or \
+             `aristo show fn <name>` to look up by item.",
+        );
     }
     CliError::Other {
         message,
@@ -845,18 +850,18 @@ fn format_canon_binding(ws: &Workspace, id: &AnnotationId, entry: &IndexEntry) -
             out.push_str(&format!("    backed by:    {backed}\n"));
             out.push('\n');
             out.push_str(
-                "    Aretta has committed to a verification mechanism for this\n    \
-                 property. Verification execution itself lands in Phase 2 — `aristo\n    \
-                 verify` will run it then; see _deferred/verification-execution.md.\n",
+                "    Aretta has committed to a verifier for this property; it\n    \
+                 isn't wired up yet, so the binding stands without an attached\n    \
+                 verification result for now.\n",
             );
         }
         IdNamespace::Kanon => {
             out.push_str("    backed by:    — (no backing yet for your scope)\n");
             out.push('\n');
             out.push_str(
-                "    This property is canonically recognized but has no verification\n    \
-                 mechanism behind it. Aretta invests in verifiers by demand; tell us\n    \
-                 this property matters to you:\n\n        \
+                "    This property is canonically recognized but doesn't have a\n    \
+                 verifier behind it. Aretta invests in verifiers by demand — tell\n    \
+                 us this one matters:\n\n        \
                  aristo canon request-verify {bare}\n",
             );
             // Best-effort: substitute the bare canon id into the hint.

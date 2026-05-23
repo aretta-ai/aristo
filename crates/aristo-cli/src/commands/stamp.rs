@@ -66,10 +66,9 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool) -> CliResu
     })?;
     println!("→ Found {} annotations", discovered.len());
 
-    println!("→ Building index entries");
     let (mut entries, parents_map) = build_entries(&discovered, &ws.root)?;
 
-    println!("→ Detecting cycles in parent graph");
+    println!("→ Checking for parent-link cycles");
     detect_cycles(&parents_map).map_err(|e| CliError::Other {
         message: format!("{e}\n\nNo files modified. Fix the cycle and re-run `aristo stamp`."),
         exit_code: 2,
@@ -128,14 +127,11 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool) -> CliResu
     run_canon_step_for_stamp(&ws, &index, skip_canon, refresh_canon)?;
 
     println!();
-    println!(
-        "ok: stamped {} annotations into {}",
-        index.entries.len(),
-        ws.index_path()
-            .strip_prefix(&ws.root)
-            .unwrap_or(&ws.index_path())
-            .display()
-    );
+    let n = index.entries.len();
+    let path = ws.index_path();
+    let rel = path.strip_prefix(&ws.root).unwrap_or(&path).display();
+    let noun = if n == 1 { "annotation" } else { "annotations" };
+    println!("ok: stamped {n} {noun} into {rel}");
     warn_on_counterexamples(&index);
     Ok(())
 }

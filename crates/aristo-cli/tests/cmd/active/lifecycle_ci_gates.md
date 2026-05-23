@@ -35,8 +35,7 @@ tier test path) ships.
 $ aristo stamp --check
 → Walking source from [..] …
 → Found 2 annotations
-→ Building index entries
-→ Detecting cycles in parent graph
+→ Checking for parent-link cycles
   new: 0, unchanged: 2, body-drifted: 0, text-changed: 0, removed: 0
 
 ok: index is up to date (no rewrite needed).
@@ -51,7 +50,7 @@ ok: 0 lint findings.
 
 ```console
 $ aristo verify --check --strict
-ok: 0 annotations verified, 0 skipped (documentation only).
+ok: 0 annotations verified, 0 skipped (documentation-only).
 → 2 entries pending neural verification — enqueued under .aristo/verify-queue/pending/.
   In Claude Code (or another agent with the aristo-neural-verify skill installed), run:
     /aristo-neural-verify
@@ -94,7 +93,7 @@ Tier:
 Index health:
   schema_version: 1 (current)
 
-Canon binding (§13):
+Canon binding:
   Auth:              no token (free-tier mode)
   Last fetched:      never
   Catalog version:   —
@@ -102,7 +101,7 @@ Canon binding (§13):
   Accepted (bound):  0
   Rejected:          0
 
-[INFO] For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`).
+For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`).
 
 ```
 
@@ -113,6 +112,6 @@ $ aristo badge --out=docs/badge.svg
 → Writing docs/badge.svg ([..] style)
 ok: badge written. Embed in README:
 
-  ![aristo verified](https://aretta.dev/[..]/badge.svg)
+  ![aristo verified](docs/badge.svg)
 
 ```

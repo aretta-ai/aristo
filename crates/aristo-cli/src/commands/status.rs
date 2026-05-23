@@ -116,7 +116,7 @@ pub(crate) fn run() -> CliResult<()> {
 
     println!();
     println!(
-        "[INFO] For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`)."
+        "For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`)."
     );
     Ok(())
 }
@@ -138,7 +138,7 @@ fn print_canon_health(ws: &crate::Workspace) {
     use aristo_core::canon::cache::CanonMatchesFile;
 
     println!();
-    println!("Canon binding (§13):");
+    println!("Canon binding:");
 
     // Config: enabled?
     let config = ws.load_config();

@@ -130,7 +130,7 @@ fn permissive_mode_skips_invalid_annotations_with_warning() {
         .success() // exit 0 — invalid annotations are warnings, not errors
         .stderr(contains("warning: skipping"))
         .stderr(contains("FooBar"))
-        .stdout(contains("ok: index regenerated (1 annotations)"));
+        .stdout(contains("ok: index regenerated (1 annotation)"));
 
     let index = fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap();
     let parsed: aristo_core::index::IndexFile = toml::from_str(&index).unwrap();

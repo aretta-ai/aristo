@@ -54,7 +54,7 @@ fn empty_workspace_reports_zero_verified_zero_skipped() {
         .assert()
         .success()
         .stdout(contains(
-            "ok: 0 annotations verified, 0 skipped (documentation only).",
+            "ok: 0 annotations verified, 0 skipped (documentation-only).",
         ));
 }
 
@@ -68,7 +68,7 @@ fn verify_false_intent_is_counted_as_skipped_documentation_only() {
         .assert()
         .success()
         .stdout(contains(
-            "ok: 0 annotations verified, 1 skipped (documentation only).",
+            "ok: 0 annotations verified, 1 skipped (documentation-only).",
         ));
 }
 
@@ -109,7 +109,7 @@ fn verify_test_intent_returns_not_implemented_pointing_to_deferred_design() {
         .assert()
         .failure()
         .code(64)
-        .stderr(contains("not yet implemented"))
+        .stderr(contains("is not implemented yet"))
         .stderr(contains("post-MVP"))
         .stderr(contains("verify-test-design.md"));
 }
@@ -124,7 +124,7 @@ fn verify_full_intent_returns_not_implemented_pointing_to_deferred_design() {
         .assert()
         .failure()
         .code(64)
-        .stderr(contains("not yet implemented"))
+        .stderr(contains("is not implemented yet"))
         .stderr(contains("post-MVP"));
 }
 
@@ -139,7 +139,7 @@ fn filter_id_narrows_to_one_entry() {
         .assert()
         .success()
         .stdout(contains(
-            "ok: 0 annotations verified, 0 skipped (documentation only).",
+            "ok: 0 annotations verified, 0 skipped (documentation-only).",
         ));
 
     // Filter HITS the entry — should count it.
@@ -148,7 +148,7 @@ fn filter_id_narrows_to_one_entry() {
         .assert()
         .success()
         .stdout(contains(
-            "ok: 0 annotations verified, 1 skipped (documentation only).",
+            "ok: 0 annotations verified, 1 skipped (documentation-only).",
         ));
 }
 
@@ -167,7 +167,7 @@ fn unknown_filter_key_exits_2() {
 
 #[test]
 fn rerun_does_not_reverify_verify_false_entries() {
-    // verify=false entries are always skipped (documentation only),
+    // verify=false entries are always skipped (documentation-only),
     // even under --rerun. --rerun forces re-processing of clean
     // verified entries (Status::Verified|Tested|Neural), not of
     // intentional opt-outs.
@@ -179,7 +179,7 @@ fn rerun_does_not_reverify_verify_false_entries() {
         .assert()
         .success()
         .stdout(contains(
-            "ok: 0 annotations verified, 1 skipped (documentation only).",
+            "ok: 0 annotations verified, 1 skipped (documentation-only).",
         ));
 }
 
@@ -206,7 +206,7 @@ fn assume_entries_are_treated_as_documentation_only() {
         .assert()
         .success()
         .stdout(contains(
-            "ok: 0 annotations verified, 1 skipped (documentation only).",
+            "ok: 0 annotations verified, 1 skipped (documentation-only).",
         ));
 }
 

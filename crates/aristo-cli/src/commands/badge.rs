@@ -143,10 +143,8 @@ fn write_to_file(
     println!("→ Writing {} ({} style)", out_rel.display(), style.label(),);
     println!("ok: badge written. Embed in README:");
     println!();
-    println!(
-        "  ![aristo verified](https://aretta.dev/{}/badge.svg)",
-        ws_slug(root),
-    );
+    println!("  ![aristo verified]({})", out_rel.display());
+    let _ = root;
     Ok(())
 }
 
@@ -165,14 +163,6 @@ fn write_to_stdout(svg: &str) -> CliResult<()> {
     let mut handle = stdout.lock();
     handle.write_all(svg.as_bytes()).map_err(CliError::Io)?;
     Ok(())
-}
-
-/// Best-effort `<org>/<repo>` slug for the embed-snippet hint. Falls back
-/// to the workspace dir name if no git remote is configured.
-fn ws_slug(root: &Path) -> String {
-    root.file_name()
-        .map(|n| format!("<org>/{}", n.to_string_lossy()))
-        .unwrap_or_else(|| "<org>/<repo>".to_string())
 }
 
 // ─── counters (the simple metrics the progress line surfaces) ─────────

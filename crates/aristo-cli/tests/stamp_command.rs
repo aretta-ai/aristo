@@ -59,7 +59,7 @@ fn stamp_on_fresh_workspace_writes_initial_index() {
         .arg("stamp")
         .assert()
         .success()
-        .stdout(contains("ok: stamped 1 annotations"))
+        .stdout(contains("ok: stamped 1 annotation"))
         .stdout(contains("new: 1"));
 
     let idx = read_index(tmp.path());

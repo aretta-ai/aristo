@@ -21,7 +21,7 @@ $ aristo badge --out=docs/badge.svg
 → Writing docs/badge.svg ([..] style)
 ok: badge written. Embed in README:
 
-  ![aristo verified](https://aretta.dev/[..]/badge.svg)
+  ![aristo verified](docs/badge.svg)
 
 ```
 
@@ -34,7 +34,7 @@ $ aristo badge --metric=count --out=docs/badge.svg
 → Writing docs/badge.svg ([..] style)
 ok: badge written. Embed in README:
 
-  ![aristo verified](https://aretta.dev/[..]/badge.svg)
+  ![aristo verified](docs/badge.svg)
 
 ```
 
@@ -47,7 +47,7 @@ $ aristo badge --metric=rate --out=docs/badge.svg
 → Writing docs/badge.svg ([..] style)
 ok: badge written. Embed in README:
 
-  ![aristo verified](https://aretta.dev/[..]/badge.svg)
+  ![aristo verified](docs/badge.svg)
 
 ```
 
@@ -60,7 +60,7 @@ $ aristo badge --metric=tier --out=docs/badge.svg
 → Writing docs/badge.svg ([..] style)
 ok: badge written. Embed in README:
 
-  ![aristo verified](https://aretta.dev/[..]/badge.svg)
+  ![aristo verified](docs/badge.svg)
 
 ```
 
