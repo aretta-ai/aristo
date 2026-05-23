@@ -322,23 +322,11 @@ else
         say "skipping steps 7-8: obstacle_path has no pending match."
     fi
 
-    # ─── 9. request-verify (idempotency) ─────────────────────────────
-    # Pick whichever canon_id we have; prefer the kanon: tier since
-    # request-verify makes the most sense for unbacked entries.
-    RV_CANON="${BE_ONE_CANON:-$OBSTACLE_CANON}"
-    if [[ -n "$RV_CANON" ]]; then
-        step 9 "aristo canon request-verify $RV_CANON — first call (submitted)"
-        run "$ARISTO" canon request-verify "$RV_CANON" --notes "live runbook smoke test"
-        echo
-        say "GREEN-LIGHT: 'submitted' (Aretta has been notified)."
-        pause
-
-        step "9b" "aristo canon request-verify $RV_CANON — repeat call (updated)"
-        run "$ARISTO" canon request-verify "$RV_CANON" --notes "live runbook smoke test — round 2"
-        echo
-        say "GREEN-LIGHT: 'updated' (idempotent path)."
-        pause
-    fi
+    # `aristo canon request-verify` is intentionally NOT exercised in
+    # this runbook — it's a Phase 2 demand-signal endpoint whose
+    # backing isn't wired up yet (see meta-repo §13 _deferred docs).
+    # Re-introduce step 9 here when Phase 2 verification execution
+    # lands.
 fi
 
 # ─── cleanup ─────────────────────────────────────────────────────────────

@@ -471,18 +471,33 @@ fn format_text(id: &AnnotationId, entry: &IndexEntry, index: &IndexFile) -> Stri
     out.push_str(&format!("  body_hash: {}\n", entry_body_hash(entry)));
 
     // Server binding (intent only — assume's binding is just `linked`).
+    //
+    // Per canon-strategy.md §CS10 ("what the card deliberately hides"),
+    // the opaque `linked` ref is hidden from the user surface for
+    // canon-bound (`aristos:` / `kanon:`) annotations. In Phase 1
+    // those `linked` values are synthesized placeholders anyway (see
+    // `canon::types::synthesize_phase1_linked` rationale); surfacing
+    // them would be misleading. For non-canon BindingState::Bound /
+    // Certified entries — i.e., the B5a/B5b server-bound path,
+    // distinct from the canon flow — we still render `linked:`
+    // because there it's a real server-issued value.
+    let is_canon_bound = matches!(id.namespace(), IdNamespace::Aristos | IdNamespace::Kanon);
     if let IndexEntry::Intent(e) = entry {
         match &e.binding {
             BindingState::Local => {}
             BindingState::Bound { linked } => {
-                out.push_str(&format!("  linked:    {linked}\n"));
+                if !is_canon_bound {
+                    out.push_str(&format!("  linked:    {linked}\n"));
+                }
             }
             BindingState::Certified {
                 linked,
                 verified_outcome,
                 last_verified_at_commit,
             } => {
-                out.push_str(&format!("  linked:    {linked}\n"));
+                if !is_canon_bound {
+                    out.push_str(&format!("  linked:    {linked}\n"));
+                }
                 out.push_str(&format!("  verified_outcome: {verified_outcome}\n"));
                 out.push_str(&format!(
                     "  last_verified_at_commit: {last_verified_at_commit}\n"
@@ -491,7 +506,9 @@ fn format_text(id: &AnnotationId, entry: &IndexEntry, index: &IndexFile) -> Stri
         }
     } else if let IndexEntry::Assume(a) = entry {
         if let Some(linked) = &a.linked {
-            out.push_str(&format!("  linked:    {linked}\n"));
+            if !is_canon_bound {
+                out.push_str(&format!("  linked:    {linked}\n"));
+            }
         }
     }
 
@@ -772,8 +789,11 @@ fn format_canon_binding(ws: &Workspace, id: &AnnotationId, entry: &IndexEntry) -
     }
     // Only intent entries can be canon-bound (assumes don't have a
     // binding state). Skip for assumes — though the namespace check
-    // upstream should prevent this.
-    let IndexEntry::Intent(intent) = entry else {
+    // upstream should prevent this. The `intent` itself is no longer
+    // read inside this block (the trust card now hides `linked` per
+    // §CS10, which was the only field we destructured), but the
+    // pattern match still has to be exhaustive to confirm "is intent."
+    let IndexEntry::Intent(_intent) = entry else {
         return String::new();
     };
     // Read the canon cache for the accepted_matches entry under this id.
@@ -811,9 +831,12 @@ fn format_canon_binding(ws: &Workspace, id: &AnnotationId, entry: &IndexEntry) -
         out.push_str(&format!("    confidence:   {:.2}\n", a.confidence));
         out.push_str(&format!("    bound_at:     {}\n", a.bound_at));
     }
-    if let aristo_core::index::BindingState::Bound { linked } = &intent.binding {
-        out.push_str(&format!("    linked:       {linked}\n"));
-    }
+    // Per canon-strategy.md §CS10 ("what the card deliberately hides"),
+    // the opaque `linked` ref is intentionally absent from the trust
+    // card. In Phase 1 the value is a client-derived placeholder
+    // (`synthesize_phase1_linked`); even when Phase 2 makes it a
+    // server-issued binding handle, the card still hides it — it's
+    // plumbing, not user-facing identity.
     match ns {
         IdNamespace::Aristos => {
             let backed = accepted

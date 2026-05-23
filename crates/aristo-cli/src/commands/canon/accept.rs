@@ -240,11 +240,17 @@ pub(crate) fn apply_acceptance(
     bound_entry.accepted_matches.push(accepted);
     cache.write_atomic(&cache_path).map_err(CliError::Io)?;
 
+    // Per canon-strategy.md §CS10, the opaque `linked` ref is hidden
+    // from user-facing surfaces. `linked_str` is still computed +
+    // persisted in the index, but it doesn't appear in the success
+    // message — Phase 1 it's a synthesized placeholder, Phase 2 it'll
+    // be a server-issued handle, and neither is useful to surface to
+    // the user during accept.
+    let _ = linked_str;
     println!(
-        "ok: accepted canon match for `{}` → `{}` (linked: {}).",
+        "ok: accepted canon match for `{}` → `{}`.",
         ann_id.as_str(),
         prefixed_id.as_str(),
-        linked_str
     );
     Ok(())
 }

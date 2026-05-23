@@ -146,20 +146,7 @@ backed tier, shows `backed by:` with the verification mechanism, and
 ends with the `aristo canon show <bare>` pointer for full canon-side
 detail.
 
-### Step 9 — `aristo canon request-verify <kanon_canon_id>`
-
-Calls `POST /canon/request-verify`. Records a demand signal against
-the unbacked entry. First call should return `submitted`; the script
-runs it twice to verify the idempotent path returns `updated`.
-
-**Green-light (first run):**
-- `ok: submitted` (or wording with "Aretta has been notified").
-
-**Green-light (second run):**
-- `updated` (or wording indicating "your previous request was
-  updated").
-
-### Step 10 — cleanup
+### Step 9 — cleanup
 
 The script prompts: `delete /tmp/aristo-runbook-<XXXX>? [y/N]`.
 **Default no** — you may want to poke around the resulting workspace
@@ -179,7 +166,12 @@ manually.
 | 6 | (local) | trust-card kanon: variant rendering |
 | 7 | (local) | accept + rewrite on the aristos: tier |
 | 8 | (local) | trust-card aristos: variant rendering |
-| 9 | `POST /canon/request-verify` | request body, `submitted` vs `updated` idempotency |
+
+`POST /canon/request-verify` is intentionally not exercised here —
+it's a Phase 2 demand-signal endpoint whose backing isn't wired up
+yet (see `../../../docs/mockups/13-canon-and-matching/_deferred/`
+in the meta-repo). The runbook will gain a step 9 when Phase 2
+verification execution lands.
 
 ---
 
