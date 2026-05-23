@@ -46,6 +46,7 @@
 //! Phase 2. No `verified_outcome` write; no test-binary dispatch;
 //! no signed certificate read-back.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -54,6 +55,7 @@ use aristo_core::canon::{
     rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError},
 };
 use aristo_core::index::{AnnotationId, ArtaId, BindingState, IndexEntry, IndexFile};
+use aristo_core::walk::extract_from_source;
 
 use crate::commands::index::workspace_or_error;
 use crate::{CliError, CliResult, Workspace};
@@ -195,6 +197,36 @@ pub(crate) fn apply_acceptance(
     let new_source = splice_source(&source, &rewrite);
     atomic_write_bytes(&src_path, new_source.as_bytes())?;
 
+    // 6b. Refresh sibling annotation sites in the affected file.
+    //
+    // The rewrite collapses the target annotation's attribute span
+    // (e.g., multi-line → one-liner), which shifts the line numbers
+    // of every annotation that follows it in the same file. Without
+    // this refresh, the next `canon accept` (or any other operation
+    // that looks up an annotation by `parse_line_from_site`) finds
+    // a stale line and fails with "no attribute found at line N".
+    //
+    // Approach: walk the in-memory `new_source` (no second disk
+    // read), build a map from each annotation's stripped site
+    // (e.g., `"fn be_one"`) to its current line number, then update
+    // every index entry that points at this file. The match uses
+    // stripped site (function name + kind) which is unique per file
+    // and stable under canon's id-prefix rewrites — `id =` changes
+    // but the surrounding `fn name() {...}` doesn't.
+    let fresh = extract_from_source(&new_source).map_err(|e| CliError::Other {
+        message: format!(
+            "internal: failed to re-walk `{}` after rewrite: {e}\n\
+             The source file may be unparseable after the rewrite; report \
+             this as a canon-accept bug.",
+            src_path.display()
+        ),
+        exit_code: 1,
+    })?;
+    let mut line_by_site: BTreeMap<String, usize> = BTreeMap::new();
+    for ann in &fresh {
+        line_by_site.insert(ann.site.clone(), ann.line);
+    }
+
     // 7. Rewrite the index entry.
     let mut new_intent = intent.clone();
     new_intent.text = pending.canonical_text.clone();
@@ -204,10 +236,27 @@ pub(crate) fn apply_acceptance(
     // so the next critique session re-runs against the canonical text.
     new_intent.last_critiqued_at_text_hash = None;
     new_intent.last_critique_finding_count = None;
+    // Refresh the just-rewritten entry's own site too — even though
+    // the attribute starts at the same line, the human-readable
+    // "fn name (line N)" needs the post-shift N. (For a one-and-only
+    // annotation at the top of the file the line stays put, but a
+    // sibling above could have shifted it.)
+    new_intent.site = refresh_site(&new_intent.site, &line_by_site);
     index.entries.remove(&ann_id);
     index
         .entries
         .insert(prefixed_id.clone(), IndexEntry::Intent(new_intent));
+
+    // Refresh sibling annotations' sites in the same file.
+    for (_id, entry) in index.entries.iter_mut() {
+        let same_file = entry_file(entry) == intent.file;
+        if !same_file {
+            continue;
+        }
+        let new_site = refresh_site(entry_site(entry), &line_by_site);
+        set_entry_site(entry, new_site);
+    }
+
     let index_toml = toml::to_string_pretty(&index).map_err(|e| CliError::Other {
         message: format!("serializing .aristo/index.toml: {e}"),
         exit_code: 1,
@@ -253,6 +302,50 @@ pub(crate) fn apply_acceptance(
         prefixed_id.as_str(),
     );
     Ok(())
+}
+
+/// Given an existing `"<site> (line N)"` string and a fresh
+/// `stripped_site -> line` map, return a new site string with the
+/// post-rewrite line. Falls back to the original string when the
+/// stripped site isn't in the map — covers the corner where a
+/// sibling annotation is unparseable post-rewrite (shouldn't happen
+/// but is harmless to no-op).
+fn refresh_site(old: &str, line_by_site: &BTreeMap<String, usize>) -> String {
+    // Site format is `"<stripped> (line N)"`. Strip the trailing
+    // ` (line N)` to get the stripped site for map lookup.
+    let stripped = match old.rfind(" (line ") {
+        Some(idx) => &old[..idx],
+        None => old,
+    };
+    match line_by_site.get(stripped) {
+        Some(line) => format!("{stripped} (line {line})"),
+        None => old.to_string(),
+    }
+}
+
+/// Per-entry site accessor — index.rs has one for read; this is the
+/// write side.
+fn set_entry_site(entry: &mut IndexEntry, site: String) {
+    match entry {
+        IndexEntry::Intent(e) => e.site = site,
+        IndexEntry::Assume(e) => e.site = site,
+    }
+}
+
+/// Read accessor mirroring `set_entry_site` for the entry-site refresh.
+fn entry_site(entry: &IndexEntry) -> &str {
+    match entry {
+        IndexEntry::Intent(e) => &e.site,
+        IndexEntry::Assume(e) => &e.site,
+    }
+}
+
+/// Per-entry file accessor.
+fn entry_file(entry: &IndexEntry) -> &str {
+    match entry {
+        IndexEntry::Intent(e) => &e.file,
+        IndexEntry::Assume(e) => &e.file,
+    }
 }
 
 /// Locate the pending match by `(annotation_id, canon_id)`. Returns a

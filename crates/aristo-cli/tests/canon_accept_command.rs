@@ -391,3 +391,103 @@ fn accept_already_bound_annotation_refuses() {
         .unwrap();
     assert!(!out.status.success(), "re-accept must refuse");
 }
+
+// ─── sibling-shift regression ────────────────────────────────────────────
+
+/// Two multi-line `#[aristo::intent(...)]` annotations in the same
+/// file. Accepting the first rewrites it to a one-liner, shifting
+/// the second annotation's line. Without the sibling-site refresh,
+/// the second accept fails with "no attribute found at line N"
+/// because the index still records the second annotation's pre-shift
+/// line.
+const TWO_MULTILINE_SOURCE: &str = r#"
+#[aristo::intent(
+    "each cell should be written exactly once per page edit",
+    id = "first_anno"
+)]
+pub fn first_fn() {}
+
+#[aristo::intent(
+    "total can't be negative",
+    id = "second_anno"
+)]
+pub fn second_fn() {}
+"#;
+
+fn write_two_match_fixture(fixture_dir: &Path) {
+    std::fs::create_dir_all(fixture_dir).unwrap();
+    let body = r#"
+effective_scopes = [":vanilla"]
+canon_version = "v0.2.0"
+matched_at = "2026-06-15T09:14:22Z"
+
+results = [
+    [
+        { canon_id = "cell_written_exactly_once_per_page_edit", version = "v0.2.1", canonical_text = "edit_page writes each cell exactly once", confidence = 0.92, scope = ":vanilla", prefix_tier = "aristos:", backed_by = "specialized neural checker", linked = "arta_a1b2c3d4ef56", verification = { coverage_level = "tight", test_binaries = [] } }
+    ],
+    [
+        { canon_id = "checkout_total_non_negative", version = "v0.1.0", canonical_text = "checkout total is non-negative", confidence = 0.94, scope = ":vanilla", prefix_tier = "kanon:", linked = "arta_b2c3d4e5f6a7", verification = { coverage_level = "loose", test_binaries = [] } }
+    ]
+]
+"#;
+    std::fs::write(fixture_dir.join("match.toml"), body).unwrap();
+}
+
+#[test]
+fn accept_then_sibling_accept_succeeds_after_line_shift() {
+    let ws = setup_workspace(TWO_MULTILINE_SOURCE);
+    let fixture = ws.path().join("fixtures/canon");
+    write_two_match_fixture(&fixture);
+    stamp(ws.path(), &fixture);
+
+    // First accept: rewrites first_fn's multi-line attribute to a
+    // one-liner. This collapses ~3 source lines → 1, shifting
+    // second_fn upward in the file.
+    let out1 = aristo_in(ws.path())
+        .args([
+            "canon",
+            "accept",
+            "first_anno",
+            "cell_written_exactly_once_per_page_edit",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out1.status.success(),
+        "first accept failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&out1.stdout),
+        String::from_utf8_lossy(&out1.stderr)
+    );
+
+    // Second accept on the sibling. Without the sibling-site refresh,
+    // this fails because the index still records second_fn's
+    // pre-shift line. The fix re-walks the file after the first
+    // rewrite and updates all annotations' `site` fields with their
+    // current (post-shift) lines.
+    let out2 = aristo_in(ws.path())
+        .args([
+            "canon",
+            "accept",
+            "second_anno",
+            "checkout_total_non_negative",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out2.status.success(),
+        "second accept failed (sibling-shift regression): stdout={} stderr={}",
+        String::from_utf8_lossy(&out2.stdout),
+        String::from_utf8_lossy(&out2.stderr)
+    );
+
+    // Both rewrites landed in source.
+    let post = std::fs::read_to_string(ws.path().join("src/lib.rs")).unwrap();
+    assert!(
+        post.contains(r#"id = "aristos:cell_written_exactly_once_per_page_edit""#),
+        "expected first annotation's aristos: prefix in source; got:\n{post}"
+    );
+    assert!(
+        post.contains(r#"id = "kanon:checkout_total_non_negative""#),
+        "expected second annotation's kanon: prefix in source; got:\n{post}"
+    );
+}
