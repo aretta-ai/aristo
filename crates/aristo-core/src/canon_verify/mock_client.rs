@@ -76,6 +76,23 @@ impl MockVerifyClient {
         }
     }
 
+    /// Construct a mock that returns this POST response on the first
+    /// POST and replays the GET sequence in order. Useful for testing
+    /// the full POST → poll loop end-to-end (E2 `--wait`).
+    pub fn with_post_and_gets(
+        post: PostVerifySessionResponse,
+        get_responses: Vec<GetVerifySessionResponse>,
+    ) -> Self {
+        Self {
+            post_response: Mutex::new(Some(Ok(post))),
+            get_responses: Mutex::new(
+                get_responses.into_iter().map(Ok).collect::<Vec<_>>(),
+            ),
+            posted: Mutex::new(Vec::new()),
+            fetched: Mutex::new(Vec::new()),
+        }
+    }
+
     /// Inspect the requests POSTed so far. Useful for asserting wire-
     /// shape correctness in dispatcher tests.
     pub fn posted_requests(&self) -> Vec<VerifySessionRequest> {

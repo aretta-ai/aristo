@@ -21,16 +21,42 @@
 //! verification mechanism (see `docs/deferred/verify-test-design.md`)
 //! and out of scope for §14.
 
+use std::collections::HashSet;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use aristo_core::canon::CanonMatchesFile;
 use aristo_core::canon_verify::{
-    HttpVerifyClient, PostVerifySessionResponse, VerifyClient, VerifyError, VerifySessionRequest,
+    AnnotationOutcomeStatus, GetVerifySessionResponse, HttpVerifyClient, PostVerifySessionResponse,
+    SessionStatus, TestOutcomeStatus, VerifyClient, VerifyError, VerifySessionRequest,
     VerifySessionTag,
 };
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, IntentEntry};
 
 use crate::{CliError, CliResult};
+
+/// Long-poll server-side hold-time (§7c row 9). The server may ignore
+/// this and return immediately in the prototype — the SDK still sends
+/// the hint for forward-compat.
+const LONGPOLL_WAIT_SECS: u32 = 30;
+
+/// Default between-poll backoff when the server returns immediately.
+/// Keeps the CLI rendering smooth (§7c row 9 "3s render") and bounded.
+/// Overridable via `ARISTO_VERIFY_POLL_MS` for tests; production
+/// callers never set it.
+const POLL_INTERVAL: Duration = Duration::from_secs(3);
+
+fn poll_interval() -> Duration {
+    if let Ok(ms) = std::env::var("ARISTO_VERIFY_POLL_MS") {
+        if let Ok(n) = ms.parse::<u64>() {
+            return Duration::from_millis(n);
+        }
+    }
+    POLL_INTERVAL
+}
+
+/// Heartbeat cadence (§7c row 13: "still running… (N seconds elapsed)").
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Identifies an entry pending canon-verify dispatch. Lightweight —
 /// the actual request body assembly happens in [`build_tags`].
@@ -178,6 +204,8 @@ pub(crate) fn run_canon_dispatch(
     workspace_root: &Path,
     matches_path: &Path,
     canon_entries: &[CanonDispatchEntry<'_>],
+    tags_filter: Option<&[String]>,
+    wait: bool,
 ) -> CliResult<usize> {
     if canon_entries.is_empty() {
         return Ok(0);
@@ -194,7 +222,25 @@ pub(crate) fn run_canon_dispatch(
         ),
         exit_code: 1,
     })?;
-    let tags = build_tags(canon_entries, &matches);
+    let mut tags = build_tags(canon_entries, &matches);
+
+    // 2b. Optional --tags filter (E4): subset to the requested ids.
+    // Validates each requested id (reject `arta_*` — those are server-
+    // side opaque refs that the user never sees in source).
+    if let Some(requested) = tags_filter {
+        let allowed = build_tag_filter_set(canon_entries, requested)?;
+        tags.retain(|t| allowed.contains(&t.annotation_id));
+        if tags.is_empty() {
+            return Err(CliError::Other {
+                message: format!(
+                    "--tags filter matched zero eligible canon-bound entries. \
+                     Requested ids: {}",
+                    requested.join(", ")
+                ),
+                exit_code: 1,
+            });
+        }
+    }
     if tags.is_empty() {
         // Every canon-bound entry was missing a cache entry. Surface
         // a helpful message rather than POSTing empty.
@@ -264,11 +310,269 @@ pub(crate) fn run_canon_dispatch(
         tags,
     };
     let resp = client.post_session(&req).map_err(verify_error_to_cli)?;
-
-    // 7. Print user-facing summary (detach default per §7c row 1).
     let dispatched = req.tags.len();
     print_session_dispatched(&req, &resp);
+
+    // 7. Optional poll-to-completion (--wait).
+    if wait {
+        let final_snapshot = poll_until_terminal(&*client, &resp.session_id)?;
+        render_final_snapshot(&final_snapshot);
+        if !final_snapshot.summary.is_success() {
+            // §7c row 7: any failed / build_failed / inconclusive → exit 1.
+            return Err(CliError::Other {
+                message: format!(
+                    "canon-verify reported {} failed, {} build_failed, {} inconclusive",
+                    final_snapshot.summary.failed,
+                    final_snapshot.summary.build_failed,
+                    final_snapshot.summary.inconclusive
+                ),
+                exit_code: 1,
+            });
+        }
+    }
+
     Ok(dispatched)
+}
+
+/// Re-attach to an existing session (E3 — `aristo verify --view <id>`).
+/// One GET (or polling loop with --wait), render, exit-code derive.
+/// Skips POST + push-first precheck entirely.
+pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
+    let creds = aristo_core::auth::resolve_full().map_err(no_auth_to_cli_error)?;
+    let base_url = std::env::var("ARETTA_API_URL")
+        .unwrap_or_else(|_| creds.server.as_str().to_string());
+    let client: Box<dyn VerifyClient> =
+        if let Some(mock) = test_mock_client_from_env() {
+            mock
+        } else {
+            Box::new(HttpVerifyClient::new(base_url, &creds.token))
+        };
+
+    let snapshot = if wait {
+        poll_until_terminal(&*client, session_id)?
+    } else {
+        client
+            .get_session(session_id, None)
+            .map_err(verify_error_to_cli)?
+    };
+    render_final_snapshot(&snapshot);
+    if wait && !snapshot.summary.is_success() {
+        return Err(CliError::Other {
+            message: format!(
+                "canon-verify reported {} failed, {} build_failed, {} inconclusive",
+                snapshot.summary.failed,
+                snapshot.summary.build_failed,
+                snapshot.summary.inconclusive
+            ),
+            exit_code: 1,
+        });
+    }
+    Ok(())
+}
+
+/// Long-poll loop until the session reaches a terminal state. Renders
+/// an intermediate snapshot at first non-terminal response so the user
+/// sees the in-flight state; emits a heartbeat every 60s.
+fn poll_until_terminal<C: VerifyClient + ?Sized>(
+    client: &C,
+    session_id: &str,
+) -> CliResult<GetVerifySessionResponse> {
+    let started = Instant::now();
+    let mut last_heartbeat = started;
+    let mut intermediate_rendered = false;
+
+    loop {
+        let snapshot = client
+            .get_session(session_id, Some(LONGPOLL_WAIT_SECS))
+            .map_err(verify_error_to_cli)?;
+        if snapshot.status.is_terminal() {
+            return Ok(snapshot);
+        }
+        if !intermediate_rendered {
+            // First non-terminal poll: show what's running.
+            println!();
+            println!(
+                "  status: {} ({} of {} annotations verified so far)",
+                status_label(snapshot.status),
+                snapshot.summary.verified,
+                snapshot.summary.total_annotations
+            );
+            intermediate_rendered = true;
+        }
+        if last_heartbeat.elapsed() >= HEARTBEAT_INTERVAL {
+            let elapsed = started.elapsed().as_secs();
+            println!("  still running… ({elapsed}s elapsed)");
+            last_heartbeat = Instant::now();
+        }
+        // Back off briefly so we don't hammer when the server returns
+        // immediately (i.e., when ?wait= is ignored — current proxy
+        // state).
+        std::thread::sleep(poll_interval());
+    }
+}
+
+fn build_tag_filter_set(
+    canon_entries: &[CanonDispatchEntry<'_>],
+    requested: &[String],
+) -> CliResult<HashSet<String>> {
+    let mut allowed: HashSet<String> = HashSet::new();
+    // Build a map from canon-bound AnnotationId.as_str() → linked arta_*
+    // so the user can pass either source-form ids (`aristos:foo`) or
+    // canon-id suffixes (`foo`) without surprises.
+    let mut by_source: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+    let mut by_canon: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+    for d in canon_entries {
+        let linked = match &d.entry.binding {
+            aristo_core::index::BindingState::Bound { linked } => linked.as_str().to_string(),
+            aristo_core::index::BindingState::Certified { linked, .. } => {
+                linked.as_str().to_string()
+            }
+            aristo_core::index::BindingState::Local => continue,
+        };
+        by_source.insert(d.id.as_str(), linked.clone());
+        let canon = strip_canon_prefix(d.id.as_str());
+        by_canon.insert(canon, linked);
+    }
+    for raw in requested {
+        let id = raw.trim();
+        if id.is_empty() {
+            continue;
+        }
+        if id.starts_with("arta_") {
+            return Err(CliError::Other {
+                message: format!(
+                    "--tags rejects opaque server ids (got `{id}`). Pass the source-form id \
+                     instead, e.g. `--tags aristos:foo,kanon:bar`."
+                ),
+                exit_code: 2,
+            });
+        }
+        if let Some(linked) = by_source.get(id) {
+            allowed.insert(linked.clone());
+        } else if let Some(linked) = by_canon.get(id) {
+            allowed.insert(linked.clone());
+        } else {
+            return Err(CliError::Other {
+                message: format!(
+                    "--tags id `{id}` is not a canon-bound entry in this workspace's index"
+                ),
+                exit_code: 1,
+            });
+        }
+    }
+    Ok(allowed)
+}
+
+// ─── Rendering (WORKFLOW.md §6 — CLI form) ──────────────────────────────────
+
+fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
+    println!();
+    println!(
+        "session {} — verifying {} against canon {}",
+        snapshot.session_id,
+        short_sha(&snapshot.user_commit_sha),
+        snapshot.canon_version
+    );
+    println!(
+        "status: {} ({}/{} verified)",
+        status_label(snapshot.status),
+        snapshot.summary.verified,
+        snapshot.summary.total_annotations
+    );
+    println!();
+    println!(
+        "{:<55}  {:<14} TESTS",
+        "ANNOTATION", "STATUS"
+    );
+    for ann in &snapshot.annotations {
+        let icon = annotation_icon(ann.status);
+        let passed = ann
+            .tests
+            .iter()
+            .filter(|t| matches!(t.status, TestOutcomeStatus::Pass))
+            .count();
+        let header = format!(
+            "{}{}@{} ({})",
+            ann.tier, ann.canon_id, ann.version, ann.scope
+        );
+        let tests_summary = if ann.tests.is_empty() {
+            "(no coverage)".to_string()
+        } else {
+            format!("{}/{} passed", passed, ann.tests.len())
+        };
+        println!(
+            "{:<55}  {} {:<11}  {}",
+            header,
+            icon,
+            annotation_status_word(ann.status),
+            tests_summary
+        );
+        println!("  {}", ann.source_path);
+        for t in &ann.tests {
+            if !matches!(
+                t.status,
+                TestOutcomeStatus::Fail
+                    | TestOutcomeStatus::BuildFailed
+                    | TestOutcomeStatus::CloneFailed
+                    | TestOutcomeStatus::Timeout
+                    | TestOutcomeStatus::Error
+            ) {
+                continue;
+            }
+            let bin = t.test_binary.as_deref().unwrap_or("(session)");
+            let word = test_status_word(t.status);
+            match &t.stderr_url {
+                Some(url) => println!("  • {bin} {word} — see {url}"),
+                None => println!("  • {bin} {word}"),
+            }
+        }
+    }
+    println!();
+    // No `view_url` on GetVerifySessionResponse; the dashboard link is
+    // derivable from session_id when needed but we surface only the
+    // session id here to keep the output tight.
+}
+
+fn status_label(s: SessionStatus) -> &'static str {
+    match s {
+        SessionStatus::Queued => "queued",
+        SessionStatus::Running => "running",
+        SessionStatus::Done => "done",
+        SessionStatus::Failed => "failed",
+        SessionStatus::TimedOut => "timed out",
+        SessionStatus::Cancelled => "cancelled",
+    }
+}
+
+fn annotation_icon(s: AnnotationOutcomeStatus) -> &'static str {
+    match s {
+        AnnotationOutcomeStatus::Verified => "[ok]",
+        AnnotationOutcomeStatus::Failed => "[fail]",
+        AnnotationOutcomeStatus::BuildFailed => "[warn]",
+        AnnotationOutcomeStatus::Inconclusive => "[?]",
+        AnnotationOutcomeStatus::NoCoverage => "[--]",
+    }
+}
+
+fn annotation_status_word(s: AnnotationOutcomeStatus) -> &'static str {
+    match s {
+        AnnotationOutcomeStatus::Verified => "verified",
+        AnnotationOutcomeStatus::Failed => "failed",
+        AnnotationOutcomeStatus::BuildFailed => "build_failed",
+        AnnotationOutcomeStatus::Inconclusive => "inconclusive",
+        AnnotationOutcomeStatus::NoCoverage => "no_coverage",
+    }
+}
+
+fn test_status_word(s: TestOutcomeStatus) -> &'static str {
+    match s {
+        TestOutcomeStatus::Pass => "passed",
+        TestOutcomeStatus::Fail => "failed",
+        TestOutcomeStatus::BuildFailed => "build_failed",
+        TestOutcomeStatus::CloneFailed => "clone_failed",
+        TestOutcomeStatus::Timeout => "timeout",
+        TestOutcomeStatus::Error => "error",
+    }
 }
 
 fn print_session_dispatched(req: &VerifySessionRequest, resp: &PostVerifySessionResponse) {
@@ -353,10 +657,22 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
         session_id: p.session_id,
         view_url: p.view_url,
         plan_size: p.plan_size,
-    })?;
+    });
+    // Pre-canned GET response sequence (for --view + --wait paths).
+    let get_responses: Vec<GetVerifySessionResponse> = parsed.gets.unwrap_or_default();
     // Record the POST body to a sibling file so tests can inspect it.
     let record_path = format!("{path}.posted.json");
-    let mock = aristo_core::canon_verify::MockVerifyClient::with_post_response(post_resp);
+    let mock = match (post_resp, get_responses.is_empty()) {
+        (Some(p), true) => aristo_core::canon_verify::MockVerifyClient::with_post_response(p),
+        (Some(p), false) => aristo_core::canon_verify::MockVerifyClient::with_post_and_gets(
+            p,
+            get_responses,
+        ),
+        (None, false) => {
+            aristo_core::canon_verify::MockVerifyClient::with_get_responses(get_responses)
+        }
+        (None, true) => return None,
+    };
     Some(Box::new(RecordingMock {
         inner: mock,
         record_path,
@@ -366,6 +682,7 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
 #[derive(serde::Deserialize)]
 struct FixtureFile {
     post: Option<FixturePost>,
+    gets: Option<Vec<GetVerifySessionResponse>>,
 }
 
 #[derive(serde::Deserialize)]
