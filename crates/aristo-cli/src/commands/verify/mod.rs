@@ -28,6 +28,7 @@ use crate::workspace::Workspace;
 use crate::{CliError, CliResult};
 
 pub(crate) mod apply;
+pub(crate) mod canon_dispatch;
 pub(crate) mod pending;
 pub(crate) mod session_kind;
 pub(crate) mod submit;
@@ -95,7 +96,7 @@ pub(crate) fn run(
     let mut stats = Stats::default();
     let mut pending_neural: Vec<&AnnotationId> = Vec::new();
     let mut pending_test: usize = 0;
-    let mut pending_full: usize = 0;
+    let mut pending_full: Vec<&AnnotationId> = Vec::new();
 
     for (id, entry) in index.entries.iter() {
         if !matches_all(id, entry, &filters) {
@@ -125,7 +126,7 @@ pub(crate) fn run(
                 pending_neural.push(id);
             }
             VerifyLevel::Method(VerifyMethod::Test) => pending_test += 1,
-            VerifyLevel::Method(VerifyMethod::Full) => pending_full += 1,
+            VerifyLevel::Method(VerifyMethod::Full) => pending_full.push(id),
         }
     }
 
@@ -136,25 +137,46 @@ pub(crate) fn run(
     };
     let _ = enqueued; // count surfaced via emit_summary below
 
-    emit_summary(&stats, pending_neural.len(), pending_test, pending_full);
+    // Partition `verify="full"` entries into canon-bound (kanon: /
+    // aristos:) vs. non-canon. Canon-bound entries dispatch through
+    // §14 canon-verify; non-canon-bound entries hit the deferred
+    // verify=full design path (see docs/deferred/verify-test-design.md).
+    let (canon_full, other_full) = canon_dispatch::partition_full(&index, &pending_full);
 
-    // Slice 23 ships neural via the in-agent skill route. test and full
-    // were originally milestone E slices 24/26 but are deferred to post-MVP
-    // pending the spec-schema + injection-mechanism design (see
-    // docs/deferred/verify-test-design.md). If the user has entries needing
-    // those methods, surface a NotImplemented at the end with the deferred-
-    // design pointer so the message is actionable rather than blocking-on-
-    // a-slice-number-that-isn't-coming.
+    emit_summary(
+        &stats,
+        pending_neural.len(),
+        pending_test,
+        canon_full.len() + other_full.len(),
+    );
+
+    // §14 canon-verify dispatch. Auth required (user-confirmed in
+    // session): without an arta_* token, server-side authorization
+    // would reject anyway, so we skip with an actionable hint rather
+    // than POSTing a guaranteed-401.
+    let dispatched = canon_dispatch::run_canon_dispatch(
+        &ws.root,
+        &ws.canon_matches_path(),
+        &canon_full,
+    )?;
+    let _ = dispatched;
+
+    // Slice 23 ships neural via the in-agent skill route. test +
+    // non-canon-bound full were originally milestone E slices 24/26
+    // but are deferred to post-MVP pending the spec-schema +
+    // injection-mechanism design. Canon-bound full is now live (§14);
+    // the deferred design only governs the non-canon path.
     if pending_test > 0 {
         return Err(CliError::NotImplemented {
             what: "aristo verify (verify=\"test\")",
             hint: "post-MVP — see docs/deferred/verify-test-design.md",
         });
     }
-    if pending_full > 0 {
+    if !other_full.is_empty() {
         return Err(CliError::NotImplemented {
-            what: "aristo verify (verify=\"full\")",
-            hint: "post-MVP — depends on verify=\"test\"; see docs/deferred/verify-test-design.md",
+            what: "aristo verify (verify=\"full\") for non-canon-bound entries",
+            hint: "post-MVP — see docs/deferred/verify-test-design.md. \
+                   Canon-bound (`kanon:` / `aristos:`) entries dispatch via §14.",
         });
     }
     Ok(())
