@@ -50,8 +50,27 @@ pub(crate) fn run(
     queue_status: bool,
     id: Option<String>,
     json: Option<String>,
+    wait: bool,
+    view: Option<String>,
+    tags: &[String],
 ) -> CliResult<()> {
     let _ = (check, strict); // wired for forward-compat; no behavior yet (see module doc)
+
+    // E3: `--view <session_id>` attaches to an existing session.
+    // Read-only — no session guard, no workspace mutation. Runs
+    // before workspace resolution since the operation only needs
+    // an HTTP client (auth + server URL).
+    if let Some(session_id) = view {
+        if !tags.is_empty() {
+            return Err(CliError::Other {
+                message: "--tags is not compatible with --view (the session was already \
+                          dispatched with its tag set)".into(),
+                exit_code: 2,
+            });
+        }
+        return canon_dispatch::run_view_session(&session_id, wait);
+    }
+
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
@@ -154,10 +173,13 @@ pub(crate) fn run(
     // session): without an arta_* token, server-side authorization
     // would reject anyway, so we skip with an actionable hint rather
     // than POSTing a guaranteed-401.
+    let tags_filter = if tags.is_empty() { None } else { Some(tags) };
     let dispatched = canon_dispatch::run_canon_dispatch(
         &ws.root,
         &ws.canon_matches_path(),
         &canon_full,
+        tags_filter,
+        wait,
     )?;
     let _ = dispatched;
 

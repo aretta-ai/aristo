@@ -234,6 +234,30 @@ enum Commands {
         /// Safe to call concurrently.
         #[arg(long = "queue-status", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
         queue_status: bool,
+        /// Block until the canon-verify session reaches a terminal
+        /// state, rendering a snapshot at each long-poll return and
+        /// emitting a `still running…` heartbeat every 60s. Exit code
+        /// is derived from the final summary: `0` iff every
+        /// annotation is `verified` or `no_coverage`. Without
+        /// `--wait` the SDK detaches after dispatch (prints session
+        /// id and exits 0). Combine with `--view <id>` to attach to
+        /// a session another invocation started.
+        #[arg(long = "wait")]
+        wait: bool,
+        /// Re-attach to a previously-dispatched canon-verify session
+        /// by id. Skips the source eligibility scan, push-first
+        /// precheck, and POST — just GETs the session state and
+        /// renders. Combine with `--wait` to block until terminal.
+        #[arg(long = "view", value_name = "SESSION_ID")]
+        view: Option<String>,
+        /// Subset the canon-verify dispatch to the listed annotation
+        /// ids. Comma-separated; each id must be a canon-bound entry
+        /// (`aristos:foo` or `kanon:bar`) in the workspace's index.
+        /// Bare canon-id suffixes (e.g. `foo`) are accepted as a
+        /// shorthand. `arta_*` (server-side opaque) ids are rejected
+        /// — those are not user-facing.
+        #[arg(long = "tags", value_name = "id1,id2,...", value_delimiter = ',')]
+        tags: Vec<String>,
     },
 
     /// Run the critique skill against annotation prose — opinionated
@@ -766,6 +790,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             json,
             pop_next,
             queue_status,
+            wait,
+            view,
+            tags,
         } => commands::verify::run(
             &filters,
             rerun,
@@ -778,6 +805,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             queue_status,
             id,
             json,
+            wait,
+            view,
+            &tags,
         ),
         Commands::Critique {
             filters,

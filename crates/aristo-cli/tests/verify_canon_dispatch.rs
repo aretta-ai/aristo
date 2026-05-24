@@ -302,6 +302,328 @@ fn missing_cache_entry_for_canon_bound_full_skips_with_refresh_hint() {
         .stdout(contains("aristo canon refresh"));
 }
 
+/// Fixture builder for `--wait` / `--view` paths: takes a JSON object
+/// describing the post-and-gets sequence and writes it to a file the
+/// SDK reads via ARISTO_CANON_VERIFY_FIXTURE.
+fn write_full_fixture(dir: &Path, body: &str) -> PathBuf {
+    let path = dir.join("verify-fixture.json");
+    fs::write(&path, body).unwrap();
+    path
+}
+
+#[test]
+fn wait_blocks_until_session_terminal_and_renders_final_snapshot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    // Two GET responses: one running, one done. The poll loop must
+    // skip the first, render the second.
+    let fixture_body = r#"{
+      "post": {
+        "session_id": "01HMWAIT",
+        "view_url": "https://dev.aretta.ai/dashboard/jobs/01HMWAIT",
+        "plan_size": 1
+      },
+      "gets": [
+        {
+          "session_id": "01HMWAIT",
+          "status": "running",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        },
+        {
+          "session_id": "01HMWAIT",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [
+            {
+              "annotation_id": "arta_op4q3z9NbV",
+              "canon_id": "foo",
+              "version": "v0.1.0",
+              "scope": "turso",
+              "tier": "aristos:",
+              "source_path": "src/foo.rs:42",
+              "status": "verified",
+              "tests": [{"test_binary": "foo_conform", "status": "pass", "duration_ms": 1234}]
+            }
+          ],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stdout(contains("01HMWAIT"))
+        .stdout(contains("session 01HMWAIT"))
+        .stdout(contains("status: done (1/1 verified)"))
+        .stdout(contains("aristos:foo@v0.1.0"))
+        .stdout(contains("verified"));
+}
+
+#[test]
+fn wait_exits_nonzero_when_summary_has_failures() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMFAIL", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        {
+          "session_id": "01HMFAIL",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [
+            {
+              "annotation_id": "arta_op4q3z9NbV",
+              "canon_id": "foo",
+              "version": "v0.1.0",
+              "scope": "turso",
+              "tier": "aristos:",
+              "source_path": "src/foo.rs:42",
+              "status": "failed",
+              "tests": [{"test_binary": "foo_conform", "status": "fail", "duration_ms": 1234}]
+            }
+          ],
+          "summary": {"total_annotations": 1, "verified": 0, "failed": 1, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stdout(contains("status: done"))
+        .stdout(contains("failed"))
+        .stderr(contains("1 failed"));
+}
+
+#[test]
+fn view_attaches_to_existing_session_without_post() {
+    // --view <id> skips POST entirely — no workspace, no git, no auth-
+    // sourced repo. Only a single GET. We deliberately don't init a
+    // git repo in this test to prove push-first/precheck is skipped.
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    // No `post` block — the SDK should never POST under --view.
+    let fixture_body = r#"{
+      "gets": [
+        {
+          "session_id": "01HMVIEW",
+          "status": "running",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 0, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .args(["verify", "--view", "01HMVIEW"])
+        .assert()
+        .success()
+        .stdout(contains("session 01HMVIEW"))
+        .stdout(contains("status: running"));
+
+    // The .posted.json sidecar must NOT have been written.
+    let posted = tmp.path().join("verify-fixture.json.posted.json");
+    assert!(
+        !posted.exists(),
+        "--view must not POST; sidecar exists at {posted:?}"
+    );
+}
+
+#[test]
+fn view_with_wait_blocks_until_terminal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "gets": [
+        {
+          "session_id": "01HMVW",
+          "status": "running",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        },
+        {
+          "session_id": "01HMVW",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--view", "01HMVW", "--wait"])
+        .assert()
+        .success()
+        .stdout(contains("status: done (1/1 verified)"));
+}
+
+#[test]
+fn tags_filter_narrows_to_requested_canon_bound_ids() {
+    // Two canon-bound entries; --tags picks one. Wire-shape proves
+    // only the requested tag's annotation_id reached the POST body.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    aristo_in(tmp.path()).arg("init").assert().success();
+    let body = format!(
+        "[__meta__]\nschema_version = 1\n\n\
+         [\"aristos:alpha\"]\nkind = \"intent\"\ntext = \"a\"\n\
+         verify = \"full\"\nstatus = \"unknown\"\n\
+         text_hash = \"{ZERO_HASH}\"\nbody_hash = \"{ZERO_HASH}\"\n\
+         file = \"src/a.rs\"\nsite = \"fn a (line 1)\"\n\
+         covered_region = \"function\"\nlinked = \"arta_alpha000000\"\n\n\
+         [\"kanon:beta\"]\nkind = \"intent\"\ntext = \"b\"\n\
+         verify = \"full\"\nstatus = \"unknown\"\n\
+         text_hash = \"{ZERO_HASH}\"\nbody_hash = \"{ZERO_HASH}\"\n\
+         file = \"src/b.rs\"\nsite = \"fn b (line 1)\"\n\
+         covered_region = \"function\"\nlinked = \"arta_beta00000000\"\n",
+    );
+    fs::write(tmp.path().join(".aristo/index.toml"), body).unwrap();
+    let matches = r#"
+[__meta__]
+schema_version = 1
+
+["aristos:alpha"]
+last_match_text_hash = "blake3:a"
+canon_fetched_at = "2026-05-24T00:00:00Z"
+[["aristos:alpha".accepted_matches]]
+canon_id = "alpha"
+version = "v0.1.0"
+canonical_text = "a"
+canon_version = "v0.2.0"
+confidence = 0.9
+prefix_tier = "aristos:"
+backed_by = "x"
+accepted_at = "2026-05-24T00:00:00Z"
+bound_at = "2026-05-24T00:00:00Z"
+
+["kanon:beta"]
+last_match_text_hash = "blake3:b"
+canon_fetched_at = "2026-05-24T00:00:00Z"
+[["kanon:beta".accepted_matches]]
+canon_id = "beta"
+version = "v0.2.0"
+canonical_text = "b"
+canon_version = "v0.2.0"
+confidence = 0.9
+prefix_tier = "kanon:"
+accepted_at = "2026-05-24T00:00:00Z"
+bound_at = "2026-05-24T00:00:00Z"
+"#;
+    fs::write(tmp.path().join(".aristo/canon-matches.toml"), matches).unwrap();
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let captured_path = write_post_fixture(tmp.path(), "01HMTAGS", 1);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", tmp.path().join("verify-fixture.json"))
+        .args(["verify", "--tags", "kanon:beta"])
+        .assert()
+        .success();
+
+    let captured = fs::read_to_string(&captured_path).unwrap();
+    let body: serde_json::Value = serde_json::from_str(&captured).unwrap();
+    let tags = body["tags"].as_array().unwrap();
+    assert_eq!(tags.len(), 1, "--tags kanon:beta must dispatch one tag, got {tags:?}");
+    assert_eq!(tags[0]["annotation_id"], "arta_beta00000000");
+    assert_eq!(tags[0]["canon_id"], "beta");
+}
+
+#[test]
+fn tags_rejects_arta_prefixed_ids() {
+    // arta_* is server-side opaque; users should never paste it.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .args(["verify", "--tags", "arta_op4q3z9NbV"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("--tags rejects opaque server ids"));
+}
+
+#[test]
+fn view_with_tags_is_rejected_as_incompatible() {
+    // The session was already dispatched with its tag set; --tags is
+    // not meaningful on attach.
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .args(["verify", "--view", "01HM", "--tags", "aristos:foo"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("--tags is not compatible with --view"));
+}
+
 #[test]
 fn non_canon_bound_full_intent_still_yields_deferred_design_message() {
     // Regression for the pre-§14 NotImplemented arm — local-id
