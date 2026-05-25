@@ -18,13 +18,24 @@ for the layered-testing design.
 ## How to run
 
 ```bash
-./scripts/live-dev-runbook.sh
+./scripts/live-dev-runbook.sh              # interactive (default)
+./scripts/live-dev-runbook.sh -y           # non-interactive
+./scripts/live-dev-runbook.sh --non-interactive
 ```
 
-The script drives the flow. Each command runs automatically; the
-script pauses between steps so you can eyeball the output against the
-green-light criteria in this file. Press **enter** to continue,
-**ctrl-c** to abort.
+The script drives the flow. Each command runs automatically; in
+**interactive mode** (default) the script pauses between steps so
+you can eyeball the output against the green-light criteria in this
+file. Press **enter** to continue, **ctrl-c** to abort.
+
+**Non-interactive mode** (`-y` / `--non-interactive`) skips all
+pauses and the cleanup prompt — useful for CI, agents driving the
+runbook, or known-good re-runs. The workspace + log are always
+preserved in this mode (see the final "workspace + log preserved
+at" line) so you can inspect them post-hoc. Exit code propagates
+via `set -euo pipefail` — any failed step aborts with non-zero, so
+`./scripts/live-dev-runbook.sh -y && echo OK` is a valid smoke
+test.
 
 **Prerequisite — auth done elsewhere.** This runbook does **not**
 exercise `aristo auth login`. The auth flow has its own coverage

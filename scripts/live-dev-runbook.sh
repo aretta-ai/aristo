@@ -10,9 +10,39 @@
 # Auth is assumed already done. See the runbook's preflight section.
 #
 # Usage:
-#   ./scripts/live-dev-runbook.sh
+#   ./scripts/live-dev-runbook.sh              # interactive (default)
+#   ./scripts/live-dev-runbook.sh -y           # non-interactive
+#   ./scripts/live-dev-runbook.sh --non-interactive
+#
+# In non-interactive mode, all pauses are skipped and the cleanup
+# prompt is bypassed (workspace + log are always preserved for
+# post-hoc inspection — see the final "workspace + log preserved at"
+# line). Exit code propagates from `set -euo pipefail` + the `run`
+# wrapper, so any step's failure aborts the script with non-zero
+# status. Useful in CI, agents driving the runbook, or just to skip
+# the enter-spam on a known-good run.
 
 set -euo pipefail
+
+# ─── flags ────────────────────────────────────────────────────────────────
+INTERACTIVE=1
+while (( $# > 0 )); do
+    case "$1" in
+        -y|--non-interactive|--yes)
+            INTERACTIVE=0
+            shift
+            ;;
+        -h|--help)
+            sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *)
+            echo "error: unknown argument: $1" >&2
+            echo "usage: $0 [-y|--non-interactive]" >&2
+            exit 2
+            ;;
+    esac
+done
 
 # ─── workspace ────────────────────────────────────────────────────────────
 WORKSPACE="$(mktemp -d -t aristo-runbook-XXXXXX)"
@@ -51,8 +81,14 @@ step() {
 }
 say() { echo "  $*"; }
 pause() {
-    echo
-    read -r -p "  ↪ press enter to continue (ctrl-c to abort) > " _
+    if (( INTERACTIVE )); then
+        echo
+        read -r -p "  ↪ press enter to continue (ctrl-c to abort) > " _
+    fi
+    # In non-interactive mode: silently move on. The script's own
+    # `set -e` + the `run` wrapper ensure any failed step aborts the
+    # whole runbook with non-zero exit, so there's no risk of
+    # blowing past a failure.
 }
 run() {
     echo
@@ -333,10 +369,14 @@ step "done" "all green-lights cleared"
 echo
 say "workspace + log preserved at: $WORKSPACE"
 say ""
-read -r -p "  delete $WORKSPACE? [y/N] > " ans
-if [[ "$ans" =~ ^[Yy]$ ]]; then
-    rm -rf "$WORKSPACE"
-    echo "  removed."
+if (( INTERACTIVE )); then
+    read -r -p "  delete $WORKSPACE? [y/N] > " ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+        rm -rf "$WORKSPACE"
+        echo "  removed."
+    else
+        echo "  kept. Poke around as needed."
+    fi
 else
-    echo "  kept. Poke around as needed."
+    echo "  kept (non-interactive mode). Inspect with: cat $LOG"
 fi

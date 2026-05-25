@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- scripts: `live-dev-runbook.sh` gains `-y` / `--non-interactive` flag. Skips all between-step pauses + the cleanup prompt so the runbook runs end-to-end without stdin interaction. Useful for CI, agents driving the runbook, and known-good re-runs. Exit code propagates via `set -euo pipefail` + the `run` wrapper — any failed step aborts with non-zero, so `./scripts/live-dev-runbook.sh -y && echo OK` is a valid one-line smoke test. The workspace + tee'd run.log are always preserved in this mode (the cleanup prompt is the only path that deletes them, and it's bypassed). Final line surfaces the path explicitly: `kept (non-interactive mode). Inspect with: cat $LOG`. `--help` / `-h` prints the header docstring. Verified end-to-end on dev: full 8-step run completes in ~7s with exit 0.
+
 ### Fixed
 - test: catch up trycmd + assert_cmd assertions to match the strings-audit wording changes that were merged in this batch. The `strings-audit` branch updated source-side strings but missed three test sites: (a) `lifecycle_ci_gates.md:104` still asserted `[INFO] For per-annotation diagnostics...` after the `[INFO]` bracket was dropped from `aristo status`; (b) `index_command.rs:133` still asserted `ok: index regenerated (1 annotations)` after pluralization fixed `1 annotations` → `1 annotation`; (c) `verify_command.rs` asserted `documentation only` (space) and `not yet implemented` (old phrasing) at 7 sites — code now emits `documentation-only` and `is not implemented yet`. All test assertions updated to match the new source-of-truth phrasings. No behavior changes; all 957 tests green post-merge.
 
