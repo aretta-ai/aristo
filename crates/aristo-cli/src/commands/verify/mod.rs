@@ -64,7 +64,8 @@ pub(crate) fn run(
         if !tags.is_empty() {
             return Err(CliError::Other {
                 message: "--tags is not compatible with --view (the session was already \
-                          dispatched with its tag set)".into(),
+                          dispatched with its tag set)"
+                    .into(),
                 exit_code: 2,
             });
         }

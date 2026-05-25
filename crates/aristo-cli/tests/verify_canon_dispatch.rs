@@ -67,17 +67,17 @@ fn init_repo_with_pushed_head(dir: &Path) -> tempfile::TempDir {
     // resolve — we override the actual remote target separately.
     run_git(
         dir,
-        &["remote", "add", "origin", "https://github.com/owner/repo.git"],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/owner/repo.git",
+        ],
     );
     // Now point that origin at the local bare repo for the push.
     run_git(
         dir,
-        &[
-            "remote",
-            "set-url",
-            "origin",
-            bare.path().to_str().unwrap(),
-        ],
+        &["remote", "set-url", "origin", bare.path().to_str().unwrap()],
     );
     // Seed file so git has something to commit. The SDK only cares
     // that HEAD is reachable from `origin/*`; subsequent uncommitted
@@ -214,13 +214,18 @@ fn canon_bound_full_with_auth_posts_session_and_prints_session_id() {
     aristo_in(tmp.path())
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path().join(".config"))
-        .env("ARISTO_CANON_VERIFY_FIXTURE", tmp.path().join("verify-fixture.json"))
+        .env(
+            "ARISTO_CANON_VERIFY_FIXTURE",
+            tmp.path().join("verify-fixture.json"),
+        )
         .arg("verify")
         .assert()
         .success()
         .stdout(contains("canon-verify session dispatched"))
         .stdout(contains("01HMTESTSESSION"))
-        .stdout(contains("https://dev.aretta.ai/dashboard/jobs/01HMTESTSESSION"))
+        .stdout(contains(
+            "https://dev.aretta.ai/dashboard/jobs/01HMTESTSESSION",
+        ))
         .stdout(contains("aristo verify --view 01HMTESTSESSION"));
 
     // Wire-shape assertions: the SDK's POST body must match WORKFLOW.md §4.
@@ -248,7 +253,12 @@ fn local_only_commit_rejected_by_push_first_precheck() {
     run_git(tmp.path(), &["config", "commit.gpgsign", "false"]);
     run_git(
         tmp.path(),
-        &["remote", "add", "origin", "https://github.com/owner/repo.git"],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/owner/repo.git",
+        ],
     );
     fs::write(tmp.path().join("README"), b"seed").unwrap();
     workspace_with_one_canon_bound_full_intent(tmp.path());
@@ -267,7 +277,10 @@ fn local_only_commit_rejected_by_push_first_precheck() {
     aristo_in(tmp.path())
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path().join(".config"))
-        .env("ARISTO_CANON_VERIFY_FIXTURE", tmp.path().join("verify-fixture.json"))
+        .env(
+            "ARISTO_CANON_VERIFY_FIXTURE",
+            tmp.path().join("verify-fixture.json"),
+        )
         .arg("verify")
         .assert()
         .failure()
@@ -574,7 +587,10 @@ bound_at = "2026-05-24T00:00:00Z"
     aristo_in(tmp.path())
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path().join(".config"))
-        .env("ARISTO_CANON_VERIFY_FIXTURE", tmp.path().join("verify-fixture.json"))
+        .env(
+            "ARISTO_CANON_VERIFY_FIXTURE",
+            tmp.path().join("verify-fixture.json"),
+        )
         .args(["verify", "--tags", "kanon:beta"])
         .assert()
         .success();
@@ -582,7 +598,11 @@ bound_at = "2026-05-24T00:00:00Z"
     let captured = fs::read_to_string(&captured_path).unwrap();
     let body: serde_json::Value = serde_json::from_str(&captured).unwrap();
     let tags = body["tags"].as_array().unwrap();
-    assert_eq!(tags.len(), 1, "--tags kanon:beta must dispatch one tag, got {tags:?}");
+    assert_eq!(
+        tags.len(),
+        1,
+        "--tags kanon:beta must dispatch one tag, got {tags:?}"
+    );
     assert_eq!(tags[0]["annotation_id"], "arta_beta00000000");
     assert_eq!(tags[0]["canon_id"], "beta");
 }

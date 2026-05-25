@@ -85,9 +85,7 @@ impl MockVerifyClient {
     ) -> Self {
         Self {
             post_response: Mutex::new(Some(Ok(post))),
-            get_responses: Mutex::new(
-                get_responses.into_iter().map(Ok).collect::<Vec<_>>(),
-            ),
+            get_responses: Mutex::new(get_responses.into_iter().map(Ok).collect::<Vec<_>>()),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
         }
