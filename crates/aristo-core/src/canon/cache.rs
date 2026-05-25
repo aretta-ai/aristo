@@ -40,9 +40,10 @@
 //!
 //! ## Atomic write
 //!
-//! Writes go through a temp-then-rename dance (see [`write_atomic`])
-//! so an interrupted write never leaves a half-written file. Reads
-//! tolerate a missing file by returning an empty cache.
+//! Writes go through a temp-then-rename dance
+//! ([`CanonMatchesFile::write_atomic`]) so an interrupted write never
+//! leaves a half-written file. Reads tolerate a missing file by
+//! returning an empty cache.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -151,8 +152,8 @@ pub struct PendingMatch {
     /// into `BindingState::Bound { linked }`. **Phase 1 carve-out:**
     /// the field is `Option<String>` because the current dev/prod
     /// proxy doesn't emit `linked` yet — see
-    /// [`canon::types::CanonMatch::linked`] for the full rationale and
-    /// the Phase 2 plan that restores it to required.
+    /// [`crate::canon::types::CanonMatch::linked`] for the full
+    /// rationale and the Phase 2 plan that restores it to required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked: Option<String>,
     /// Review state — `"open"` until the user decides.

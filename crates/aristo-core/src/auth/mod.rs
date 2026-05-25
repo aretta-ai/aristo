@@ -14,7 +14,7 @@
 //! - [`token`] — the [`Token`] newtype with `Debug` redaction.
 //! - [`store`] — credentials-file atomic I/O. Honors `$XDG_CONFIG_HOME`;
 //!   `0600` perms on Unix.
-//! - [`resolve`] — env-var → file precedence. Returns [`Token`] or
+//! - [`mod@resolve`] — env-var → file precedence. Returns [`Token`] or
 //!   [`AuthError`].
 //! - [`error`] — [`AuthError`] variants (`NoToken`, `Invalid`,
 //!   `Malformed`).

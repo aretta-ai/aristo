@@ -6,7 +6,7 @@
 //!
 //! - **2-second timeout** → [`CanonError::Timeout`]
 //! - **DNS / connect failure** → [`CanonError::Network`]
-//! - **401** → [`CanonError::Auth(AuthError::Invalid)`]
+//! - **401** → [`CanonError::Auth`] wrapping `AuthError::Invalid`
 //! - **400** (e.g., confidence threshold below `0.5` floor) →
 //!   [`CanonError::BadRequest`]
 //! - **Other 4xx** → [`CanonError::BadRequest`] (the message body
@@ -15,7 +15,7 @@
 //! - **Body parse failure on a 2xx** → [`CanonError::Decode`]
 //!
 //! The transport (`ureq`) and the response-mapping logic
-//! ([`map_response`] et al) are split so the response-mapping
+//! (`map_response` et al) are split so the response-mapping
 //! tests cover every status-code branch exhaustively without
 //! spinning up a server.
 

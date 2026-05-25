@@ -181,7 +181,7 @@ impl PrefixTier {
     }
 }
 
-/// Synthesize a Phase 1 placeholder [`ArtaId`] from `(canon_id, version)`
+/// Synthesize a Phase 1 placeholder [`crate::index::ArtaId`] from `(canon_id, version)`
 /// when the canon server omits the `linked` field from `/canon/match`.
 ///
 /// **Phase 1 carve-out.** Per the `linked` rationale on

@@ -232,7 +232,10 @@ mod tests {
     #[test]
     fn map_response_401_maps_to_auth_invalid() {
         let err: Result<PostVerifySessionResponse, _> = map_response(401, "{}");
-        assert!(matches!(err.unwrap_err(), VerifyError::Auth(AuthError::Invalid)));
+        assert!(matches!(
+            err.unwrap_err(),
+            VerifyError::Auth(AuthError::Invalid)
+        ));
     }
 
     #[test]
@@ -268,7 +271,10 @@ mod tests {
         let err: Result<GetVerifySessionResponse, _> =
             map_response(404, r#"{"error": "not_found"}"#);
         match err.unwrap_err() {
-            VerifyError::BadRequest { status: 404, message } => {
+            VerifyError::BadRequest {
+                status: 404,
+                message,
+            } => {
                 assert!(message.contains("not_found"));
             }
             other => panic!("expected BadRequest 404, got {other:?}"),
@@ -280,7 +286,10 @@ mod tests {
         let err: Result<PostVerifySessionResponse, _> =
             map_response(503, r#"{"error": "upstream timeout"}"#);
         match err.unwrap_err() {
-            VerifyError::Server { status: 503, message } => {
+            VerifyError::Server {
+                status: 503,
+                message,
+            } => {
                 assert!(message.contains("upstream"));
             }
             other => panic!("expected Server 503, got {other:?}"),

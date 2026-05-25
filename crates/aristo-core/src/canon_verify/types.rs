@@ -329,9 +329,15 @@ mod tests {
         assert!(!parsed.summary.is_success());
 
         assert_eq!(parsed.annotations.len(), 3);
-        assert_eq!(parsed.annotations[2].status, AnnotationOutcomeStatus::NoCoverage);
+        assert_eq!(
+            parsed.annotations[2].status,
+            AnnotationOutcomeStatus::NoCoverage
+        );
         assert_eq!(parsed.annotations[1].tests.len(), 2);
-        assert_eq!(parsed.annotations[1].tests[1].status, TestOutcomeStatus::Fail);
+        assert_eq!(
+            parsed.annotations[1].tests[1].status,
+            TestOutcomeStatus::Fail
+        );
     }
 
     // ─── enum wire-form pins ─────────────────────────────────────────────
@@ -373,7 +379,10 @@ mod tests {
             (TestOutcomeStatus::Error, "\"error\""),
         ] {
             assert_eq!(serde_json::to_string(&status).unwrap(), wire);
-            assert_eq!(serde_json::from_str::<TestOutcomeStatus>(wire).unwrap(), status);
+            assert_eq!(
+                serde_json::from_str::<TestOutcomeStatus>(wire).unwrap(),
+                status
+            );
         }
     }
 

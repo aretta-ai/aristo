@@ -79,10 +79,7 @@ pub fn rev_parse_head(workspace_root: &Path) -> Result<String, GitError> {
 /// and still couldn't find it" indirection. Users who routinely
 /// fetch via `git pull --rebase` etc. will never hit this; users
 /// who didn't will see the precheck reject and run `git push`.
-pub fn commit_present_on_remote(
-    workspace_root: &Path,
-    commit_sha: &str,
-) -> Result<bool, GitError> {
+pub fn commit_present_on_remote(workspace_root: &Path, commit_sha: &str) -> Result<bool, GitError> {
     if !looks_like_sha(commit_sha) {
         return Err(GitError::Parse(format!(
             "commit_sha `{commit_sha}` is not a hex SHA"
@@ -92,9 +89,7 @@ pub fn commit_present_on_remote(
         .args(["branch", "-r", "--contains", commit_sha])
         .current_dir(workspace_root)
         .output()
-        .map_err(|e| {
-            GitError::NotInstalled(format!("spawn `git branch -r --contains`: {e}"))
-        })?;
+        .map_err(|e| GitError::NotInstalled(format!("spawn `git branch -r --contains`: {e}")))?;
     if !out.status.success() {
         // Non-zero exit usually means "no such commit" — surface as
         // the precheck-rejected case, not a command failure.
@@ -196,17 +191,15 @@ mod tests {
         run_git(upstream.path(), &["init", "--bare", "-q"]);
         run_git(
             repo.path(),
-            &[
-                "remote",
-                "add",
-                "origin",
-                upstream.path().to_str().unwrap(),
-            ],
+            &["remote", "add", "origin", upstream.path().to_str().unwrap()],
         );
         run_git(repo.path(), &["push", "-q", "origin", "main"]);
         let sha = rev_parse_head(repo.path()).unwrap();
         let present = commit_present_on_remote(repo.path(), &sha).expect("branch -r");
-        assert!(present, "after `git push origin main`, commit must be on origin/*");
+        assert!(
+            present,
+            "after `git push origin main`, commit must be on origin/*"
+        );
     }
 
     #[test]

@@ -70,9 +70,7 @@ impl MockVerifyClient {
                 view_url: "https://mock.aretta.ai/dashboard/jobs/mock-session".into(),
                 plan_size: 0,
             }))),
-            get_responses: Mutex::new(
-                get_responses.into_iter().map(Ok).collect::<Vec<_>>(),
-            ),
+            get_responses: Mutex::new(get_responses.into_iter().map(Ok).collect::<Vec<_>>()),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
         }
@@ -93,8 +91,14 @@ impl MockVerifyClient {
 impl std::fmt::Debug for MockVerifyClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MockVerifyClient")
-            .field("posted_count", &self.posted.lock().map(|v| v.len()).unwrap_or(0))
-            .field("fetched_count", &self.fetched.lock().map(|v| v.len()).unwrap_or(0))
+            .field(
+                "posted_count",
+                &self.posted.lock().map(|v| v.len()).unwrap_or(0),
+            )
+            .field(
+                "fetched_count",
+                &self.fetched.lock().map(|v| v.len()).unwrap_or(0),
+            )
             .finish()
     }
 }
@@ -104,10 +108,7 @@ impl VerifyClient for MockVerifyClient {
         &self,
         req: &VerifySessionRequest,
     ) -> Result<PostVerifySessionResponse, VerifyError> {
-        self.posted
-            .lock()
-            .expect("mock mutex")
-            .push(req.clone());
+        self.posted.lock().expect("mock mutex").push(req.clone());
         // Replay the canned response. If exhausted, surface a clear
         // panic rather than a silent re-use — test misconfig should
         // fail loudly.
@@ -226,7 +227,10 @@ mod tests {
         assert_eq!(mock.get_session("sid", None).unwrap(), r0);
         assert_eq!(mock.get_session("sid", Some(30)).unwrap(), r1);
         let fetched = mock.fetched_sessions();
-        assert_eq!(fetched, vec![("sid".into(), None), ("sid".into(), Some(30))]);
+        assert_eq!(
+            fetched,
+            vec![("sid".into(), None), ("sid".into(), Some(30))]
+        );
     }
 
     #[test]
