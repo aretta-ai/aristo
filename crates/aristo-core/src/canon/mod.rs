@@ -19,14 +19,13 @@
 //!   explicit path.
 //! - [`auth`]: token resolution and persistence — env var
 //!   (`ARETTA_TOKEN`) → `~/.config/aristo/credentials` →
-//!   [`AuthError::NoToken`]. The [`Token`](auth::Token) newtype
+//!   [`AuthError::NoToken`]. The [`Token`] newtype
 //!   redacts itself in `Debug` output to prevent accidental
 //!   logging of credentials.
 //! - [`http_client`]: [`HttpCanonClient`] — `ureq`-backed
-//!   blocking impl. Pure response-mapping helpers ([`map_response`](
-//!   http_client::map_response)) are split from the transport so
-//!   every status-code branch is unit-testable without a real
-//!   network call.
+//!   blocking impl. Pure response-mapping helpers (`map_response`
+//!   in [`http_client`]) are split from the transport so every
+//!   status-code branch is unit-testable without a real network call.
 //! - [`cache`]: [`CanonMatchesFile`] — schema + atomic I/O for
 //!   `.aristo/canon-matches.toml`. Three buckets per annotation:
 //!   `pending_matches` (surfaced, not reviewed), `accepted_matches`
@@ -34,7 +33,7 @@
 //!   Cache-hit semantics per L5's invalidation rules.
 //!
 //! **Phase 1 scope**: no verification execution. The `verification`
-//! block on [`CanonMatch`](types::CanonMatch) is informational
+//! block on [`CanonMatch`] is informational
 //! metadata about what Phase 2 will eventually run; the SDK ignores
 //! it. See
 //! `../aretta-sdk/docs/mockups/13-canon-and-matching/_deferred/verification-execution.md`.

@@ -1,7 +1,7 @@
 //! [`NoopCanonClient`] — free-tier and opt-out path.
 //!
 //! Returns [`CanonError::NotEnabled`] for every method. Callers
-//! constructing a [`CanonClient`](super::CanonClient) at startup
+//! constructing a [`CanonClient`] at startup
 //! pick this impl when:
 //!
 //! - The user is on the free tier (no auth token, no upgrade).
