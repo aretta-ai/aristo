@@ -91,10 +91,7 @@ pub(crate) fn partition_full<'a>(
             continue;
         };
         if id.is_canon_bound() {
-            canon.push(CanonDispatchEntry {
-                id,
-                entry: intent,
-            });
+            canon.push(CanonDispatchEntry { id, entry: intent });
         } else {
             other.push(id);
         }
@@ -130,9 +127,7 @@ fn build_one_tag(
     let annotation_id = match &dispatch.entry.binding {
         aristo_core::index::BindingState::Local => return None,
         aristo_core::index::BindingState::Bound { linked } => linked.as_str().to_string(),
-        aristo_core::index::BindingState::Certified { linked, .. } => {
-            linked.as_str().to_string()
-        }
+        aristo_core::index::BindingState::Certified { linked, .. } => linked.as_str().to_string(),
     };
     // Strip `aristos:` / `kanon:` prefix to get the bare canon_id.
     let canon_id = strip_canon_prefix(dispatch.id.as_str()).to_string();
@@ -268,18 +263,19 @@ pub(crate) fn run_canon_dispatch(
             })?
         }
     };
-    let commit_sha = aristo_core::git::rev_parse_head(workspace_root).map_err(|e| {
-        CliError::Other {
+    let commit_sha =
+        aristo_core::git::rev_parse_head(workspace_root).map_err(|e| CliError::Other {
             message: format!("git rev-parse HEAD failed: {e}"),
             exit_code: 1,
-        }
-    })?;
+        })?;
 
     // 4. Push-first precheck (WORKFLOW.md §4 + §7c).
-    let pushed = aristo_core::git::commit_present_on_remote(workspace_root, &commit_sha)
-        .map_err(|e| CliError::Other {
-            message: format!("git push-first precheck failed: {e}"),
-            exit_code: 1,
+    let pushed =
+        aristo_core::git::commit_present_on_remote(workspace_root, &commit_sha).map_err(|e| {
+            CliError::Other {
+                message: format!("git push-first precheck failed: {e}"),
+                exit_code: 1,
+            }
         })?;
     if !pushed {
         return Err(CliError::Other {
@@ -294,14 +290,13 @@ pub(crate) fn run_canon_dispatch(
     }
 
     // 5. Build the HTTP client. ARETTA_API_URL overrides for tests.
-    let base_url = std::env::var("ARETTA_API_URL")
-        .unwrap_or_else(|_| creds.server.as_str().to_string());
-    let client: Box<dyn VerifyClient> =
-        if let Some(mock) = test_mock_client_from_env() {
-            mock
-        } else {
-            Box::new(HttpVerifyClient::new(base_url, &creds.token))
-        };
+    let base_url =
+        std::env::var("ARETTA_API_URL").unwrap_or_else(|_| creds.server.as_str().to_string());
+    let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
+        mock
+    } else {
+        Box::new(HttpVerifyClient::new(base_url, &creds.token))
+    };
 
     // 6. POST.
     let req = VerifySessionRequest {
@@ -339,14 +334,13 @@ pub(crate) fn run_canon_dispatch(
 /// Skips POST + push-first precheck entirely.
 pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     let creds = aristo_core::auth::resolve_full().map_err(no_auth_to_cli_error)?;
-    let base_url = std::env::var("ARETTA_API_URL")
-        .unwrap_or_else(|_| creds.server.as_str().to_string());
-    let client: Box<dyn VerifyClient> =
-        if let Some(mock) = test_mock_client_from_env() {
-            mock
-        } else {
-            Box::new(HttpVerifyClient::new(base_url, &creds.token))
-        };
+    let base_url =
+        std::env::var("ARETTA_API_URL").unwrap_or_else(|_| creds.server.as_str().to_string());
+    let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
+        mock
+    } else {
+        Box::new(HttpVerifyClient::new(base_url, &creds.token))
+    };
 
     let snapshot = if wait {
         poll_until_terminal(&*client, session_id)?
@@ -480,10 +474,7 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
         snapshot.summary.total_annotations
     );
     println!();
-    println!(
-        "{:<55}  {:<14} TESTS",
-        "ANNOTATION", "STATUS"
-    );
+    println!("{:<55}  {:<14} TESTS", "ANNOTATION", "STATUS");
     for ann in &snapshot.annotations {
         let icon = annotation_icon(ann.status);
         let passed = ann
@@ -621,7 +612,10 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
             ),
             exit_code: 1,
         },
-        VerifyError::BadRequest { status, message } if status == 402 => CliError::Other {
+        VerifyError::BadRequest {
+            status: 402,
+            message,
+        } => CliError::Other {
             message: format!(
                 "no canon coverage applies for your scopes — \
                  contact Aretta for DP onboarding to enable verification.\n  \
@@ -664,10 +658,9 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
     let record_path = format!("{path}.posted.json");
     let mock = match (post_resp, get_responses.is_empty()) {
         (Some(p), true) => aristo_core::canon_verify::MockVerifyClient::with_post_response(p),
-        (Some(p), false) => aristo_core::canon_verify::MockVerifyClient::with_post_and_gets(
-            p,
-            get_responses,
-        ),
+        (Some(p), false) => {
+            aristo_core::canon_verify::MockVerifyClient::with_post_and_gets(p, get_responses)
+        }
         (None, false) => {
             aristo_core::canon_verify::MockVerifyClient::with_get_responses(get_responses)
         }
@@ -775,8 +768,10 @@ mod tests {
     }
 
     fn matches_with(id: &AnnotationId, canon_id: &str, version: &str) -> CanonMatchesFile {
-        let mut f = CanonMatchesFile::default();
-        f.meta = CacheMeta::default();
+        let mut f = CanonMatchesFile {
+            meta: CacheMeta::default(),
+            ..CanonMatchesFile::default()
+        };
         f.entries.insert(
             id.clone(),
             CacheEntry {
@@ -866,7 +861,10 @@ mod tests {
             "fn vacuum (line 42)",
         );
         let matches = matches_with(&id, "vacuum_preserves_logical_content", "v0.1.0");
-        let dispatch = vec![CanonDispatchEntry { id: &id, entry: &entry }];
+        let dispatch = vec![CanonDispatchEntry {
+            id: &id,
+            entry: &entry,
+        }];
 
         let tags = build_tags(&dispatch, &matches);
         assert_eq!(tags.len(), 1);
@@ -895,7 +893,10 @@ mod tests {
             "fn foo (line 7)",
         );
         let matches = matches_with(&id, "foo", "v0.2.0");
-        let dispatch = vec![CanonDispatchEntry { id: &id, entry: &entry }];
+        let dispatch = vec![CanonDispatchEntry {
+            id: &id,
+            entry: &entry,
+        }];
         let tags = build_tags(&dispatch, &matches);
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].annotation_id, "arta_aaaa1234");
@@ -917,7 +918,10 @@ mod tests {
             "fn foo (line 7)",
         );
         let matches = CanonMatchesFile::default();
-        let dispatch = vec![CanonDispatchEntry { id: &id, entry: &entry }];
+        let dispatch = vec![CanonDispatchEntry {
+            id: &id,
+            entry: &entry,
+        }];
         let tags = build_tags(&dispatch, &matches);
         assert!(tags.is_empty(), "missing cache entry must drop the tag");
     }
@@ -934,7 +938,10 @@ mod tests {
             "fn foo (line 7)",
         );
         let matches = matches_with(&id, "foo", "v0.1.0");
-        let dispatch = vec![CanonDispatchEntry { id: &id, entry: &entry }];
+        let dispatch = vec![CanonDispatchEntry {
+            id: &id,
+            entry: &entry,
+        }];
         let tags = build_tags(&dispatch, &matches);
         assert!(tags.is_empty());
     }
@@ -950,7 +957,10 @@ mod tests {
             "fn foo", // no "(line N)" suffix
         );
         let matches = matches_with(&id, "foo", "v0.1.0");
-        let dispatch = vec![CanonDispatchEntry { id: &id, entry: &entry }];
+        let dispatch = vec![CanonDispatchEntry {
+            id: &id,
+            entry: &entry,
+        }];
         let tags = build_tags(&dispatch, &matches);
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].source_path, "src/foo.rs");
@@ -961,7 +971,10 @@ mod tests {
     #[test]
     fn strip_canon_prefix_handles_both_tiers_and_no_prefix() {
         assert_eq!(strip_canon_prefix("aristos:foo_bar"), "foo_bar");
-        assert_eq!(strip_canon_prefix("kanon:checkout_total_non_negative"), "checkout_total_non_negative");
+        assert_eq!(
+            strip_canon_prefix("kanon:checkout_total_non_negative"),
+            "checkout_total_non_negative"
+        );
         // No prefix — pass through (defensive).
         assert_eq!(strip_canon_prefix("local_id"), "local_id");
     }
@@ -1006,12 +1019,11 @@ mod tests {
 
     #[test]
     fn dispatch_session_propagates_server_error() {
-        let mock = aristo_core::canon_verify::MockVerifyClient::with_post_error(
-            VerifyError::BadRequest {
+        let mock =
+            aristo_core::canon_verify::MockVerifyClient::with_post_error(VerifyError::BadRequest {
                 status: 402,
                 message: "no_canon_coverage".into(),
-            },
-        );
+            });
         let req = VerifySessionRequest {
             repo_full_name: "o/r".into(),
             commit_sha: "x".into(),
@@ -1023,5 +1035,4 @@ mod tests {
             other => panic!("expected BadRequest 402, got {other:?}"),
         }
     }
-
 }
