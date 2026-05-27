@@ -202,6 +202,18 @@ pub struct AcceptedMatch {
     pub prefix_tier: PrefixTier,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backed_by: Option<String>,
+    /// Opaque server-issued binding handle, persisted from
+    /// [`PendingMatch::linked`] at accept time. This is the cache's
+    /// authoritative copy of the binding ref — `aristo stamp` derives
+    /// `BindingState::Bound { linked }` for the index entry from this
+    /// field, so the binding survives stamp's full-regen of the index.
+    /// **Phase 1 carve-out:** `Option<String>` because the dev/prod
+    /// `/canon/match` may omit `linked`; accept synthesizes a
+    /// deterministic placeholder in that case. Older caches written
+    /// before this field existed deserialize with `linked = None` and
+    /// the deriver re-synthesizes from `(canon_id, version)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked: Option<String>,
     /// RFC 3339 timestamp of acceptance (when the user clicked
     /// `[a]ccept` in the critique session).
     pub accepted_at: String,
@@ -357,6 +369,7 @@ mod tests {
             confidence: 1.0,
             prefix_tier: PrefixTier::Aristos,
             backed_by: Some("specialized neural checker".into()),
+            linked: Some("arta_a1b2c3d4".into()),
             accepted_at: "2026-06-15T09:20:00Z".into(),
             bound_at: "2026-06-15T09:20:00Z".into(),
         }
@@ -472,6 +485,53 @@ mod tests {
     }
 
     #[test]
+    fn accepted_match_round_trips_with_linked_field() {
+        // `linked` on AcceptedMatch is the cache's authoritative copy
+        // of the binding handle (stamp re-derives the index's
+        // BindingState::Bound from it). Round-trip must preserve the
+        // value end-to-end.
+        let mut f = CanonMatchesFile::default();
+        f.entries.insert(
+            aid("aristos:cell_written_exactly_once_per_page_edit"),
+            CacheEntry {
+                last_match_text_hash: "blake3:9d4e2f01".into(),
+                canon_fetched_at: "2026-06-15T09:30:00Z".into(),
+                pending_matches: vec![],
+                accepted_matches: vec![sample_accepted()],
+                rejected_matches: vec![],
+            },
+        );
+        let s = toml::to_string(&f).unwrap();
+        assert!(s.contains("linked = \"arta_a1b2c3d4\""), "got: {s}");
+        let back: CanonMatchesFile = toml::from_str(&s).unwrap();
+        assert_eq!(back, f);
+    }
+
+    #[test]
+    fn accepted_match_without_linked_omits_field_on_disk() {
+        // Pre-`linked` caches deserialize cleanly (default None) and
+        // re-serialize without an empty `linked = ` line cluttering
+        // the file.
+        let mut acc = sample_accepted();
+        acc.linked = None;
+        let mut f = CanonMatchesFile::default();
+        f.entries.insert(
+            aid("aristos:foo"),
+            CacheEntry {
+                last_match_text_hash: "blake3:abc".into(),
+                canon_fetched_at: "2026-06-15T09:30:00Z".into(),
+                pending_matches: vec![],
+                accepted_matches: vec![acc],
+                rejected_matches: vec![],
+            },
+        );
+        let s = toml::to_string(&f).unwrap();
+        assert!(!s.contains("linked ="), "got: {s}");
+        let back: CanonMatchesFile = toml::from_str(&s).unwrap();
+        assert_eq!(back, f);
+    }
+
+    #[test]
     fn canon_prefixed_keys_round_trip() {
         // Quoted-key form for canon-bound ids (aristos: + kanon:).
         let mut f = CanonMatchesFile::default();
@@ -499,6 +559,7 @@ mod tests {
                     confidence: 0.94,
                     prefix_tier: PrefixTier::Kanon,
                     backed_by: None,
+                    linked: None,
                     accepted_at: "2026-06-14T17:02:11Z".into(),
                     bound_at: "2026-06-14T17:02:11Z".into(),
                 }],
@@ -624,6 +685,7 @@ canon_version  = "v0.2.0"
 confidence     = 1.0
 prefix_tier    = "aristos:"
 backed_by      = "specialized neural checker"
+linked         = "arta_a1b2c3d4..."
 accepted_at    = "2026-06-15T09:20:00Z"
 bound_at       = "2026-06-15T09:20:00Z"
 
@@ -676,6 +738,19 @@ reason      = "intentionally narrower than canon entry"
             kanon_entry.accepted_matches[0].prefix_tier,
             PrefixTier::Kanon
         );
+
+        // aristos: tier accepted match persists `linked` — the cache
+        // is the source of truth for the binding handle (stamp
+        // re-derives BindingState::Bound from this field).
+        let aristos_entry =
+            &parsed.entries[&aid("aristos:cell_written_exactly_once_per_page_edit")];
+        assert_eq!(
+            aristos_entry.accepted_matches[0].linked.as_deref(),
+            Some("arta_a1b2c3d4..."),
+        );
+        // kanon: tier accepted match omits `linked` (no backing in
+        // sample) — deserialize as None.
+        assert_eq!(kanon_entry.accepted_matches[0].linked, None);
     }
 
     // ─── Atomic I/O ──────────────────────────────────────────────────────

@@ -769,6 +769,7 @@ mod tests {
                     confidence: 0.95,
                     prefix_tier: PrefixTier::Aristos,
                     backed_by: Some("specialized neural checker".into()),
+                    linked: None,
                     accepted_at: "2026-06-14T00:00:00Z".into(),
                     bound_at: "2026-06-14T00:00:00Z".into(),
                 }],

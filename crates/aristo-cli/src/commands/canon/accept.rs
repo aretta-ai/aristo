@@ -264,6 +264,10 @@ pub(crate) fn apply_acceptance(
     atomic_write_bytes(&index_path, index_toml.as_bytes())?;
 
     // 8. Move the pending match → accepted_matches under the new id.
+    //    Persist the (resolved or synthesized) `linked` ref on the
+    //    accepted match — the cache is the authoritative store for
+    //    the binding handle, and `aristo stamp` derives the index
+    //    entry's BindingState::Bound from this field on every run.
     let accepted = AcceptedMatch {
         canon_id: pending.canon_id.clone(),
         version: pending.version.clone(),
@@ -272,6 +276,7 @@ pub(crate) fn apply_acceptance(
         confidence: pending.confidence,
         prefix_tier: pending.prefix_tier,
         backed_by: pending.backed_by.clone(),
+        linked: Some(linked_str.clone()),
         accepted_at: now.to_string(),
         bound_at: now.to_string(),
     };

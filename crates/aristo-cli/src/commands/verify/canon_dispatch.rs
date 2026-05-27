@@ -786,6 +786,7 @@ mod tests {
                     confidence: 0.95,
                     prefix_tier: PrefixTier::Aristos,
                     backed_by: Some("test backing".into()),
+                    linked: None,
                     accepted_at: "2026-05-24T00:00:00Z".into(),
                     bound_at: "2026-05-24T00:00:00Z".into(),
                 }],
