@@ -278,8 +278,24 @@ fn applies_to_from_site(site: &str) -> Vec<String> {
     }
     // Map syn-surface keywords to the canon contract's set.
     match head {
-        "fn" | "method" | "mod" | "struct" | "enum" | "trait" | "impl" | "type" => {
+        "fn" | "method" | "mod" | "struct" | "enum" | "trait" | "type" => {
             vec![head.to_string()]
+        }
+        // `impl` is special — the walker emits the site as either
+        // `"impl X for Y"` (annotation on the impl block itself) or
+        // `"impl X for Y::method_name"` (annotation on a fn/method
+        // within the impl). For the latter, the kind we send to
+        // `/canon/match` must be `method` — canon entries declare
+        // their kinds against the annotated item, not its containing
+        // block, so an `applies_to: [fn, method]` entry needs to see
+        // `["method"]` from us, not `["impl"]`, to pass the server's
+        // intersection filter.
+        "impl" => {
+            if site.contains("::") {
+                vec!["method".to_string()]
+            } else {
+                vec!["impl".to_string()]
+            }
         }
         // Unknown surface — still send something so the server can
         // filter; if the canon entry has no `applies_to` constraint,
@@ -651,6 +667,33 @@ mod tests {
     fn applies_to_empty_site_returns_empty() {
         let v: Vec<String> = applies_to_from_site("");
         assert!(v.is_empty());
+    }
+
+    #[test]
+    fn applies_to_for_fn_inside_impl_resolves_to_method() {
+        // Annotations on a `fn` inside an `impl X for Y` block have
+        // site = "impl X for Y::method_name (line N)". The kind we
+        // send to /canon/match must be `method`, not `impl` — canon
+        // entries declare applies_to against the annotated item, not
+        // its enclosing block. Regression: when this returned ["impl"],
+        // canon entries with applies_to:[fn,method] were filtered out
+        // server-side and stamp reported "0 new finding(s)" for a text
+        // that direct-curl matched at 0.9999.
+        assert_eq!(
+            applies_to_from_site("impl Wal for WalFile::prepare_wal_finish (line 3985)"),
+            vec!["method"]
+        );
+    }
+
+    #[test]
+    fn applies_to_for_annotation_on_impl_block_itself_keeps_impl() {
+        // No `::` in the site → the annotation is on the impl block
+        // itself, not a method within. Keep `impl` so the server can
+        // still filter against impl-targeted canon entries (if any).
+        assert_eq!(
+            applies_to_from_site("impl Wal for WalFile (line 3985)"),
+            vec!["impl"]
+        );
     }
 
     // ─── merge_response_into_cache: user-decision preservation ─────────────
