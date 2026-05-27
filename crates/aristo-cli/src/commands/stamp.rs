@@ -74,6 +74,20 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool) -> CliResu
         exit_code: 2,
     })?;
 
+    // Derive canon binding from the canon-matches cache before merging
+    // prior status. `build_entries` walks source — which carries the
+    // prefixed `id =` but not the server-issued binding handle — and
+    // emits every entry as `BindingState::Local`. The cache's
+    // `accepted_matches[<prefixed_id>]` is the authoritative store
+    // for the `linked` ref; this step joins source-projection with
+    // cache-fact so `aristo stamp` is idempotent w.r.t. canon binding
+    // and no full-regen of `.aristo/index.toml` erases prior accepts.
+    let cache = CanonMatchesFile::read(&ws.canon_matches_path()).map_err(|e| CliError::Other {
+        message: format!("reading {}: {e}", ws.canon_matches_path().display()),
+        exit_code: 1,
+    })?;
+    derive_bindings_from_cache(&mut entries, &cache);
+
     let summary = merge_status_from_prev(&mut entries, prev_index.as_ref());
     if !check {
         // Skip the cascade in --check mode; CI shouldn't mutate the
@@ -309,6 +323,87 @@ enum NotableKind {
 }
 
 #[aristo::intent(
+    "Canon binding state is derived from `.aristo/canon-matches.toml`, \
+     not preserved across stamp runs. For every index entry whose id \
+     carries a canon prefix (`aristos:` / `kanon:`) and has a matching \
+     row in the cache's `accepted_matches`, set the binding to \
+     `BindingState::Bound { linked }` (or `AssumeEntry::linked = \
+     Some(...)`). If the cache row's `linked` field is absent — older \
+     caches written before the field was added, or Phase 1 carve-outs \
+     where the server omits it — synthesize a deterministic placeholder \
+     from `(canon_id, version)`, identical to what `canon accept` \
+     would have written. Source has a canon prefix but no cache row → \
+     leave Local and emit a diagnostic; the binding was orphaned \
+     (cache deleted or never fetched) and the user must re-run with \
+     `--refresh-canon` or re-accept.",
+    verify = "test",
+    id = "stamp_derives_canon_binding_from_cache"
+)]
+fn derive_bindings_from_cache(
+    entries: &mut std::collections::BTreeMap<AnnotationId, IndexEntry>,
+    cache: &CanonMatchesFile,
+) {
+    use aristo_core::canon::synthesize_phase1_linked;
+    use aristo_core::index::{ArtaId, BindingState};
+
+    for (id, entry) in entries.iter_mut() {
+        // Only canon-prefixed ids are eligible for binding; bare ids
+        // (e.g. opaque `aret_*` or user-written snake_case) are
+        // unambiguously Local.
+        if !is_canon_prefixed(id) {
+            continue;
+        }
+        let Some(cache_row) = cache.entries.get(id) else {
+            eprintln!(
+                "warning: `{}` has a canon prefix in source but no row in \
+                 .aristo/canon-matches.toml — binding orphaned. Re-run \
+                 `aristo stamp --refresh-canon` or re-accept to restore.",
+                id.as_str()
+            );
+            continue;
+        };
+        // Take the most recent accepted match (BTreeMap iteration is
+        // ordered, and accept appends; the last entry wins).
+        let Some(accepted) = cache_row.accepted_matches.last() else {
+            eprintln!(
+                "warning: `{}` has a canon prefix in source and a cache row, \
+                 but no accepted_matches[]. Binding cannot be derived — \
+                 re-accept the canon match.",
+                id.as_str()
+            );
+            continue;
+        };
+        let linked: ArtaId = match accepted.linked.as_deref() {
+            Some(raw) => match ArtaId::parse(raw) {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!(
+                        "warning: `{}` cache row has a malformed `linked` field \
+                         (`{raw}`: {e}); falling back to synthesized handle.",
+                        id.as_str()
+                    );
+                    synthesize_phase1_linked(&accepted.canon_id, &accepted.version)
+                }
+            },
+            None => synthesize_phase1_linked(&accepted.canon_id, &accepted.version),
+        };
+        match entry {
+            IndexEntry::Intent(e) => {
+                e.binding = BindingState::Bound { linked };
+            }
+            IndexEntry::Assume(e) => {
+                e.linked = Some(linked);
+            }
+        }
+    }
+}
+
+fn is_canon_prefixed(id: &AnnotationId) -> bool {
+    let s = id.as_str();
+    s.starts_with("aristos:") || s.starts_with("kanon:")
+}
+
+#[aristo::intent(
     "Status after stamp reflects the current code, not any prior \
      version. Body-unchanged entries keep their prior status. \
      Body-drifted entries with verified-class status (Verified, Tested, \
@@ -441,6 +536,233 @@ fn print_summary(s: &StampSummary) {
                     change.id
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod derive_bindings_tests {
+    use super::*;
+    use aristo_core::canon::cache::{AcceptedMatch, CacheEntry};
+    use aristo_core::canon::{synthesize_phase1_linked, PrefixTier};
+    use aristo_core::index::{
+        AssumeEntry, BindingState, CoveredRegion, IntentEntry, Sha256, VerifyLevel, VerifyMethod,
+    };
+    use std::collections::BTreeMap;
+
+    fn aid(s: &str) -> AnnotationId {
+        AnnotationId::parse(s).unwrap()
+    }
+    fn sha(c: char) -> Sha256 {
+        Sha256::parse(&format!("sha256:{}", c.to_string().repeat(64))).unwrap()
+    }
+
+    fn local_intent(text: &str) -> IndexEntry {
+        IndexEntry::Intent(IntentEntry {
+            text: text.into(),
+            verify: VerifyLevel::Method(VerifyMethod::Full),
+            status: Status::Unknown,
+            text_hash: sha('a'),
+            body_hash: sha('b'),
+            file: "src/lib.rs".into(),
+            site: "fn foo (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            binding: BindingState::Local,
+            parent: None,
+            last_critiqued_at_text_hash: None,
+            last_critique_finding_count: None,
+        })
+    }
+
+    fn local_assume(text: &str) -> IndexEntry {
+        IndexEntry::Assume(AssumeEntry {
+            text: text.into(),
+            status: Status::Unknown,
+            text_hash: sha('a'),
+            body_hash: sha('b'),
+            file: "src/lib.rs".into(),
+            site: "fn foo (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            linked: None,
+            parent: None,
+        })
+    }
+
+    fn accepted(canon_id: &str, version: &str, linked: Option<&str>) -> AcceptedMatch {
+        AcceptedMatch {
+            canon_id: canon_id.into(),
+            version: version.into(),
+            canonical_text: "x".into(),
+            canon_version: "v0.2.0".into(),
+            confidence: 1.0,
+            prefix_tier: PrefixTier::Aristos,
+            backed_by: Some("backing".into()),
+            linked: linked.map(str::to_string),
+            accepted_at: "2026-05-26T00:00:00Z".into(),
+            bound_at: "2026-05-26T00:00:00Z".into(),
+        }
+    }
+
+    fn cache_with(id: &str, am: AcceptedMatch) -> CanonMatchesFile {
+        let mut c = CanonMatchesFile::default();
+        c.entries.insert(
+            aid(id),
+            CacheEntry {
+                last_match_text_hash: "blake3:x".into(),
+                canon_fetched_at: "2026-05-26T00:00:00Z".into(),
+                pending_matches: vec![],
+                accepted_matches: vec![am],
+                rejected_matches: vec![],
+            },
+        );
+        c
+    }
+
+    #[test]
+    fn prefixed_id_with_cache_linked_promotes_intent_to_bound() {
+        let mut entries = BTreeMap::new();
+        let id = "aristos:foo";
+        entries.insert(aid(id), local_intent("text"));
+        let cache = cache_with(id, accepted("foo", "v0.1.0", Some("arta_op4q3z9NbV")));
+
+        derive_bindings_from_cache(&mut entries, &cache);
+
+        let IndexEntry::Intent(e) = &entries[&aid(id)] else {
+            panic!("expected Intent");
+        };
+        match &e.binding {
+            BindingState::Bound { linked } => {
+                assert_eq!(linked.as_str(), "arta_op4q3z9NbV");
+            }
+            other => panic!("expected Bound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prefixed_id_without_cache_linked_synthesizes_handle() {
+        // Older caches written before the `linked` field existed
+        // deserialize as None. The derive step must synthesize the
+        // same handle `canon accept` would have written.
+        let mut entries = BTreeMap::new();
+        let id = "aristos:foo";
+        entries.insert(aid(id), local_intent("text"));
+        let cache = cache_with(id, accepted("foo", "v0.1.0", None));
+
+        derive_bindings_from_cache(&mut entries, &cache);
+
+        let IndexEntry::Intent(e) = &entries[&aid(id)] else {
+            panic!();
+        };
+        let expected = synthesize_phase1_linked("foo", "v0.1.0");
+        match &e.binding {
+            BindingState::Bound { linked } => assert_eq!(linked, &expected),
+            other => panic!("expected Bound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prefixed_id_with_no_cache_row_stays_local() {
+        // Source has a canon prefix but the cache has no row at all
+        // — binding is orphaned (e.g. user deleted canon-matches.toml).
+        // Stay Local; the deriver emits a stderr warning.
+        let mut entries = BTreeMap::new();
+        let id = "aristos:foo";
+        entries.insert(aid(id), local_intent("text"));
+        let cache = CanonMatchesFile::default();
+
+        derive_bindings_from_cache(&mut entries, &cache);
+
+        let IndexEntry::Intent(e) = &entries[&aid(id)] else {
+            panic!();
+        };
+        assert_eq!(e.binding, BindingState::Local);
+    }
+
+    #[test]
+    fn prefixed_id_with_cache_row_but_no_accepted_stays_local() {
+        let mut entries = BTreeMap::new();
+        let id = "aristos:foo";
+        entries.insert(aid(id), local_intent("text"));
+        // Cache row exists but accepted_matches is empty (e.g.
+        // pending-only state).
+        let mut cache = CanonMatchesFile::default();
+        cache.entries.insert(
+            aid(id),
+            CacheEntry {
+                last_match_text_hash: "blake3:x".into(),
+                canon_fetched_at: "2026-05-26T00:00:00Z".into(),
+                pending_matches: vec![],
+                accepted_matches: vec![],
+                rejected_matches: vec![],
+            },
+        );
+
+        derive_bindings_from_cache(&mut entries, &cache);
+
+        let IndexEntry::Intent(e) = &entries[&aid(id)] else {
+            panic!();
+        };
+        assert_eq!(e.binding, BindingState::Local);
+    }
+
+    #[test]
+    fn unprefixed_id_is_never_promoted_even_with_cache_hit() {
+        // Bare ids (opaque `aret_*`, user snake_case) are unambiguously
+        // Local — even if someone manually inserts an accepted match
+        // for them, the deriver ignores it. Canon binding is signaled
+        // by the prefix in source, not by cache presence.
+        let mut entries = BTreeMap::new();
+        let id = "aret_abc12def";
+        entries.insert(aid(id), local_intent("text"));
+        let cache = cache_with(id, accepted("foo", "v0.1.0", Some("arta_op4q3z9NbV")));
+
+        derive_bindings_from_cache(&mut entries, &cache);
+
+        let IndexEntry::Intent(e) = &entries[&aid(id)] else {
+            panic!();
+        };
+        assert_eq!(e.binding, BindingState::Local);
+    }
+
+    #[test]
+    fn assume_entry_with_cache_hit_sets_linked() {
+        let mut entries = BTreeMap::new();
+        let id = "aristos:some_external_invariant";
+        entries.insert(aid(id), local_assume("text"));
+        let cache = cache_with(
+            id,
+            accepted("some_external_invariant", "v0.1.0", Some("arta_op4q3z9NbV")),
+        );
+
+        derive_bindings_from_cache(&mut entries, &cache);
+
+        let IndexEntry::Assume(e) = &entries[&aid(id)] else {
+            panic!();
+        };
+        assert_eq!(
+            e.linked.as_ref().map(|a| a.as_str()),
+            Some("arta_op4q3z9NbV")
+        );
+    }
+
+    #[test]
+    fn malformed_cache_linked_falls_back_to_synthesized() {
+        // A corrupted `linked` field shouldn't fail the entire stamp;
+        // fall back to the synthesized handle and warn.
+        let mut entries = BTreeMap::new();
+        let id = "aristos:foo";
+        entries.insert(aid(id), local_intent("text"));
+        let cache = cache_with(id, accepted("foo", "v0.1.0", Some("not-an-arta-id")));
+
+        derive_bindings_from_cache(&mut entries, &cache);
+
+        let IndexEntry::Intent(e) = &entries[&aid(id)] else {
+            panic!();
+        };
+        let expected = synthesize_phase1_linked("foo", "v0.1.0");
+        match &e.binding {
+            BindingState::Bound { linked } => assert_eq!(linked, &expected),
+            other => panic!("expected Bound (synthesized fallback), got {other:?}"),
         }
     }
 }

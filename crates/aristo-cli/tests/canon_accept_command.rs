@@ -491,3 +491,56 @@ fn accept_then_sibling_accept_succeeds_after_line_shift() {
         "expected second annotation's kanon: prefix in source; got:\n{post}"
     );
 }
+
+#[test]
+fn binding_survives_a_subsequent_stamp_run() {
+    // The original snag: `aristo stamp` (run e.g. by the pre-commit
+    // hook after `git commit`) regenerates `.aristo/index.toml` from
+    // source, and the walker can't know the server-issued `linked`
+    // ref. Before the derive-from-cache fix, stamp emitted every
+    // entry as BindingState::Local, wiping the binding the previous
+    // `aristo canon accept` had written to the index — and breaking
+    // `aristo verify --tags`, which requires Bound.
+    //
+    // After the fix, stamp reads the canon-matches cache and
+    // re-derives BindingState::Bound for any entry whose id carries
+    // a canon prefix and has a matching `accepted_matches` row. This
+    // test pins that behavior end-to-end.
+    let ws = setup_workspace(ARISTOS_SOURCE);
+    let fixture = ws.path().join("fixtures/canon");
+    write_aristos_fixture(&fixture);
+    stamp(ws.path(), &fixture);
+
+    // Accept binds the entry: index has BindingState::Bound { linked }.
+    aristo_in(ws.path())
+        .args([
+            "canon",
+            "accept",
+            "edit_page_cell_write_invariant",
+            "cell_written_exactly_once_per_page_edit",
+        ])
+        .status()
+        .unwrap();
+
+    let post_accept = std::fs::read_to_string(ws.path().join(".aristo/index.toml")).unwrap();
+    assert!(
+        post_accept.contains(r#"linked = "arta_a1b2c3d4ef56""#),
+        "post-accept must have linked set; got:\n{post_accept}"
+    );
+
+    // The provocation: stamp again. The walker discovers the same
+    // source (now with the prefixed `id = "aristos:..."`), build_entries
+    // emits BindingState::Local, and the derive-from-cache step must
+    // restore BindingState::Bound from the cache's accepted_matches row.
+    stamp(ws.path(), &fixture);
+
+    let post_stamp = std::fs::read_to_string(ws.path().join(".aristo/index.toml")).unwrap();
+    assert!(
+        post_stamp.contains(r#"["aristos:cell_written_exactly_once_per_page_edit"]"#),
+        "post-stamp must still have the prefixed entry; got:\n{post_stamp}"
+    );
+    assert!(
+        post_stamp.contains(r#"linked = "arta_a1b2c3d4ef56""#),
+        "post-stamp must preserve linked via derive-from-cache; got:\n{post_stamp}"
+    );
+}
