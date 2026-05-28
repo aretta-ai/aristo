@@ -1,5 +1,0 @@
-error: the `aristos:` id namespace is reserved for server-bound ids written by `aristo sync`; do not write it manually in source
- --> tests/ui/fail/aristos_id_reserved.rs:6:23
-  |
-6 | #[intent("text", id = "aristos:my_thing")]
-  |                       ^^^^^^^^^^^^^^^^^^

@@ -131,19 +131,17 @@ fn validate_verify(expr: &syn::Expr) -> Result<(), syn::Error> {
 #[cfg(feature = "aristo_check")]
 fn validate_id(id: &syn::LitStr) -> Result<(), syn::Error> {
     let s = id.value();
-    if s.starts_with("aret_") {
-        return Err(syn::Error::new(
-            id.span(),
-            "the `aret_` id prefix is reserved for ids assigned by `aristo stamp`; \
-             omit `id` and let `aristo stamp` assign one, or pick an unreserved name",
-        ));
-    }
-    if s.starts_with("aristos:") {
-        return Err(syn::Error::new(
-            id.span(),
-            "the `aristos:` id namespace is reserved for server-bound ids written \
-             by `aristo sync`; do not write it manually in source",
-        ));
+    // Namespace / provenance is intentionally NOT enforced here. `aristos:`
+    // (sync-bound) and `aret_` (stamp-assigned) are provenance claims a
+    // proc-macro cannot verify: it sees only this annotation's tokens, with no
+    // binding/sync/stamp context, so it cannot distinguish a legitimate
+    // tool-written id from a hand-typed one. Enforcing it in the macro can only
+    // produce false rejects (a real bound id fails to compile) or false passes.
+    // That policy belongs to `aristo lint`, which can read the repo + binding
+    // state. The macro only checks that a *bare* (un-namespaced) id is a valid
+    // snake_case identifier; recognized-namespace ids pass through untouched.
+    if s.starts_with("aristos:") || s.starts_with("aret_") {
+        return Ok(());
     }
     if !is_valid_user_id(&s) {
         return Err(syn::Error::new(
@@ -235,17 +233,17 @@ mod tests {
     // ---- id ----
 
     #[test]
-    fn aret_prefix_rejected() {
-        let err = validate_intent(&intent("\"text\", id = \"aret_foo\"")).unwrap_err();
-        assert!(err.to_string().contains("`aret_` id prefix is reserved"));
+    fn aret_prefix_id_accepted() {
+        // Provenance policy moved to `aristo lint`; the macro has no stamp
+        // context and must not reject tool-namespaced ids.
+        validate_intent(&intent("\"text\", id = \"aret_foo\"")).unwrap();
     }
 
     #[test]
-    fn aristos_namespace_rejected() {
-        let err = validate_intent(&intent("\"text\", id = \"aristos:foo\"")).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("`aristos:` id namespace is reserved"));
+    fn aristos_namespace_id_accepted() {
+        // Canon-bound ids must compile; boundness is checked by `aristo lint`,
+        // not the macro (which has no binding context).
+        validate_intent(&intent("\"text\", id = \"aristos:wal_initialized\"")).unwrap();
     }
 
     #[test]
@@ -277,12 +275,12 @@ mod tests {
     fn multiple_errors_combine() {
         // Empty text + bad verify + bad id → all three surface (syn::Error
         // chains via .combine; iterating yields each individually).
-        let err = validate_intent(&intent("\"\", verify = \"yolo\", id = \"aret_x\"")).unwrap_err();
+        let err = validate_intent(&intent("\"\", verify = \"yolo\", id = \"BadId\"")).unwrap_err();
         let msgs: Vec<String> = err.into_iter().map(|e| e.to_string()).collect();
         let joined = msgs.join("\n");
         assert!(joined.contains("must not be empty"), "msgs:\n{joined}");
         assert!(joined.contains("invalid `verify`"), "msgs:\n{joined}");
-        assert!(joined.contains("`aret_` id prefix"), "msgs:\n{joined}");
+        assert!(joined.contains("snake_case"), "msgs:\n{joined}");
         assert_eq!(msgs.len(), 3, "expected 3 errors, got {}", msgs.len());
     }
 
@@ -293,7 +291,7 @@ mod tests {
         validate_assume(&assume("\"text\", id = \"foo_bar\"")).unwrap();
         let err = validate_assume(&assume("\"\"")).unwrap_err();
         assert!(err.to_string().contains("must not be empty"));
-        let err = validate_assume(&assume("\"text\", id = \"aret_x\"")).unwrap_err();
-        assert!(err.to_string().contains("`aret_` id prefix"));
+        let err = validate_assume(&assume("\"text\", id = \"BadId\"")).unwrap_err();
+        assert!(err.to_string().contains("snake_case"));
     }
 }
