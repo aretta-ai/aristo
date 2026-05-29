@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Added
+- docs: `CONTRIBUTING.md` — how to contribute during alpha. Routes questions/ideas to Discussions, bugs to Issues, security to `SECURITY.md`; summarizes the `CLAUDE.md` working agreement (conventional commits, CHANGELOG-per-commit, tests-before-correctness, specs-are-truth, dogfood annotations); a four-step PR loop with a soft "small team, alpha" response promise; and an inbound-license + Code-of-Conduct note. Links forward to `SECURITY.md` + `CODE_OF_CONDUCT.md` (landing next). Org slug `aretta-ai`.
 - docs: `docs/GETTING-STARTED.md` — the agent-first walkthrough. Centers the real workflow: your coding agent writes `#[aristo::intent]` claims (authoring skill), verifies them and brings each verdict back for you to **accept or refuse** (neural-verify + critique skills), and the git pre-commit hook re-stamps on every commit so you never run `aristo stamp` by hand. Walks one full loop with real captured CLI output (`init`, stamp, `status`/tier, the `/aristo-neural-verify` queue handoff, badge) plus the drift beat: a body change flips a verified claim to **stale** (`body-drifted: 1 … was Verified, now Stale`) and the agent re-verifies and refutes it. Emphasizes review-as-gate — nothing an agent concludes lands until you accept it; no unreviewed bloat. Cross-links the manifesto + glossary. ~1450 words.
 
 ### Changed
