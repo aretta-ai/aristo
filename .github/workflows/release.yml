@@ -1,0 +1,66 @@
+name: release
+
+# Publish to crates.io on a version tag, via crates.io Trusted
+# Publishing (GitHub OIDC) — no long-lived token stored in the repo.
+#
+# ── One-time crates.io setup (per crate) ──────────────────────────────
+# For EACH of aristo, aristo-core, aristo-macros, aristo-cli:
+#   crates.io → the crate → Settings → Trusted Publishing → Add, with:
+#     Repository owner:  aretta-ai
+#     Repository name:   aristo
+#     Workflow filename: release.yml
+#     Environment:       release        (must match `environment:` below)
+# (A crate must have been published once already before you can add a
+#  trusted publisher for it — which all four have, from the 0.1.0 manual
+#  release.)
+#
+# ── Cutting a release ─────────────────────────────────────────────────
+#   1. Bump [workspace.package] version (cascades to all four crates).
+#   2. Promote CHANGELOG [Unreleased] → [vX.Y.Z] — DATE.
+#   3. Land on main (green CI), then:
+#        git tag -s vX.Y.Z -m "Aristo vX.Y.Z" && git push origin vX.Y.Z
+#   This workflow then publishes all four crates automatically.
+#
+# NOTE: every crate must be at the new (unpublished) version, or its
+# `cargo publish` step errors with "crate version already uploaded".
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  id-token: write          # required to mint the OIDC token
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Gate on a GitHub Environment named "release" — lets you add
+    # required reviewers / branch limits to releases later, and is the
+    # environment the crates.io trusted-publisher config is scoped to.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Exchange the GitHub OIDC token for a short-lived crates.io token.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      # Publish in dependency order (macros → meta → core → cli).
+      # cargo blocks until each crate is live in the index before
+      # returning, so the next step resolves the freshly-published dep.
+      - run: cargo publish -p aristo-macros
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - run: cargo publish -p aristo
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - run: cargo publish -p aristo-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - run: cargo publish -p aristo-cli
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

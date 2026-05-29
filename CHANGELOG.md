@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- ci: `release.yml` — automated crates.io publishing on `v*.*.*` tags via Trusted Publishing (GitHub OIDC, no stored token). Publishes all four crates in dependency order using a short-lived token minted from the workflow's OIDC identity; gated on a `release` GitHub Environment. Requires a one-time per-crate trusted-publisher config on crates.io (documented in the workflow header). For v0.1.1+; the 0.1.0 release is published manually.
+
 ## [v0.1.0] — 2026-05-29
 
 First public release. The MVP cuts the offline scope of Aristo's annotation SDK: declare verifiable intent above a function, hash it against the function body, classify the function's verification status, and surface drift before it ships. Phase 2 (server-side commands, paid `verify="full"`, free-tier `verify="test"`, `verify --audit-only`, `aristos:`-namespace renames) is deferred until the `aristo sync` infrastructure ships.
