@@ -121,6 +121,6 @@ jobs:
       #   → 1.88 (time + time-core then required 1.88).
       # The ecosystem chase is real: lock the MSRV at what current
       # transitive deps actually need rather than what we wish for.
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@1.100
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace
