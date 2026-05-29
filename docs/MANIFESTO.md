@@ -67,8 +67,8 @@ Concretely:
   is *for*.
 - **The hash.** A token-stream hash of the function body, captured
   when the claim was last verified. When the body drifts, the hash
-  drifts, and the annotation's verification status reverts to
-  *unknown*.
+  drifts, and a claim that was verified flips to *stale* — its
+  verification no longer applies.
 - **The verify spectrum.** Four modes, increasing in rigor:
   `verify=false` (a claim only — useful documentation, no
   verification), `verify="neural"` (an AI critic reads the code
