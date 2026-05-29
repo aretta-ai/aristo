@@ -57,8 +57,8 @@ annotation:
 
 **Staleness** — When a function body changes after its claim was last
 verified, the claim is no longer trustworthy. Aristo detects this by
-hashing the function body; when the hash drifts, the verification
-status reverts to *unknown*.
+hashing the function body; when the hash drifts, a verified claim's
+status flips to *stale*.
 
 **The index** — `.aristo/index.toml`, committed to your repo. The
 machine-readable record of every annotation: id, hash, verify mode,
