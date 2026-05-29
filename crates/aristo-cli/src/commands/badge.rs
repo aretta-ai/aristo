@@ -806,4 +806,122 @@ mod tests {
         assert!(svg.contains("✦"), "Areté ✦ glyph; got:\n{svg}");
         assert!(svg.contains("Areté"), "Areté label; got:\n{svg}");
     }
+
+    // ─── redesign: single-segment pill invariants ────────────────────
+
+    fn demo_counters() -> Counters {
+        Counters {
+            total: 47,
+            aristos_count: 20,
+            verification_rate_pct: 80,
+        }
+    }
+
+    #[test]
+    fn render_svg_is_single_segment_with_no_label_half_or_wordmark() {
+        // The redesign collapsed the two-segment shields badge into one
+        // tier-colored pill: no `#555` label half, no visible "aristo"
+        // wordmark. The project name survives ONLY in the accessible
+        // title / aria-label, never as a rendered text body.
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::Flat,
+            Metric::Tier,
+        );
+        assert!(
+            !svg.contains(r##"fill="#555""##),
+            "no grey label-half rect; got:\n{svg}"
+        );
+        assert_eq!(
+            svg.matches("<rect").count(),
+            1,
+            "single-segment pill has exactly one rect; got:\n{svg}"
+        );
+        assert_eq!(
+            svg.matches("<text").count(),
+            1,
+            "only the tier value is a text element — no standalone wordmark; got:\n{svg}"
+        );
+        assert!(
+            svg.contains(r#"aria-label="aristo: "#) && svg.contains("<title>aristo: "),
+            "aristo kept in title/aria-label only; got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_drops_the_gloss_gradient() {
+        // The old shields-style badge carried a <linearGradient> gloss
+        // overlay; the flat redesign removes it.
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::Flat,
+            Metric::Tier,
+        );
+        assert!(
+            !svg.contains("linearGradient"),
+            "gloss gradient removed; got:\n{svg}"
+        );
+        assert!(
+            !svg.contains("<defs"),
+            "no gradient defs block; got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn ink_for_picks_contrast_by_luminance_across_the_palette() {
+        // Dark fills (stone + reds + the count/rate green) → white ink.
+        assert_eq!(ink_for("#8a8378"), "#fff", "Aspirant stone, luma ~132");
+        assert_eq!(ink_for("#C0362C"), "#fff", "Adept intl orange, luma ~94");
+        assert_eq!(ink_for("#8c2913"), "#fff", "Ascendent, luma ~68");
+        assert_eq!(
+            ink_for("#4c1"),
+            "#fff",
+            "count/rate green (3-digit), luma ~142"
+        );
+        // Light fills (tan + gold) → dark ink for legibility.
+        assert_eq!(ink_for("#c9a87c"), "#2b2824", "Apprentice tan, luma ~173");
+        assert_eq!(ink_for("#d4a017"), "#2b2824", "Areté gold, luma ~160");
+    }
+
+    #[test]
+    fn render_svg_inks_text_white_on_dark_tier_fill() {
+        // Adept (#C0362C, dark) → white ink distinct from the fill, so a
+        // contrast regression that left text the fill color is caught.
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::Flat,
+            Metric::Tier,
+        );
+        assert_eq!(sample_computation().tier, Tier::Adept);
+        assert!(
+            svg.contains(r##"fill="#fff""##),
+            "white ink on dark Adept fill; got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_for_the_badge_uppercases_arete_value_and_spaces_it() {
+        let arete = TierComputation {
+            verifiable: 1,
+            verification_ratio: 1.0,
+            coverage_score: 1.0,
+            articulation_floor: 0.05,
+            visible_score: 1.0,
+            arete_gate_met: true,
+            tier: Tier::Arete,
+        };
+        let svg = render_svg(&demo_counters(), &arete, Style::ForTheBadge, Metric::Tier);
+        // to_uppercase("✦ Areté") = "✦ ARETÉ": ✦ survives, é → É.
+        assert!(
+            svg.contains("✦ ARETÉ"),
+            "for-the-badge uppercases the Areté value incl. glyph; got:\n{svg}"
+        );
+        assert!(
+            svg.contains(r#"letter-spacing="0.8""#),
+            "for-the-badge carries the airy tracking; got:\n{svg}"
+        );
+    }
 }
