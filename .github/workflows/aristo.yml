@@ -37,7 +37,7 @@ jobs:
       - name: badge (regenerate SVG)
         run: cargo run --release --bin aristo -- badge --out=docs/badge.svg
       - name: upload badge artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aristo-badge
           path: docs/badge.svg
