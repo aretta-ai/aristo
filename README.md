@@ -1,6 +1,7 @@
 # Aristo
 
 ![aristo verified](./docs/badge.svg)
+[![CI](https://github.com/aretta-ai/aristo/actions/workflows/ci.yml/badge.svg)](https://github.com/aretta-ai/aristo/actions/workflows/ci.yml)
 [![crate](https://img.shields.io/crates/v/aristo.svg)](https://crates.io/crates/aristo)
 [![docs](https://docs.rs/aristo/badge.svg)](https://docs.rs/aristo)
 [![license](https://img.shields.io/crates/l/aristo.svg)](./LICENSE)
