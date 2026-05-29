@@ -82,7 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo install aristo --locked
+      - run: cargo install aristo-cli --locked   # the `aristo` binary ships in the aristo-cli crate
       - name: stamp --check (index in sync with source)
         run: aristo stamp --check
       - name: lint --check --strict (no warn/error findings)

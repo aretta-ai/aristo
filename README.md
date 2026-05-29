@@ -47,7 +47,7 @@ caught — is in **[Getting started](./docs/GETTING-STARTED.md)**.
 ## Install
 
 ```bash
-cargo install aristo      # the `aristo` CLI
+cargo install aristo-cli  # the `aristo` CLI
 cargo add aristo          # the #[aristo::intent] / #[aristo::assume] macros
 aristo install-skills --agent claude-code   # also: cursor, codex, opencode, antigravity
 ```

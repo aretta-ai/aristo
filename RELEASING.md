@@ -124,8 +124,10 @@ GitHub will show ✓ Verified on both the tag page and the release commit.
 cargo search aristo                       # expect 4 hits
 
 # 2. CLI installs from crates.io (in a fresh shell or temp HOME)
+#    The `aristo` binary ships in the `aristo-cli` crate (the `aristo`
+#    crate is the binary-less macro/verification library).
 cd $(mktemp -d)
-cargo install aristo --locked --force
+cargo install aristo-cli --locked --force
 aristo --version                          # expects "aristo 0.1.0"
 
 # 3. Library compiles in a fresh project
@@ -169,4 +171,4 @@ For 0.1.1, 0.2.0, etc., the sequence is identical except:
 3. Run the publish sequence above
 4. Tag + push
 
-The `cargo install aristo --locked` line in the GH workflow template (`crates/aristo-cli/src/commands/init.rs::GH_WORKFLOW_STARTER`) pins to the LATEST release automatically — no template update needed across versions.
+The `cargo install aristo-cli --locked` line in the GH workflow template (`crates/aristo-cli/src/commands/init.rs::GH_WORKFLOW_STARTER`) pins to the LATEST release automatically — no template update needed across versions.

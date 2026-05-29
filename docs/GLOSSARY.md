@@ -15,7 +15,7 @@ The source of the product name.
 
 **Aristo** — The open-source SDK: the annotation macros, the CLI, the
 index format, and the verification orchestration. MIT-licensed. What
-you install with `cargo install aristo`.
+you install with `cargo install aristo-cli`.
 
 **Aretta** — The company behind Aristo. Maintains the SDK and runs the
 paid backend for deeper machine-checking and hosted solutions.
