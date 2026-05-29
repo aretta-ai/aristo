@@ -11,10 +11,10 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/aretta-dev/aristo"
-homepage = "https://github.com/aretta-dev/aristo"
+repository = "https://github.com/aretta-ai/aristo"
+homepage = "https://github.com/aretta-ai/aristo"
 rust-version = "1.88"
-authors = ["Aretta <hello@aretta.dev>"]
+authors = ["Aretta <hello@aretta.ai>"]
 # Workspace-level keywords inherited by all 4 crates via
 # `keywords.workspace = true`. Max 5 entries; lowercase, no spaces;
 # crates.io facet search uses these.

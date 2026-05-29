@@ -12,7 +12,7 @@
 //! slice 31 can preserve them by switching the flag explicitly.
 //!
 //! Offline-only. The `--strict` flag (which would cross-check against
-//! `aretta.dev/registry/<org>/<repo>`) is server-side and remains
+//! `aretta.ai/registry/<org>/<repo>`) is server-side and remains
 //! deferred to Phase 2 — not stubbed, not declared.
 //!
 //! See `../aretta-sdk/docs/mockups/08-commercial-cluster/visibility-artifacts.md`
