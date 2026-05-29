@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- chore: remove stray `SESSION-B-HANDOFF.md` + `SESSION-SLICE4-HANDOFF.md` from the repo root — internal session handoff notes, not part of the SDK.
 - chore: `.github` issue + PR templates — light, non-forcing. `ISSUE_TEMPLATE/config.yml` keeps blank issues enabled and adds contact links (Discussions + private security advisory); markdown `bug_report` + `feature_request` templates with a handful of prompts (not enforced forms); a short `PULL_REQUEST_TEMPLATE.md` with three checkboxes (one logical change + conventional commit, CHANGELOG bullet, green `fmt`/`clippy`/`test`).
 - docs: `docs/COMMUNITY.md` — slim navigator routing each kind of conversation: Discussions (questions/ideas/feedback — what we want most), Issues (bugs/features), `SECURITY.md` (private vuln reports), `CONTRIBUTING.md` (code), and a Code-of-Conduct pointer. Alpha-honest "small team, fast as we can" close.
 - docs: `GOVERNANCE.md` — who decides what, and how it evolves. States the open-core commitment (SDK is MIT forever; Aretta's paid backend is a service around it, not a gate inside it); maintainers are Aretta's founders today, with maintainership earned through contribution; load-bearing decisions discussed in the open before they're built, routine changes by PR; stage-one founder-led governance that formalizes in the open when the project needs it. Clears the manifesto's forward link to `../GOVERNANCE.md`.
