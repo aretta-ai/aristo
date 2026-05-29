@@ -72,9 +72,10 @@ Concretely:
 - **The verify spectrum.** Four modes, increasing in rigor:
   `verify=false` (a claim only — useful documentation, no
   verification), `verify="neural"` (an AI critic reads the code
-  against the claim), `verify="test"` (existing tests, augmented
-  with the mined assertion), `verify="full"` (server-side formal
-  proof, paid Phase 2).
+  against the claim), `verify="test"` (checked against your
+  existing tests — in progress), `verify="full"` (the strongest
+  mode: the best check available, from tests up to formal proofs;
+  currently with design partners).
 - **The badge.** A trust-tier scheme — Aspirant → Apprentice →
   Adept → Ascendent → Areté — that summarizes how thoroughly a
   codebase practices the discipline.
