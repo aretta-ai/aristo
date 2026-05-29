@@ -121,8 +121,8 @@ The rule is restrained, not exhaustive:
 
 The authoring skill (and future skills: mining, neural-verify, review) is taste-driven and we're bootstrapping that taste from scratch. The system has TWO living artifacts per skill:
 
-- **`.aristo/feedback/<skill>/PHILOSOPHY.md`** — distilled principles, P-tagged (e.g. `P-VERIFY-OFF-WHEN-COVERED`), each with one-line rule + rationale paragraph + linked example cases. Modeled on Rust API Guidelines / OpenAI Model Spec / Chicago Manual of Style. Anti-patterns first; principles can be drafts; user can write principles directly without waiting for cases. **This is the only feedback artifact the skill itself loads** (alongside its SKILL.md body, via `include_str!`).
-- **`.aristo/feedback/<skill>/cases/<date>-<slug>.md`** — audit-trail evidence per feedback round: original (skill-generated), better (per user), why, candidate_principle. Each case file stays as historical record + regression eval; the principle distilled from it lives in PHILOSOPHY.md.
+- **`crates/aristo-cli/src/skills/<skill>-philosophy.md`** (the canonical PHILOSOPHY.md) — distilled principles, P-tagged (e.g. `P-VERIFY-OFF-WHEN-COVERED`), each with one-line rule + rationale paragraph + linked example cases. Modeled on Rust API Guidelines / OpenAI Model Spec / Chicago Manual of Style. Anti-patterns first; principles can be drafts; user can write principles directly without waiting for cases. **This is the only feedback artifact the skill itself loads** (alongside its SKILL.md body, via `include_str!`) — so it lives **in-crate** and ships in the published tarball. (It used to live under `.aristo/feedback/<skill>/`, but `include_str!` can't reach outside the crate root at publish time — moved 2026-05-29.)
+- **`.aristo/feedback/<skill>/cases/<date>-<slug>.md`** — audit-trail evidence per feedback round: original (skill-generated), better (per user), why, candidate_principle. Each case file stays as historical record + regression eval (dev-only, not shipped); the principle distilled from it lives in the in-crate PHILOSOPHY.md.
 
 **REFLECTION protocol** (triggered at milestone close + on-demand):
 1. Read recent open cases for the skill.

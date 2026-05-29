@@ -62,24 +62,23 @@ pub(crate) fn bundled() -> &'static [Skill] {
 }
 
 /// The authoring skill body shipped to disk on install. Concatenates
-/// the agent-facing skill manifest with the canonical PHILOSOPHY.md
-/// (durable principles + case links) so updates to PHILOSOPHY.md
-/// auto-propagate into the bundled skill — no manual sync step.
+/// the agent-facing skill manifest with the canonical principles from
+/// `aristo-authoring-philosophy.md` (durable principles + case links)
+/// so the bundled skill cannot drift from them — no manual sync step.
 ///
-/// PHILOSOPHY.md lives at `.aristo/feedback/aristo-authoring/`; it's
-/// human-curated and tracked in git (`.gitignore` whitelists the
-/// `feedback/` subtree). The relative path here climbs four parents
-/// from this file (`crates/aristo-cli/src/skills/` → repo root) before
-/// descending; if the layout changes the build breaks loudly rather
-/// than silently shipping a skill without principles.
+/// The principles file lives in-crate, next to this module
+/// (`src/skills/aristo-authoring-philosophy.md`), so it ships in the
+/// published crate tarball. (It was previously read from the repo's
+/// `.aristo/feedback/` dogfood tree, which broke `cargo publish`:
+/// `include_str!` can't reach outside the crate root.)
 const AUTHORING_BODY: &str = concat!(
     include_str!("aristo-authoring.md"),
     "\n\n---\n\n## Canonical principles (verbatim from PHILOSOPHY.md)\n\n\
      The section below is `include_str!`'d at build time from \
-     `.aristo/feedback/aristo-authoring/PHILOSOPHY.md` so the bundled \
-     skill cannot drift from the project's distilled principles. Edit \
-     the source file, not this section.\n\n",
-    include_str!("../../../../.aristo/feedback/aristo-authoring/PHILOSOPHY.md"),
+     `aristo-authoring-philosophy.md` so the bundled skill cannot \
+     drift from the project's distilled principles. Edit the source \
+     file, not this section.\n\n",
+    include_str!("aristo-authoring-philosophy.md"),
 );
 
 const AUTHORING: Skill = Skill {
