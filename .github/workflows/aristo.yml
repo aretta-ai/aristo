@@ -23,7 +23,7 @@ jobs:
   aristo:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: build (release, single shared rebuild for all gates)
         run: cargo build --release --bin aristo
       - name: stamp --check (index in sync with source)
