@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.1.0"
-generated_at = "2026-05-27T18:41:12.26272Z"
+generated_at = "2026-05-29T23:39:18.447605Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -125,15 +125,15 @@ file = "crates/aristo-cli/src/commands/badge.rs"
 site = "fn write_to_stdout (line 151)"
 covered_region = "function"
 
-[badge_svg_text_width_uses_seven_px_heuristic]
+[badge_text_width_calibrated_to_fallback_font]
 kind = "intent"
-text = "SVG text width is approximated as 7px per character in the badge body and 10px padding on each end. This deviates slightly from shields.io's per-glyph metrics table (DejaVu Sans), but the trycmd scenarios match the SVG with byte-level wildcards (the spec only pins `<svg ...>` ↔ `</svg>` framing, not exact pixel dimensions). A regression that broke the 7px/10px convention without updating downstream consumers (rendering pipelines that pin widths) would produce misaligned text rendering at the edges."
+text = "Badge text width is approximated per-character, scaled by font size, and deliberately calibrated to the WIDER fallback sans (DejaVu/Verdana) rather than the narrower brand font (Fira Sans Condensed). GitHub strips the web-font fetch from committed SVGs, so the README badge renders in the fallback; sizing to the brand font's metrics would clip the tier text there. Over-estimating is safe (a little right padding); under-estimating clips. The trycmd scenarios match the SVG with wildcards (only `<svg ...>` ↔ `</svg>` framing is pinned, not pixel dimensions), so this heuristic is the sole guard against clipping."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:f5243d15f6f113dd5610a8c8405e5ba5472ccf26983af71c76e2422d4216a65f"
-body_hash = "sha256:241b103a0a5a0c0f90d87d6d15b12d824b23c1daaba6bf9b36cd187c4bc408b5"
+text_hash = "sha256:ec910abdf1617447efedb37603eec8653116fe7224b955ef15d333eb120df1f6"
+body_hash = "sha256:ba5f8515bc2f247fd72b8f007af85297f5bb2853b416ee7207bd3742074aaf45"
 file = "crates/aristo-cli/src/commands/badge.rs"
-site = "fn render_flat (line 270)"
+site = "fn text_width (line 424)"
 covered_region = "function"
 
 [badge_verification_rate_counts_only_terminal_clean_intents]

@@ -222,7 +222,19 @@ fn is_verified_state(status: Status) -> bool {
 
 // ─── SVG rendering ────────────────────────────────────────────────────
 
+/// Accessible-label prefix. The redesigned badge is a single tier pill
+/// with NO visible "aristo" wordmark (the glyph + tier carry it), but
+/// the `<title>` / `aria-label` keep the project name so the badge is
+/// still identifiable to screen readers and link previews.
 const LABEL: &str = "aristo";
+
+/// Font stack. Fira Sans Condensed is the brand face; it is a web font
+/// that GitHub's sanitized SVG won't fetch, so the stack falls back to
+/// the condensed/regular system sans GitHub actually renders. Pill
+/// widths are sized against the WIDER fallback metrics (see
+/// [`text_width`]) so the committed README badge never clips when the
+/// brand font is unavailable.
+const FONT_STACK: &str = "'Fira Sans Condensed','DejaVu Sans Condensed',Verdana,Geneva,sans-serif";
 
 /// Locked simpleicons-style bridge-as-Ω logo (D11). 24×24 viewBox,
 /// fill="currentColor" so the badge's color group propagates.
@@ -233,6 +245,67 @@ const LOGO_PATHS: &str = concat!(
     r#"<path d="M1 21 L23 21 L23 22.5 L1 22.5 Z"/>"#,
 );
 
+/// Geometry + type treatment for a single-segment tier pill. The three
+/// `--style` flavors are just three of these (see [`Style::geom`]).
+struct BadgeGeom {
+    height: u32,
+    /// Corner radius. `0` for the square flavor.
+    rx: u32,
+    /// Rendered side of the embedded logo box (the 24×24 viewBox scales
+    /// to this). The glyph is vertically centered in `height`.
+    glyph_px: u32,
+    font_size: u32,
+    font_weight: u32,
+    /// UPPERCASE the tier label (the `for-the-badge` flavor only).
+    uppercase: bool,
+    /// Letter-spacing in px; `0.0` for the compact flavors.
+    letter_spacing: f32,
+    /// Left margin before the glyph.
+    pad_left: u32,
+    /// Gap between glyph and text.
+    gap: u32,
+    /// Right margin after the text.
+    pad_right: u32,
+}
+
+impl Style {
+    fn geom(self) -> BadgeGeom {
+        match self {
+            // 20px compact pill: rounded, mixed-case, regular weight.
+            Style::Flat => BadgeGeom {
+                height: 20,
+                rx: 4,
+                glyph_px: 14,
+                font_size: 11,
+                font_weight: 600,
+                uppercase: false,
+                letter_spacing: 0.0,
+                pad_left: 6,
+                gap: 5,
+                pad_right: 8,
+            },
+            // Identical to flat but square corners.
+            Style::FlatSquare => BadgeGeom {
+                rx: 0,
+                ..Style::Flat.geom()
+            },
+            // Variant C: 28px, bold UPPERCASE, airy letter-spacing.
+            Style::ForTheBadge => BadgeGeom {
+                height: 28,
+                rx: 4,
+                glyph_px: 16,
+                font_size: 13,
+                font_weight: 700,
+                uppercase: true,
+                letter_spacing: 0.8,
+                pad_left: 9,
+                gap: 7,
+                pad_right: 11,
+            },
+        }
+    }
+}
+
 fn render_svg(
     counters: &Counters,
     computation: &TierComputation,
@@ -240,11 +313,92 @@ fn render_svg(
     metric: Metric,
 ) -> String {
     let value = headline_value(counters, computation, metric);
-    let value_color = value_color(computation.tier, metric);
-    match style {
-        Style::Flat => render_flat(LABEL, &value, value_color, false),
-        Style::FlatSquare => render_flat(LABEL, &value, value_color, true),
-        Style::ForTheBadge => render_for_the_badge(LABEL, &value, value_color),
+    let fill = value_color(computation.tier, metric);
+    render_pill(&value, fill, style.geom())
+}
+
+/// Render a single tier-colored pill: centered logo + tier text, no
+/// "aristo" label segment, no gloss gradient. Text + glyph pick a
+/// white or dark ink by the fill's luminance ([`ink_for`]) so every
+/// tier in the D11 palette stays legible.
+fn render_pill(value: &str, fill: &str, g: BadgeGeom) -> String {
+    let text = if g.uppercase {
+        value.to_uppercase()
+    } else {
+        value.to_string()
+    };
+    let ink = ink_for(fill);
+
+    // Letter-spacing widens the visual run; fold it into the measured
+    // width so the right padding stays honest.
+    let spacing_w =
+        (text.chars().count().saturating_sub(1) as f32 * g.letter_spacing).round() as u32;
+    let text_w = text_width(&text, g.font_size) + spacing_w;
+    let glyph_x = g.pad_left;
+    let text_x = g.pad_left + g.glyph_px + g.gap;
+    let total_w = text_x + text_w + g.pad_right;
+
+    let glyph_y = (g.height - g.glyph_px) / 2;
+    // Optical baseline: a touch below vertical center reads as centered.
+    let text_y = g.height / 2 + g.font_size / 3;
+    let spacing_attr = if g.letter_spacing > 0.0 {
+        format!(r#" letter-spacing="{:.1}""#, g.letter_spacing)
+    } else {
+        String::new()
+    };
+
+    format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="{height}" role="img" aria-label="{LABEL}: {value}">
+  <title>{LABEL}: {value}</title>
+  <rect width="{total_w}" height="{height}" rx="{rx}" fill="{fill}"/>
+  <g transform="translate({glyph_x} {glyph_y})" fill="{ink}">
+    <svg width="{glyph_px}" height="{glyph_px}" viewBox="0 0 24 24" fill="currentColor">{logo}</svg>
+  </g>
+  <text x="{text_x}" y="{text_y}" fill="{ink}" font-family="{FONT_STACK}" font-size="{font_size}" font-weight="{font_weight}"{spacing_attr}>{text}</text>
+</svg>
+"##,
+        height = g.height,
+        rx = g.rx,
+        glyph_px = g.glyph_px,
+        font_size = g.font_size,
+        font_weight = g.font_weight,
+        logo = LOGO_PATHS,
+    )
+}
+
+/// White or dark ink for text/glyph laid over `bg_hex`, chosen by
+/// perceived luminance (0.299R + 0.587G + 0.114B). Threshold 150
+/// reproduces the D11 contrast intent exactly — white on the stone +
+/// red tiers and the count/rate green, dark `#2b2824` on the light tan
+/// (Apprentice) and gold (Areté) tiers — without hardcoding a per-tier
+/// map that would silently break if the palette shifts.
+fn ink_for(bg_hex: &str) -> &'static str {
+    let (r, gc, b) = parse_hex(bg_hex);
+    let luma = 0.299 * r as f32 + 0.587 * gc as f32 + 0.114 * b as f32;
+    if luma > 150.0 {
+        "#2b2824"
+    } else {
+        "#fff"
+    }
+}
+
+/// Parse `#rgb` or `#rrggbb` into 8-bit channels. Unparseable input
+/// falls back to mid-grey, which is harmless (it only steers ink
+/// choice, and every palette color is a valid literal anyway).
+fn parse_hex(hex: &str) -> (u8, u8, u8) {
+    let h = hex.trim_start_matches('#');
+    let expand = |s: &str| u8::from_str_radix(s, 16).unwrap_or(128);
+    match h.len() {
+        3 => {
+            let c: Vec<char> = h.chars().collect();
+            (
+                expand(&format!("{0}{0}", c[0])),
+                expand(&format!("{0}{0}", c[1])),
+                expand(&format!("{0}{0}", c[2])),
+            )
+        }
+        6 => (expand(&h[0..2]), expand(&h[2..4]), expand(&h[4..6])),
+        _ => (128, 128, 128),
     }
 }
 
@@ -268,94 +422,25 @@ fn value_color(tier: Tier, metric: Metric) -> &'static str {
 }
 
 #[aristo::intent(
-    "SVG text width is approximated as 7px per character in the badge \
-     body and 10px padding on each end. This deviates slightly from \
-     shields.io's per-glyph metrics table (DejaVu Sans), but the trycmd \
-     scenarios match the SVG with byte-level wildcards (the spec only \
-     pins `<svg ...>` ↔ `</svg>` framing, not exact pixel dimensions). \
-     A regression that broke the 7px/10px convention without updating \
-     downstream consumers (rendering pipelines that pin widths) would \
-     produce misaligned text rendering at the edges.",
+    "Badge text width is approximated per-character, scaled by font \
+     size, and deliberately calibrated to the WIDER fallback sans \
+     (DejaVu/Verdana) rather than the narrower brand font (Fira Sans \
+     Condensed). GitHub strips the web-font fetch from committed SVGs, \
+     so the README badge renders in the fallback; sizing to the brand \
+     font's metrics would clip the tier text there. Over-estimating is \
+     safe (a little right padding); under-estimating clips. The trycmd \
+     scenarios match the SVG with wildcards (only `<svg ...>` ↔ \
+     `</svg>` framing is pinned, not pixel dimensions), so this \
+     heuristic is the sole guard against clipping.",
     verify = "neural",
-    id = "badge_svg_text_width_uses_seven_px_heuristic"
+    id = "badge_text_width_calibrated_to_fallback_font"
 )]
-fn render_flat(label: &str, value: &str, value_color: &str, square: bool) -> String {
-    // The label half embeds the 14×14 bridge-as-Ω logo before the
-    // wordmark (D11). Logo width + small gap = 18px reserved.
-    let logo_w = 18u32;
-    let label_text_w = text_width(label);
-    let label_w = label_text_w + logo_w;
-    let value_w = text_width(value);
-    let total_w = label_w + value_w;
-    let label_text_mid = logo_w + label_text_w / 2;
-    let value_mid = label_w + value_w / 2;
-    let rx = if square { 0 } else { 3 };
-
-    format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="20" role="img" aria-label="{label}: {value}">
-  <title>{label}: {value}</title>
-  <linearGradient id="b" x2="0" y2="100%">
-    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-    <stop offset="1" stop-opacity=".1"/>
-  </linearGradient>
-  <mask id="a"><rect width="{total_w}" height="20" rx="{rx}" fill="#fff"/></mask>
-  <g mask="url(#a)">
-    <rect width="{label_w}" height="20" fill="#555"/>
-    <rect x="{label_w}" width="{value_w}" height="20" fill="{value_color}"/>
-    <rect width="{total_w}" height="20" fill="url(#b)"/>
-  </g>
-  <g transform="translate(3 3)" fill="#fff">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">{logo}</svg>
-  </g>
-  <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
-    <text x="{label_text_mid}" y="15" fill="#010101" fill-opacity=".3">{label}</text>
-    <text x="{label_text_mid}" y="14">{label}</text>
-    <text x="{value_mid}" y="15" fill="#010101" fill-opacity=".3">{value}</text>
-    <text x="{value_mid}" y="14">{value}</text>
-  </g>
-</svg>
-"##,
-        logo = LOGO_PATHS,
-    )
-}
-
-fn render_for_the_badge(label: &str, value: &str, value_color: &str) -> String {
-    let upper_label = label.to_uppercase();
-    // 16×16 logo for the taller style.
-    let logo_w = 22u32;
-    let label_text_w = text_width(&upper_label) + 10;
-    let label_w = label_text_w + logo_w;
-    let value_w = text_width(value) + 10;
-    let total_w = label_w + value_w;
-    let label_text_mid = logo_w + label_text_w / 2;
-    let value_mid = label_w + value_w / 2;
-
-    format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="28" role="img" aria-label="{label}: {value}">
-  <title>{label}: {value}</title>
-  <g>
-    <rect width="{label_w}" height="28" fill="#555"/>
-    <rect x="{label_w}" width="{value_w}" height="28" fill="{value_color}"/>
-  </g>
-  <g transform="translate(4 6)" fill="#fff">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">{logo}</svg>
-  </g>
-  <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="10" font-weight="bold">
-    <text x="{label_text_mid}" y="19">{upper_label}</text>
-    <text x="{value_mid}" y="19">{value}</text>
-  </g>
-</svg>
-"##,
-        logo = LOGO_PATHS,
-    )
-}
-
-/// Approximate text width in pixels for DejaVu Sans 11. Real shields.io
-/// uses a per-glyph table; the badge command pins to a 7px-per-char +
-/// 10px padding approximation per the intent above.
-fn text_width(text: &str) -> u32 {
-    let chars = text.chars().count() as u32;
-    chars * 7 + 20
+fn text_width(text: &str, font_size: u32) -> u32 {
+    // ~0.62em average advance for fallback condensed/regular sans —
+    // measured generously so the pill never clips when the brand font
+    // is unavailable.
+    let per_char = (font_size as f32 * 0.62).ceil() as u32;
+    text.chars().count() as u32 * per_char
 }
 
 #[cfg(test)]
@@ -657,21 +742,27 @@ mod tests {
         };
         let computation = sample_computation();
         let svg = render_svg(&counters, &computation, Style::Flat, Metric::Tier);
-        assert!(svg.contains(r#"rx="3""#), "expected rx=3; got:\n{svg}");
+        assert!(svg.contains(r#"rx="4""#), "expected rx=4; got:\n{svg}");
     }
 
     #[test]
-    fn render_svg_for_the_badge_uses_uppercase_label_and_taller_box() {
+    fn render_svg_for_the_badge_uppercases_tier_value_and_taller_box() {
         let counters = Counters {
             total: 47,
             aristos_count: 20,
             verification_rate_pct: 80,
         };
+        // sample_computation() lands on Adept — for-the-badge uppercases
+        // the tier VALUE (the "aristo" wordmark is gone in the redesign).
         let computation = sample_computation();
         let svg = render_svg(&counters, &computation, Style::ForTheBadge, Metric::Tier);
         assert!(
-            svg.contains("ARISTO"),
-            "expected uppercase label; got:\n{svg}"
+            svg.contains("ADEPT"),
+            "expected uppercase tier value; got:\n{svg}"
+        );
+        assert!(
+            !svg.contains("ARISTO"),
+            "the 'aristo' wordmark segment is removed; got:\n{svg}"
         );
         assert!(svg.contains(r#"height="28""#), "expected h=28; got:\n{svg}");
     }
