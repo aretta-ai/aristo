@@ -101,7 +101,7 @@ impl VerifyClient for HttpVerifyClient {
         &self,
         req: &VerifySessionRequest,
     ) -> Result<PostVerifySessionResponse, VerifyError> {
-        self.post_json("/canon/verify/sessions", req)
+        self.post_json("/verify/sessions", req)
     }
 
     fn get_session(
@@ -111,8 +111,8 @@ impl VerifyClient for HttpVerifyClient {
     ) -> Result<GetVerifySessionResponse, VerifyError> {
         let encoded = url_encode(session_id);
         let path = match wait_seconds {
-            Some(n) if n > 0 => format!("/canon/verify/sessions/{encoded}?wait={n}"),
-            _ => format!("/canon/verify/sessions/{encoded}"),
+            Some(n) if n > 0 => format!("/verify/sessions/{encoded}?wait={n}"),
+            _ => format!("/verify/sessions/{encoded}"),
         };
         self.get_json(&path)
     }

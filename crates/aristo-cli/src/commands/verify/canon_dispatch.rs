@@ -256,7 +256,7 @@ pub(crate) fn run_canon_dispatch(
             // ARISTO_REPO env override as a CI escape hatch.
             std::env::var("ARISTO_REPO").map_err(|_| CliError::Other {
                 message: format!(
-                    "could not determine repo for canon-verify: {e}\n  \
+                    "could not determine repo for verify: {e}\n  \
                      Set ARISTO_REPO=<owner/repo> to override (CI use)."
                 ),
                 exit_code: 1,
@@ -316,7 +316,7 @@ pub(crate) fn run_canon_dispatch(
             // §7c row 7: any failed / build_failed / inconclusive → exit 1.
             return Err(CliError::Other {
                 message: format!(
-                    "canon-verify reported {} failed, {} build_failed, {} inconclusive",
+                    "verify reported {} failed, {} build_failed, {} inconclusive",
                     final_snapshot.summary.failed,
                     final_snapshot.summary.build_failed,
                     final_snapshot.summary.inconclusive
@@ -353,7 +353,7 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     if wait && !snapshot.summary.is_success() {
         return Err(CliError::Other {
             message: format!(
-                "canon-verify reported {} failed, {} build_failed, {} inconclusive",
+                "verify reported {} failed, {} build_failed, {} inconclusive",
                 snapshot.summary.failed,
                 snapshot.summary.build_failed,
                 snapshot.summary.inconclusive
@@ -574,7 +574,7 @@ fn print_session_dispatched(req: &VerifySessionRequest, resp: &PostVerifySession
     };
     println!();
     println!(
-        "→ canon-verify session dispatched — verifying {} {annotation_word} against {}",
+        "→ verify session dispatched — verifying {} {annotation_word} against {}",
         resp.plan_size,
         short_sha(&req.commit_sha)
     );
@@ -594,7 +594,7 @@ fn short_sha(sha: &str) -> String {
 fn no_auth_to_cli_error(e: aristo_core::auth::AuthError) -> CliError {
     CliError::Other {
         message: format!(
-            "canon-verify requires authentication: {e}\n  \
+            "verify requires authentication: {e}\n  \
              Run `aristo auth login` to sign in.\n  \
              (Without a token, the SDK skips canon-bound `verify=\"full\"` \
              entries — they'd be rejected server-side anyway.)"
@@ -607,7 +607,7 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
     match e {
         VerifyError::Auth(inner) => CliError::Other {
             message: format!(
-                "canon-verify auth error: {inner}\n  \
+                "verify auth error: {inner}\n  \
                  Your token may be expired — re-run `aristo auth login`."
             ),
             exit_code: 1,
@@ -624,11 +624,11 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
             exit_code: 1,
         },
         VerifyError::BadRequest { status, message } => CliError::Other {
-            message: format!("canon-verify server rejected request (HTTP {status}): {message}"),
+            message: format!("verify server rejected request (HTTP {status}): {message}"),
             exit_code: 1,
         },
         other => CliError::Other {
-            message: format!("canon-verify failed: {other}"),
+            message: format!("verify failed: {other}"),
             exit_code: 1,
         },
     }

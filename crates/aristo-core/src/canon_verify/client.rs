@@ -80,17 +80,17 @@ pub enum VerifyError {
 impl fmt::Display for VerifyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            VerifyError::Auth(e) => write!(f, "canon-verify auth error: {e}"),
-            VerifyError::Network(msg) => write!(f, "canon-verify network error: {msg}"),
-            VerifyError::Timeout => write!(f, "canon-verify request timed out"),
+            VerifyError::Auth(e) => write!(f, "verify auth error: {e}"),
+            VerifyError::Network(msg) => write!(f, "verify network error: {msg}"),
+            VerifyError::Timeout => write!(f, "verify request timed out"),
             VerifyError::BadRequest { status, message } => {
-                write!(f, "canon-verify server returned HTTP {status}: {message}")
+                write!(f, "verify server returned HTTP {status}: {message}")
             }
             VerifyError::Server { status, message } => {
-                write!(f, "canon-verify server error (HTTP {status}): {message}")
+                write!(f, "verify server error (HTTP {status}): {message}")
             }
-            VerifyError::Decode(msg) => write!(f, "canon-verify response decode error: {msg}"),
-            VerifyError::Fixture(msg) => write!(f, "canon-verify fixture error: {msg}"),
+            VerifyError::Decode(msg) => write!(f, "verify response decode error: {msg}"),
+            VerifyError::Fixture(msg) => write!(f, "verify fixture error: {msg}"),
         }
     }
 }
