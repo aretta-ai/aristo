@@ -2,10 +2,10 @@
 #
 # live-dev-runbook.sh — drive aristo through the live-dev runbook.
 #
-# Companion to docs/LIVE-DEV-RUNBOOK.md. The markdown is the spec
-# (what the human reads); this script is the executor (what removes
-# copy-paste friction). They MUST stay in sync — when adding a step,
-# update the markdown first, then mirror the change here.
+# The spec this executes (LIVE-DEV-RUNBOOK.md) lives in Aretta's
+# internal design archive; this script is the executor (what removes
+# copy-paste friction). When adding a step, update the spec first,
+# then mirror the change here.
 #
 # Auth is assumed already done. See the runbook's preflight section.
 #

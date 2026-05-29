@@ -86,8 +86,7 @@ before it ships.
   builds on.
 
 Tiers climb Aspirant → Apprentice → Adept → Ascendent → Areté as a
-codebase's verification deepens (see the [badge tier
-scheme](./docs/decisions/badge-tier-scheme.md)).
+codebase's verification deepens.
 
 ## Documentation
 
@@ -96,7 +95,7 @@ scheme](./docs/decisions/badge-tier-scheme.md)).
 - **[Glossary](./docs/GLOSSARY.md)** — the vocabulary, defined once.
 - **API docs** — [`aristo`](https://docs.rs/aristo) · [`aristo-core`](https://docs.rs/aristo-core) · [`aristo-macros`](https://docs.rs/aristo-macros) · [`aristo-cli`](https://docs.rs/aristo-cli)
 - **CLI surface** — every `aristo <cmd> --help` is canonical.
-- **[Decision archive](./docs/decisions/)** · **[Changelog](./CHANGELOG.md)** · **[Roadmap](./docs/ROADMAP.md)**
+- **[Changelog](./CHANGELOG.md)** — per-commit release notes.
 
 ## Workspace layout
 
