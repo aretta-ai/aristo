@@ -18,17 +18,17 @@ workspace = true
 
 [dependencies]
 aristo = { workspace = true }
-getrandom = "0.2"
+getrandom = "0.4"
 globset = "0.4"
 proc-macro2 = { version = "1.0", features = ["span-locations"] }
-schemars = "0.8"
+schemars = "1.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
+sha2 = "0.11"
 syn = { version = "2.0", features = ["full", "extra-traits", "visit"] }
 thiserror = "2.0"
 time = { version = "0.3", features = ["formatting"] }
-toml = "0.8"
+toml = "1.1"
 # Blocking HTTP client for the canon API. `rustls` feature avoids
 # OpenSSL system-dep so the CLI builds clean on every platform.
 ureq = { version = "3.3", default-features = false, features = ["json", "rustls"] }
