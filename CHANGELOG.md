@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- feat(cli): redesign the `aristo badge` SVG as a single-segment tier pill — just the bridge glyph + tier name, replacing the old `aristo │ <tier>` two-part badge. ~40% narrower (Apprentice 170px → 103px), flat fill with no gloss gradient, `rx=4` rounded corners, Fira Sans Condensed type with a system-sans fallback, and luminance-based auto-contrast ink (white on the stone/red tiers, dark on the tan/gold tiers). All three `--style` flavors get the new shape; `for-the-badge` keeps the tall bold-UPPERCASE treatment. Pill widths are sized to the wider fallback font so the committed README badge never clips where the brand web-font can't load (e.g. GitHub's sanitized SVG).
 - ci: `release.yml` — automated crates.io publishing on `v*.*.*` tags via Trusted Publishing (GitHub OIDC, no stored token). Publishes all four crates in dependency order using a short-lived token minted from the workflow's OIDC identity; gated on a `release` GitHub Environment. Requires a one-time per-crate trusted-publisher config on crates.io (documented in the workflow header). For v0.1.1+; the 0.1.0 release is published manually.
 
 ## [v0.1.0] — 2026-05-29
