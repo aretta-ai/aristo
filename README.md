@@ -121,7 +121,7 @@ Aristo is small, focused, and moving fast — help is welcome.
 
 CI gates every PR: the `aristo` annotation pipeline (`stamp` / `lint` /
 `verify` / `doc` checks) and standard Rust gates (`fmt`, `clippy`,
-`test`, release build, `cargo doc`, MSRV 1.75).
+`test`, release build, `cargo doc`, MSRV 1.88).
 
 ## License
 

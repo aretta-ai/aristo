@@ -29,7 +29,7 @@ The two CI workflows (`.github/workflows/aristo.yml` + `.github/workflows/ci.yml
     - `cargo test` (from `ci.yml::test`)
     - `cargo build --release` (from `ci.yml::build-release`)
     - `cargo doc` (from `ci.yml::docs`)
-    - `cargo check (MSRV 1.75)` (from `ci.yml::msrv`)
+    - `cargo check (MSRV 1.88)` (from `ci.yml::msrv`)
 - **Require signed commits**: ✓ (matches our local `commit.gpgsign = true` policy; rejects unsigned commits on `main`)
 - **Require linear history**: ✓ (rejects merge commits; forces squash or rebase-merge — keeps `main`'s log readable)
 - **Do not allow bypassing the above settings**: ✓ (applies the rules to everyone including admins; bypass should require lifting the rule, not silently circumventing)
