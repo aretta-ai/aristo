@@ -30,7 +30,7 @@ directly only to set up, and to glance at where you stand.
 ## One-time setup
 
 ```console
-$ cargo install aristo       # the `aristo` CLI
+$ cargo install aristo-cli   # the `aristo` CLI
 $ cargo add aristo           # the #[aristo::intent] / #[aristo::assume] macros
 ```
 

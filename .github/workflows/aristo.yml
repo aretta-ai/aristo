@@ -1,9 +1,9 @@
 # Aristo CI gates — dogfood configuration for the aristo SDK itself.
 #
 # Sibling projects use the template `aristo init` writes (which calls
-# `cargo install aristo --locked` to fetch the published crate). This
-# repo can't install itself from crates.io pre-v0.1.0, so we build the
-# binary in-tree and invoke it via `cargo run --release --bin aristo`.
+# `cargo install aristo-cli --locked` to fetch the published crate — the
+# `aristo` binary ships in the aristo-cli crate). This repo dogfoods the
+# in-tree build instead, invoking it via `cargo run --release --bin aristo`.
 #
 # Gate order (slice 34): stamp first (everything downstream reads the
 # index — fail fast on staleness), lint second (cheapest static check),
