@@ -197,7 +197,7 @@ fn canon_bound_full_with_no_auth_surfaces_aristo_auth_login_hint() {
         .arg("verify")
         .assert()
         .failure()
-        .stderr(contains("canon-verify requires authentication"))
+        .stderr(contains("verify requires authentication"))
         .stderr(contains("aristo auth login"));
 }
 
@@ -221,7 +221,7 @@ fn canon_bound_full_with_auth_posts_session_and_prints_session_id() {
         .arg("verify")
         .assert()
         .success()
-        .stdout(contains("canon-verify session dispatched"))
+        .stdout(contains("verify session dispatched"))
         .stdout(contains("01HMTESTSESSION"))
         .stdout(contains(
             "https://dev.aretta.ai/dashboard/jobs/01HMTESTSESSION",
