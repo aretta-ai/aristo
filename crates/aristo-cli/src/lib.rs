@@ -46,12 +46,23 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Set up Aristo in this repo (creates `aristo.toml`, `.aristo/`,
-    /// pre-commit hook, CI workflow).
+    /// pre-commit hook). Pass `--ci` / `--ci-verify` to also add CI workflows.
     Init {
         /// Modify Cargo.toml to add `aristo` as a dependency. Default
         /// behavior just prints the dep line for the user to paste in.
         #[arg(short, long)]
         force: bool,
+
+        /// Also write a lite PR-gate workflow (`.github/workflows/aristo.yml`)
+        /// that runs stamp/lint/doc via the shared aristo-action. No token needed.
+        #[arg(long)]
+        ci: bool,
+
+        /// Also write the nightly/manual verify workflow
+        /// (`.github/workflows/aristo-verify.yml`). Needs an `ARETTA_TOKEN` repo
+        /// secret (paid tier). Implies `--ci`.
+        #[arg(long)]
+        ci_verify: bool,
     },
 
     /// Print a syntax cheat sheet for the detected language.
@@ -753,7 +764,11 @@ pub fn run() -> ExitCode {
 /// Maps a parsed `Commands` variant to its handler.
 fn dispatch(cmd: Commands) -> CliResult<()> {
     match cmd {
-        Commands::Init { force } => commands::init::run(force),
+        Commands::Init {
+            force,
+            ci,
+            ci_verify,
+        } => commands::init::run(force, ci, ci_verify),
         Commands::Lang { file } => commands::lang::run(file),
         Commands::InstallSkills {
             agent,
