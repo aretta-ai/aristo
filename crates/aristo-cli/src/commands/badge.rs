@@ -2,8 +2,10 @@
 //!
 //! Reads `.aristo/index.toml` + walks the workspace source for the
 //! coverage formula's denominator, computes the D7 visible score and
-//! D8 tier (with the D4 Areté gate), and emits a shields.io-compatible
-//! SVG. Three style variants (`flat`, `flat-square`, `for-the-badge`)
+//! D8 tier (with the D4 Areté gate), and renders a shields.io-quality
+//! SVG via the `badge-maker` crate — entirely offline, so the output
+//! sits flush with the crate / docs / CI shields badges in a README.
+//! Three style variants (`flat-square` default, `flat`, `plastic`)
 //! × three metric variants (`tier`, `count`, `rate`).
 //!
 //! Slice 31.5 makes `tier` the default headline metric. `count` and
@@ -24,6 +26,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use badge_maker::{BadgeBuilder, Logo, Style as BmStyle};
+
 use aristo_core::badge::{compute_tier, Tier, TierComputation};
 use aristo_core::index::{IdNamespace, IndexEntry, IndexFile, Status};
 use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
@@ -37,7 +41,7 @@ use crate::{CliError, CliResult};
 pub(crate) enum Style {
     Flat,
     FlatSquare,
-    ForTheBadge,
+    Plastic,
 }
 
 impl Style {
@@ -45,9 +49,9 @@ impl Style {
         match raw {
             "flat" => Ok(Self::Flat),
             "flat-square" => Ok(Self::FlatSquare),
-            "for-the-badge" => Ok(Self::ForTheBadge),
+            "plastic" => Ok(Self::Plastic),
             other => Err(format!(
-                "unknown --style `{other}`; expected `flat`, `flat-square`, or `for-the-badge`"
+                "unknown --style `{other}`; expected `flat`, `flat-square`, or `plastic`"
             )),
         }
     }
@@ -56,7 +60,15 @@ impl Style {
         match self {
             Self::Flat => "flat",
             Self::FlatSquare => "flat-square",
-            Self::ForTheBadge => "for-the-badge",
+            Self::Plastic => "plastic",
+        }
+    }
+
+    fn to_badge_maker(self) -> BmStyle {
+        match self {
+            Self::Flat => BmStyle::Flat,
+            Self::FlatSquare => BmStyle::FlatSquare,
+            Self::Plastic => BmStyle::Plastic,
         }
     }
 }
@@ -222,90 +234,26 @@ fn is_verified_state(status: Status) -> bool {
 
 // ─── SVG rendering ────────────────────────────────────────────────────
 
-/// Accessible-label prefix. The redesigned badge is a single tier pill
-/// with NO visible "aristo" wordmark (the glyph + tier carry it), but
-/// the `<title>` / `aria-label` keep the project name so the badge is
-/// still identifiable to screen readers and link previews.
+/// The badge's label half — the project name, on the dark stone half.
 const LABEL: &str = "aristo";
 
-/// Font stack. Fira Sans Condensed is the brand face; it is a web font
-/// that GitHub's sanitized SVG won't fetch, so the stack falls back to
-/// the condensed/regular system sans GitHub actually renders. Pill
-/// widths are sized against the WIDER fallback metrics (see
-/// [`text_width`]) so the committed README badge never clips when the
-/// brand font is unavailable.
-const FONT_STACK: &str = "'Fira Sans Condensed','DejaVu Sans Condensed',Verdana,Geneva,sans-serif";
+/// Dark stone (D11) label-half background. The `aristo` wordmark and the
+/// white bridge glyph sit on it; the tier color fills the message half.
+const LABEL_COLOR: &str = "#2b2824";
 
-/// Locked simpleicons-style bridge-as-Ω logo (D11). 24×24 viewBox,
-/// fill="currentColor" so the badge's color group propagates.
-const LOGO_PATHS: &str = concat!(
-    r#"<path d="M5 4 Q12 12 19 4 L19 5.5 Q12 13.5 5 5.5 Z"/>"#,
-    r#"<path d="M2 21 L3 4 L7 4 L8 21 Z"/>"#,
-    r#"<path d="M16 21 L17 4 L21 4 L22 21 Z"/>"#,
-    r#"<path d="M1 21 L23 21 L23 22.5 L1 22.5 Z"/>"#,
-);
+/// The bridge glyph, embedded as the badge logo: a stroked suspension
+/// bridge (catenary arc + deck + three cables), white so it reads on the
+/// dark label half. `badge-maker` inlines this SVG as a base64 data-URI,
+/// so the rendered badge is fully self-contained — no external logo
+/// fetch, which keeps `aristo badge` an offline command. The logo
+/// *concept* is still unsettled (bridge vs. keystone vs. shield); this
+/// is the mockup placeholder, not a locked logo.
+const BRIDGE_GLYPH: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5 Q12 5 21 16.5"/><path d="M3 16.5h18"/><path d="M8 11v5.5"/><path d="M12 8v8.5"/><path d="M16 11v5.5"/></svg>"##;
 
-/// Geometry + type treatment for a single-segment tier pill. The three
-/// `--style` flavors are just three of these (see [`Style::geom`]).
-struct BadgeGeom {
-    height: u32,
-    /// Corner radius. `0` for the square flavor.
-    rx: u32,
-    /// Rendered side of the embedded logo box (the 24×24 viewBox scales
-    /// to this). The glyph is vertically centered in `height`.
-    glyph_px: u32,
-    font_size: u32,
-    font_weight: u32,
-    /// UPPERCASE the tier label (the `for-the-badge` flavor only).
-    uppercase: bool,
-    /// Letter-spacing in px; `0.0` for the compact flavors.
-    letter_spacing: f32,
-    /// Left margin before the glyph.
-    pad_left: u32,
-    /// Gap between glyph and text.
-    gap: u32,
-    /// Right margin after the text.
-    pad_right: u32,
-}
-
-impl Style {
-    fn geom(self) -> BadgeGeom {
-        match self {
-            // 20px compact pill: rounded, mixed-case, regular weight.
-            Style::Flat => BadgeGeom {
-                height: 20,
-                rx: 4,
-                glyph_px: 14,
-                font_size: 11,
-                font_weight: 600,
-                uppercase: false,
-                letter_spacing: 0.0,
-                pad_left: 6,
-                gap: 5,
-                pad_right: 8,
-            },
-            // Identical to flat but square corners.
-            Style::FlatSquare => BadgeGeom {
-                rx: 0,
-                ..Style::Flat.geom()
-            },
-            // Variant C: 28px, bold UPPERCASE, airy letter-spacing.
-            Style::ForTheBadge => BadgeGeom {
-                height: 28,
-                rx: 4,
-                glyph_px: 16,
-                font_size: 13,
-                font_weight: 700,
-                uppercase: true,
-                letter_spacing: 0.8,
-                pad_left: 9,
-                gap: 7,
-                pad_right: 11,
-            },
-        }
-    }
-}
-
+/// Render the badge SVG via `badge-maker` (shields.io-parity output,
+/// generated entirely offline): the `aristo` label on the dark stone
+/// half with the bridge glyph, then the headline value (tier / count /
+/// rate) in the tier color on the message half.
 fn render_svg(
     counters: &Counters,
     computation: &TierComputation,
@@ -313,93 +261,25 @@ fn render_svg(
     metric: Metric,
 ) -> String {
     let value = headline_value(counters, computation, metric);
-    let fill = value_color(computation.tier, metric);
-    render_pill(&value, fill, style.geom())
-}
-
-/// Render a single tier-colored pill: centered logo + tier text, no
-/// "aristo" label segment, no gloss gradient. Text + glyph pick a
-/// white or dark ink by the fill's luminance ([`ink_for`]) so every
-/// tier in the D11 palette stays legible.
-fn render_pill(value: &str, fill: &str, g: BadgeGeom) -> String {
-    let text = if g.uppercase {
-        value.to_uppercase()
-    } else {
-        value.to_string()
-    };
-    let ink = ink_for(fill);
-
-    // Letter-spacing widens the visual run; fold it into the measured
-    // width so the right padding stays honest.
-    let spacing_w =
-        (text.chars().count().saturating_sub(1) as f32 * g.letter_spacing).round() as u32;
-    let text_w = text_width(&text, g.font_size) + spacing_w;
-    let glyph_x = g.pad_left;
-    let text_x = g.pad_left + g.glyph_px + g.gap;
-    let total_w = text_x + text_w + g.pad_right;
-
-    let glyph_y = (g.height - g.glyph_px) / 2;
-    // Optical baseline: a touch below vertical center reads as centered.
-    let text_y = g.height / 2 + g.font_size / 3;
-    let spacing_attr = if g.letter_spacing > 0.0 {
-        format!(r#" letter-spacing="{:.1}""#, g.letter_spacing)
-    } else {
-        String::new()
-    };
-
-    format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="{height}" role="img" aria-label="{LABEL}: {value}">
-  <title>{LABEL}: {value}</title>
-  <rect width="{total_w}" height="{height}" rx="{rx}" fill="{fill}"/>
-  <g transform="translate({glyph_x} {glyph_y})" fill="{ink}">
-    <svg width="{glyph_px}" height="{glyph_px}" viewBox="0 0 24 24" fill="currentColor">{logo}</svg>
-  </g>
-  <text x="{text_x}" y="{text_y}" fill="{ink}" font-family="{FONT_STACK}" font-size="{font_size}" font-weight="{font_weight}"{spacing_attr}>{text}</text>
-</svg>
-"##,
-        height = g.height,
-        rx = g.rx,
-        glyph_px = g.glyph_px,
-        font_size = g.font_size,
-        font_weight = g.font_weight,
-        logo = LOGO_PATHS,
-    )
-}
-
-/// White or dark ink for text/glyph laid over `bg_hex`, chosen by
-/// perceived luminance (0.299R + 0.587G + 0.114B). Threshold 150
-/// reproduces the D11 contrast intent exactly — white on the stone +
-/// red tiers and the count/rate green, dark `#2b2824` on the light tan
-/// (Apprentice) and gold (Areté) tiers — without hardcoding a per-tier
-/// map that would silently break if the palette shifts.
-fn ink_for(bg_hex: &str) -> &'static str {
-    let (r, gc, b) = parse_hex(bg_hex);
-    let luma = 0.299 * r as f32 + 0.587 * gc as f32 + 0.114 * b as f32;
-    if luma > 150.0 {
-        "#2b2824"
-    } else {
-        "#fff"
-    }
-}
-
-/// Parse `#rgb` or `#rrggbb` into 8-bit channels. Unparseable input
-/// falls back to mid-grey, which is harmless (it only steers ink
-/// choice, and every palette color is a valid literal anyway).
-fn parse_hex(hex: &str) -> (u8, u8, u8) {
-    let h = hex.trim_start_matches('#');
-    let expand = |s: &str| u8::from_str_radix(s, 16).unwrap_or(128);
-    match h.len() {
-        3 => {
-            let c: Vec<char> = h.chars().collect();
-            (
-                expand(&format!("{0}{0}", c[0])),
-                expand(&format!("{0}{0}", c[1])),
-                expand(&format!("{0}{0}", c[2])),
-            )
-        }
-        6 => (expand(&h[0..2]), expand(&h[2..4]), expand(&h[4..6])),
-        _ => (128, 128, 128),
-    }
+    let color = value_color(computation.tier, metric);
+    BadgeBuilder::new()
+        .label(LABEL)
+        .message(&value)
+        .label_color_parse(LABEL_COLOR)
+        .color_parse(color)
+        .style(style.to_badge_maker())
+        .logo(Logo::SVGLogo {
+            svg: BRIDGE_GLYPH.to_string(),
+            color: None,
+            width: 14,
+            padding: 3,
+        })
+        .build()
+        // The inputs are a fixed label, a fixed dark stone label color,
+        // and a value color drawn from the closed D11 palette (or the
+        // count/rate green) — all valid, so build never errors here.
+        .expect("badge inputs are fixed valid colors + style")
+        .svg()
 }
 
 fn headline_value(counters: &Counters, computation: &TierComputation, metric: Metric) -> String {
@@ -410,37 +290,14 @@ fn headline_value(counters: &Counters, computation: &TierComputation, metric: Me
     }
 }
 
-/// The value half of the badge picks up the tier color ONLY when
-/// `--metric=tier` is in play — that's where the palette signal is
-/// load-bearing. `count` and `rate` get the slice-31 default green
-/// so existing README embeds keep their visual identity.
+/// The message half picks up the tier color ONLY for `--metric=tier`
+/// (where the palette signal is load-bearing). `count` and `rate` keep
+/// the slice-31 default green so existing README embeds keep identity.
 fn value_color(tier: Tier, metric: Metric) -> &'static str {
     match metric {
         Metric::Tier => tier.color_hex(),
         Metric::Count | Metric::Rate => "#4c1",
     }
-}
-
-#[aristo::intent(
-    "Badge text width is approximated per-character, scaled by font \
-     size, and deliberately calibrated to the WIDER fallback sans \
-     (DejaVu/Verdana) rather than the narrower brand font (Fira Sans \
-     Condensed). GitHub strips the web-font fetch from committed SVGs, \
-     so the README badge renders in the fallback; sizing to the brand \
-     font's metrics would clip the tier text there. Over-estimating is \
-     safe (a little right padding); under-estimating clips. The trycmd \
-     scenarios match the SVG with wildcards (only `<svg ...>` ↔ \
-     `</svg>` framing is pinned, not pixel dimensions), so this \
-     heuristic is the sole guard against clipping.",
-    verify = "neural",
-    id = "badge_text_width_calibrated_to_fallback_font"
-)]
-fn text_width(text: &str, font_size: u32) -> u32 {
-    // ~0.62em average advance for fallback condensed/regular sans —
-    // measured generously so the pill never clips when the brand font
-    // is unavailable.
-    let per_char = (font_size as f32 * 0.62).ceil() as u32;
-    text.chars().count() as u32 * per_char
 }
 
 #[cfg(test)]
@@ -534,14 +391,16 @@ mod tests {
     fn style_parses_three_documented_forms() {
         assert_eq!(Style::parse("flat"), Ok(Style::Flat));
         assert_eq!(Style::parse("flat-square"), Ok(Style::FlatSquare));
-        assert_eq!(Style::parse("for-the-badge"), Ok(Style::ForTheBadge));
+        assert_eq!(Style::parse("plastic"), Ok(Style::Plastic));
     }
 
     #[test]
     fn style_rejects_unknown_form() {
-        let err = Style::parse("plastic").unwrap_err();
+        // `for-the-badge` is no longer offered (badge-maker renders flat /
+        // flat-square / plastic), so it now parses as unknown.
+        let err = Style::parse("for-the-badge").unwrap_err();
         assert!(err.contains("unknown --style"), "got: {err}");
-        assert!(err.contains("plastic"), "got: {err}");
+        assert!(err.contains("for-the-badge"), "got: {err}");
     }
 
     #[test]
@@ -634,180 +493,7 @@ mod tests {
         assert_eq!(c.verification_rate_pct, 50);
     }
 
-    // ─── rendering — metric routing + SVG framing ────────────────────
-
-    #[test]
-    fn render_svg_default_metric_emits_tier_label_in_value() {
-        let counters = Counters {
-            total: 47,
-            aristos_count: 20,
-            verification_rate_pct: 80,
-        };
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Tier);
-        assert!(
-            svg.contains(computation.tier.label()),
-            "tier label must appear in tier-metric SVG; got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn render_svg_count_metric_preserves_slice_31_surface() {
-        let counters = Counters {
-            total: 47,
-            aristos_count: 20,
-            verification_rate_pct: 80,
-        };
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Count);
-        assert!(svg.contains("✓ 47"), "expected `✓ 47`; got:\n{svg}");
-    }
-
-    #[test]
-    fn render_svg_rate_metric_emits_percentage_value() {
-        let counters = Counters {
-            total: 47,
-            aristos_count: 20,
-            verification_rate_pct: 80,
-        };
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Rate);
-        assert!(svg.contains("80%"), "expected `80%`; got:\n{svg}");
-    }
-
-    #[test]
-    fn render_svg_value_color_tier_uses_palette() {
-        // Adept (computed from 1 neural-verified intent in a 1-fn module
-        // → ratio 0.6 × coverage 1.0 = 0.6 → Adept).
-        let counters = Counters {
-            total: 1,
-            aristos_count: 0,
-            verification_rate_pct: 100,
-        };
-        let computation = sample_computation();
-        assert_eq!(computation.tier, Tier::Adept);
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Tier);
-        assert!(
-            svg.contains("#C0362C"),
-            "Adept tier should color with International Orange; got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn render_svg_value_color_count_keeps_slice_31_green() {
-        let counters = Counters {
-            total: 1,
-            aristos_count: 0,
-            verification_rate_pct: 100,
-        };
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Count);
-        assert!(
-            svg.contains("#4c1"),
-            "count metric should keep slice-31 green; got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn render_svg_flat_has_svg_framing() {
-        let counters = Counters {
-            total: 47,
-            aristos_count: 20,
-            verification_rate_pct: 80,
-        };
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Tier);
-        assert!(svg.starts_with("<svg "), "got:\n{svg}");
-        assert!(svg.trim_end().ends_with("</svg>"), "got:\n{svg}");
-    }
-
-    #[test]
-    fn render_svg_flat_square_uses_no_corner_radius() {
-        let counters = Counters {
-            total: 47,
-            aristos_count: 20,
-            verification_rate_pct: 80,
-        };
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::FlatSquare, Metric::Tier);
-        assert!(svg.contains(r#"rx="0""#), "expected rx=0; got:\n{svg}");
-    }
-
-    #[test]
-    fn render_svg_flat_uses_corner_radius() {
-        let counters = Counters {
-            total: 47,
-            aristos_count: 20,
-            verification_rate_pct: 80,
-        };
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Tier);
-        assert!(svg.contains(r#"rx="4""#), "expected rx=4; got:\n{svg}");
-    }
-
-    #[test]
-    fn render_svg_for_the_badge_uppercases_tier_value_and_taller_box() {
-        let counters = Counters {
-            total: 47,
-            aristos_count: 20,
-            verification_rate_pct: 80,
-        };
-        // sample_computation() lands on Adept — for-the-badge uppercases
-        // the tier VALUE (the "aristo" wordmark is gone in the redesign).
-        let computation = sample_computation();
-        let svg = render_svg(&counters, &computation, Style::ForTheBadge, Metric::Tier);
-        assert!(
-            svg.contains("ADEPT"),
-            "expected uppercase tier value; got:\n{svg}"
-        );
-        assert!(
-            !svg.contains("ARISTO"),
-            "the 'aristo' wordmark segment is removed; got:\n{svg}"
-        );
-        assert!(svg.contains(r#"height="28""#), "expected h=28; got:\n{svg}");
-    }
-
-    #[test]
-    fn render_svg_embeds_locked_bridge_logo() {
-        let counters = Counters {
-            total: 0,
-            aristos_count: 0,
-            verification_rate_pct: 0,
-        };
-        let computation = sample_computation();
-        // The locked bridge-as-Ω logo's first path is the catenary that
-        // dips between the towers — D11. If a future edit accidentally
-        // ships a different logo, this assertion catches it.
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Tier);
-        assert!(
-            svg.contains(r#"<path d="M5 4 Q12 12 19 4 L19 5.5 Q12 13.5 5 5.5 Z"/>"#),
-            "expected locked catenary path in SVG; got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn render_svg_arete_tier_uses_gold_color_and_glyph() {
-        let counters = Counters {
-            total: 0,
-            aristos_count: 0,
-            verification_rate_pct: 0,
-        };
-        let computation = TierComputation {
-            verifiable: 1,
-            verification_ratio: 1.0,
-            coverage_score: 1.0,
-            articulation_floor: 0.05,
-            visible_score: 1.0,
-            arete_gate_met: true,
-            tier: Tier::Arete,
-        };
-        let svg = render_svg(&counters, &computation, Style::Flat, Metric::Tier);
-        assert!(svg.contains("#d4a017"), "Areté gold color; got:\n{svg}");
-        assert!(svg.contains("✦"), "Areté ✦ glyph; got:\n{svg}");
-        assert!(svg.contains("Areté"), "Areté label; got:\n{svg}");
-    }
-
-    // ─── redesign: single-segment pill invariants ────────────────────
+    // ─── rendering via badge-maker (shields-parity output) ───────────
 
     fn demo_counters() -> Counters {
         Counters {
@@ -817,94 +503,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn render_svg_is_single_segment_with_no_label_half_or_wordmark() {
-        // The redesign collapsed the two-segment shields badge into one
-        // tier-colored pill: no `#555` label half, no visible "aristo"
-        // wordmark. The project name survives ONLY in the accessible
-        // title / aria-label, never as a rendered text body.
-        let svg = render_svg(
-            &demo_counters(),
-            &sample_computation(),
-            Style::Flat,
-            Metric::Tier,
-        );
-        assert!(
-            !svg.contains(r##"fill="#555""##),
-            "no grey label-half rect; got:\n{svg}"
-        );
-        assert_eq!(
-            svg.matches("<rect").count(),
-            1,
-            "single-segment pill has exactly one rect; got:\n{svg}"
-        );
-        assert_eq!(
-            svg.matches("<text").count(),
-            1,
-            "only the tier value is a text element — no standalone wordmark; got:\n{svg}"
-        );
-        assert!(
-            svg.contains(r#"aria-label="aristo: "#) && svg.contains("<title>aristo: "),
-            "aristo kept in title/aria-label only; got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn render_svg_drops_the_gloss_gradient() {
-        // The old shields-style badge carried a <linearGradient> gloss
-        // overlay; the flat redesign removes it.
-        let svg = render_svg(
-            &demo_counters(),
-            &sample_computation(),
-            Style::Flat,
-            Metric::Tier,
-        );
-        assert!(
-            !svg.contains("linearGradient"),
-            "gloss gradient removed; got:\n{svg}"
-        );
-        assert!(
-            !svg.contains("<defs"),
-            "no gradient defs block; got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn ink_for_picks_contrast_by_luminance_across_the_palette() {
-        // Dark fills (stone + reds + the count/rate green) → white ink.
-        assert_eq!(ink_for("#8a8378"), "#fff", "Aspirant stone, luma ~132");
-        assert_eq!(ink_for("#C0362C"), "#fff", "Adept intl orange, luma ~94");
-        assert_eq!(ink_for("#8c2913"), "#fff", "Ascendent, luma ~68");
-        assert_eq!(
-            ink_for("#4c1"),
-            "#fff",
-            "count/rate green (3-digit), luma ~142"
-        );
-        // Light fills (tan + gold) → dark ink for legibility.
-        assert_eq!(ink_for("#c9a87c"), "#2b2824", "Apprentice tan, luma ~173");
-        assert_eq!(ink_for("#d4a017"), "#2b2824", "Areté gold, luma ~160");
-    }
-
-    #[test]
-    fn render_svg_inks_text_white_on_dark_tier_fill() {
-        // Adept (#C0362C, dark) → white ink distinct from the fill, so a
-        // contrast regression that left text the fill color is caught.
-        let svg = render_svg(
-            &demo_counters(),
-            &sample_computation(),
-            Style::Flat,
-            Metric::Tier,
-        );
-        assert_eq!(sample_computation().tier, Tier::Adept);
-        assert!(
-            svg.contains(r##"fill="#fff""##),
-            "white ink on dark Adept fill; got:\n{svg}"
-        );
-    }
-
-    #[test]
-    fn render_svg_for_the_badge_uppercases_arete_value_and_spaces_it() {
-        let arete = TierComputation {
+    fn arete_computation() -> TierComputation {
+        TierComputation {
             verifiable: 1,
             verification_ratio: 1.0,
             coverage_score: 1.0,
@@ -912,16 +512,168 @@ mod tests {
             visible_score: 1.0,
             arete_gate_met: true,
             tier: Tier::Arete,
-        };
-        let svg = render_svg(&demo_counters(), &arete, Style::ForTheBadge, Metric::Tier);
-        // to_uppercase("✦ Areté") = "✦ ARETÉ": ✦ survives, é → É.
-        assert!(
-            svg.contains("✦ ARETÉ"),
-            "for-the-badge uppercases the Areté value incl. glyph; got:\n{svg}"
+        }
+    }
+
+    #[test]
+    fn render_svg_default_metric_emits_tier_label_in_message() {
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Tier,
         );
         assert!(
-            svg.contains(r#"letter-spacing="0.8""#),
-            "for-the-badge carries the airy tracking; got:\n{svg}"
+            svg.contains(sample_computation().tier.label()),
+            "tier label must appear in the tier-metric SVG; got:\n{svg}"
         );
+    }
+
+    #[test]
+    fn render_svg_count_metric_preserves_slice_31_surface() {
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Count,
+        );
+        assert!(svg.contains("✓ 47"), "expected `✓ 47`; got:\n{svg}");
+    }
+
+    #[test]
+    fn render_svg_rate_metric_emits_percentage_value() {
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Rate,
+        );
+        assert!(svg.contains("80%"), "expected `80%`; got:\n{svg}");
+    }
+
+    #[test]
+    fn render_svg_tier_metric_fills_message_with_palette_color() {
+        // sample_computation() → Adept → #C0362C, lowercased by badge-maker.
+        let computation = sample_computation();
+        assert_eq!(computation.tier, Tier::Adept);
+        let svg = render_svg(
+            &demo_counters(),
+            &computation,
+            Style::FlatSquare,
+            Metric::Tier,
+        );
+        assert!(
+            svg.contains("#c0362c"),
+            "Adept message half is International Orange; got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_count_metric_keeps_slice_31_green() {
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Count,
+        );
+        assert!(
+            svg.contains("#4c1"),
+            "count metric keeps the slice-31 green; got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_has_valid_svg_framing() {
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Tier,
+        );
+        assert!(svg.starts_with("<svg "), "got:\n{svg}");
+        assert!(svg.trim_end().ends_with("</svg>"), "got:\n{svg}");
+    }
+
+    #[test]
+    fn render_svg_labels_aristo_on_the_dark_stone_half() {
+        // Standard shields two-segment layout: `aristo` on the dark stone
+        // label half (#2b2824), the tier color on the message half — so
+        // the badge sits flush with the crate / license shields badges.
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Tier,
+        );
+        assert!(
+            svg.contains("aristo"),
+            "the `aristo` label is present; got:\n{svg}"
+        );
+        assert!(
+            svg.contains(r##"fill="#2b2824""##),
+            "dark stone label half; got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_embeds_bridge_glyph_as_inline_logo() {
+        // The bridge ships embedded as a base64 SVG data-URI <image>, so
+        // the badge is self-contained — no external logo fetch. Catches a
+        // regression that drops the glyph.
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Tier,
+        );
+        assert!(
+            svg.contains("<image"),
+            "logo <image> element present; got:\n{svg}"
+        );
+        assert!(
+            svg.contains("data:image/svg+xml;base64,"),
+            "logo inlined as a data-URI (offline, self-contained); got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_flat_square_uses_crisp_edges() {
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::FlatSquare,
+            Metric::Tier,
+        );
+        assert!(
+            svg.contains("crispEdges"),
+            "flat-square renders square (crisp) edges; got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_flat_style_rounds_corners() {
+        let svg = render_svg(
+            &demo_counters(),
+            &sample_computation(),
+            Style::Flat,
+            Metric::Tier,
+        );
+        assert!(
+            svg.contains(r#"rx="3""#),
+            "flat style rounds corners (rx=3); got:\n{svg}"
+        );
+    }
+
+    #[test]
+    fn render_svg_arete_tier_uses_gold_color_and_glyph() {
+        let svg = render_svg(
+            &demo_counters(),
+            &arete_computation(),
+            Style::FlatSquare,
+            Metric::Tier,
+        );
+        assert!(svg.contains("#d4a017"), "Areté gold color; got:\n{svg}");
+        assert!(svg.contains("✦"), "Areté ✦ glyph; got:\n{svg}");
+        assert!(svg.contains("Areté"), "Areté label; got:\n{svg}");
     }
 }
