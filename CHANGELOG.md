@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- chore: regenerate `docs/badge.svg` with the badge-maker renderer — the README's "aristo verified" badge is now the offline-rendered flat-square shields badge (dark `aristo` label + bridge glyph + the Apprentice tier in tan).
 - feat(cli): render the `aristo badge` SVG via the `badge-maker` crate — shields.io-quality output generated entirely offline, replacing the hand-rolled renderer. The badge is now a standard two-segment shields badge that sits flush with the crate / docs / CI badges: `aristo` on a dark stone (`#2b2824`) label half with the bridge glyph (a stroked suspension bridge, embedded as a self-contained base64 data-URI logo — no external fetch), and the tier name in its D11 color on the message half. Default `--style` is `flat-square` (also `flat`, `plastic`). This fixes the prior badge's GitHub web-font fallback problem: `badge-maker` uses standard Verdana/DejaVu metrics, so the committed badge renders identically everywhere.
 - docs: add a GitHub Actions CI build-status badge to the README badge cluster (`ci.yml`), placed right after the aristo tier badge. Shows the standard `fmt`/`clippy`/`test`/build gate status on `main`. (Renders once the `ci` workflow has run on `main` at least once.)
 - chore: regenerate the repo's own `docs/badge.svg` with the redesigned renderer — the README's "aristo verified" badge is now the single-segment Apprentice tier pill (103px, was 170px).
