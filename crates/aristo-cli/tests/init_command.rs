@@ -30,7 +30,10 @@ fn creates_all_state_files_in_empty_dir() {
     assert!(root.join(".aristo/index.toml").is_file());
     assert!(root.join(".aristo/specs").is_dir());
     assert!(root.join(".aristo/doc").is_dir());
-    assert!(root.join(".github/workflows/aristo.yml").is_file());
+
+    // CI workflows are opt-in (--ci / --ci-verify) — not written by default.
+    assert!(!root.join(".github/workflows/aristo.yml").exists());
+    assert!(!root.join(".github/workflows/aristo-verify.yml").exists());
 
     // No git → no hook installed.
     assert!(!root.join(".git/hooks/pre-commit").exists());
@@ -179,4 +182,59 @@ fn second_invocation_in_git_repo_notes_existing_hook() {
         .assert()
         .success()
         .stdout(contains("pre-commit hook already installed"));
+}
+
+#[test]
+fn ci_flag_writes_lite_workflow_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    aristo_in(root).arg("init").arg("--ci").assert().success();
+
+    let lite = root.join(".github/workflows/aristo.yml");
+    assert!(lite.is_file(), "--ci writes the lite PR gate");
+    assert!(
+        !root.join(".github/workflows/aristo-verify.yml").exists(),
+        "--ci does NOT write the verify workflow"
+    );
+
+    let content = fs::read_to_string(&lite).unwrap();
+    assert!(
+        content.contains("aretta-ai/aristo-action"),
+        "lite gate runs via the shared action; got:\n{content}"
+    );
+    assert!(
+        content.contains("checks: stamp, lint, doc"),
+        "lite gate runs stamp/lint/doc; got:\n{content}"
+    );
+}
+
+#[test]
+fn ci_verify_flag_writes_both_workflows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    aristo_in(root)
+        .arg("init")
+        .arg("--ci-verify")
+        .assert()
+        .success();
+
+    // --ci-verify implies the lite gate, plus the verify workflow.
+    assert!(
+        root.join(".github/workflows/aristo.yml").is_file(),
+        "--ci-verify also writes the lite gate"
+    );
+    let verify = root.join(".github/workflows/aristo-verify.yml");
+    assert!(verify.is_file(), "--ci-verify writes the verify workflow");
+
+    let content = fs::read_to_string(&verify).unwrap();
+    assert!(
+        content.contains("checks: verify"),
+        "verify workflow runs the verify check; got:\n{content}"
+    );
+    assert!(
+        content.contains("ARETTA_TOKEN"),
+        "verify workflow wires the token secret; got:\n{content}"
+    );
 }
