@@ -41,6 +41,7 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
             repo,
         } => login(stdin, token, &server, repo),
         AuthAction::Status => status(),
+        AuthAction::Token => token(),
         AuthAction::Logout => logout(),
     }
 }
@@ -275,6 +276,42 @@ fn status() -> CliResult<()> {
                 "credentials file is malformed: {msg}\n  \
                  Run `aristo auth logout` then `aristo auth login` to re-create it."
             ),
+            exit_code: 1,
+        }),
+    }
+}
+
+// ─── token ─────────────────────────────────────────────────────────────────
+
+/// Print the resolved token to stdout — and NOTHING else — so it pipes
+/// cleanly into a clipboard tool (`aristo auth token | pbcopy`) or a CI
+/// secret. Unlike `status`, this deliberately prints the secret value, so
+/// it's only ever written to stdout on explicit request.
+fn token() -> CliResult<()> {
+    match aristo_core::auth::resolve_full() {
+        Ok(creds) => {
+            println!("{}", creds.token.as_str());
+            Ok(())
+        }
+        Err(AuthError::NoToken) => Err(CliError::Other {
+            message: format!(
+                "not authenticated — no token found.\n  \
+                 Run `aristo auth login` to mint one, or set the {} env var.",
+                auth::ENV_VAR
+            ),
+            exit_code: 1,
+        }),
+        Err(AuthError::Malformed(msg)) => Err(CliError::Other {
+            message: format!(
+                "credentials file is malformed: {msg}\n  \
+                 Run `aristo auth logout` then `aristo auth login` to re-create it."
+            ),
+            exit_code: 1,
+        }),
+        Err(AuthError::Invalid) => Err(CliError::Other {
+            message: "stored token was rejected by the server. \
+                      Run `aristo auth login` to refresh."
+                .into(),
             exit_code: 1,
         }),
     }

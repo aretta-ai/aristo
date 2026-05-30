@@ -543,6 +543,13 @@ pub(crate) enum AuthAction {
     /// itself — only its source (env var, credentials file, or none).
     /// Handy for sanity-checking before running `aristo stamp`.
     Status,
+    /// Print the resolved `arta_*` token to stdout — the `ARETTA_TOKEN`
+    /// env var if set, else the on-disk credentials file. Nothing else is
+    /// printed, so it pipes cleanly to your clipboard, e.g.
+    /// `aristo auth token | pbcopy` (macOS) or
+    /// `aristo auth token | xclip -selection clipboard` (Linux). Handy for
+    /// setting the `ARETTA_TOKEN` CI secret. Errors if not authenticated.
+    Token,
     /// Remove the stored credentials file. Idempotent — running
     /// `logout` when not logged in is not an error.
     Logout,
