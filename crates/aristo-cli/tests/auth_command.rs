@@ -356,3 +356,59 @@ fn full_auth_lifecycle() {
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("not authenticated"));
 }
+
+// ─── auth token ────────────────────────────────────────────────────────────
+
+#[test]
+fn token_prints_value_from_env_var() {
+    let tmp = TempDir::new().unwrap();
+    let out = isolated(tmp.path())
+        .args(["auth", "token"])
+        .env("ARETTA_TOKEN", "arta_env_tok_123")
+        .output()
+        .expect("run aristo");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Unlike `status`, `token` DOES print the value — and only the value.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout.trim(), "arta_env_tok_123", "stdout: {stdout}");
+}
+
+#[test]
+fn token_prints_value_from_credentials_file() {
+    let tmp = TempDir::new().unwrap();
+    let p = creds_path(tmp.path());
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(
+        &p,
+        "[aretta]\ntoken = \"arta_file_tok_456\"\nissued_at = \"2026-05-20T00:00:00Z\"\n",
+    )
+    .unwrap();
+
+    let out = isolated(tmp.path())
+        .args(["auth", "token"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout.trim(), "arta_file_tok_456", "stdout: {stdout}");
+}
+
+#[test]
+fn token_errors_when_not_authenticated() {
+    let tmp = TempDir::new().unwrap();
+    let out = isolated(tmp.path())
+        .args(["auth", "token"])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit when no token is available"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("not authenticated"), "stderr: {stderr}");
+    assert!(stderr.contains("aristo auth login"), "stderr: {stderr}");
+}

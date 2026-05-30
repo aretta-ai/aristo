@@ -218,7 +218,10 @@ fn ci_verify_flag_writes_both_workflows() {
         .arg("init")
         .arg("--ci-verify")
         .assert()
-        .success();
+        .success()
+        // On completion, --ci-verify prints token-setup guidance.
+        .stdout(contains("ARETTA_TOKEN"))
+        .stdout(contains("aristo auth token"));
 
     // --ci-verify implies the lite gate, plus the verify workflow.
     assert!(

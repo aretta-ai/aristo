@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.1.0"
-generated_at = "2026-05-30T03:16:23.341724Z"
+generated_at = "2026-05-30T03:25:29.311321Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -505,7 +505,7 @@ text = "A second invocation never errors and never overwrites existing files. Ea
 verify = "test"
 status = "unknown"
 text_hash = "sha256:0522fae6676189ff629bf6295ecc0cc883b20f8a4c3303fbcb6723d487d70be7"
-body_hash = "sha256:125a7eb0e16fcc003114091450d0503b20b981d8cd868f0f1d9d752509d3dd24"
+body_hash = "sha256:1861a9fdc95a1bb291bb9cb360d6be38cadf01c2ae3a358bb95c06b1e4991746"
 file = "crates/aristo-cli/src/commands/init.rs"
 site = "fn run (line 103)"
 covered_region = "function"

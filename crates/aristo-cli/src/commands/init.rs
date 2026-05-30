@@ -175,6 +175,7 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool) -> CliResult<()> {
             || Ok(GH_VERIFY_WORKFLOW.to_string()),
             &mut any_change,
         )?;
+        print_verify_token_help(&cwd);
     }
 
     if !any_change {
@@ -235,6 +236,27 @@ fn create_or_note_dir(path: &Path, label: &str, any_change: &mut bool) -> CliRes
         *any_change = true;
     }
     Ok(())
+}
+
+/// After `--ci-verify` writes the verify workflow, point the user at the exact
+/// GitHub secrets page + how to grab their token. The workflow is inert until
+/// `ARETTA_TOKEN` is set, so this guidance is the difference between "wrote a
+/// file" and "actually set up".
+fn print_verify_token_help(cwd: &Path) {
+    println!();
+    println!("Next — the verify workflow needs an ARETTA_TOKEN secret on this repo:");
+    match aristo_core::auth::derive_repo_full_name(cwd) {
+        Ok(repo) => println!(
+            "  1. Add the secret: https://github.com/{repo}/settings/secrets/actions/new  (name: ARETTA_TOKEN)"
+        ),
+        Err(_) => println!(
+            "  1. Add the secret under Settings -> Secrets and variables -> Actions -> New repository secret  (name: ARETTA_TOKEN)"
+        ),
+    }
+    println!(
+        "  2. Token value:    `aristo auth token` prints yours — pipe to your clipboard, e.g. `aristo auth token | pbcopy`"
+    );
+    println!("                     ...or `aristo auth login` to mint a new one.");
 }
 
 fn serialize_default_config() -> CliResult<String> {
