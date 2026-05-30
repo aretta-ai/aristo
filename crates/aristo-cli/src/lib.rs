@@ -424,8 +424,8 @@ enum Commands {
         /// Default: stdout.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Badge style. Mirrors shields.io's three default forms.
-        #[arg(long, default_value = "flat")]
+        /// Badge style: `flat-square` (default), `flat`, or `plastic`.
+        #[arg(long, default_value = "flat-square")]
         style: String,
         /// Which metric the SVG value half displays. `tier` (default,
         /// the locked D7 score → D8 tier) is the headline signal;

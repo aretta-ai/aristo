@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.1.0"
-generated_at = "2026-05-29T23:39:18.447605Z"
+generated_at = "2026-05-30T00:48:44.43566Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -122,18 +122,7 @@ status = "unknown"
 text_hash = "sha256:868914242eaad1867dfe8dd165b5d1ac77f0fae296e06a9fbff8ae1243328cce"
 body_hash = "sha256:37376e36592e756c2e047a9cdf99783694ebe30000980d8ef577a685e881d636"
 file = "crates/aristo-cli/src/commands/badge.rs"
-site = "fn write_to_stdout (line 151)"
-covered_region = "function"
-
-[badge_text_width_calibrated_to_fallback_font]
-kind = "intent"
-text = "Badge text width is approximated per-character, scaled by font size, and deliberately calibrated to the WIDER fallback sans (DejaVu/Verdana) rather than the narrower brand font (Fira Sans Condensed). GitHub strips the web-font fetch from committed SVGs, so the README badge renders in the fallback; sizing to the brand font's metrics would clip the tier text there. Over-estimating is safe (a little right padding); under-estimating clips. The trycmd scenarios match the SVG with wildcards (only `<svg ...>` ↔ `</svg>` framing is pinned, not pixel dimensions), so this heuristic is the sole guard against clipping."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:ec910abdf1617447efedb37603eec8653116fe7224b955ef15d333eb120df1f6"
-body_hash = "sha256:ba5f8515bc2f247fd72b8f007af85297f5bb2853b416ee7207bd3742074aaf45"
-file = "crates/aristo-cli/src/commands/badge.rs"
-site = "fn text_width (line 424)"
+site = "fn write_to_stdout (line 163)"
 covered_region = "function"
 
 [badge_verification_rate_counts_only_terminal_clean_intents]
@@ -144,7 +133,7 @@ status = "unknown"
 text_hash = "sha256:d9acd5595fafabd8927cfbe243159010c610e72f84590d787f70163b4f6e5069"
 body_hash = "sha256:12c760ffa255c45f18973ecf9cbd3a62f69a883521dcf4126fc2fd7255d9c040"
 file = "crates/aristo-cli/src/commands/badge.rs"
-site = "fn is_verified_state (line 208)"
+site = "fn is_verified_state (line 220)"
 covered_region = "function"
 
 [body_hash_is_verbatim]
