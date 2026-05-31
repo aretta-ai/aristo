@@ -27,9 +27,9 @@ use std::time::{Duration, Instant};
 
 use aristo_core::canon::CanonMatchesFile;
 use aristo_core::canon_verify::{
-    AnnotationOutcomeStatus, GetVerifySessionResponse, HttpVerifyClient, PostVerifySessionResponse,
-    SessionStatus, TestOutcomeStatus, VerifyClient, VerifyError, VerifySessionRequest,
-    VerifySessionTag,
+    AnnotationOutcomeStatus, DifferentialReport, Finding, GetVerifySessionResponse,
+    HttpVerifyClient, PostVerifySessionResponse, SessionStatus, TestOutcome, TestOutcomeStatus,
+    VerifyClient, VerifyError, VerifySessionRequest, VerifySessionTag,
 };
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, IntentEntry};
 
@@ -510,11 +510,12 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
             ) {
                 continue;
             }
-            let bin = t.test_binary.as_deref().unwrap_or("(session)");
-            let word = test_status_word(t.status);
-            match &t.stderr_url {
-                Some(url) => println!("  • {bin} {word} — see {url}"),
-                None => println!("  • {bin} {word}"),
+            // Phase 16: a structured DifferentialReport renders a
+            // violation card instead of the terse bullet. Fall back to
+            // the bullet when no report is attached.
+            match &t.report {
+                Some(report) => render_report_card(report),
+                None => render_test_bullet(t),
             }
         }
     }
@@ -522,6 +523,126 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
     // No `view_url` on GetVerifySessionResponse; the dashboard link is
     // derivable from session_id when needed but we surface only the
     // session id here to keep the output tight.
+}
+
+/// The terse fall-back row for a failing test with no attached report:
+/// `• <bin> <word> — see <stderr_url>`.
+fn render_test_bullet(t: &TestOutcome) {
+    let bin = t.test_binary.as_deref().unwrap_or("(session)");
+    let word = test_status_word(t.status);
+    match &t.stderr_url {
+        Some(url) => println!("  • {bin} {word} — see {url}"),
+        None => println!("  • {bin} {word}"),
+    }
+}
+
+/// Phase 16 Track A — render a [`DifferentialReport`] as a structured
+/// violation card (Slice-1 shape). Hand-emitted plain ASCII; the CLI
+/// has no color/table/box crate and that's fine. Every value is driven
+/// off the report fields; nothing is hard-coded.
+fn render_report_card(report: &DifferentialReport) {
+    let Finding::StateEq {
+        expected,
+        actual,
+        divergence,
+    } = &report.finding;
+
+    println!();
+    // Headline + plain-language statement.
+    println!("  ✗ PROPERTY VIOLATED   {}", report.property.canon_id);
+    println!("    {}", report.property.statement);
+    println!();
+
+    // spec / impl source anchors (each optional).
+    if report.property.spec_source.is_some() || report.property.impl_source.is_some() {
+        let spec = report
+            .property
+            .spec_source
+            .as_ref()
+            .map(|s| format!("spec  {}:{}", s.path, s.line))
+            .unwrap_or_default();
+        let imp = report.property.impl_source.as_ref().map(|s| {
+            let loc = format!("impl  {}:{}", s.path, s.line);
+            match &s.snippet {
+                Some(snip) => format!("{loc} ({snip})"),
+                None => loc,
+            }
+        });
+        match imp {
+            Some(imp) if !spec.is_empty() => println!("    {spec}            {imp}"),
+            Some(imp) => println!("    {imp}"),
+            None => println!("    {spec}"),
+        }
+        println!();
+    }
+
+    // The mask: compared fields + how many were ignored.
+    let compared = report.relation.compared.join(", ");
+    let ignored = render_ignored(&report.relation.ignored);
+    println!("    Compared: [{compared}]   (ignored: {ignored})");
+    println!();
+
+    // Two-column snapshot labels, then the -/+ divergence rows.
+    println!("        {}      {}", expected.label, actual.label);
+    for d in divergence {
+        println!("      - {} = {}", d.field, d.expected);
+        println!("      + {} = {}", d.field, d.actual);
+        if let Some(why) = &d.provenance {
+            println!("        why  {why}");
+        }
+    }
+    println!();
+
+    // Verdict frame.
+    if let Some(cr_id) = &report.verdict.cr_id {
+        match &report.verdict.expected_to_fail {
+            Some(etf) => {
+                println!(
+                    "    Verdict   {cr_id} · EXPECTED TO FAIL (the failure IS the conformance verdict)"
+                );
+                println!("    Unblocks  {}", etf.reason);
+            }
+            None => println!("    Verdict   {cr_id}"),
+        }
+    } else if let Some(etf) = &report.verdict.expected_to_fail {
+        println!("    Verdict   EXPECTED TO FAIL (the failure IS the conformance verdict)");
+        println!("    Unblocks  {}", etf.reason);
+    }
+    println!();
+
+    // Reproduce hint, derived from canon_id + seed.
+    println!("    Reproduce");
+    println!(
+        "      aristo verify --case {} --replay",
+        reproduce_case(report)
+    );
+    println!();
+}
+
+/// Render the ignored-mask suffix: first two names, then `+N` for the
+/// remainder, e.g. `max_frame, max_frame_inflight, +7`.
+fn render_ignored(ignored: &[String]) -> String {
+    if ignored.is_empty() {
+        return "none".to_string();
+    }
+    let head: Vec<&str> = ignored.iter().take(2).map(String::as_str).collect();
+    let rest = ignored.len().saturating_sub(head.len());
+    if rest > 0 {
+        format!("{}, +{rest}", head.join(", "))
+    } else {
+        head.join(", ")
+    }
+}
+
+/// Derive the `--case` repro token. Prefer the scenario seed (the
+/// deterministic repro key); fall back to the canon id.
+fn reproduce_case(report: &DifferentialReport) -> &str {
+    let seed = report.scenario.seed.as_str();
+    if seed.is_empty() {
+        report.property.canon_id.as_str()
+    } else {
+        seed
+    }
 }
 
 fn status_label(s: SessionStatus) -> &'static str {

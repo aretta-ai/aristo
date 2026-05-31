@@ -189,6 +189,10 @@ pub struct TestOutcome {
     /// Lazy-fetch handle. SDK doesn't follow it in E1–E4; dashboard does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stderr_url: Option<String>,
+    /// Phase 16: the typed, relation-kind-polymorphic verify-result
+    /// record. Present on fail; optionally on pass (attestation).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<crate::canon_verify::report::DifferentialReport>,
 }
 
 /// Test-level outcome enum (WORKFLOW.md §5 — six values, distinct
@@ -444,6 +448,51 @@ mod tests {
     }
 
     // ─── optional fields permitted for forward-compat ───────────────────
+
+    // ─── Phase 16: TestOutcome.report ────────────────────────────────────
+
+    #[test]
+    fn test_outcome_carries_phase16_report_and_round_trips() {
+        // A failing TestOutcome carrying the golden cr03.minimal report
+        // round-trips byte-stably through serde_json::Value. This pins
+        // the nesting at annotations[].tests[].report.
+        let report_json = include_str!("../../tests/fixtures/cr03.minimal.json");
+        let outcome_json = format!(
+            r#"{{
+              "test_binary": "cr_03_conform",
+              "test_kind": "differential",
+              "relation": "tight",
+              "status": "fail",
+              "duration_ms": 4210,
+              "report": {report_json}
+            }}"#
+        );
+        let parsed: TestOutcome = serde_json::from_str(&outcome_json).unwrap();
+        assert_eq!(parsed.status, TestOutcomeStatus::Fail);
+        let report = parsed.report.as_ref().expect("report must deserialize");
+        assert_eq!(
+            report.property.canon_id,
+            "wal_initialized_reflects_sync_outcome"
+        );
+        // Round-trip: TestOutcome (with report) → Value == original Value.
+        let reserialized = serde_json::to_value(&parsed).unwrap();
+        let original: serde_json::Value = serde_json::from_str(&outcome_json).unwrap();
+        assert_eq!(reserialized, original);
+    }
+
+    #[test]
+    fn test_outcome_without_report_still_deserializes() {
+        // Existing-style payload (no `report`) must still parse and
+        // serialize without emitting a `report` key (skip_serializing_if).
+        let json = r#"{"test_binary": "foo_conform", "status": "pass", "duration_ms": 1234}"#;
+        let parsed: TestOutcome = serde_json::from_str(json).unwrap();
+        assert!(parsed.report.is_none());
+        let reserialized = serde_json::to_value(&parsed).unwrap();
+        assert!(
+            reserialized.get("report").is_none(),
+            "absent report must not serialize as a key"
+        );
+    }
 
     #[test]
     fn get_response_tolerates_missing_optional_fields() {
