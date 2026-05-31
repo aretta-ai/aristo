@@ -442,6 +442,106 @@ fn wait_exits_nonzero_when_summary_has_failures() {
 }
 
 #[test]
+fn wait_renders_structured_card_when_test_carries_phase16_report() {
+    // Phase 16 Track A: a failing TestOutcome carrying the golden
+    // cr03.minimal report must render a structured violation card
+    // INSTEAD of the `• <bin> failed — see <url>` bullet. The report
+    // body below is a byte-copy of the cross-repo contract fixture.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let report = r#"{
+      "property": {
+        "canon_id": "wal_initialized_reflects_sync_outcome",
+        "statement": "The WAL initialized flag is set true only after a successful sync of the wal-header.",
+        "spec_source": { "path": "verification/db/flavors/turso/wal-conformance/tests/conformance/snapshot/cr_03_initialized.rs", "line": 46 },
+        "impl_source": { "path": "core/storage/wal.rs", "line": 3989, "snippet": "prepare_wal_finish" }
+      },
+      "scenario": {
+        "op_trace": [],
+        "seed": "cr_03_initialized_under_sync_eio/fail_nth(Sync,1,EIO)/pragma+create"
+      },
+      "verdict": {
+        "cr_id": "CR-03",
+        "expected_to_fail": {
+          "tag": "CR-03",
+          "reason": "Unblocks when turso (a) rolls back the partial header write on sync failure, or (b) exposes a public wal_initialized_atomic() accessor that distinguishes \"flag was set\" from \"file exists\"."
+        }
+      },
+      "relation": {
+        "kind": "state_eq",
+        "description": "StateEq under ProjectionMask { initialized }",
+        "compared": ["initialized"],
+        "ignored": ["max_frame", "max_frame_inflight", "nbackfills", "nbackfills_inflight", "checkpoint_seq", "on_disk_frame_count", "durable_frame_count", "on_disk_header_present", "on_disk_header_durable"]
+      },
+      "finding": {
+        "kind": "state_eq",
+        "expected": { "label": "lean (reference)", "fields": [ { "field": "initialized", "value": "false" } ] },
+        "actual": { "label": "turso (under test)", "fields": [ { "field": "initialized", "value": "true" } ] },
+        "divergence": [ { "field": "initialized", "expected": "false", "actual": "true", "provenance": "lean reads s.shared.initialized; turso reads the *.db-wal >=32-byte file-existence proxy." } ]
+      }
+    }"#;
+
+    let fixture_body = format!(
+        r#"{{
+      "post": {{ "session_id": "01HMCARD", "view_url": "https://x", "plan_size": 1 }},
+      "gets": [
+        {{
+          "session_id": "01HMCARD",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [
+            {{
+              "annotation_id": "arta_op4q3z9NbV",
+              "canon_id": "wal_initialized_reflects_sync_outcome",
+              "version": "v0.1.0",
+              "scope": "turso",
+              "tier": "aristos:",
+              "source_path": "core/storage/wal.rs:3989",
+              "status": "failed",
+              "tests": [
+                {{ "test_binary": "cr_03_conform", "test_kind": "differential", "relation": "tight", "status": "fail", "duration_ms": 4210, "report": {report} }}
+              ]
+            }}
+          ],
+          "summary": {{ "total_annotations": 1, "verified": 0, "failed": 1, "build_failed": 0, "inconclusive": 0, "no_coverage": 0 }}
+        }}
+      ]
+    }}"#
+    );
+    let fixture_path = write_full_fixture(tmp.path(), &fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        // Headline: canon id + the plain-language statement.
+        .stdout(contains("wal_initialized_reflects_sync_outcome"))
+        .stdout(contains(
+            "The WAL initialized flag is set true only after a successful sync of the wal-header.",
+        ))
+        // The diff rows with -/+ markers.
+        .stdout(contains("- initialized = false"))
+        .stdout(contains("+ initialized = true"))
+        // Verdict frame: CR id + the unblock reason substring.
+        .stdout(contains("CR-03"))
+        .stdout(contains("wal_initialized_atomic"))
+        // Reproduce section.
+        .stdout(contains("Reproduce"));
+}
+
+#[test]
 fn view_attaches_to_existing_session_without_post() {
     // --view <id> skips POST entirely — no workspace, no git, no auth-
     // sourced repo. Only a single GET. We deliberately don't init a

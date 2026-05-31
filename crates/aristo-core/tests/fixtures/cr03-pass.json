@@ -1,0 +1,54 @@
+{
+  "property": {
+    "canon_id": "wal_initialized_reflects_sync_outcome",
+    "statement": "The WAL initialized flag is set true only after a successful sync of the wal-header.",
+    "spec_source": {
+      "path": "verification/db/flavors/turso/wal-conformance/tests/conformance/snapshot/cr_03_initialized.rs",
+      "line": 46
+    },
+    "impl_source": {
+      "path": "core/storage/wal.rs",
+      "line": 3989,
+      "snippet": "prepare_wal_finish"
+    }
+  },
+  "scenario": {
+    "op_trace": [],
+    "seed": "cr_03_initialized_under_sync_eio/fail_nth(Sync,1,EIO)/pragma+create"
+  },
+  "verdict": {
+    "cr_id": "CR-03"
+  },
+  "relation": {
+    "kind": "state_eq",
+    "description": "StateEq under ProjectionMask { initialized }",
+    "compared": ["initialized"],
+    "ignored": [
+      "max_frame",
+      "max_frame_inflight",
+      "nbackfills",
+      "nbackfills_inflight",
+      "checkpoint_seq",
+      "on_disk_frame_count",
+      "durable_frame_count",
+      "on_disk_header_present",
+      "on_disk_header_durable"
+    ]
+  },
+  "finding": {
+    "kind": "state_eq",
+    "expected": {
+      "label": "lean (reference)",
+      "fields": [
+        { "field": "initialized", "value": "false" }
+      ]
+    },
+    "actual": {
+      "label": "turso (under test)",
+      "fields": [
+        { "field": "initialized", "value": "false" }
+      ]
+    },
+    "divergence": []
+  }
+}
