@@ -282,8 +282,9 @@ enum Commands {
             value_name = "CANON_ID",
             requires = "because",
             conflicts_with_all = [
-                "view", "wait", "tags", "rerun", "apply_verdicts",
-                "submit_verdict", "pop_next", "queue_status"
+                "view", "wait", "tags", "rerun", "check", "strict", "filters",
+                "apply_verdicts", "rewrite_hashes", "submit_verdict", "id",
+                "json", "pop_next", "queue_status"
             ]
         )]
         accept: Option<String>,

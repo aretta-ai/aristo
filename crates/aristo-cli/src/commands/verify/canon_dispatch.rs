@@ -373,14 +373,18 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
             .get_session(session_id, None)
             .map_err(verify_error_to_cli)?
     };
-    // Best-effort waiver join: `--view` doesn't require a workspace (it
-    // only needs an HTTP client), so if there's no `.aristo/` above cwd we
-    // simply apply no waivers. When run inside a repo, the accepted gaps
-    // shape the render + exit exactly as the dispatch path.
-    let expectations = Workspace::find(None)
-        .ok()
-        .map(|ws| ExpectationsFile::read(&ws.expectations_path()).unwrap_or_default())
-        .unwrap_or_default();
+    // `--view` doesn't require a workspace (it only needs an HTTP client),
+    // so with no `.aristo/` above cwd we apply no waivers. When a workspace
+    // IS present we read its expectations the same way the dispatch path
+    // does — a *malformed* file hard-errors (loud, not silently dropped);
+    // only a genuinely-absent file reads as empty.
+    let expectations = match Workspace::find(None) {
+        Ok(ws) => ExpectationsFile::read(&ws.expectations_path()).map_err(|e| CliError::Other {
+            message: format!("failed to read {}: {e}", ws.expectations_path().display()),
+            exit_code: 1,
+        })?,
+        Err(_) => ExpectationsFile::default(),
+    };
     render_final_snapshot(&snapshot, &expectations);
     if wait {
         let verdict = waiver::evaluate(&snapshot, &expectations);
@@ -507,8 +511,12 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse, expectations: &Exp
         let waiver_match: Option<(AnnotationId, &Expectation)> =
             waiver::waiver_key(&ann.tier, &ann.canon_id)
                 .and_then(|id| expectations.get(&id).map(|e| (id, e)));
-        let waived_failing =
-            matches!(ann.status, AnnotationOutcomeStatus::Failed) && waiver_match.is_some();
+        // A clean accepted gap is a waived property `Failed` with no
+        // operational test failure hiding in its test set — an operational
+        // break falls through to the normal card so it can't be masked.
+        let waived_failing = matches!(ann.status, AnnotationOutcomeStatus::Failed)
+            && waiver_match.is_some()
+            && !waiver::tests_operationally_broken(&ann.tests);
         let ratchet_breach =
             matches!(ann.status, AnnotationOutcomeStatus::Verified) && waiver_match.is_some();
 
@@ -573,6 +581,28 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse, expectations: &Exp
             }
         }
     }
+
+    // Phase 16 (c): a waiver that matched no annotation this run is stale or
+    // drifted (renamed upstream, removed from source, or never applicable).
+    // Surface it on stderr so the silent-non-match can't rot unnoticed.
+    let matched: std::collections::BTreeSet<AnnotationId> = snapshot
+        .annotations
+        .iter()
+        .filter_map(|ann| {
+            let id = waiver::waiver_key(&ann.tier, &ann.canon_id)?;
+            expectations.is_waived(&id).then_some(id)
+        })
+        .collect();
+    for id in expectations.entries.keys() {
+        if !matched.contains(id) {
+            eprintln!(
+                "  note: waiver for `{}` in .aristo/expectations.toml matched no annotation this \
+                 run — renamed, removed, or stale. `aristo list` to check; remove if no longer needed.",
+                id.as_str()
+            );
+        }
+    }
+
     println!();
     // No `view_url` on GetVerifySessionResponse; the dashboard link is
     // derivable from session_id when needed but we surface only the

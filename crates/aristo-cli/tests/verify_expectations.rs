@@ -494,3 +494,173 @@ fn unwaived_failure_is_unchanged_and_still_red() {
         .failure()
         .stdout(contains("known gap (accepted)").not());
 }
+
+// ─── hardening (from the adversarial review) ─────────────────────────────────
+
+#[test]
+fn accept_rejects_an_empty_reason() {
+    let tmp = tempfile::tempdir().unwrap();
+    lean_workspace_with_canon_entry(tmp.path());
+
+    // clap enforces flag PRESENCE; the command enforces a non-empty value
+    // (a reasonless waiver is how baselines rot).
+    aristo_in(tmp.path())
+        .args(["verify", "--accept", "foo", "--because", "   "])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("non-empty reason"));
+
+    assert!(
+        !tmp.path().join(".aristo/expectations.toml").exists(),
+        "a blank reason must not write the expectations file"
+    );
+}
+
+#[test]
+fn accept_conflicts_with_dispatch_and_ci_flags() {
+    let tmp = tempfile::tempdir().unwrap();
+    lean_workspace_with_canon_entry(tmp.path());
+
+    // --accept is write-only; combining it with the no-write CI mode (or any
+    // dispatch flag) is a clap usage error, never a silent write.
+    aristo_in(tmp.path())
+        .args(["verify", "--accept", "foo", "--because", "x", "--check"])
+        .assert()
+        .failure()
+        .code(2);
+
+    assert!(
+        !tmp.path().join(".aristo/expectations.toml").exists(),
+        "a rejected flag combo must not write the expectations file"
+    );
+}
+
+#[test]
+fn malformed_expectations_hard_errors_verify_wait() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    // A malformed committed sidecar surfaces LOUDLY rather than silently
+    // dropping the user's waivers (and flipping accepted gaps to red).
+    fs::write(
+        tmp.path().join(".aristo/expectations.toml"),
+        "this is = = not valid toml [[[",
+    )
+    .unwrap();
+
+    let fixture = one_annotation_fixture(
+        "01HMBAD",
+        "failed",
+        "fail",
+        r#"{ "total_annotations": 1, "verified": 0, "failed": 1, "build_failed": 0, "inconclusive": 0, "no_coverage": 0 }"#,
+    );
+    let fixture_path = write_full_fixture(tmp.path(), &fixture);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stderr(contains("expectations.toml"));
+}
+
+#[test]
+fn waived_annotation_with_an_operational_test_is_red_not_an_accepted_gap() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .args([
+            "verify",
+            "--accept",
+            "aristos:foo",
+            "--because",
+            "the property gap",
+        ])
+        .assert()
+        .success();
+
+    // Annotation aggregates to `failed` (precedence), but one of its tests
+    // is a build failure — an operational break the waiver must NOT mask.
+    let fixture = r#"{
+      "post": { "session_id": "01HMOP", "view_url": "https://x", "plan_size": 1 },
+      "gets": [{
+        "session_id": "01HMOP", "status": "done", "user_commit_sha": "abc1234567890",
+        "canon_version": "v0.1.0", "started_at": "2026-05-24T00:00:00Z", "completed_at": "2026-05-24T00:01:00Z",
+        "annotations": [{
+          "annotation_id": "arta_op4q3z9NbV", "canon_id": "foo", "version": "v0.1.0",
+          "scope": "turso", "tier": "aristos:", "source_path": "src/foo.rs:42", "status": "failed",
+          "tests": [
+            { "test_binary": "foo_conform", "status": "fail" },
+            { "test_binary": "foo_build", "status": "build_failed" }
+          ]
+        }],
+        "summary": { "total_annotations": 1, "verified": 0, "failed": 1, "build_failed": 0, "inconclusive": 0, "no_coverage": 0 }
+      }]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stdout(contains("known gap (accepted)").not());
+}
+
+#[test]
+fn orphan_waiver_warns_when_it_matches_no_annotation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .args([
+            "verify",
+            "--accept",
+            "aristos:foo",
+            "--because",
+            "drifted gap",
+        ])
+        .assert()
+        .success();
+
+    // The session returns no annotation for the waived id (renamed / removed
+    // upstream) → the stale waiver is surfaced, not silently rotting.
+    let fixture = r#"{
+      "post": { "session_id": "01HMORPH", "view_url": "https://x", "plan_size": 1 },
+      "gets": [{
+        "session_id": "01HMORPH", "status": "done", "user_commit_sha": "abc1234567890",
+        "canon_version": "v0.1.0", "started_at": "2026-05-24T00:00:00Z", "completed_at": "2026-05-24T00:01:00Z",
+        "annotations": [],
+        "summary": { "total_annotations": 0, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0 }
+      }]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stderr(contains("aristos:foo"))
+        .stderr(contains("matched no annotation"));
+}
