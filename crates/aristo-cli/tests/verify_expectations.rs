@@ -15,7 +15,7 @@
 //! - `--accept` requires `--because`, rejects unknown / opaque ids, and
 //!   accepts a bare canon-id suffix as shorthand. It's idempotent.
 //! - Read-time join (`--wait`): a WAIVED + still-FAILING annotation
-//!   renders "known gap (accepted)" and the run exits 0 (the failure is
+//!   renders "KNOWN PROPERTY FAILURE" and the run exits 0 (the failure is
 //!   excluded from the red exit). The internal `EXPECTED TO FAIL` frame
 //!   is not shown.
 //! - Strict ratchet: a WAIVED annotation that now PASSES makes verify go
@@ -417,7 +417,7 @@ fn waived_failing_annotation_renders_accepted_gap_and_exits_zero() {
         // not a build failure.
         .assert()
         .success()
-        .stdout(contains("known gap (accepted)"))
+        .stdout(contains("KNOWN PROPERTY FAILURE"))
         .stdout(contains(
             "turso uses a file-existence proxy; tracked upstream",
         ))
@@ -425,6 +425,83 @@ fn waived_failing_annotation_renders_accepted_gap_and_exits_zero() {
         // an already-accepted gap doesn't re-offer the accept hint.
         .stdout(contains("EXPECTED TO FAIL").not())
         .stdout(contains("Known limitation").not());
+}
+
+#[test]
+fn waived_failure_with_a_report_renders_the_full_known_failure_card() {
+    // An accepted gap keeps ALL the violation detail (statement + diff +
+    // provenance) — just reframed as an orange KNOWN PROPERTY FAILURE with
+    // the user's reason as a footer, not the red PROPERTY VIOLATED.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .args([
+            "verify",
+            "--accept",
+            "aristos:foo",
+            "--because",
+            "turso file-existence proxy is the root cause",
+        ])
+        .assert()
+        .success();
+
+    let report = r#"{
+      "property": {
+        "canon_id": "foo",
+        "statement": "The initialized flag is set true only after a successful header sync.",
+        "impl_source": { "path": "src/foo.rs", "line": 42, "snippet": "prepare" }
+      },
+      "scenario": { "op_trace": [], "seed": "seed" },
+      "verdict": {},
+      "relation": {
+        "kind": "state_eq", "description": "StateEq", "compared": ["initialized"], "ignored": ["max_frame"]
+      },
+      "finding": {
+        "kind": "state_eq",
+        "expected": { "label": "reference", "fields": [ { "field": "initialized", "value": "false" } ] },
+        "actual": { "label": "turso (observed)", "fields": [ { "field": "initialized", "value": "true" } ] },
+        "divergence": [ { "field": "initialized", "expected": "false", "actual": "true", "provenance": "non-durable header reads as present" } ]
+      }
+    }"#;
+    let fixture = format!(
+        r#"{{
+      "post": {{ "session_id": "01HMFULL", "view_url": "https://x", "plan_size": 1 }},
+      "gets": [{{
+        "session_id": "01HMFULL", "status": "done", "user_commit_sha": "abc1234567890",
+        "canon_version": "v0.1.0", "started_at": "2026-05-24T00:00:00Z", "completed_at": "2026-05-24T00:01:00Z",
+        "annotations": [{{
+          "annotation_id": "arta_op4q3z9NbV", "canon_id": "foo", "version": "v0.1.0",
+          "scope": "turso", "tier": "aristos:", "source_path": "src/foo.rs:42", "status": "failed",
+          "tests": [{{ "test_binary": "foo_conform", "status": "fail", "report": {report} }}]
+        }}],
+        "summary": {{ "total_annotations": 1, "verified": 0, "failed": 1, "build_failed": 0, "inconclusive": 0, "no_coverage": 0 }}
+      }}]
+    }}"#
+    );
+    let fixture_path = write_full_fixture(tmp.path(), &fixture);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        // Reframed headline + the user's reason footer.
+        .stdout(contains("KNOWN PROPERTY FAILURE"))
+        .stdout(contains("turso file-existence proxy is the root cause"))
+        // The full violation body is still shown.
+        .stdout(contains("The initialized flag is set true"))
+        .stdout(contains("- initialized = false"))
+        .stdout(contains("+ initialized = true"))
+        // Not the red failure frame, not the internal conformance tag.
+        .stdout(contains("PROPERTY VIOLATED").not())
+        .stdout(contains("EXPECTED TO FAIL").not());
 }
 
 #[test]
@@ -494,7 +571,7 @@ fn unwaived_failure_is_unchanged_and_still_red() {
         .args(["verify", "--wait"])
         .assert()
         .failure()
-        .stdout(contains("known gap (accepted)").not())
+        .stdout(contains("KNOWN PROPERTY FAILURE").not())
         // A failing, un-waived property points the user at how to accept it.
         .stdout(contains("aristo verify --accept aristos:foo --because"));
 }
@@ -622,7 +699,7 @@ fn waived_annotation_with_an_operational_test_is_red_not_an_accepted_gap() {
         .args(["verify", "--wait"])
         .assert()
         .failure()
-        .stdout(contains("known gap (accepted)").not());
+        .stdout(contains("KNOWN PROPERTY FAILURE").not());
 }
 
 #[test]
