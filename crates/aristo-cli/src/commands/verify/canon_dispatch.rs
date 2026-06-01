@@ -33,8 +33,11 @@ use aristo_core::canon_verify::{
     HttpVerifyClient, PostVerifySessionResponse, SessionStatus, TestOutcome, TestOutcomeStatus,
     VerifyClient, VerifyError, VerifySessionRequest, VerifySessionTag,
 };
+use aristo_core::expectations::{Expectation, ExpectationsFile};
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, IntentEntry};
 
+use super::waiver;
+use crate::workspace::Workspace;
 use crate::{CliError, CliResult};
 
 /// Long-poll server-side hold-time (§7c row 9). The server may ignore
@@ -200,6 +203,7 @@ pub(crate) fn dispatch_session<C: VerifyClient + ?Sized>(
 pub(crate) fn run_canon_dispatch(
     workspace_root: &Path,
     matches_path: &Path,
+    expectations_path: &Path,
     canon_entries: &[CanonDispatchEntry<'_>],
     tags_filter: Option<&[String]>,
     wait: bool,
@@ -312,23 +316,41 @@ pub(crate) fn run_canon_dispatch(
 
     // 7. Optional poll-to-completion (--wait).
     if wait {
-        let final_snapshot = poll_until_terminal(&*client, &resp.session_id)?;
-        render_final_snapshot(&final_snapshot);
-        if !final_snapshot.summary.is_success() {
-            // §7c row 7: any failed / build_failed / inconclusive → exit 1.
-            return Err(CliError::Other {
-                message: format!(
-                    "verify reported {} failed, {} build_failed, {} inconclusive",
-                    final_snapshot.summary.failed,
-                    final_snapshot.summary.build_failed,
-                    final_snapshot.summary.inconclusive
-                ),
+        // Phase 16 (c): the user's accepted gaps are a read-time join over
+        // the results — they decide which failures are "known" (green) and
+        // catch a waived property that has started passing (red ratchet).
+        let expectations =
+            ExpectationsFile::read(expectations_path).map_err(|e| CliError::Other {
+                message: format!("failed to read {}: {e}", expectations_path.display()),
                 exit_code: 1,
-            });
+            })?;
+        let final_snapshot = poll_until_terminal(&*client, &resp.session_id)?;
+        render_final_snapshot(&final_snapshot, &expectations);
+        let verdict = waiver::evaluate(&final_snapshot, &expectations);
+        if verdict.is_red() {
+            return Err(exit_error_for(&verdict));
         }
     }
 
     Ok(dispatched)
+}
+
+/// The `--wait` failure error, worded from the waiver-aware verdict.
+/// `failed` counts only un-waived (genuine) property failures; a tripped
+/// ratchet is surfaced explicitly so the message points at the fix.
+fn exit_error_for(verdict: &waiver::WaiverVerdict) -> CliError {
+    let ratchet = if verdict.ratchet_breaches > 0 {
+        format!(", {} accepted-gap-now-passes", verdict.ratchet_breaches)
+    } else {
+        String::new()
+    };
+    CliError::Other {
+        message: format!(
+            "verify reported {} failed, {} build_failed, {} inconclusive{ratchet}",
+            verdict.unwaived_failed, verdict.build_failed, verdict.inconclusive
+        ),
+        exit_code: 1,
+    }
 }
 
 /// Re-attach to an existing session (E3 — `aristo verify --view <id>`).
@@ -351,17 +373,20 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
             .get_session(session_id, None)
             .map_err(verify_error_to_cli)?
     };
-    render_final_snapshot(&snapshot);
-    if wait && !snapshot.summary.is_success() {
-        return Err(CliError::Other {
-            message: format!(
-                "verify reported {} failed, {} build_failed, {} inconclusive",
-                snapshot.summary.failed,
-                snapshot.summary.build_failed,
-                snapshot.summary.inconclusive
-            ),
-            exit_code: 1,
-        });
+    // Best-effort waiver join: `--view` doesn't require a workspace (it
+    // only needs an HTTP client), so if there's no `.aristo/` above cwd we
+    // simply apply no waivers. When run inside a repo, the accepted gaps
+    // shape the render + exit exactly as the dispatch path.
+    let expectations = Workspace::find(None)
+        .ok()
+        .map(|ws| ExpectationsFile::read(&ws.expectations_path()).unwrap_or_default())
+        .unwrap_or_default();
+    render_final_snapshot(&snapshot, &expectations);
+    if wait {
+        let verdict = waiver::evaluate(&snapshot, &expectations);
+        if verdict.is_red() {
+            return Err(exit_error_for(&verdict));
+        }
     }
     Ok(())
 }
@@ -461,7 +486,7 @@ fn build_tag_filter_set(
 
 // ─── Rendering (WORKFLOW.md §6 — CLI form) ──────────────────────────────────
 
-fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
+fn render_final_snapshot(snapshot: &GetVerifySessionResponse, expectations: &ExpectationsFile) {
     println!();
     println!(
         "session {} — verifying {} against canon {}",
@@ -478,7 +503,23 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
     println!();
     println!("{:<55}  {:<14} TESTS", "ANNOTATION", "STATUS");
     for ann in &snapshot.annotations {
-        let icon = annotation_icon(ann.status);
+        // Phase 16 (c): is this annotation a user-accepted gap?
+        let waiver_match: Option<(AnnotationId, &Expectation)> =
+            waiver::waiver_key(&ann.tier, &ann.canon_id)
+                .and_then(|id| expectations.get(&id).map(|e| (id, e)));
+        let waived_failing =
+            matches!(ann.status, AnnotationOutcomeStatus::Failed) && waiver_match.is_some();
+        let ratchet_breach =
+            matches!(ann.status, AnnotationOutcomeStatus::Verified) && waiver_match.is_some();
+
+        let (icon, word) = if waived_failing {
+            ("[gap]", "accepted")
+        } else {
+            (
+                annotation_icon(ann.status),
+                annotation_status_word(ann.status),
+            )
+        };
         let passed = ann
             .tests
             .iter()
@@ -493,14 +534,23 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
         } else {
             format!("{}/{} passed", passed, ann.tests.len())
         };
-        println!(
-            "{:<55}  {} {:<11}  {}",
-            header,
-            icon,
-            annotation_status_word(ann.status),
-            tests_summary
-        );
+        println!("{:<55}  {} {:<11}  {}", header, icon, word, tests_summary);
         println!("  {}", ann.source_path);
+
+        // A waived gap replaces the violation card with the accepted-gap
+        // frame; a waived property that now passes trips the ratchet. In
+        // both cases the per-test card loop is skipped.
+        if let Some((id, exp)) = &waiver_match {
+            if waived_failing {
+                render_accepted_gap(exp);
+                continue;
+            }
+            if ratchet_breach {
+                render_ratchet_breach(id);
+                continue;
+            }
+        }
+
         for t in &ann.tests {
             if !matches!(
                 t.status,
@@ -538,6 +588,33 @@ fn render_test_bullet(t: &TestOutcome) {
         Some(url) => println!("  • {bin} {word} — see {url}"),
         None => println!("  • {bin} {word}"),
     }
+}
+
+/// Phase 16 (c) — a user-accepted gap. Replaces the red violation card
+/// with the user's own reason: this property is known to fail and has
+/// been explicitly waived, so it is not a build failure.
+fn render_accepted_gap(exp: &Expectation) {
+    anstream::println!();
+    anstream::println!("    {C_BOLD}known gap (accepted){C_BOLD:#}  {}", exp.reason);
+    if let Some(tracking) = &exp.tracking {
+        anstream::println!("    {C_DIM}tracking{C_DIM:#}              {tracking}");
+    }
+    anstream::println!();
+}
+
+/// Phase 16 (c) — the strict ratchet. A waived property that now passes
+/// is a red signal: the gap is closed, so the waiver is stale and must be
+/// removed before it silently masks a future regression.
+fn render_ratchet_breach(id: &AnnotationId) {
+    anstream::println!();
+    anstream::println!(
+        "    {C_HEAD}✗ accepted gap now passes{C_HEAD:#} — this property now holds."
+    );
+    anstream::println!(
+        "    {C_BOLD}Remove{C_BOLD:#} the stale waiver for `{}` from .aristo/expectations.toml",
+        id.as_str()
+    );
+    anstream::println!();
 }
 
 // ── Card styling. `anstream` auto-strips these when stdout isn't a TTY
