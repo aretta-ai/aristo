@@ -23,6 +23,7 @@
 //! - Output prints session_id + view_url in detach default.
 
 use assert_cmd::Command;
+use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -538,13 +539,18 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
         // The diff rows with -/+ markers (ANSI auto-stripped off-TTY).
         .stdout(contains("- initialized = false"))
         .stdout(contains("+ initialized = true"))
-        // Verdict frame: CR id + the unblock reason substring + reworded label.
-        .stdout(contains("CR-03"))
-        .stdout(contains("wal_initialized_atomic"))
-        .stdout(contains("Clears when"))
+        // The internal conformance verdict frame is NOT rendered — `CR-03`
+        // and `EXPECTED TO FAIL` are Aretta-side bookkeeping, confusing on a
+        // user surface.
+        .stdout(contains("CR-03").not())
+        .stdout(contains("EXPECTED TO FAIL").not())
         // Reproduce section is a real command scoped to this annotation.
         .stdout(contains(
             "aristo verify --filter id=aristos:wal_initialized_reflects_sync_outcome --rerun",
+        ))
+        // An un-waived property failure offers the one-liner to accept it.
+        .stdout(contains(
+            "aristo verify --accept aristos:wal_initialized_reflects_sync_outcome --because",
         ));
 }
 
