@@ -21,6 +21,7 @@ pub mod canon_verify;
 pub mod config;
 pub mod critique;
 pub mod cycle;
+pub mod expectations;
 pub mod git;
 pub mod hash;
 pub mod id;
