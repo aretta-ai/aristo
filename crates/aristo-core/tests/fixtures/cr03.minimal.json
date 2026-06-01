@@ -2,10 +2,6 @@
   "property": {
     "canon_id": "wal_initialized_reflects_sync_outcome",
     "statement": "The WAL initialized flag is set true only after a successful sync of the wal-header.",
-    "spec_source": {
-      "path": "verification/db/flavors/turso/wal-conformance/tests/conformance/snapshot/cr_03_initialized.rs",
-      "line": 46
-    },
     "impl_source": {
       "path": "core/storage/wal.rs",
       "line": 3989,
@@ -20,7 +16,7 @@
     "cr_id": "CR-03",
     "expected_to_fail": {
       "tag": "CR-03",
-      "reason": "Unblocks when turso (a) rolls back the partial header write on sync failure, or (b) exposes a public wal_initialized_atomic() accessor that distinguishes \"flag was set\" from \"file exists\"."
+      "reason": "turso (a) rolls back the partial header write on sync failure, or (b) exposes a public wal_initialized_atomic() accessor that distinguishes \"flag was set\" from \"file exists\"."
     }
   },
   "relation": {
@@ -42,7 +38,7 @@
   "finding": {
     "kind": "state_eq",
     "expected": {
-      "label": "lean (reference)",
+      "label": "reference",
       "fields": [
         { "field": "initialized", "value": "false" },
         { "field": "max_frame", "value": "0" },
@@ -57,7 +53,7 @@
       ]
     },
     "actual": {
-      "label": "turso (under test)",
+      "label": "turso (observed)",
       "fields": [
         { "field": "initialized", "value": "true" },
         { "field": "max_frame", "value": "0" },
@@ -76,7 +72,7 @@
         "field": "initialized",
         "expected": "false",
         "actual": "true",
-        "provenance": "lean reads s.shared.initialized; turso reads the *.db-wal >=32-byte file-existence proxy. The header pwrite landed before the failed sync, so the proxy sees a non-durable header as present — a durability/proxy collapse, not a raw value mismatch."
+        "provenance": "turso reports `initialized` from the *.db-wal file-existence proxy (a >=32-byte header on disk). The header write landed before the sync failed, so a non-durable header reads as present — turso cannot distinguish \"header bytes exist\" from \"header is durable\". The property requires a successful header sync before initialized is true."
       }
     ]
   }

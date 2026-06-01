@@ -454,11 +454,12 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
     let home = tempfile::tempdir().unwrap();
     write_aretta_token(home.path(), "https://example.test");
 
+    // Lean-redacted (Slice 2.1): no model labels, no `spec_source`, the
+    // provenance + reason are turso-framed.
     let report = r#"{
       "property": {
         "canon_id": "wal_initialized_reflects_sync_outcome",
         "statement": "The WAL initialized flag is set true only after a successful sync of the wal-header.",
-        "spec_source": { "path": "verification/db/flavors/turso/wal-conformance/tests/conformance/snapshot/cr_03_initialized.rs", "line": 46 },
         "impl_source": { "path": "core/storage/wal.rs", "line": 3989, "snippet": "prepare_wal_finish" }
       },
       "scenario": {
@@ -469,7 +470,7 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
         "cr_id": "CR-03",
         "expected_to_fail": {
           "tag": "CR-03",
-          "reason": "Unblocks when turso (a) rolls back the partial header write on sync failure, or (b) exposes a public wal_initialized_atomic() accessor that distinguishes \"flag was set\" from \"file exists\"."
+          "reason": "turso (a) rolls back the partial header write on sync failure, or (b) exposes a public wal_initialized_atomic() accessor that distinguishes \"flag was set\" from \"file exists\"."
         }
       },
       "relation": {
@@ -480,9 +481,9 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
       },
       "finding": {
         "kind": "state_eq",
-        "expected": { "label": "lean (reference)", "fields": [ { "field": "initialized", "value": "false" } ] },
-        "actual": { "label": "turso (under test)", "fields": [ { "field": "initialized", "value": "true" } ] },
-        "divergence": [ { "field": "initialized", "expected": "false", "actual": "true", "provenance": "lean reads s.shared.initialized; turso reads the *.db-wal >=32-byte file-existence proxy." } ]
+        "expected": { "label": "reference", "fields": [ { "field": "initialized", "value": "false" } ] },
+        "actual": { "label": "turso (observed)", "fields": [ { "field": "initialized", "value": "true" } ] },
+        "divergence": [ { "field": "initialized", "expected": "false", "actual": "true", "provenance": "turso reports `initialized` from the *.db-wal file-existence proxy; a non-durable header reads as present." } ]
       }
     }"#;
 
@@ -531,14 +532,20 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
         .stdout(contains(
             "The WAL initialized flag is set true only after a successful sync of the wal-header.",
         ))
-        // The diff rows with -/+ markers.
+        // Lean-redacted, user-framed snapshot labels.
+        .stdout(contains("reference"))
+        .stdout(contains("turso (observed)"))
+        // The diff rows with -/+ markers (ANSI auto-stripped off-TTY).
         .stdout(contains("- initialized = false"))
         .stdout(contains("+ initialized = true"))
-        // Verdict frame: CR id + the unblock reason substring.
+        // Verdict frame: CR id + the unblock reason substring + reworded label.
         .stdout(contains("CR-03"))
         .stdout(contains("wal_initialized_atomic"))
-        // Reproduce section.
-        .stdout(contains("Reproduce"));
+        .stdout(contains("Clears when"))
+        // Reproduce section is a real command scoped to this annotation.
+        .stdout(contains(
+            "aristo verify --filter id=aristos:wal_initialized_reflects_sync_outcome --rerun",
+        ));
 }
 
 #[test]
