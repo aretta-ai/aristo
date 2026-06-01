@@ -269,6 +269,33 @@ enum Commands {
         /// — those are not user-facing.
         #[arg(long = "tags", value_name = "id1,id2,...", value_delimiter = ',')]
         tags: Vec<String>,
+        /// Phase 16 (c): record a user-side known-failure waiver for a
+        /// canon-bound property your code currently violates. Write-only
+        /// — does NOT dispatch a verification. Requires `--because`. The
+        /// gap lands in `.aristo/expectations.toml` (commit it); at
+        /// verify time it renders as a "known gap (accepted)" instead of
+        /// a failure, and the strict ratchet flips it back to red if the
+        /// property ever starts passing — so stale waivers can't rot.
+        /// Accepts a bare canon-id suffix (e.g. `foo`) as shorthand.
+        #[arg(
+            long = "accept",
+            value_name = "CANON_ID",
+            requires = "because",
+            conflicts_with_all = [
+                "view", "wait", "tags", "rerun", "apply_verdicts",
+                "submit_verdict", "pop_next", "queue_status"
+            ]
+        )]
+        accept: Option<String>,
+        /// Reason the gap is accepted (mandatory with `--accept`).
+        /// Recorded verbatim and shown on the verify card. A reasonless
+        /// waiver is how baselines rot, so it is required.
+        #[arg(long = "because", value_name = "REASON", requires = "accept")]
+        because: Option<String>,
+        /// Optional tracking reference (issue URL, ticket id) for the
+        /// accepted gap. Only meaningful with `--accept`.
+        #[arg(long = "tracking", value_name = "REF", requires = "accept")]
+        tracking: Option<String>,
     },
 
     /// Run the critique skill against annotation prose — opinionated
@@ -815,6 +842,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             wait,
             view,
             tags,
+            accept,
+            because,
+            tracking,
         } => commands::verify::run(
             &filters,
             rerun,
@@ -830,6 +860,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             wait,
             view,
             &tags,
+            accept,
+            because,
+            tracking,
         ),
         Commands::Critique {
             filters,

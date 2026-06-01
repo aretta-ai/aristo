@@ -81,6 +81,14 @@ impl Workspace {
         self.aristo_dir().join("canon-matches.toml")
     }
 
+    /// Path to `.aristo/expectations.toml` — the user-side known-failure
+    /// waiver sidecar (Phase 16 (c); committed by default). See
+    /// `aristo_core::expectations` for the schema. Written by
+    /// `aristo verify --accept`; read at verify time as a join.
+    pub fn expectations_path(&self) -> PathBuf {
+        self.aristo_dir().join("expectations.toml")
+    }
+
     /// Path to `.aristo/specs/`.
     pub fn specs_dir(&self) -> PathBuf {
         self.aristo_dir().join("specs")
@@ -221,6 +229,10 @@ mod tests {
         };
         assert_eq!(ws.aristo_dir(), PathBuf::from("/proj/.aristo"));
         assert_eq!(ws.index_path(), PathBuf::from("/proj/.aristo/index.toml"));
+        assert_eq!(
+            ws.expectations_path(),
+            PathBuf::from("/proj/.aristo/expectations.toml")
+        );
         assert_eq!(ws.specs_dir(), PathBuf::from("/proj/.aristo/specs"));
         assert_eq!(ws.doc_dir(), PathBuf::from("/proj/.aristo/doc"));
         assert_eq!(ws.config_path(), PathBuf::from("/proj/aristo.toml"));

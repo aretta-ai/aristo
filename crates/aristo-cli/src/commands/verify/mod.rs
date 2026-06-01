@@ -33,6 +33,7 @@ pub(crate) mod pending;
 pub(crate) mod session_kind;
 pub(crate) mod submit;
 pub(crate) mod validator;
+pub(crate) mod waiver;
 
 #[allow(
     clippy::too_many_arguments,
@@ -53,6 +54,9 @@ pub(crate) fn run(
     wait: bool,
     view: Option<String>,
     tags: &[String],
+    accept: Option<String>,
+    because: Option<String>,
+    tracking: Option<String>,
 ) -> CliResult<()> {
     let _ = (check, strict); // wired for forward-compat; no behavior yet (see module doc)
 
@@ -75,6 +79,17 @@ pub(crate) fn run(
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
     let index = read_index(&ws.index_path())?;
+
+    // Phase 16 (c): `--accept <canon-id> --because <reason>` records a
+    // user-side known-failure waiver in `.aristo/expectations.toml` and
+    // returns. Write-only — no dispatch, and no session guard: an
+    // accepted gap is an independent sidecar, not an index/proof
+    // mutation, so it shouldn't block on an open critique session.
+    if let Some(canon_id) = accept {
+        let reason =
+            because.expect("--because is required with --accept (enforced by clap `requires`)");
+        return waiver::run_accept(&ws, &index, &canon_id, &reason, tracking.as_deref());
+    }
 
     // Reads (pop_next, queue_status) bypass the session guard;
     // workers must keep functioning so an open critique-review
@@ -178,6 +193,7 @@ pub(crate) fn run(
     let dispatched = canon_dispatch::run_canon_dispatch(
         &ws.root,
         &ws.canon_matches_path(),
+        &ws.expectations_path(),
         &canon_full,
         tags_filter,
         wait,
