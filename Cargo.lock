@@ -111,6 +111,8 @@ dependencies = [
 name = "aristo-cli"
 version = "0.1.0"
 dependencies = [
+ "anstream 0.6.21",
+ "anstyle",
  "aristo",
  "aristo-core",
  "assert_cmd",

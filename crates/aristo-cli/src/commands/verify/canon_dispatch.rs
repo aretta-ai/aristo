@@ -25,6 +25,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use anstyle::{AnsiColor, Color, Style};
+
 use aristo_core::canon::CanonMatchesFile;
 use aristo_core::canon_verify::{
     AnnotationOutcomeStatus, DifferentialReport, Finding, GetVerifySessionResponse,
@@ -514,7 +516,9 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse) {
             // violation card instead of the terse bullet. Fall back to
             // the bullet when no report is attached.
             match &t.report {
-                Some(report) => render_report_card(report),
+                Some(report) => {
+                    render_report_card(report, &format!("{}{}", ann.tier, ann.canon_id))
+                }
                 None => render_test_bullet(t),
             }
         }
@@ -536,87 +540,99 @@ fn render_test_bullet(t: &TestOutcome) {
     }
 }
 
+// ── Card styling. `anstream` auto-strips these when stdout isn't a TTY
+// (piped / CI / `NO_COLOR`), so the `-`/`+` markers still carry the
+// meaning with color removed.
+const C_HEAD: Style = Style::new()
+    .bold()
+    .fg_color(Some(Color::Ansi(AnsiColor::Red)));
+const C_BOLD: Style = Style::new().bold();
+const C_DIM: Style = Style::new().dimmed();
+const C_DEL: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
+const C_ADD: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+const C_TAG: Style = Style::new()
+    .bold()
+    .fg_color(Some(Color::Ansi(AnsiColor::Yellow)));
+
 /// Phase 16 Track A — render a [`DifferentialReport`] as a structured
-/// violation card (Slice-1 shape). Hand-emitted plain ASCII; the CLI
-/// has no color/table/box crate and that's fine. Every value is driven
-/// off the report fields; nothing is hard-coded.
-fn render_report_card(report: &DifferentialReport) {
+/// violation card. User-framed (no model/verification internals); every
+/// value is driven off the report fields. `repro_id` is the tier-qualified
+/// annotation id used for the reproduce command.
+fn render_report_card(report: &DifferentialReport, repro_id: &str) {
     let Finding::StateEq {
         expected,
         actual,
         divergence,
     } = &report.finding;
 
-    println!();
+    anstream::println!();
     // Headline + plain-language statement.
-    println!("  ✗ PROPERTY VIOLATED   {}", report.property.canon_id);
-    println!("    {}", report.property.statement);
-    println!();
+    anstream::println!(
+        "  {C_HEAD}✗ PROPERTY VIOLATED{C_HEAD:#}   {C_BOLD}{}{C_BOLD:#}",
+        report.property.canon_id
+    );
+    anstream::println!("    {}", report.property.statement);
+    anstream::println!();
 
-    // spec / impl source anchors (each optional).
-    if report.property.spec_source.is_some() || report.property.impl_source.is_some() {
-        let spec = report
-            .property
-            .spec_source
-            .as_ref()
-            .map(|s| format!("spec  {}:{}", s.path, s.line))
-            .unwrap_or_default();
-        let imp = report.property.impl_source.as_ref().map(|s| {
-            let loc = format!("impl  {}:{}", s.path, s.line);
-            match &s.snippet {
-                Some(snip) => format!("{loc} ({snip})"),
-                None => loc,
-            }
-        });
-        match imp {
-            Some(imp) if !spec.is_empty() => println!("    {spec}            {imp}"),
-            Some(imp) => println!("    {imp}"),
-            None => println!("    {spec}"),
-        }
-        println!();
+    // The impl anchor — the user's own code. The spec anchor (the closed
+    // verification harness) is deliberately not surfaced.
+    if let Some(s) = &report.property.impl_source {
+        let loc = match &s.snippet {
+            Some(snip) => format!("impl  {}:{} ({snip})", s.path, s.line),
+            None => format!("impl  {}:{}", s.path, s.line),
+        };
+        anstream::println!("    {C_DIM}{loc}{C_DIM:#}");
+        anstream::println!();
     }
 
     // The mask: compared fields + how many were ignored.
     let compared = report.relation.compared.join(", ");
     let ignored = render_ignored(&report.relation.ignored);
-    println!("    Compared: [{compared}]   (ignored: {ignored})");
-    println!();
+    anstream::println!(
+        "    {C_BOLD}Compared:{C_BOLD:#} [{compared}]   {C_DIM}(ignored: {ignored}){C_DIM:#}"
+    );
+    anstream::println!();
 
     // Two-column snapshot labels, then the -/+ divergence rows.
-    println!("        {}      {}", expected.label, actual.label);
+    anstream::println!(
+        "        {C_DIM}{}      {}{C_DIM:#}",
+        expected.label,
+        actual.label
+    );
     for d in divergence {
-        println!("      - {} = {}", d.field, d.expected);
-        println!("      + {} = {}", d.field, d.actual);
+        anstream::println!("      {C_DEL}- {} = {}{C_DEL:#}", d.field, d.expected);
+        anstream::println!("      {C_ADD}+ {} = {}{C_ADD:#}", d.field, d.actual);
         if let Some(why) = &d.provenance {
-            println!("        why  {why}");
+            anstream::println!("        {C_DIM}why  {why}{C_DIM:#}");
         }
     }
-    println!();
+    anstream::println!();
 
     // Verdict frame.
-    if let Some(cr_id) = &report.verdict.cr_id {
-        match &report.verdict.expected_to_fail {
-            Some(etf) => {
-                println!(
-                    "    Verdict   {cr_id} · EXPECTED TO FAIL (the failure IS the conformance verdict)"
-                );
-                println!("    Unblocks  {}", etf.reason);
-            }
-            None => println!("    Verdict   {cr_id}"),
+    match (&report.verdict.cr_id, &report.verdict.expected_to_fail) {
+        (Some(cr_id), Some(etf)) => {
+            anstream::println!(
+                "    {C_BOLD}Verdict{C_BOLD:#}   {cr_id} · {C_TAG}EXPECTED TO FAIL{C_TAG:#} (the failure IS the conformance verdict)"
+            );
+            anstream::println!("    {C_BOLD}Clears when{C_BOLD:#}  {}", etf.reason);
         }
-    } else if let Some(etf) = &report.verdict.expected_to_fail {
-        println!("    Verdict   EXPECTED TO FAIL (the failure IS the conformance verdict)");
-        println!("    Unblocks  {}", etf.reason);
+        (Some(cr_id), None) => {
+            anstream::println!("    {C_BOLD}Verdict{C_BOLD:#}   {cr_id}")
+        }
+        (None, Some(etf)) => {
+            anstream::println!(
+                "    {C_BOLD}Verdict{C_BOLD:#}   {C_TAG}EXPECTED TO FAIL{C_TAG:#} (the failure IS the conformance verdict)"
+            );
+            anstream::println!("    {C_BOLD}Clears when{C_BOLD:#}  {}", etf.reason);
+        }
+        (None, None) => {}
     }
-    println!();
+    anstream::println!();
 
-    // Reproduce hint, derived from canon_id + seed.
-    println!("    Reproduce");
-    println!(
-        "      aristo verify --case {} --replay",
-        reproduce_case(report)
-    );
-    println!();
+    // Reproduce — a real command scoped to this annotation.
+    anstream::println!("    {C_BOLD}Reproduce{C_BOLD:#}");
+    anstream::println!("      {C_DIM}aristo verify --filter id={repro_id} --rerun{C_DIM:#}");
+    anstream::println!();
 }
 
 /// Render the ignored-mask suffix: first two names, then `+N` for the
@@ -631,17 +647,6 @@ fn render_ignored(ignored: &[String]) -> String {
         format!("{}, +{rest}", head.join(", "))
     } else {
         head.join(", ")
-    }
-}
-
-/// Derive the `--case` repro token. Prefer the scenario seed (the
-/// deterministic repro key); fall back to the canon id.
-fn reproduce_case(report: &DifferentialReport) -> &str {
-    let seed = report.scenario.seed.as_str();
-    if seed.is_empty() {
-        report.property.canon_id.as_str()
-    } else {
-        seed
     }
 }
 

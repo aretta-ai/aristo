@@ -2,10 +2,6 @@
   "property": {
     "canon_id": "wal_initialized_reflects_sync_outcome",
     "statement": "The WAL initialized flag is set true only after a successful sync of the wal-header.",
-    "spec_source": {
-      "path": "verification/db/flavors/turso/wal-conformance/tests/conformance/snapshot/cr_03_initialized.rs",
-      "line": 46
-    },
     "impl_source": {
       "path": "core/storage/wal.rs",
       "line": 3989,
@@ -38,13 +34,13 @@
   "finding": {
     "kind": "state_eq",
     "expected": {
-      "label": "lean (reference)",
+      "label": "reference",
       "fields": [
         { "field": "initialized", "value": "false" }
       ]
     },
     "actual": {
-      "label": "turso (under test)",
+      "label": "turso (observed)",
       "fields": [
         { "field": "initialized", "value": "false" }
       ]

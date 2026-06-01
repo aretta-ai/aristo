@@ -27,6 +27,11 @@ path = "src/main.rs"
 [dependencies]
 aristo = { workspace = true }
 aristo-core = { workspace = true }
+# Phase 16 verify-card styling. anstyle = the style vocabulary; anstream =
+# an stdout wrapper that auto-strips ANSI when not a TTY (piped / CI) and
+# honors NO_COLOR. Both already resolve in the tree via clap's color feature.
+anstyle = "1"
+anstream = "0.6"
 badge-maker = "0.3.1"
 clap = { version = "4.5", features = ["derive"] }
 dirs = "5.0"
