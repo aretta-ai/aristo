@@ -25,7 +25,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anstyle::{AnsiColor, Color, Style};
+use anstyle::{Ansi256Color, AnsiColor, Color, Style};
 
 use aristo_core::canon::CanonMatchesFile;
 use aristo_core::canon_verify::{
@@ -551,7 +551,14 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse, expectations: &Exp
         // both cases the per-test card loop is skipped.
         if let Some((id, exp)) = &waiver_match {
             if waived_failing {
-                render_accepted_gap(exp);
+                // Show the SAME violation detail, reframed as an accepted
+                // known failure (orange headline) with the user's reason as a
+                // footer. Fall back to the bare frame if no report is attached.
+                let repro = format!("{}{}", ann.tier, ann.canon_id);
+                match first_failing_report(&ann.tests) {
+                    Some(report) => render_violation_card(report, &repro, CardKind::Accepted(exp)),
+                    None => render_accepted_gap(exp),
+                }
                 continue;
             }
             if ratchet_breach {
@@ -575,9 +582,11 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse, expectations: &Exp
             // violation card instead of the terse bullet. Fall back to
             // the bullet when no report is attached.
             match &t.report {
-                Some(report) => {
-                    render_report_card(report, &format!("{}{}", ann.tier, ann.canon_id))
-                }
+                Some(report) => render_violation_card(
+                    report,
+                    &format!("{}{}", ann.tier, ann.canon_id),
+                    CardKind::Violated,
+                ),
                 None => render_test_bullet(t),
             }
         }
@@ -637,19 +646,19 @@ fn render_test_bullet(t: &TestOutcome) {
     }
 }
 
-/// Phase 16 (c) — a user-accepted gap. Replaces the red violation card
-/// with the user's own reason: this property is known to fail and has
-/// been explicitly waived, so it is not a build failure.
+/// Phase 16 (c) — the bare accepted-gap frame, used only when the failing
+/// test carried no structured report (so there's no violation body to
+/// show). The rich path reuses [`render_violation_card`] with
+/// [`CardKind::Accepted`].
 fn render_accepted_gap(exp: &Expectation) {
     let mut card = Card::new();
     card.raw(
-        format!("{C_BOLD}known gap (accepted){C_BOLD:#}"),
-        "known gap (accepted)",
+        format!("{C_WARN}⚠ KNOWN PROPERTY FAILURE{C_WARN:#}"),
+        "⚠ KNOWN PROPERTY FAILURE",
     );
     card.blank();
-    card.wrap(&exp.reason, Style::new(), 0);
+    card.wrap_hang("accepted  ", &exp.reason, C_WARN);
     if let Some(tracking) = &exp.tracking {
-        card.blank();
         card.line(&format!("tracking  {tracking}"), C_DIM, 0);
     }
     anstream::println!();
@@ -690,12 +699,30 @@ const C_BOLD: Style = Style::new().bold();
 const C_DIM: Style = Style::new().dimmed();
 const C_DEL: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
 const C_ADD: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+/// Orange — a known, accepted failure: not a passing run, but not a red
+/// build break either. 256-color so it reads as orange (not yellow).
+const C_WARN: Style = Style::new()
+    .bold()
+    .fg_color(Some(Color::Ansi256(Ansi256Color(208))));
 
-/// Phase 16 Track A — render a [`DifferentialReport`] as a structured
-/// violation card. User-framed (no model/verification internals); every
-/// value is driven off the report fields. `repro_id` is the tier-qualified
-/// annotation id used for the reproduce command.
-fn render_report_card(report: &DifferentialReport, repro_id: &str) {
+/// How a property-failure card is framed.
+enum CardKind<'a> {
+    /// Un-waived: red `PROPERTY VIOLATED`; the caller prints the reproduce
+    /// command + accept hint below the card.
+    Violated,
+    /// A user-accepted gap: orange `KNOWN PROPERTY FAILURE`; the same
+    /// violation body, plus the user's reason + tracker as a footer.
+    Accepted(&'a Expectation),
+}
+
+/// Render a [`DifferentialReport`] as a structured card. User-framed (no
+/// model/verification internals); every value is driven off the report
+/// fields. The only difference between an un-waived failure and an
+/// accepted gap is the headline colour/label and the footer — the
+/// violation detail (statement, diff, provenance) is identical, because an
+/// accepted gap is still a real, visible failure the user chose to live
+/// with.
+fn render_violation_card(report: &DifferentialReport, repro_id: &str, kind: CardKind<'_>) {
     let Finding::StateEq {
         expected,
         actual,
@@ -703,14 +730,23 @@ fn render_report_card(report: &DifferentialReport, repro_id: &str) {
     } = &report.finding;
 
     let mut card = Card::new();
-    // Headline + plain-language statement (wrapped to the card width).
-    card.raw(
-        format!(
-            "{C_HEAD}✗ PROPERTY VIOLATED{C_HEAD:#}  {C_BOLD}{}{C_BOLD:#}",
-            report.property.canon_id
+    // Headline — red "violated" vs. orange "known failure".
+    match &kind {
+        CardKind::Violated => card.raw(
+            format!(
+                "{C_HEAD}✗ PROPERTY VIOLATED{C_HEAD:#}  {C_BOLD}{}{C_BOLD:#}",
+                report.property.canon_id
+            ),
+            &format!("✗ PROPERTY VIOLATED  {}", report.property.canon_id),
         ),
-        &format!("✗ PROPERTY VIOLATED  {}", report.property.canon_id),
-    );
+        CardKind::Accepted(_) => card.raw(
+            format!(
+                "{C_WARN}⚠ KNOWN PROPERTY FAILURE{C_WARN:#}  {C_BOLD}{}{C_BOLD:#}",
+                report.property.canon_id
+            ),
+            &format!("⚠ KNOWN PROPERTY FAILURE  {}", report.property.canon_id),
+        ),
+    }
     card.blank();
     card.wrap(&report.property.statement, Style::new(), 0);
 
@@ -750,15 +786,43 @@ fn render_report_card(report: &DifferentialReport, repro_id: &str) {
         }
     }
 
+    // Accepted footer: the user's acknowledgement, inside the card.
+    if let CardKind::Accepted(exp) = &kind {
+        card.blank();
+        card.wrap_hang("accepted  ", &exp.reason, C_WARN);
+        if let Some(tracking) = &exp.tracking {
+            card.line(&format!("tracking  {tracking}"), C_DIM, 0);
+        }
+    }
+
     anstream::println!();
     anstream::print!("{}", card.render());
 
-    // Reproduce — kept BELOW the card so the command stays on one
-    // copy-pasteable line.
+    // Reproduce — only for an un-waived failure (an accepted gap needs no
+    // action). Kept BELOW the card so the command stays one copy-pasteable
+    // line.
+    if matches!(kind, CardKind::Violated) {
+        anstream::println!();
+        anstream::println!("  {C_BOLD}Reproduce{C_BOLD:#}");
+        anstream::println!("    {C_DIM}aristo verify --filter id={repro_id} --rerun{C_DIM:#}");
+    }
     anstream::println!();
-    anstream::println!("  {C_BOLD}Reproduce{C_BOLD:#}");
-    anstream::println!("    {C_DIM}aristo verify --filter id={repro_id} --rerun{C_DIM:#}");
-    anstream::println!();
+}
+
+/// The report on the first failing test of an annotation, if any.
+fn first_failing_report(tests: &[TestOutcome]) -> Option<&DifferentialReport> {
+    tests.iter().find_map(|t| {
+        matches!(
+            t.status,
+            TestOutcomeStatus::Fail
+                | TestOutcomeStatus::BuildFailed
+                | TestOutcomeStatus::CloneFailed
+                | TestOutcomeStatus::Timeout
+                | TestOutcomeStatus::Error
+        )
+        .then_some(t.report.as_ref())
+        .flatten()
+    })
 }
 
 /// Render the ignored-mask suffix: first two names, then `+N` for the
