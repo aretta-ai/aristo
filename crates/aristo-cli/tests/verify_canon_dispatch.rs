@@ -528,11 +528,11 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
         .args(["verify", "--wait"])
         .assert()
         .failure()
-        // Headline: canon id + the plain-language statement.
+        // Headline: canon id + the plain-language statement. The statement
+        // is word-wrapped into the card, so assert a fragment that stays
+        // within one wrapped line rather than the whole sentence.
         .stdout(contains("wal_initialized_reflects_sync_outcome"))
-        .stdout(contains(
-            "The WAL initialized flag is set true only after a successful sync of the wal-header.",
-        ))
+        .stdout(contains("The WAL initialized flag is set true"))
         // Lean-redacted, user-framed snapshot labels.
         .stdout(contains("reference"))
         .stdout(contains("turso (observed)"))

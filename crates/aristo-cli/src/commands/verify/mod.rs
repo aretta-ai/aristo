@@ -29,6 +29,7 @@ use crate::{CliError, CliResult};
 
 pub(crate) mod apply;
 pub(crate) mod canon_dispatch;
+pub(crate) mod card;
 pub(crate) mod pending;
 pub(crate) mod session_kind;
 pub(crate) mod submit;
