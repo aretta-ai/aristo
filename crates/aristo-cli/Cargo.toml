@@ -40,6 +40,10 @@ proc-macro2 = { version = "1.0", features = ["span-locations"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 syn = { version = "2.0", features = ["full", "extra-traits", "visit"] }
+# Phase 16 verify-card layout: word-wrap to a fixed width (no mid-word cuts,
+# clean continuation lines) + ANSI-aware display-width measurement for the
+# box frame. We do not hand-roll the wrapping.
+textwrap = "0.16"
 time = { version = "0.3", features = ["formatting"] }
 toml = "0.8"
 walkdir = "2.5"

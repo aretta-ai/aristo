@@ -36,6 +36,7 @@ use aristo_core::canon_verify::{
 use aristo_core::expectations::{Expectation, ExpectationsFile};
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, IntentEntry};
 
+use super::card::Card;
 use super::waiver;
 use crate::workspace::Workspace;
 use crate::{CliError, CliResult};
@@ -640,11 +641,19 @@ fn render_test_bullet(t: &TestOutcome) {
 /// with the user's own reason: this property is known to fail and has
 /// been explicitly waived, so it is not a build failure.
 fn render_accepted_gap(exp: &Expectation) {
-    anstream::println!();
-    anstream::println!("    {C_BOLD}known gap (accepted){C_BOLD:#}  {}", exp.reason);
+    let mut card = Card::new();
+    card.raw(
+        format!("{C_BOLD}known gap (accepted){C_BOLD:#}"),
+        "known gap (accepted)",
+    );
+    card.blank();
+    card.wrap(&exp.reason, Style::new(), 0);
     if let Some(tracking) = &exp.tracking {
-        anstream::println!("    {C_DIM}tracking{C_DIM:#}              {tracking}");
+        card.blank();
+        card.line(&format!("tracking  {tracking}"), C_DIM, 0);
     }
+    anstream::println!();
+    anstream::print!("{}", card.render());
     anstream::println!();
 }
 
@@ -652,14 +661,22 @@ fn render_accepted_gap(exp: &Expectation) {
 /// is a red signal: the gap is closed, so the waiver is stale and must be
 /// removed before it silently masks a future regression.
 fn render_ratchet_breach(id: &AnnotationId) {
+    let mut card = Card::new();
+    card.raw(
+        format!("{C_HEAD}✗ accepted gap now passes{C_HEAD:#}"),
+        "✗ accepted gap now passes",
+    );
+    card.blank();
+    card.wrap(
+        "This property now holds, so the waiver is stale — remove it from \
+         .aristo/expectations.toml:",
+        Style::new(),
+        0,
+    );
+    card.blank();
+    card.line(id.as_str(), C_DIM, 2);
     anstream::println!();
-    anstream::println!(
-        "    {C_HEAD}✗ accepted gap now passes{C_HEAD:#} — this property now holds."
-    );
-    anstream::println!(
-        "    {C_BOLD}Remove{C_BOLD:#} the stale waiver for `{}` from .aristo/expectations.toml",
-        id.as_str()
-    );
+    anstream::print!("{}", card.render());
     anstream::println!();
 }
 
@@ -685,14 +702,17 @@ fn render_report_card(report: &DifferentialReport, repro_id: &str) {
         divergence,
     } = &report.finding;
 
-    anstream::println!();
-    // Headline + plain-language statement.
-    anstream::println!(
-        "  {C_HEAD}✗ PROPERTY VIOLATED{C_HEAD:#}   {C_BOLD}{}{C_BOLD:#}",
-        report.property.canon_id
+    let mut card = Card::new();
+    // Headline + plain-language statement (wrapped to the card width).
+    card.raw(
+        format!(
+            "{C_HEAD}✗ PROPERTY VIOLATED{C_HEAD:#}  {C_BOLD}{}{C_BOLD:#}",
+            report.property.canon_id
+        ),
+        &format!("✗ PROPERTY VIOLATED  {}", report.property.canon_id),
     );
-    anstream::println!("    {}", report.property.statement);
-    anstream::println!();
+    card.blank();
+    card.wrap(&report.property.statement, Style::new(), 0);
 
     // The impl anchor — the user's own code. The spec anchor (the closed
     // verification harness) is deliberately not surfaced.
@@ -701,36 +721,43 @@ fn render_report_card(report: &DifferentialReport, repro_id: &str) {
             Some(snip) => format!("impl  {}:{} ({snip})", s.path, s.line),
             None => format!("impl  {}:{}", s.path, s.line),
         };
-        anstream::println!("    {C_DIM}{loc}{C_DIM:#}");
-        anstream::println!();
+        card.blank();
+        card.line(&loc, C_DIM, 0);
     }
+    card.blank();
 
     // The mask: compared fields + how many were ignored.
     let compared = report.relation.compared.join(", ");
     let ignored = render_ignored(&report.relation.ignored);
-    anstream::println!(
-        "    {C_BOLD}Compared:{C_BOLD:#} [{compared}]   {C_DIM}(ignored: {ignored}){C_DIM:#}"
+    card.raw(
+        format!("{C_BOLD}Compared:{C_BOLD:#} [{compared}]   {C_DIM}(ignored: {ignored}){C_DIM:#}"),
+        &format!("Compared: [{compared}]   (ignored: {ignored})"),
     );
-    anstream::println!();
+    card.blank();
 
-    // Two-column snapshot labels, then the -/+ divergence rows.
-    anstream::println!(
-        "        {C_DIM}{}      {}{C_DIM:#}",
-        expected.label,
-        actual.label
+    // Snapshot labels, then the -/+ divergence rows (provenance wrapped
+    // with a hanging `why` label).
+    card.line(
+        &format!("{}      {}", expected.label, actual.label),
+        C_DIM,
+        4,
     );
     for d in divergence {
-        anstream::println!("      {C_DEL}- {} = {}{C_DEL:#}", d.field, d.expected);
-        anstream::println!("      {C_ADD}+ {} = {}{C_ADD:#}", d.field, d.actual);
+        card.line(&format!("- {} = {}", d.field, d.expected), C_DEL, 2);
+        card.line(&format!("+ {} = {}", d.field, d.actual), C_ADD, 2);
         if let Some(why) = &d.provenance {
-            anstream::println!("        {C_DIM}why  {why}{C_DIM:#}");
+            card.wrap_hang("  why  ", why, C_DIM);
         }
     }
-    anstream::println!();
 
-    // Reproduce — a real command scoped to this annotation.
-    anstream::println!("    {C_BOLD}Reproduce{C_BOLD:#}");
-    anstream::println!("      {C_DIM}aristo verify --filter id={repro_id} --rerun{C_DIM:#}");
+    anstream::println!();
+    anstream::print!("{}", card.render());
+
+    // Reproduce — kept BELOW the card so the command stays on one
+    // copy-pasteable line.
+    anstream::println!();
+    anstream::println!("  {C_BOLD}Reproduce{C_BOLD:#}");
+    anstream::println!("    {C_DIM}aristo verify --filter id={repro_id} --rerun{C_DIM:#}");
     anstream::println!();
 }
 
