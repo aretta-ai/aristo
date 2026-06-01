@@ -580,6 +580,22 @@ fn render_final_snapshot(snapshot: &GetVerifySessionResponse, expectations: &Exp
                 None => render_test_bullet(t),
             }
         }
+
+        // Un-waived property failure: point the user at the one-liner that
+        // acknowledges it as a known gap. Future runs then report a "known
+        // gap (accepted)" instead of a failure (with a strict ratchet so a
+        // stale waiver can't rot). Offered only for a property `Failed` —
+        // the only outcome a waiver can forgive.
+        if matches!(ann.status, AnnotationOutcomeStatus::Failed) && waiver_match.is_none() {
+            anstream::println!(
+                "    {C_BOLD}Known limitation?{C_BOLD:#} acknowledge it so future runs report a known gap, not a failure:"
+            );
+            anstream::println!(
+                "      {C_DIM}aristo verify --accept {}{} --because \"<why this is OK for now>\"{C_DIM:#}",
+                ann.tier, ann.canon_id
+            );
+            anstream::println!();
+        }
     }
 
     // Phase 16 (c): a waiver that matched no annotation this run is stale or
@@ -657,9 +673,6 @@ const C_BOLD: Style = Style::new().bold();
 const C_DIM: Style = Style::new().dimmed();
 const C_DEL: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
 const C_ADD: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
-const C_TAG: Style = Style::new()
-    .bold()
-    .fg_color(Some(Color::Ansi(AnsiColor::Yellow)));
 
 /// Phase 16 Track A — render a [`DifferentialReport`] as a structured
 /// violation card. User-framed (no model/verification internals); every
@@ -712,27 +725,6 @@ fn render_report_card(report: &DifferentialReport, repro_id: &str) {
         if let Some(why) = &d.provenance {
             anstream::println!("        {C_DIM}why  {why}{C_DIM:#}");
         }
-    }
-    anstream::println!();
-
-    // Verdict frame.
-    match (&report.verdict.cr_id, &report.verdict.expected_to_fail) {
-        (Some(cr_id), Some(etf)) => {
-            anstream::println!(
-                "    {C_BOLD}Verdict{C_BOLD:#}   {cr_id} · {C_TAG}EXPECTED TO FAIL{C_TAG:#} (the failure IS the conformance verdict)"
-            );
-            anstream::println!("    {C_BOLD}Clears when{C_BOLD:#}  {}", etf.reason);
-        }
-        (Some(cr_id), None) => {
-            anstream::println!("    {C_BOLD}Verdict{C_BOLD:#}   {cr_id}")
-        }
-        (None, Some(etf)) => {
-            anstream::println!(
-                "    {C_BOLD}Verdict{C_BOLD:#}   {C_TAG}EXPECTED TO FAIL{C_TAG:#} (the failure IS the conformance verdict)"
-            );
-            anstream::println!("    {C_BOLD}Clears when{C_BOLD:#}  {}", etf.reason);
-        }
-        (None, None) => {}
     }
     anstream::println!();
 

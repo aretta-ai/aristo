@@ -421,8 +421,10 @@ fn waived_failing_annotation_renders_accepted_gap_and_exits_zero() {
         .stdout(contains(
             "turso uses a file-existence proxy; tracked upstream",
         ))
-        // The internal conformance frame is never shown for a waived gap.
-        .stdout(contains("EXPECTED TO FAIL").not());
+        // The internal conformance frame is never shown for a waived gap, and
+        // an already-accepted gap doesn't re-offer the accept hint.
+        .stdout(contains("EXPECTED TO FAIL").not())
+        .stdout(contains("Known limitation").not());
 }
 
 #[test]
@@ -492,7 +494,9 @@ fn unwaived_failure_is_unchanged_and_still_red() {
         .args(["verify", "--wait"])
         .assert()
         .failure()
-        .stdout(contains("known gap (accepted)").not());
+        .stdout(contains("known gap (accepted)").not())
+        // A failing, un-waived property points the user at how to accept it.
+        .stdout(contains("aristo verify --accept aristos:foo --because"));
 }
 
 // ─── hardening (from the adversarial review) ─────────────────────────────────
