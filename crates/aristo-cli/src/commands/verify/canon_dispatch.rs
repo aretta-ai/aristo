@@ -1132,7 +1132,13 @@ mod tests {
             ev(2, "pwrite", "db-wal @0 len=32", false, "ok"),
             ev(3, "sync", "db-wal", true, "EIO"),
             // A deliberately long detail to stress the width bound.
-            ev(4, "truncate", "db-journal @18446744073709551615 len=4096", false, "ok"),
+            ev(
+                4,
+                "truncate",
+                "db-journal @18446744073709551615 len=4096",
+                false,
+                "ok",
+            ),
         ];
 
         let mut card = Card::new();
