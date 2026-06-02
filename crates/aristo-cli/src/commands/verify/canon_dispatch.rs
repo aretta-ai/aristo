@@ -29,9 +29,9 @@ use anstyle::{Ansi256Color, AnsiColor, Color, Style};
 
 use aristo_core::canon::CanonMatchesFile;
 use aristo_core::canon_verify::{
-    AnnotationOutcomeStatus, DifferentialReport, Finding, GetVerifySessionResponse,
-    HttpVerifyClient, PostVerifySessionResponse, SessionStatus, TestOutcome, TestOutcomeStatus,
-    VerifyClient, VerifyError, VerifySessionRequest, VerifySessionTag,
+    AnnotationOutcomeStatus, DifferentialReport, FaultSpec, Finding, GetVerifySessionResponse,
+    HttpVerifyClient, OpEvent, PostVerifySessionResponse, SessionStatus, TestOutcome,
+    TestOutcomeStatus, VerifyClient, VerifyError, VerifySessionRequest, VerifySessionTag,
 };
 use aristo_core::expectations::{Expectation, ExpectationsFile};
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, IntentEntry};
@@ -760,6 +760,18 @@ fn render_violation_card(report: &DifferentialReport, repro_id: &str, kind: Card
         card.blank();
         card.line(&loc, C_DIM, 0);
     }
+
+    // Scenario (Slice 3): the injected fault + the IO timeline that led
+    // to the divergence. Additive — both are absent in a Slice-1 report,
+    // so older reports render exactly as before.
+    if let Some(fault) = &report.scenario.fault {
+        card.blank();
+        render_fault_banner(&mut card, fault);
+    }
+    if !report.scenario.op_trace.is_empty() {
+        card.blank();
+        render_op_trace(&mut card, &report.scenario.op_trace);
+    }
     card.blank();
 
     // The mask: compared fields + how many were ignored.
@@ -807,6 +819,48 @@ fn render_violation_card(report: &DifferentialReport, repro_id: &str, kind: Card
         anstream::println!("    {C_DIM}aristo verify --filter id={repro_id} --rerun{C_DIM:#}");
     }
     anstream::println!();
+}
+
+/// The fault banner (Slice 3): the named, parameterized injected fault,
+/// e.g. `fault   fail_nth · sync #1 → EIO   (fired 1×)`. Turso-observable
+/// only — the policy identity + the injected error, never the model.
+fn render_fault_banner(card: &mut Card, fault: &FaultSpec) {
+    let op = fault.op.to_lowercase();
+    let plain = format!(
+        "fault   {} · {op} #{} → {}   (fired {}×)",
+        fault.kind, fault.nth, fault.error, fault.fired_count
+    );
+    let styled = format!(
+        "{C_WARN}fault{C_WARN:#}   {} · {op} #{} → {C_WARN}{}{C_WARN:#}   {C_DIM}(fired {}×){C_DIM:#}",
+        fault.kind, fault.nth, fault.error, fault.fired_count
+    );
+    card.raw(styled, &plain);
+}
+
+/// The numbered IO timeline (Slice 3): the ordered op stream the harness
+/// recorded, the injected event marked. `ok` results are elided as noise;
+/// the injected event shows its error + a `← injected` marker in orange.
+/// Every op the run issued is shown (the real cr_03 trace is 3 ops).
+fn render_op_trace(card: &mut Card, op_trace: &[OpEvent]) {
+    let injected_seq = op_trace.iter().find(|e| e.injected).map(|e| e.seq);
+    let suffix = match injected_seq {
+        Some(k) => format!("{} I/O ops, fault at op {k}", op_trace.len()),
+        None => format!("{} I/O ops", op_trace.len()),
+    };
+    card.raw(
+        format!("{C_BOLD}what we tested{C_BOLD:#}   {C_DIM}·   {suffix}{C_DIM:#}"),
+        &format!("what we tested   ·   {suffix}"),
+    );
+    for ev in op_trace {
+        let mut text = format!("{:>2}  {:<8} {}", ev.seq, ev.op, ev.detail);
+        if ev.injected {
+            text.push_str(&format!("   {}  ← injected", ev.result));
+        } else if ev.result != "ok" {
+            text.push_str(&format!("   {}", ev.result));
+        }
+        let style = if ev.injected { C_WARN } else { C_DIM };
+        card.line(&text, style, 2);
+    }
 }
 
 /// The report on the first failing test of an annotation, if any.
@@ -1056,6 +1110,60 @@ mod tests {
 
     fn arta(s: &str) -> ArtaId {
         ArtaId::parse(s).unwrap()
+    }
+
+    /// The fault banner + numbered IO timeline must stay inside the
+    /// 88-column card frame — every rendered line exactly the card width,
+    /// even with a deliberately long detail. Also pins the injected
+    /// marker. (Prints the card under `--nocapture` for eyeballing.)
+    #[test]
+    fn op_trace_timeline_fits_88_cols() {
+        use textwrap::core::display_width;
+
+        let fault = FaultSpec {
+            kind: "fail_nth".into(),
+            op: "Sync".into(),
+            nth: 1,
+            error: "EIO".into(),
+            fired_count: 1,
+        };
+        let op_trace = vec![
+            ev(1, "pwrite", "db @0 len=4096", false, "ok"),
+            ev(2, "pwrite", "db-wal @0 len=32", false, "ok"),
+            ev(3, "sync", "db-wal", true, "EIO"),
+            // A deliberately long detail to stress the width bound.
+            ev(4, "truncate", "db-journal @18446744073709551615 len=4096", false, "ok"),
+        ];
+
+        let mut card = Card::new();
+        render_fault_banner(&mut card, &fault);
+        card.blank();
+        render_op_trace(&mut card, &op_trace);
+        let rendered = card.render();
+
+        for line in rendered.lines() {
+            assert_eq!(
+                display_width(line),
+                88,
+                "every card line must be 88 cols; got {line:?}"
+            );
+        }
+        // `render()` keeps ANSI (anstream strips it only at print time), so
+        // assert substrings that don't cross a style boundary: the banner's
+        // unstyled middle, and the injected op line (one uniform style).
+        assert!(rendered.contains("fail_nth · sync #1 →"));
+        assert!(rendered.contains("EIO  ← injected"));
+        eprintln!("\n{rendered}");
+    }
+
+    fn ev(seq: u64, op: &str, detail: &str, injected: bool, result: &str) -> OpEvent {
+        OpEvent {
+            seq,
+            op: op.into(),
+            detail: detail.into(),
+            injected,
+            result: result.into(),
+        }
     }
 
     fn intent(

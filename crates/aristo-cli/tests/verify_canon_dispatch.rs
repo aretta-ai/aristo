@@ -555,6 +555,109 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
 }
 
 #[test]
+fn wait_renders_fault_banner_and_io_timeline_for_enriched_report() {
+    // Phase 16 Slice 3: a failing TestOutcome carrying the ENRICHED
+    // cr03.full report (populated scenario.fault + scenario.op_trace)
+    // must render a fault banner + a numbered IO timeline with the
+    // injected event marked. Report body is a byte-copy of the
+    // cross-repo cr03.full contract fixture's salient fields.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let report = r#"{
+      "property": {
+        "canon_id": "wal_initialized_reflects_sync_outcome",
+        "statement": "The WAL initialized flag is set true only after a successful sync of the wal-header.",
+        "impl_source": { "path": "core/storage/wal.rs", "line": 3989, "snippet": "prepare_wal_finish" }
+      },
+      "scenario": {
+        "fault": { "kind": "fail_nth", "op": "Sync", "nth": 1, "error": "EIO", "fired_count": 1 },
+        "op_trace": [
+          { "seq": 1, "op": "pwrite", "detail": "db @0 len=4096", "injected": false, "result": "ok" },
+          { "seq": 2, "op": "pwrite", "detail": "db-wal @0 len=32", "injected": false, "result": "ok" },
+          { "seq": 3, "op": "sync", "detail": "db-wal", "injected": true, "result": "EIO" }
+        ],
+        "seed": "cr_03_initialized_under_sync_eio/fail_nth(Sync,1,EIO)/pragma+create"
+      },
+      "verdict": {
+        "cr_id": "CR-03",
+        "expected_to_fail": { "tag": "CR-03", "reason": "turso rolls back the partial header write on sync failure." }
+      },
+      "relation": {
+        "kind": "state_eq",
+        "description": "StateEq under ProjectionMask { initialized }",
+        "compared": ["initialized"],
+        "ignored": ["max_frame", "nbackfills"]
+      },
+      "finding": {
+        "kind": "state_eq",
+        "expected": { "label": "reference", "fields": [ { "field": "initialized", "value": "false" } ] },
+        "actual": { "label": "turso (observed)", "fields": [ { "field": "initialized", "value": "true" } ] },
+        "divergence": [ { "field": "initialized", "expected": "false", "actual": "true", "provenance": "turso reports initialized from the *.db-wal file-existence proxy; a non-durable header reads as present." } ]
+      }
+    }"#;
+
+    let fixture_body = format!(
+        r#"{{
+      "post": {{ "session_id": "01HMFULL", "view_url": "https://x", "plan_size": 1 }},
+      "gets": [
+        {{
+          "session_id": "01HMFULL",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [
+            {{
+              "annotation_id": "arta_op4q3z9NbV",
+              "canon_id": "wal_initialized_reflects_sync_outcome",
+              "version": "v0.1.0",
+              "scope": "turso",
+              "tier": "aristos:",
+              "source_path": "core/storage/wal.rs:3989",
+              "status": "failed",
+              "tests": [
+                {{ "test_binary": "cr_03_conform", "test_kind": "differential", "relation": "tight", "status": "fail", "duration_ms": 4210, "report": {report} }}
+              ]
+            }}
+          ],
+          "summary": {{ "total_annotations": 1, "verified": 0, "failed": 1, "build_failed": 0, "inconclusive": 0, "no_coverage": 0 }}
+        }}
+      ]
+    }}"#
+    );
+    let fixture_path = write_full_fixture(tmp.path(), &fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        // The fault banner: the named, parameterized injected fault.
+        .stdout(contains("fault"))
+        .stdout(contains("fail_nth · sync #1 → EIO"))
+        .stdout(contains("(fired 1×)"))
+        // The numbered IO timeline header + the ops that ran.
+        .stdout(contains("what we tested"))
+        .stdout(contains("3 I/O ops, fault at op 3"))
+        .stdout(contains("pwrite"))
+        .stdout(contains("db-wal @0 len=32"))
+        // The injected event is marked.
+        .stdout(contains("← injected"))
+        // Still no model/Lean identity on the user surface (IP).
+        .stdout(contains("lean").not())
+        .stdout(contains("Lean").not());
+}
+
+#[test]
 fn view_attaches_to_existing_session_without_post() {
     // --view <id> skips POST entirely — no workspace, no git, no auth-
     // sourced repo. Only a single GET. We deliberately don't init a
