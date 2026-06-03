@@ -26,12 +26,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anstyle::{Ansi256Color, AnsiColor, Color, Style};
+use textwrap::core::display_width;
 
 use aristo_core::canon::CanonMatchesFile;
 use aristo_core::canon_verify::{
-    AnnotationOutcomeStatus, DifferentialReport, FaultSpec, Finding, GetVerifySessionResponse,
-    HttpVerifyClient, OpEvent, PostVerifySessionResponse, SessionStatus, TestOutcome,
-    TestOutcomeStatus, VerifyClient, VerifyError, VerifySessionRequest, VerifySessionTag,
+    AnnotationOutcomeStatus, CallFrame, DifferentialReport, FaultSpec, FieldDivergence, Finding,
+    FrameRole, GetVerifySessionResponse, HttpVerifyClient, PostVerifySessionResponse,
+    SessionStatus, Snapshot, TestOutcome, TestOutcomeStatus, TestStep, VerifyClient, VerifyError,
+    VerifySessionRequest, VerifySessionTag,
 };
 use aristo_core::expectations::{Expectation, ExpectationsFile};
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, IntentEntry};
@@ -723,89 +725,7 @@ enum CardKind<'a> {
 /// accepted gap is still a real, visible failure the user chose to live
 /// with.
 fn render_violation_card(report: &DifferentialReport, repro_id: &str, kind: CardKind<'_>) {
-    let Finding::StateEq {
-        expected,
-        actual,
-        divergence,
-    } = &report.finding;
-
-    let mut card = Card::new();
-    // Headline — red "violated" vs. orange "known failure".
-    match &kind {
-        CardKind::Violated => card.raw(
-            format!(
-                "{C_HEAD}✗ PROPERTY VIOLATED{C_HEAD:#}  {C_BOLD}{}{C_BOLD:#}",
-                report.property.canon_id
-            ),
-            &format!("✗ PROPERTY VIOLATED  {}", report.property.canon_id),
-        ),
-        CardKind::Accepted(_) => card.raw(
-            format!(
-                "{C_WARN}⚠ KNOWN PROPERTY FAILURE{C_WARN:#}  {C_BOLD}{}{C_BOLD:#}",
-                report.property.canon_id
-            ),
-            &format!("⚠ KNOWN PROPERTY FAILURE  {}", report.property.canon_id),
-        ),
-    }
-    card.blank();
-    card.wrap(&report.property.statement, Style::new(), 0);
-
-    // The impl anchor — the user's own code. The spec anchor (the closed
-    // verification harness) is deliberately not surfaced.
-    if let Some(s) = &report.property.impl_source {
-        let loc = match &s.snippet {
-            Some(snip) => format!("impl  {}:{} ({snip})", s.path, s.line),
-            None => format!("impl  {}:{}", s.path, s.line),
-        };
-        card.blank();
-        card.line(&loc, C_DIM, 0);
-    }
-
-    // Scenario (Slice 3): the injected fault + the IO timeline that led
-    // to the divergence. Additive — both are absent in a Slice-1 report,
-    // so older reports render exactly as before.
-    if let Some(fault) = &report.scenario.fault {
-        card.blank();
-        render_fault_banner(&mut card, fault);
-    }
-    if !report.scenario.op_trace.is_empty() {
-        card.blank();
-        render_op_trace(&mut card, &report.scenario.op_trace);
-    }
-    card.blank();
-
-    // The mask: compared fields + how many were ignored.
-    let compared = report.relation.compared.join(", ");
-    let ignored = render_ignored(&report.relation.ignored);
-    card.raw(
-        format!("{C_BOLD}Compared:{C_BOLD:#} [{compared}]   {C_DIM}(ignored: {ignored}){C_DIM:#}"),
-        &format!("Compared: [{compared}]   (ignored: {ignored})"),
-    );
-    card.blank();
-
-    // Snapshot labels, then the -/+ divergence rows (provenance wrapped
-    // with a hanging `why` label).
-    card.line(
-        &format!("{}      {}", expected.label, actual.label),
-        C_DIM,
-        4,
-    );
-    for d in divergence {
-        card.line(&format!("- {} = {}", d.field, d.expected), C_DEL, 2);
-        card.line(&format!("+ {} = {}", d.field, d.actual), C_ADD, 2);
-        if let Some(why) = &d.provenance {
-            card.wrap_hang("  why  ", why, C_DIM);
-        }
-    }
-
-    // Accepted footer: the user's acknowledgement, inside the card.
-    if let CardKind::Accepted(exp) = &kind {
-        card.blank();
-        card.wrap_hang("accepted  ", &exp.reason, C_WARN);
-        if let Some(tracking) = &exp.tracking {
-            card.line(&format!("tracking  {tracking}"), C_DIM, 0);
-        }
-    }
+    let card = build_violation_card(report, &kind);
 
     anstream::println!();
     anstream::print!("{}", card.render());
@@ -821,46 +741,415 @@ fn render_violation_card(report: &DifferentialReport, repro_id: &str, kind: Card
     anstream::println!();
 }
 
+/// Build the violation [`Card`] (no printing) so tests can render it to a
+/// string and assert on the framed text. The card order is: headline →
+/// statement → impl → fault banner → "what turso ran" → "where your code
+/// broke it" → "divergence observed" → (accepted footer).
+fn build_violation_card(report: &DifferentialReport, kind: &CardKind<'_>) -> Card {
+    let Finding::StateEq {
+        expected,
+        actual,
+        divergence,
+    } = &report.finding;
+
+    let mut card = Card::new();
+    // Headline — red "violated" vs. orange "known failure".
+    match kind {
+        CardKind::Violated => card.raw(
+            format!(
+                "{C_HEAD}✗ PROPERTY VIOLATED{C_HEAD:#}   {C_BOLD}{}{C_BOLD:#}",
+                report.property.canon_id
+            ),
+            &format!("✗ PROPERTY VIOLATED   {}", report.property.canon_id),
+        ),
+        CardKind::Accepted(_) => card.raw(
+            format!(
+                "{C_WARN}⚠ KNOWN PROPERTY FAILURE{C_WARN:#}   {C_BOLD}{}{C_BOLD:#}",
+                report.property.canon_id
+            ),
+            &format!("⚠ KNOWN PROPERTY FAILURE   {}", report.property.canon_id),
+        ),
+    }
+    card.blank();
+    card.wrap(&report.property.statement, Style::new(), 0);
+
+    // The impl anchor — the user's own code. The spec anchor (the closed
+    // verification harness) is deliberately not surfaced.
+    if let Some(s) = &report.property.impl_source {
+        let loc = match &s.snippet {
+            Some(snip) => format!("impl   {}:{}  ·  {snip}", s.path, s.line),
+            None => format!("impl   {}:{}", s.path, s.line),
+        };
+        card.blank();
+        card.line(&loc, C_DIM, 0);
+    }
+
+    // The injected fault that led to the divergence. Additive — absent in
+    // a Slice-1 report, so older reports render exactly as before.
+    if let Some(fault) = &report.scenario.fault {
+        render_fault_banner(&mut card, fault);
+    }
+
+    // "what turso ran" — the top-level test workload (the SQL the test
+    // issued), the faulting statement flagged. Additive.
+    if !report.scenario.test_shape.is_empty() {
+        card.blank();
+        render_test_shape(&mut card, &report.scenario.test_shape);
+    }
+
+    // "where your code broke it" — the turso call-path spine. Additive.
+    if !report.scenario.call_path.is_empty() {
+        card.blank();
+        render_call_path(&mut card, report);
+    }
+
+    // "divergence observed" — the masked counterexample, AFTER the call
+    // path so the user reads cause (the broken call) then effect (the
+    // diverging field).
+    card.blank();
+    render_divergence(&mut card, report, expected, actual, divergence);
+
+    // Accepted footer: the user's acknowledgement, inside the card.
+    if let CardKind::Accepted(exp) = kind {
+        card.blank();
+        card.wrap_hang("accepted  ", &exp.reason, C_WARN);
+        if let Some(tracking) = &exp.tracking {
+            card.line(&format!("tracking  {tracking}"), C_DIM, 0);
+        }
+    }
+
+    card
+}
+
 /// The fault banner (Slice 3): the named, parameterized injected fault,
-/// e.g. `fault   fail_nth · sync #1 → EIO   (fired 1×)`. Turso-observable
+/// e.g. `fault  fail_nth · sync #1 → EIO  ·  fired 1×`. Turso-observable
 /// only — the policy identity + the injected error, never the model.
 fn render_fault_banner(card: &mut Card, fault: &FaultSpec) {
     let op = fault.op.to_lowercase();
     let plain = format!(
-        "fault   {} · {op} #{} → {}   (fired {}×)",
+        "fault  {} · {op} #{} → {}  ·  fired {}×",
         fault.kind, fault.nth, fault.error, fault.fired_count
     );
     let styled = format!(
-        "{C_WARN}fault{C_WARN:#}   {} · {op} #{} → {C_WARN}{}{C_WARN:#}   {C_DIM}(fired {}×){C_DIM:#}",
+        "{C_WARN}fault{C_WARN:#}  {} · {op} #{} → {C_WARN}{}{C_WARN:#}  {C_DIM}·  fired {}×{C_DIM:#}",
         fault.kind, fault.nth, fault.error, fault.fired_count
     );
     card.raw(styled, &plain);
 }
 
-/// The numbered IO timeline (Slice 3): the ordered op stream the harness
-/// recorded, the injected event marked. `ok` results are elided as noise;
-/// the injected event shows its error + a `← injected` marker in orange.
-/// Every op the run issued is shown (the real cr_03 trace is 3 ops).
-fn render_op_trace(card: &mut Card, op_trace: &[OpEvent]) {
-    let injected_seq = op_trace.iter().find(|e| e.injected).map(|e| e.seq);
-    let suffix = match injected_seq {
-        Some(k) => format!("{} I/O ops, fault at op {k}", op_trace.len()),
-        None => format!("{} I/O ops", op_trace.len()),
-    };
+/// "what turso ran" (Slice 3a): the top-level test workload — the SQL
+/// statements the test issued — as plain labels, the faulting statement
+/// flagged with a sub-line. Driven off `scenario.test_shape`; the
+/// op-trace timeline is no longer surfaced (it stays in the contract data
+/// but is not rendered).
+fn render_test_shape(card: &mut Card, steps: &[TestStep]) {
     card.raw(
-        format!("{C_BOLD}what we tested{C_BOLD:#}   {C_DIM}·   {suffix}{C_DIM:#}"),
-        &format!("what we tested   ·   {suffix}"),
+        format!("{C_BOLD}what turso ran{C_BOLD:#}"),
+        "what turso ran",
     );
-    for ev in op_trace {
-        let mut text = format!("{:>2}  {:<8} {}", ev.seq, ev.op, ev.detail);
-        if ev.injected {
-            text.push_str(&format!("   {}  ← injected", ev.result));
-        } else if ev.result != "ok" {
-            text.push_str(&format!("   {}", ev.result));
+    for step in steps {
+        card.line(&step.label, C_DIM, 2);
+        if step.faulted {
+            card.line("└ faulted on commit", C_WARN, 5);
         }
-        let style = if ev.injected { C_WARN } else { C_DIM };
-        card.line(&text, style, 2);
     }
+}
+
+/// "where your code broke it" (Slice 3a): the turso call-path spine.
+///
+/// The header NAMES the entry frame (`… · inside Connection::execute`);
+/// the body renders `call_path[1..]` (the entry is already named, so it's
+/// dropped from the list). The spine is a pre-order walk; `depth`
+/// reconstructs the tree. Trunk frames (`depth <= fork_depth`) render
+/// flush at the base indent; from the fork the two branches — the
+/// pre-fault effect write and the fault — render with `├─`/`└─`
+/// connectors + `│`/space guides so they read as siblings.
+///
+/// Every shown frame is turso (the spine is IP-filtered upstream); labels
+/// are shortened for display. The fault frame carries a glyph-gated
+/// marker derived from the report (`✗ {op} → {error}   fault injected
+/// here`); the effect frame a NEUTRAL marker (no divergence values —
+/// those live in the "divergence observed" block below). The two markers
+/// are column-aligned. Meaning survives with colour stripped.
+fn render_call_path(card: &mut Card, report: &DifferentialReport) {
+    let frames = &report.scenario.call_path;
+    let Some(entry) = frames.first() else {
+        return;
+    };
+
+    // Header: name the entry frame inline; render the rest below it.
+    let entry_label = shorten_frame_label(&entry.label);
+    card.raw(
+        format!(
+            "{C_BOLD}where your code broke it{C_BOLD:#}   {C_DIM}·   inside {entry_label}{C_DIM:#}"
+        ),
+        &format!("where your code broke it   ·   inside {entry_label}"),
+    );
+    card.blank();
+
+    let body = &frames[1..];
+    let fork_depth = fork_depth(frames);
+
+    // Base indent of the spine inside the card.
+    const BASE: usize = 2;
+
+    // The fault marker, derived from the injected fault (op + error). The
+    // effect marker is a fixed neutral string — the diverging values live
+    // in the "divergence observed" block, not on the frame.
+    let fault_marker = report.scenario.fault.as_ref().map(|f| {
+        format!(
+            "✗ {} → {}   fault injected here",
+            f.op.to_lowercase(),
+            f.error
+        )
+    });
+    const EFFECT_MARKER: &str = "writes the WAL header to disk";
+
+    // Pass 1: build each frame's plain prefix+label and remember which
+    // carry a marker, so the markers can be column-aligned.
+    struct RenderedFrame {
+        prefix: String,
+        label: String,
+        role: FrameRole,
+    }
+    let mut rendered: Vec<RenderedFrame> = Vec::with_capacity(body.len());
+    for (i, frame) in body.iter().enumerate() {
+        let rel = frame.depth.saturating_sub(fork_depth) as usize;
+        let prefix = if rel == 0 {
+            " ".repeat(BASE)
+        } else {
+            format!("{}{}", " ".repeat(BASE), tree_prefix(body, i, rel))
+        };
+        rendered.push(RenderedFrame {
+            prefix,
+            label: shorten_frame_label(&frame.label),
+            role: frame.role,
+        });
+    }
+
+    // The marker column: 2 past the widest marked frame's plain end.
+    let marker_col = rendered
+        .iter()
+        .filter(|r| matches!(r.role, FrameRole::Fault | FrameRole::Effect))
+        .map(|r| display_width(&r.prefix) + display_width(&r.label))
+        .max()
+        .map(|w| w + 2);
+
+    // Pass 2: emit. The prefix is plain (counts toward width directly); the
+    // label is dim; the marker (if any) is padded to `marker_col` and
+    // coloured by role.
+    for r in &rendered {
+        match r.role {
+            FrameRole::Normal => {
+                let plain = format!("{}{}", r.prefix, r.label);
+                let styled = format!("{}{C_DIM}{}{C_DIM:#}", r.prefix, r.label);
+                card.raw(styled, &plain);
+            }
+            FrameRole::Fault | FrameRole::Effect => {
+                let marker = if matches!(r.role, FrameRole::Fault) {
+                    fault_marker.as_deref().unwrap_or("✗ fault injected here")
+                } else {
+                    EFFECT_MARKER
+                };
+                let here = display_width(&r.prefix) + display_width(&r.label);
+                let gap = " ".repeat(marker_col.unwrap_or(here + 2).saturating_sub(here));
+                let mstyle = if matches!(r.role, FrameRole::Fault) {
+                    C_WARN
+                } else {
+                    C_DIM
+                };
+                let plain = format!("{}{}{gap}{marker}", r.prefix, r.label);
+                let styled = format!(
+                    "{}{C_DIM}{}{C_DIM:#}{gap}{mstyle}{marker}{mstyle:#}",
+                    r.prefix, r.label
+                );
+                card.raw(styled, &plain);
+            }
+        }
+    }
+}
+
+/// The `├─`/`└─` connector + `│`/space guide prefix for a forked frame at
+/// relative level `rel` (`= depth - fork_depth >= 1`), index `i` in the
+/// subtree slice `body`. Standard pre-order tree drawing: for each
+/// ancestor level a `│  ` guide if that branch is still open (a later
+/// sibling exists before the branch closes), else three spaces; at the
+/// frame's own level a `├─ ` if a later sibling follows, else `└─ `.
+fn tree_prefix(body: &[CallFrame], i: usize, rel: usize) -> String {
+    // The caller's `fork_depth` for this frame: depth[i] - rel.
+    let fork = body[i].depth.saturating_sub(rel as u32);
+    let rel_at = |idx: usize| (body[idx].depth.saturating_sub(fork)) as usize;
+
+    // Scanning forward from `i`, is there another frame at relative `level`
+    // before one shallower than `level` (i.e. is that branch still open)?
+    let has_later_sibling = |level: usize| {
+        for j in (i + 1)..body.len() {
+            let rj = rel_at(j);
+            if rj < level {
+                return false;
+            }
+            if rj == level {
+                return true;
+            }
+        }
+        false
+    };
+
+    let mut out = String::new();
+    for level in 1..rel {
+        out.push_str(if has_later_sibling(level) {
+            "│  "
+        } else {
+            "   "
+        });
+    }
+    out.push_str(if has_later_sibling(rel) {
+        "├─ "
+    } else {
+        "└─ "
+    });
+    out
+}
+
+/// The depth of the first branching node on the spine — the shallowest
+/// `depth` at which two distinct later frames hang off the same parent.
+/// For a pure (un-forked) path no such node exists and the whole spine is
+/// the flush trunk, so we return `u32::MAX` (every `depth - fork_depth`
+/// saturates to 0 → indent stays flush).
+fn fork_depth(frames: &[CallFrame]) -> u32 {
+    // In a pre-order spine, descent increments depth by one. A *drop* —
+    // a frame whose depth is `<=` its predecessor's — means the walk has
+    // popped back up and re-opened a branch off the shared prefix; that
+    // branch's parent sits at `this.depth - 1`. The shallowest such parent
+    // is the first branching node. A pure path never drops, so `fork`
+    // stays `u32::MAX` and every subtree indent saturates to 0 (flush).
+    let mut fork = u32::MAX;
+    let mut prev: Option<u32> = None;
+    for f in frames {
+        if let Some(p) = prev {
+            if f.depth <= p && f.depth >= 1 {
+                fork = fork.min(f.depth - 1);
+            }
+        }
+        prev = Some(f.depth);
+    }
+    fork
+}
+
+/// Shorten a wire symbol for display: drop the leading `turso_core::`
+/// module path and keep the last 1–2 `::`-segments, so
+/// `turso_core::storage::wal::WalFile::prepare_wal_finish` →
+/// `WalFile::prepare_wal_finish` and `turso_core::vdbe::execute::op_halt`
+/// → `op_halt`. Deterministic: a trailing `Type::method` pair is kept
+/// whole; a bare free function keeps just its name.
+fn shorten_frame_label(label: &str) -> String {
+    let segs: Vec<&str> = label.split("::").collect();
+    let n = segs.len();
+    if n == 0 {
+        return label.to_string();
+    }
+    // The last segment is always the fn/op name. If the penultimate
+    // segment looks like a type (UpperCamel), keep the `Type::name` pair;
+    // otherwise (a module path) keep just the name.
+    let last = segs[n - 1];
+    if n >= 2 {
+        let penult = segs[n - 2];
+        let is_type = penult
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_uppercase());
+        if is_type {
+            return format!("{penult}::{last}");
+        }
+    }
+    last.to_string()
+}
+
+/// "divergence observed" (Slice 3a): the masked counterexample, rendered
+/// AFTER the call path. A bold header naming the mask (compared fields +
+/// how many were ignored), then the aligned `expected`/`actual` rows
+/// (each tagged with its snapshot's side-label), then the provenance as a
+/// hanging `why` paragraph. Driven entirely off the report.
+fn render_divergence(
+    card: &mut Card,
+    report: &DifferentialReport,
+    expected: &Snapshot,
+    actual: &Snapshot,
+    divergence: &[FieldDivergence],
+) {
+    // Header: the mask. `compared [a, b]   (N fields ignored)`.
+    let compared = report.relation.compared.join(", ");
+    let n_ignored = report.relation.ignored.len();
+    let field_word = if n_ignored == 1 { "field" } else { "fields" };
+    card.raw(
+        format!(
+            "{C_BOLD}divergence observed{C_BOLD:#}   {C_DIM}·   compared [{compared}]   \
+             ({n_ignored} {field_word} ignored){C_DIM:#}"
+        ),
+        &format!(
+            "divergence observed   ·   compared [{compared}]   ({n_ignored} {field_word} ignored)"
+        ),
+    );
+    card.blank();
+
+    // Aligned expected/actual rows. The tag column is 11 wide (so the
+    // `field = value` clause starts in a common column); the value column
+    // is padded so the snapshot side-label lands in a common column.
+    const LABEL_W: usize = 11;
+    const VALUE_W: usize = 21;
+    for d in divergence {
+        diff_row(
+            card,
+            "expected",
+            &d.field,
+            &d.expected,
+            &expected.label,
+            C_DEL,
+            LABEL_W,
+            VALUE_W,
+        );
+        diff_row(
+            card,
+            "actual",
+            &d.field,
+            &d.actual,
+            &actual.label,
+            C_ADD,
+            LABEL_W,
+            VALUE_W,
+        );
+    }
+
+    // Provenance: the proxy/durability collapse story, hung off `why`.
+    if let Some(why) = divergence.first().and_then(|d| d.provenance.as_deref()) {
+        card.blank();
+        card.wrap_hang("  why  ", why, C_DIM);
+    }
+}
+
+/// One `expected`/`actual` row of the divergence block: a left-justified
+/// `tag`, then `{field} = {value}` padded to `value_w`, then the snapshot
+/// `side` label. The `field = value` clause is coloured by `vstyle`
+/// (red/green) so the diff survives colour-stripping via the tag word.
+#[allow(clippy::too_many_arguments)]
+fn diff_row(
+    card: &mut Card,
+    tag: &str,
+    field: &str,
+    value: &str,
+    side: &str,
+    vstyle: Style,
+    label_w: usize,
+    value_w: usize,
+) {
+    let clause = format!("{field} = {value}");
+    let label_pad = " ".repeat(label_w.saturating_sub(display_width(tag)).max(1));
+    let value_pad = " ".repeat(value_w.saturating_sub(display_width(&clause)).max(1));
+    let plain = format!("{tag}{label_pad}{clause}{value_pad}{side}");
+    let styled = format!(
+        "{C_DIM}{tag}{C_DIM:#}{label_pad}{vstyle}{clause}{vstyle:#}{value_pad}{C_DIM}{side}{C_DIM:#}"
+    );
+    card.raw_indented(styled, &plain, 2);
 }
 
 /// The report on the first failing test of an annotation, if any.
@@ -877,21 +1166,6 @@ fn first_failing_report(tests: &[TestOutcome]) -> Option<&DifferentialReport> {
         .then_some(t.report.as_ref())
         .flatten()
     })
-}
-
-/// Render the ignored-mask suffix: first two names, then `+N` for the
-/// remainder, e.g. `max_frame, max_frame_inflight, +7`.
-fn render_ignored(ignored: &[String]) -> String {
-    if ignored.is_empty() {
-        return "none".to_string();
-    }
-    let head: Vec<&str> = ignored.iter().take(2).map(String::as_str).collect();
-    let rest = ignored.len().saturating_sub(head.len());
-    if rest > 0 {
-        format!("{}, +{rest}", head.join(", "))
-    } else {
-        head.join(", ")
-    }
 }
 
 fn status_label(s: SessionStatus) -> &'static str {
@@ -1112,64 +1386,246 @@ mod tests {
         ArtaId::parse(s).unwrap()
     }
 
-    /// The fault banner + numbered IO timeline must stay inside the
-    /// 88-column card frame — every rendered line exactly the card width,
-    /// even with a deliberately long detail. Also pins the injected
-    /// marker. (Prints the card under `--nocapture` for eyeballing.)
+    /// The committed golden — byte-copy of the cross-repo contract
+    /// fixture. The renderer is driven entirely off the deserialized
+    /// report, so the test exercises the same `DifferentialReport` the
+    /// server emits.
+    const CR03_FULL: &str = include_str!("fixtures/cr03.full.json");
+
+    fn cr03_report() -> DifferentialReport {
+        serde_json::from_str(CR03_FULL).expect("cr03.full.json must deserialize")
+    }
+
+    /// Render the WHOLE violation card into a string (ANSI retained —
+    /// anstream strips it at print time). The card-construction seam
+    /// (`build_violation_card`) is shared with the printing path.
+    fn render_full_card(report: &DifferentialReport) -> String {
+        build_violation_card(report, &CardKind::Violated).render()
+    }
+
+    /// Strip ANSI SGR escape sequences (`ESC [ … m`) so a test can measure
+    /// visible columns on the styled card.
+    fn strip_sgr(s: &str) -> String {
+        let mut out = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for n in chars.by_ref() {
+                    if n == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// Card-level width: every rendered line of the WHOLE violation card —
+    /// borders and content alike — stays inside the 88-column frame.
     #[test]
-    fn op_trace_timeline_fits_88_cols() {
-        use textwrap::core::display_width;
-
-        let fault = FaultSpec {
-            kind: "fail_nth".into(),
-            op: "Sync".into(),
-            nth: 1,
-            error: "EIO".into(),
-            fired_count: 1,
-        };
-        let op_trace = vec![
-            ev(1, "pwrite", "db @0 len=4096", false, "ok"),
-            ev(2, "pwrite", "db-wal @0 len=32", false, "ok"),
-            ev(3, "sync", "db-wal", true, "EIO"),
-            // A deliberately long detail to stress the width bound.
-            ev(
-                4,
-                "truncate",
-                "db-journal @18446744073709551615 len=4096",
-                false,
-                "ok",
-            ),
-        ];
-
-        let mut card = Card::new();
-        render_fault_banner(&mut card, &fault);
-        card.blank();
-        render_op_trace(&mut card, &op_trace);
-        let rendered = card.render();
-
+    fn violation_card_fits_88_cols() {
+        let report = cr03_report();
+        let rendered = render_full_card(&report);
         for line in rendered.lines() {
-            assert_eq!(
-                display_width(line),
-                88,
-                "every card line must be 88 cols; got {line:?}"
+            assert!(
+                display_width(line) <= 88,
+                "every card line must fit 88 cols; got {} → {line:?}",
+                display_width(line)
             );
         }
-        // `render()` keeps ANSI (anstream strips it only at print time), so
-        // assert substrings that don't cross a style boundary: the banner's
-        // unstyled middle, and the injected op line (one uniform style).
-        assert!(rendered.contains("fail_nth · sync #1 →"));
-        assert!(rendered.contains("EIO  ← injected"));
         eprintln!("\n{rendered}");
     }
 
-    fn ev(seq: u64, op: &str, detail: &str, injected: bool, result: &str) -> OpEvent {
-        OpEvent {
-            seq,
-            op: op.into(),
-            detail: detail.into(),
-            injected,
-            result: result.into(),
+    /// IP boundary: the card shows ONLY turso frames. None of the harness /
+    /// model / proxy internals leak into the user-facing card.
+    #[test]
+    fn violation_card_is_turso_only_no_ip_leak() {
+        let report = cr03_report();
+        let rendered = render_full_card(&report);
+        for forbidden in [
+            "io_bridge",
+            "harness",
+            "lean",
+            "Lean",
+            "aretta",
+            "InjectedTurso",
+            "/checkouts/",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "card must not leak {forbidden:?}; got:\n{rendered}"
+            );
         }
+    }
+
+    /// "what turso ran": the section header, both SQL labels, and the
+    /// faulted sub-line are present.
+    #[test]
+    fn card_shows_what_turso_ran() {
+        let report = cr03_report();
+        let rendered = render_full_card(&report);
+        assert!(
+            rendered.contains("what turso ran"),
+            "missing 'what turso ran' header; got:\n{rendered}"
+        );
+        assert!(rendered.contains("PRAGMA journal_mode=WAL"));
+        assert!(
+            rendered.contains("CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY, v INTEGER)")
+        );
+        assert!(
+            rendered.contains("faulted on commit"),
+            "the faulting statement must be flagged; got:\n{rendered}"
+        );
+    }
+
+    /// The reworked call path: shortened labels, the named entry frame in
+    /// the header, the visible fork, and the new fault marker. The effect
+    /// frame carries the NEUTRAL marker (no divergence values inline).
+    #[test]
+    fn card_call_path_fork_and_markers() {
+        let report = cr03_report();
+        let rendered = render_full_card(&report);
+
+        // Header names the entry frame; the entry is NOT also listed below.
+        assert!(
+            rendered.contains("where your code broke it"),
+            "missing call-path header; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("inside Connection::execute"),
+            "header must name the entry frame; got:\n{rendered}"
+        );
+
+        // Shortened labels (module path dropped).
+        for label in [
+            "prepare_wal_start",
+            "begin_write_wal_header",
+            "WalFile::prepare_wal_finish",
+        ] {
+            assert!(
+                rendered.contains(label),
+                "call path must show {label:?}; got:\n{rendered}"
+            );
+        }
+
+        // The fault marker: op (lowercased) + error + the fixed tail.
+        assert!(
+            rendered.contains("→ EIO   fault injected here"),
+            "fault marker missing/changed; got:\n{rendered}"
+        );
+        // The effect marker is now NEUTRAL — no divergence values inline.
+        assert!(
+            rendered.contains("writes the WAL header to disk"),
+            "neutral effect marker missing; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("sets initialized"),
+            "the effect frame must NOT carry divergence values; got:\n{rendered}"
+        );
+
+        // The fork is visible: begin_write_wal_header (effect, depth 12)
+        // renders deeper than prepare_wal_finish (fault, depth 11), with
+        // the box-drawing connectors. (The label is dim-styled, so a style
+        // reset sits between the connector and the label in the ANSI
+        // string — assert the connector on the same LINE as its label.)
+        let line_with = |needle: &str| -> &str {
+            rendered
+                .lines()
+                .find(|l| l.contains(needle))
+                .unwrap_or_else(|| panic!("no line for {needle:?}; got:\n{rendered}"))
+        };
+        // Match the call-path frames specifically (the `WalFile::` form);
+        // the bare `prepare_wal_finish` also appears on the `impl` line.
+        assert!(
+            line_with("WalFile::prepare_wal_start").contains("├─ "),
+            "first branch must use the ├─ connector; got:\n{rendered}"
+        );
+        assert!(
+            line_with("WalFile::prepare_wal_finish").contains("└─ "),
+            "fault branch must use the └─ connector; got:\n{rendered}"
+        );
+        // Depth via the visible column where the label needle starts (the
+        // tree connectors push deeper frames right). Measured on the
+        // ANSI-stripped line so style codes don't shift the column.
+        let label_col = |needle: &str| -> usize {
+            let line = rendered
+                .lines()
+                .find(|l| l.contains(needle))
+                .unwrap_or_else(|| panic!("no line for {needle:?}"));
+            let plain = strip_sgr(line);
+            display_width(&plain[..plain.find(needle).unwrap()])
+        };
+        assert!(
+            label_col("begin_write_wal_header") > label_col("WalFile::prepare_wal_finish"),
+            "effect branch must be deeper (further right) than the fault branch:\n{rendered}"
+        );
+    }
+
+    /// The divergence is a SEPARATE block AFTER the call path — not inline
+    /// on a frame. `initialized = true` appears below the spine, under the
+    /// "divergence observed" header.
+    #[test]
+    fn card_divergence_block_after_call_path() {
+        let report = cr03_report();
+        let rendered = render_full_card(&report);
+        let lines: Vec<&str> = rendered.lines().collect();
+
+        let pos = |needle: &str| {
+            lines
+                .iter()
+                .position(|l| l.contains(needle))
+                .unwrap_or_else(|| panic!("no line for {needle:?} in:\n{rendered}"))
+        };
+
+        assert!(
+            rendered.contains("divergence observed"),
+            "missing 'divergence observed' header; got:\n{rendered}"
+        );
+        // The actual value appears, but only inside the divergence block —
+        // below the call path, never on a call-path frame.
+        assert!(
+            rendered.contains("initialized = true"),
+            "divergence must show the diverging value; got:\n{rendered}"
+        );
+        // Use the call-path frame specifically (`WalFile::` form); the bare
+        // `prepare_wal_finish` also appears on the early `impl` line.
+        assert!(
+            pos("divergence observed") > pos("WalFile::prepare_wal_finish"),
+            "divergence block must come AFTER the call path; got:\n{rendered}"
+        );
+        assert!(
+            pos("initialized = true") > pos("WalFile::prepare_wal_finish"),
+            "the diverging value must render below the spine, not inline; got:\n{rendered}"
+        );
+
+        // The mask line + the aligned expected/actual rows.
+        assert!(rendered.contains("compared [initialized]"));
+        assert!(rendered.contains("9 fields ignored"));
+        assert!(rendered.contains("initialized = false"));
+    }
+
+    /// The old op-trace rendering is GONE: neither the "what we tested"
+    /// header nor the numbered op rows appear anywhere in the card.
+    #[test]
+    fn card_has_no_op_trace_rendering() {
+        let report = cr03_report();
+        // Sanity: the fixture STILL carries the op_trace data (contract
+        // unchanged) — it is just no longer rendered.
+        assert!(
+            !report.scenario.op_trace.is_empty(),
+            "fixture should still carry op_trace data"
+        );
+        let rendered = render_full_card(&report);
+        assert!(
+            !rendered.contains("what we tested"),
+            "the old op-trace header must be gone; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("← injected"),
+            "the old op-trace injected marker must be gone; got:\n{rendered}"
+        );
     }
 
     fn intent(
