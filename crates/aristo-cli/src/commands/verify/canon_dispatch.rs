@@ -838,10 +838,12 @@ fn render_fault_banner(card: &mut Card, fault: &FaultSpec) {
 }
 
 /// "what turso ran" (Slice 3a): the top-level test workload — the SQL
-/// statements the test issued — as plain labels, the faulting statement
-/// flagged with a sub-line. Driven off `scenario.test_shape`; the
-/// op-trace timeline is no longer surfaced (it stays in the contract data
-/// but is not rendered).
+/// statements the test issued — as plain labels. Driven off
+/// `scenario.test_shape`; the op-trace timeline is no longer surfaced (it
+/// stays in the contract data but is not rendered). The per-step `faulted`
+/// flag stays on the wire but is not rendered as prose — the "divergence
+/// observed" block carries the failure; a generic faulted indicator is a
+/// deferred improvement.
 fn render_test_shape(card: &mut Card, steps: &[TestStep]) {
     card.raw(
         format!("{C_BOLD}what turso ran{C_BOLD:#}"),
@@ -849,9 +851,6 @@ fn render_test_shape(card: &mut Card, steps: &[TestStep]) {
     );
     for step in steps {
         card.line(&step.label, C_DIM, 2);
-        if step.faulted {
-            card.line("└ faulted on commit", C_WARN, 5);
-        }
     }
 }
 
@@ -868,9 +867,9 @@ fn render_test_shape(card: &mut Card, steps: &[TestStep]) {
 /// Every shown frame is turso (the spine is IP-filtered upstream); labels
 /// are shortened for display. The fault frame carries a glyph-gated
 /// marker derived from the report (`✗ {op} → {error}   fault injected
-/// here`); the effect frame a NEUTRAL marker (no divergence values —
-/// those live in the "divergence observed" block below). The two markers
-/// are column-aligned. Meaning survives with colour stripped.
+/// here`); the effect frame renders as a plain spine frame — its diverging
+/// values live in the "divergence observed" block below, not on the frame.
+/// Meaning survives with colour stripped.
 fn render_call_path(card: &mut Card, report: &DifferentialReport) {
     let frames = &report.scenario.call_path;
     let Some(entry) = frames.first() else {
@@ -894,8 +893,8 @@ fn render_call_path(card: &mut Card, report: &DifferentialReport) {
     const BASE: usize = 2;
 
     // The fault marker, derived from the injected fault (op + error). The
-    // effect marker is a fixed neutral string — the diverging values live
-    // in the "divergence observed" block, not on the frame.
+    // effect frame carries no marker — its diverging values live in the
+    // "divergence observed" block, not on the frame.
     let fault_marker = report.scenario.fault.as_ref().map(|f| {
         format!(
             "✗ {} → {}   fault injected here",
@@ -903,7 +902,6 @@ fn render_call_path(card: &mut Card, report: &DifferentialReport) {
             f.error
         )
     });
-    const EFFECT_MARKER: &str = "writes the WAL header to disk";
 
     // Pass 1: build each frame's plain prefix+label and remember which
     // carry a marker, so the markers can be column-aligned.
@@ -927,40 +925,32 @@ fn render_call_path(card: &mut Card, report: &DifferentialReport) {
         });
     }
 
-    // The marker column: 2 past the widest marked frame's plain end.
+    // The marker column: 2 past the fault frame's plain end (only the fault
+    // frame carries an inline marker).
     let marker_col = rendered
         .iter()
-        .filter(|r| matches!(r.role, FrameRole::Fault | FrameRole::Effect))
+        .filter(|r| matches!(r.role, FrameRole::Fault))
         .map(|r| display_width(&r.prefix) + display_width(&r.label))
         .max()
         .map(|w| w + 2);
 
     // Pass 2: emit. The prefix is plain (counts toward width directly); the
-    // label is dim; the marker (if any) is padded to `marker_col` and
-    // coloured by role.
+    // label is dim. Only the fault frame carries an inline marker; the
+    // effect frame renders like any other spine frame.
     for r in &rendered {
         match r.role {
-            FrameRole::Normal => {
+            FrameRole::Normal | FrameRole::Effect => {
                 let plain = format!("{}{}", r.prefix, r.label);
                 let styled = format!("{}{C_DIM}{}{C_DIM:#}", r.prefix, r.label);
                 card.raw(styled, &plain);
             }
-            FrameRole::Fault | FrameRole::Effect => {
-                let marker = if matches!(r.role, FrameRole::Fault) {
-                    fault_marker.as_deref().unwrap_or("✗ fault injected here")
-                } else {
-                    EFFECT_MARKER
-                };
+            FrameRole::Fault => {
+                let marker = fault_marker.as_deref().unwrap_or("✗ fault injected here");
                 let here = display_width(&r.prefix) + display_width(&r.label);
                 let gap = " ".repeat(marker_col.unwrap_or(here + 2).saturating_sub(here));
-                let mstyle = if matches!(r.role, FrameRole::Fault) {
-                    C_WARN
-                } else {
-                    C_DIM
-                };
                 let plain = format!("{}{}{gap}{marker}", r.prefix, r.label);
                 let styled = format!(
-                    "{}{C_DIM}{}{C_DIM:#}{gap}{mstyle}{marker}{mstyle:#}",
+                    "{}{C_DIM}{}{C_DIM:#}{gap}{C_WARN}{marker}{C_WARN:#}",
                     r.prefix, r.label
                 );
                 card.raw(styled, &plain);
@@ -1474,15 +1464,19 @@ mod tests {
         assert!(
             rendered.contains("CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY, v INTEGER)")
         );
+        // The faulting statement renders like the others — no per-cr_03
+        // "faulted on commit" sub-line (removed 2026-06-03: the wording was
+        // cr_03-specific, and the "divergence observed" block already carries
+        // the failure, so no information is lost on the card).
         assert!(
-            rendered.contains("faulted on commit"),
-            "the faulting statement must be flagged; got:\n{rendered}"
+            !rendered.contains("faulted on commit"),
+            "the cr_03-specific 'faulted on commit' note must be gone; got:\n{rendered}"
         );
     }
 
     /// The reworked call path: shortened labels, the named entry frame in
-    /// the header, the visible fork, and the new fault marker. The effect
-    /// frame carries the NEUTRAL marker (no divergence values inline).
+    /// the header, the visible fork, and the data-driven fault marker. The
+    /// effect frame renders as a plain spine frame (no prose marker).
     #[test]
     fn card_call_path_fork_and_markers() {
         let report = cr03_report();
@@ -1515,10 +1509,13 @@ mod tests {
             rendered.contains("→ EIO   fault injected here"),
             "fault marker missing/changed; got:\n{rendered}"
         );
-        // The effect marker is now NEUTRAL — no divergence values inline.
+        // The effect frame renders as a plain spine frame — no prose marker
+        // (the cr_03-specific "writes the WAL header to disk" was removed
+        // 2026-06-03; the "divergence observed" block carries the effect, and
+        // the literal was wrong for any other CR).
         assert!(
-            rendered.contains("writes the WAL header to disk"),
-            "neutral effect marker missing; got:\n{rendered}"
+            !rendered.contains("writes the WAL header to disk"),
+            "the cr_03-specific effect marker must be gone; got:\n{rendered}"
         );
         assert!(
             !rendered.contains("sets initialized"),
