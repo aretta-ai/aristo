@@ -536,9 +536,14 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
         // Lean-redacted, user-framed snapshot labels.
         .stdout(contains("reference"))
         .stdout(contains("turso (observed)"))
-        // The diff rows with -/+ markers (ANSI auto-stripped off-TTY).
-        .stdout(contains("- initialized = false"))
-        .stdout(contains("+ initialized = true"))
+        // The reworked "divergence observed" block: a header naming the
+        // mask, then aligned expected/actual rows (the `-`/`+` gutter was
+        // replaced by `expected`/`actual` word tags; ANSI auto-stripped
+        // off-TTY).
+        .stdout(contains("divergence observed"))
+        .stdout(contains("compared [initialized]"))
+        .stdout(contains("expected").and(contains("initialized = false")))
+        .stdout(contains("actual").and(contains("initialized = true")))
         // The internal conformance verdict frame is NOT rendered — `CR-03`
         // and `EXPECTED TO FAIL` are Aretta-side bookkeeping, confusing on a
         // user surface.
@@ -555,12 +560,12 @@ fn wait_renders_structured_card_when_test_carries_phase16_report() {
 }
 
 #[test]
-fn wait_renders_fault_banner_and_io_timeline_for_enriched_report() {
-    // Phase 16 Slice 3: a failing TestOutcome carrying the ENRICHED
-    // cr03.full report (populated scenario.fault + scenario.op_trace)
-    // must render a fault banner + a numbered IO timeline with the
-    // injected event marked. Report body is a byte-copy of the
-    // cross-repo cr03.full contract fixture's salient fields.
+fn wait_renders_fault_banner_but_not_op_trace_for_enriched_report() {
+    // Phase 16 Slice 3a: a failing TestOutcome carrying an enriched report
+    // (populated scenario.fault + scenario.op_trace) must render the fault
+    // banner, but the op-trace timeline is NO LONGER rendered — it stays in
+    // the contract data, off the card. Report body mirrors the salient
+    // fields of the cross-repo cr03.full contract fixture.
     let tmp = tempfile::tempdir().unwrap();
     let _bare = init_repo_with_pushed_head(tmp.path());
     workspace_with_one_canon_bound_full_intent(tmp.path());
@@ -641,17 +646,22 @@ fn wait_renders_fault_banner_and_io_timeline_for_enriched_report() {
         .args(["verify", "--wait"])
         .assert()
         .failure()
-        // The fault banner: the named, parameterized injected fault.
+        // The fault banner: the named, parameterized injected fault. The
+        // "fired" count is no longer parenthesized (Slice 3a redesign).
         .stdout(contains("fault"))
         .stdout(contains("fail_nth · sync #1 → EIO"))
-        .stdout(contains("(fired 1×)"))
-        // The numbered IO timeline header + the ops that ran.
-        .stdout(contains("what we tested"))
-        .stdout(contains("3 I/O ops, fault at op 3"))
-        .stdout(contains("pwrite"))
-        .stdout(contains("db-wal @0 len=32"))
-        // The injected event is marked.
-        .stdout(contains("← injected"))
+        .stdout(contains("fired 1×"))
+        .stdout(contains("(fired 1×)").not())
+        // The op-trace timeline is NO LONGER rendered (Slice 3a): the
+        // op stream stays in the contract data but is off the card. Its
+        // header, the per-op rows, and the injected marker are all gone.
+        .stdout(contains("what we tested").not())
+        .stdout(contains("I/O ops").not())
+        .stdout(contains("← injected").not())
+        // This enriched report carries no call_path / test_shape, so the
+        // "what turso ran" / "where your code broke it" sections don't
+        // render — only the divergence block follows the banner.
+        .stdout(contains("divergence observed"))
         // Still no model/Lean identity on the user surface (IP).
         .stdout(contains("lean").not())
         .stdout(contains("Lean").not());

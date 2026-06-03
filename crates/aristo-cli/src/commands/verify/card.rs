@@ -68,6 +68,17 @@ impl Card {
         });
     }
 
+    /// Like [`raw`](Card::raw), but indented `indent` spaces. The indent
+    /// is plain leading whitespace (no ANSI), so it counts toward the
+    /// measured width directly.
+    pub(crate) fn raw_indented(&mut self, styled: String, plain: &str, indent: usize) {
+        let pad = " ".repeat(indent);
+        self.rows.push(Row {
+            styled: format!("{pad}{styled}"),
+            width: indent + display_width(plain),
+        });
+    }
+
     /// A word-wrapped paragraph, uniformly styled, indented `indent` spaces.
     pub(crate) fn wrap(&mut self, text: &str, style: Style, indent: usize) {
         let ind = " ".repeat(indent);

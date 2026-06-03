@@ -4,7 +4,7 @@
     "statement": "The WAL initialized flag is set true only after a successful sync of the wal-header.",
     "impl_source": {
       "path": "core/storage/wal.rs",
-      "line": 3989,
+      "line": 3977,
       "snippet": "prepare_wal_finish"
     }
   },

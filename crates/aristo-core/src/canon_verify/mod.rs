@@ -30,8 +30,9 @@ pub use client::{VerifyClient, VerifyError};
 pub use http_client::HttpVerifyClient;
 pub use mock_client::MockVerifyClient;
 pub use report::{
-    DifferentialReport, ExpectedToFail, FaultSpec, FieldDivergence, Finding, NamedField, OpEvent,
-    Property, Relation, Scenario, ShrinkStats, Snapshot, SourceRef, Verdict,
+    CallFrame, DifferentialReport, ExpectedToFail, FaultSpec, FieldDivergence, Finding, FrameRole,
+    NamedField, OpEvent, Property, Relation, Scenario, ShrinkStats, Snapshot, SourceRef, TestStep,
+    Verdict,
 };
 pub use types::{
     AnnotationOutcomeStatus, AnnotationVerification, GetVerifySessionResponse,

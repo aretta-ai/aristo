@@ -495,10 +495,13 @@ fn waived_failure_with_a_report_renders_the_full_known_failure_card() {
         // Reframed headline + the user's reason footer.
         .stdout(contains("KNOWN PROPERTY FAILURE"))
         .stdout(contains("turso file-existence proxy is the root cause"))
-        // The full violation body is still shown.
+        // The full violation body is still shown — the reworked
+        // "divergence observed" block with aligned expected/actual rows
+        // (the `-`/`+` gutter was replaced by word tags in Slice 3a).
         .stdout(contains("The initialized flag is set true"))
-        .stdout(contains("- initialized = false"))
-        .stdout(contains("+ initialized = true"))
+        .stdout(contains("divergence observed"))
+        .stdout(contains("expected").and(contains("initialized = false")))
+        .stdout(contains("actual").and(contains("initialized = true")))
         // Not the red failure frame, not the internal conformance tag.
         .stdout(contains("PROPERTY VIOLATED").not())
         .stdout(contains("EXPECTED TO FAIL").not());

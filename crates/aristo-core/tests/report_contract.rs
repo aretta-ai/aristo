@@ -11,10 +11,11 @@
 //! as a `Value`. Any field drift (rename, casing, skip, extra field)
 //! breaks this — that's the point.
 
-use aristo_core::canon_verify::report::{DifferentialReport, Finding};
+use aristo_core::canon_verify::report::{DifferentialReport, Finding, FrameRole};
 
 const MINIMAL: &str = include_str!("fixtures/cr03.minimal.json");
 const PASS: &str = include_str!("fixtures/cr03-pass.json");
+const FULL: &str = include_str!("fixtures/cr03.full.json");
 
 /// Round-trip helper: JSON text → `DifferentialReport` → `Value`, and
 /// the original text → `Value`. Returns (reserialized, original) for
@@ -43,6 +44,107 @@ fn pass_fixture_round_trips_byte_stably() {
     assert_eq!(
         reserialized, original,
         "cr03-pass.json must round-trip through DifferentialReport unchanged"
+    );
+}
+
+#[test]
+fn full_fixture_round_trips_byte_stably() {
+    let (reserialized, original) = round_trip(FULL);
+    assert_eq!(
+        reserialized, original,
+        "cr03.full.json must round-trip through DifferentialReport unchanged"
+    );
+}
+
+#[test]
+fn full_fixture_call_path_shape() {
+    // The enriched (Slice 3a) report carries the 14-frame turso spine.
+    let full: DifferentialReport = serde_json::from_str(FULL).unwrap();
+    assert_eq!(
+        full.scenario.call_path.len(),
+        14,
+        "cr_03 spine is 14 frames"
+    );
+
+    // Exactly one fault frame: the injected sync site at prepare_wal_finish,
+    // joined to op_trace seq 3.
+    let faults: Vec<_> = full
+        .scenario
+        .call_path
+        .iter()
+        .filter(|f| f.role == FrameRole::Fault)
+        .collect();
+    assert_eq!(faults.len(), 1, "exactly one fault frame");
+    assert!(
+        faults[0].label.ends_with("prepare_wal_finish"),
+        "fault frame is prepare_wal_finish; got {:?}",
+        faults[0].label
+    );
+    assert_eq!(faults[0].io_seq, Some(3));
+
+    // Exactly one effect frame: the pre-fault header write, joined to seq 2.
+    let effects: Vec<_> = full
+        .scenario
+        .call_path
+        .iter()
+        .filter(|f| f.role == FrameRole::Effect)
+        .collect();
+    assert_eq!(effects.len(), 1, "exactly one effect frame");
+    assert!(
+        effects[0].label.ends_with("begin_write_wal_header"),
+        "effect frame is begin_write_wal_header; got {:?}",
+        effects[0].label
+    );
+    assert_eq!(effects[0].io_seq, Some(2));
+
+    // The minimal + pass reports carry no spine — call_path is additive.
+    let minimal: DifferentialReport = serde_json::from_str(MINIMAL).unwrap();
+    assert!(
+        minimal.scenario.call_path.is_empty(),
+        "minimal report has no call_path"
+    );
+    let pass: DifferentialReport = serde_json::from_str(PASS).unwrap();
+    assert!(
+        pass.scenario.call_path.is_empty(),
+        "pass report has no call_path"
+    );
+}
+
+#[test]
+fn full_fixture_test_shape() {
+    // The enriched (Slice 3a) report carries the "what turso ran" workload
+    // — the two SQL statements, the second of which faulted on commit.
+    let full: DifferentialReport = serde_json::from_str(FULL).unwrap();
+    let shape = &full.scenario.test_shape;
+    assert_eq!(shape.len(), 2, "cr_03 test_shape is the 2 SQL statements");
+
+    assert!(
+        !shape[0].faulted,
+        "the PRAGMA step did not fault; got faulted={}",
+        shape[0].faulted
+    );
+    assert_eq!(shape[0].label, "PRAGMA journal_mode=WAL");
+
+    assert!(
+        shape[1].faulted,
+        "the CREATE TABLE step is the one that faulted on commit"
+    );
+    assert!(
+        shape[1].label.starts_with("CREATE TABLE"),
+        "second step is the CREATE TABLE; got {:?}",
+        shape[1].label
+    );
+
+    // test_shape is optional/additive: absent in minimal + pass reports.
+    let minimal: DifferentialReport = serde_json::from_str(MINIMAL).unwrap();
+    assert!(
+        minimal.scenario.test_shape.is_empty(),
+        "minimal report has no test_shape"
+    );
+    let pass: DifferentialReport = serde_json::from_str(PASS).unwrap();
+    assert!(
+        pass.scenario.test_shape.is_empty(),
+        "pass report has no test_shape"
     );
 }
 
