@@ -142,6 +142,7 @@ dependencies = [
  "globset",
  "proc-macro2",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
