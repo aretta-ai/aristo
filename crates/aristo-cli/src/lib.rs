@@ -13,6 +13,7 @@ mod pipeline;
 mod preflight;
 mod session;
 mod skills;
+mod update_notify;
 mod workspace;
 
 pub use error::{CliError, CliResult};
@@ -785,7 +786,7 @@ pub(crate) enum BucketArg {
 /// `CliError`.
 pub fn run() -> ExitCode {
     let cli = Cli::parse();
-    match dispatch(cli.command) {
+    let code = match dispatch(cli.command) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             if !e.is_silent() {
@@ -793,7 +794,12 @@ pub fn run() -> ExitCode {
             }
             ExitCode::from(e.exit_code())
         }
-    }
+    };
+    // Best-effort "newer aristo available" notice, printed after the
+    // command's own output and never affecting its exit code. Silent in
+    // CI / pipes / on opt-out (see `update_notify`).
+    update_notify::maybe_notify();
+    code
 }
 
 /// Maps a parsed `Commands` variant to its handler.

@@ -56,6 +56,14 @@ aristo install-skills --agent claude-code   # also: cursor, codex, opencode, ant
 Then `aristo init` your project and code with your agent — the
 [walkthrough](./docs/GETTING-STARTED.md) has the rest.
 
+**Updating.** `aristo` checks crates.io at most once a day and prints a
+one-line notice when a newer release is out; update with `cargo install
+aristo-cli --locked --force` (or `cargo install-update aristo-cli` if you
+have [cargo-update](https://github.com/nabijaczleweli/cargo-update)).
+Nothing self-updates — the version stays pinned until you choose. The
+check is silent in CI and when output is piped; set
+`ARISTO_NO_UPDATE_NOTIFIER=1` to turn it off entirely.
+
 ## What a claim looks like
 
 ```rust
