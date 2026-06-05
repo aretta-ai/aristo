@@ -113,12 +113,33 @@ pub(crate) fn run() -> CliResult<()> {
     }
 
     print_canon_health(&ws);
+    print_skill_health(&ws);
 
     println!();
     println!(
         "For per-annotation diagnostics, run `aristo stamp` (or `aristo list --filter status=<state>`)."
     );
     Ok(())
+}
+
+/// Surface installed-skill staleness (project + user scope) so a binary
+/// update that left the agent skill files behind is visible from `status`.
+/// Read-only; omitted entirely when no Aristo skills are installed.
+fn print_skill_health(ws: &crate::Workspace) {
+    let rows =
+        crate::commands::install_skills::audit_rows(Some(&ws.root), dirs::home_dir().as_deref());
+    if rows.is_empty() {
+        return;
+    }
+    println!();
+    println!("Skills:");
+    for r in &rows {
+        let mark = if r.stale { "⚠" } else { "✓" };
+        println!("  {mark} {} ({}): {}", r.agent_pretty, r.scope, r.summary);
+    }
+    if rows.iter().any(|r| r.stale) {
+        println!("  Re-pin with: aristo install-skills --update");
+    }
 }
 
 #[aristo::intent(
