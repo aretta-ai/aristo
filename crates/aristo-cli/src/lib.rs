@@ -94,6 +94,10 @@ enum Commands {
         /// (read-only). Exits non-zero if any are out of date.
         #[arg(long)]
         check: bool,
+        /// Internal: emit a SessionStart hook `additionalContext` block when
+        /// installed skills are stale (used by the hook this command installs).
+        #[arg(long, hide = true)]
+        hook_format: bool,
     },
 
     /// Reverse `install-skills`: remove SDK-bundled skills.
@@ -823,7 +827,10 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             user,
             update,
             check,
-        } => commands::install_skills::install(agent, list_agents, user, update, check),
+            hook_format,
+        } => {
+            commands::install_skills::install(agent, list_agents, user, update, check, hook_format)
+        }
         Commands::UninstallSkills { agent, user, force } => {
             commands::install_skills::uninstall(agent, user, force)
         }

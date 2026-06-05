@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.1"
-generated_at = "2026-06-05T23:08:04.373052Z"
+generated_at = "2026-06-05T23:21:46.825054Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -512,13 +512,13 @@ covered_region = "function"
 
 [install_claude_hook_is_idempotent]
 kind = "intent"
-text = "Installing the session hook is idempotent — running install twice leaves the settings.json with exactly one `aristo session active --hook-format` entry, not two. We find existing entries by command substring and replace in place. A refactor that appends unconditionally would compound on every reinstall."
+text = "Installing a hook is idempotent — running install twice leaves settings.json with exactly one entry for that hook's marker, not two. Existing entries are found by command substring and left in place. A refactor that appends unconditionally would compound on every reinstall. Applies uniformly to every hook event (UserPromptSubmit, SessionStart)."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:076e69c8cd762de41df257ac030e4680137eb79fa3e4a8ad548c727e510c973f"
-body_hash = "sha256:9ddf3fdd46a5c4d2681082fff2b6b656c389e7ef5c3da8464c42df8562ee5c28"
+text_hash = "sha256:9cb4356aacef3066c29135e3eb68ee56bd482752df4eab394a26687bb4fee8e8"
+body_hash = "sha256:c42c6102bd77459be15f1ed1515943e4ad2fdc34c4beb3d4646df01775e925e9"
 file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn install_claude_hook (line 77)"
+site = "fn install_hook_into (line 82)"
 covered_region = "function"
 
 [install_skills_scope_symmetry]
@@ -527,7 +527,7 @@ text = "The per-skill install progression and the `ok: N skill(s) installed for 
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:1d1aaa192a0920902c986e87c579c9161c8d233122f42fb3f6dc5aead05f480e"
-body_hash = "sha256:ce898061f152ba8ef3f5092cff65e4c6238328254e1d7c506a5c88684116cd27"
+body_hash = "sha256:eb7b1a59998b0acc8f6daf9806a8009d1904407e609415b372a3c7f31063ae56"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
 site = "fn install (line 76)"
 covered_region = "function"
@@ -1016,13 +1016,13 @@ covered_region = "function"
 
 [uninstall_claude_hook_preserves_other_hooks]
 kind = "intent"
-text = "Uninstall removes ONLY aristo's session hook entry from UserPromptSubmit; any other hooks the user configured are preserved. After removal, if UserPromptSubmit becomes empty we leave the empty array in place rather than removing it — the user may have intentional structure around the key. Idempotent: uninstalling-when-not-installed is a no-op return."
+text = "Uninstall removes ONLY the aristo entry matching the given marker from its hook-event array; any other hooks the user configured are preserved. After removal an empty array is left in place rather than removed — the user may have intentional structure around the key. Idempotent: uninstalling-when-not-installed is a no-op return."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:62b31bfd4d0cb67341bd81bcf9603086275b0caea658c35172d8bd5f3529294b"
-body_hash = "sha256:ab583f8aa4520372d7727088a30648d5bfbc23040b738dc3f43a7ce7f29e3634"
+text_hash = "sha256:7c052ede0fce6c52efca830d4b479d0bca75033b0b6ac0bf111827fbdffdbf65"
+body_hash = "sha256:63f64377ee2cc32be1f03ea4cb56c9badc88ea481cee9df2bbf5fe1fb8672108"
 file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn uninstall_claude_hook (line 125)"
+site = "fn uninstall_hook_from (line 129)"
 covered_region = "function"
 
 [uninstall_skills_reverses_install]
@@ -1033,7 +1033,7 @@ status = "unknown"
 text_hash = "sha256:7e1d3b4471926c462131212f8301655a744c62c78a1797cd57bf0c5f2c012e44"
 body_hash = "sha256:3884c645e88b89b1e848cab4a96ddadfce79d35dc6c8dc987375f34409b50e45"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
-site = "fn uninstall (line 150)"
+site = "fn uninstall (line 156)"
 covered_region = "function"
 
 [update_all_heals_only_installed_agents]
@@ -1044,7 +1044,7 @@ status = "unknown"
 text_hash = "sha256:2912a7446cba9fa220b88cb66a2bf4be70a186d1f32800ac3cbc1b511fc65c46"
 body_hash = "sha256:a98870f81df795fee8469f0a01e968aaded6d266ea2fd5b4b9de6f0ce31fef22"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
-site = "fn update_scopes (line 564)"
+site = "fn update_scopes (line 626)"
 covered_region = "function"
 
 [validator_collects_all_failures_not_short_circuit]

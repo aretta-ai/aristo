@@ -99,3 +99,39 @@ fn update_with_no_install_is_a_clean_noop() {
         .success()
         .stdout(contains("nothing to update"));
 }
+
+#[test]
+fn hook_format_emits_sessionstart_context_only_when_stale() {
+    let tmp = TempDir::new().unwrap();
+    let proj = tmp.path().join("proj");
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+
+    aristo(&proj, &home)
+        .args(["install-skills", "--agent", "claude-code"])
+        .assert()
+        .success();
+
+    // Fresh install → hook stays silent (no context, exit 0).
+    aristo(&proj, &home)
+        .args(["install-skills", "--hook-format"])
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
+
+    // Tamper → hook emits a SessionStart additionalContext block that tells
+    // the agent to offer a refresh.
+    std::fs::write(
+        proj.join(".claude/skills/aristo-authoring/SKILL.md"),
+        "stale\n",
+    )
+    .unwrap();
+    aristo(&proj, &home)
+        .args(["install-skills", "--hook-format"])
+        .assert()
+        .success()
+        .stdout(contains("\"hookEventName\":\"SessionStart\""))
+        .stdout(contains("additionalContext"))
+        .stdout(contains("aristo install-skills --update"));
+}
