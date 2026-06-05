@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-06-04
+
 - feat(cli): `aristo` now tells you when a newer release is on crates.io. After a command finishes it prints a one-line notice to stderr — `A new release of aristo is available: X -> Y` — with the `cargo install aristo-cli --locked --force` command to update. The check hits crates.io at most once every 24 hours (cached under your config dir) and stays completely silent in CI, when output is piped/redirected, and when `ARISTO_NO_UPDATE_NOTIFIER` is set — so it never touches machine-readable stdout or changes a command's exit code. Updating stays your decision; nothing self-updates.
 
 ## [0.2.0] — 2026-06-04
