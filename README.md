@@ -30,9 +30,8 @@ knows" — has to become a first-class artifact now.
 > **Working on infrastructure code in Rust?** Databases, smart
 > contracts, compilers, runtimes — or facing this kind of pain
 > somewhere else in your codebase. If Aristo could help your team,
-> [book a quick call](#). No sales, no pressure — we want to
-> understand your problem so we can make Aristo better. We may not
-> even be able to serve you anyway, and that's fine.
+> [book a quick call](https://calendly.com/sushant-aretta/30min). No sales, no pressure — we want to
+> understand your problem so we can make Aristo better.
 
 ## How it works
 

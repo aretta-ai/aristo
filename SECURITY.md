@@ -9,7 +9,7 @@ Please report security issues **privately** — not in public issues or
 Discussions:
 
 - **Preferred:** open a [GitHub Security Advisory](https://github.com/aretta-ai/aristo/security/advisories/new) on this repo.
-- **Or email:** security@aretta.ai
+- **Or email:** sushant@aretta.ai
 
 Include what we'd need to reproduce it: affected version or commit,
 steps, and the impact you see.

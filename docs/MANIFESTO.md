@@ -28,8 +28,7 @@ This is the one we're making.
 
 ## The agentic gap
 
-Agents are good at writing code. They are bad — structurally bad —
-at remembering what code is *supposed to do* across the sessions,
+Agents are good at writing code. They are bad at remembering what code is *supposed to do* across the sessions,
 context resets, and multi-agent handoffs that define how this work
 now happens. A function gets edited; the test still passes; an
 assumption nobody wrote down just broke.
