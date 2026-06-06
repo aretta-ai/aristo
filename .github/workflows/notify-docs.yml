@@ -1,0 +1,41 @@
+name: "notify aristo-docs on docs change"
+
+# Fires a repository_dispatch at the (private) aretta-ai/aristo-docs repo when the
+# OSS docs change, so the gated docs site (aristo.aretta.ai) rebuilds with fresh
+# prose without a push to that repo. aristo-docs' deploy.yml listens for the
+# `oss-docs-changed` event. See DP6 in the meta-workspace docs-platform.md.
+#
+# Secret required:
+#   ARISTO_DOCS_DISPATCH_TOKEN — fine-grained PAT scoped to aretta-ai/aristo-docs
+#                                with Repository permissions → Actions: Read and
+#                                write. Add under Settings → Secrets and variables
+#                                → Actions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: notify-aristo-docs
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Dispatch aristo-docs rebuild
+        env:
+          GH_TOKEN: ${{ secrets.ARISTO_DOCS_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api repos/aretta-ai/aristo-docs/dispatches \
+            -X POST \
+            -f event_type=oss-docs-changed \
+            -F client_payload[sha]="${{ github.sha }}" \
+            -F client_payload[ref]="${{ github.ref_name }}"
