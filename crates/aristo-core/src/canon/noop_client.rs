@@ -62,6 +62,7 @@ mod tests {
                 applies_to: vec!["fn".into()],
             }],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         };
         let err = client.match_annotations(&req).unwrap_err();
         assert!(matches!(err, CanonError::NotEnabled));

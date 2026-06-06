@@ -42,6 +42,8 @@ use aristo_core::canon::{
 use aristo_core::config::CanonConfig;
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
 
+use crate::commands::canon::suggestions as suggestions_mod;
+use crate::pipeline::queue;
 use crate::{CliError, CliResult, Workspace};
 
 /// What happened in the canon-step. Stamp/critique render this for
@@ -144,6 +146,10 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
             })
             .collect(),
         confidence_threshold: args.threshold,
+        // §17: opt in to the proof-tree suggestions channel. The server
+        // attaches `suggestions[]` aligned by annotation index; we route
+        // them into the canon-suggestions queue after the primary merge.
+        include_suggestions: true,
     };
     let response = match client.match_annotations(&req) {
         Ok(r) => r,
@@ -165,6 +171,22 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
             message: format!("write {}: {e}", cache_path.display()),
             exit_code: 1,
         })?;
+
+    // ── §17: route proof-tree suggestions into the canon-suggestions
+    //    queue. Dedup ② (vs local index/cache/rejection-log state) +
+    //    dedup ③ (collapse clusters sharing an objective) happen inside
+    //    the router. Local state is read AFTER the primary merge so a
+    //    sibling that just landed as a pending primary is filtered out. ──
+    if let Some(suggestions) = &response.suggestions {
+        let qdir = queue::QueueDir::for_pipeline(args.ws, suggestions_mod::PIPELINE);
+        let local = suggestions_mod::local_state(args.ws, &cache)?;
+        suggestions_mod::route_suggestions_into_queue(
+            &qdir,
+            suggestions,
+            &local,
+            &now_rfc3339(),
+        )?;
+    }
 
     Ok(CanonStepOutcome::Ok {
         findings_added,
@@ -730,6 +752,7 @@ mod tests {
             effective_scopes: vec![":vanilla".into()],
             canon_version: "v0.2.0".into(),
             matched_at: "2026-06-15T09:14:22Z".into(),
+            suggestions: None,
         }
     }
 

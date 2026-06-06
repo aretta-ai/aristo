@@ -135,6 +135,7 @@ pub(crate) fn run() -> CliResult<()> {
         // still surfaces during migration (better than missing a patch
         // bump because confidence dipped 0.01 below the stamp threshold).
         confidence_threshold: 0.65,
+        include_suggestions: false,
     };
     let response = client
         .match_annotations(&request)

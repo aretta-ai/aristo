@@ -696,6 +696,36 @@ pub(crate) enum CanonAction {
     /// re-stamp). Currently diagnostic-only; automatic patch-bump
     /// application is planned.
     Migrate,
+
+    /// List or inspect queued §17 proof-tree suggestions (the related
+    /// canon entries dragged in alongside a primary match). Read-only:
+    /// it does not open a review session or mutate the queue. To review
+    /// and adopt suggestions, run `aristo session start intent-review`.
+    ///
+    /// With no argument, lists every queued cluster. With an
+    /// `<objective>` (the cluster's objective canon_id, or the seeding
+    /// primary id for siblings-only clusters), shows that cluster's
+    /// detail. With `--counts`, emits a machine-readable JSON summary
+    /// `{matches:{new,pending}, suggestions:{new,pending}}` for the
+    /// menu / skill entry Q&A.
+    Suggestions {
+        /// Objective canon_id (or seeding primary id) of the cluster to
+        /// show. Omit to list all queued clusters.
+        objective: Option<String>,
+        /// Emit counts only (`{matches:{...}, suggestions:{...}}`) as
+        /// JSON; no per-cluster detail. Mutually exclusive with
+        /// passing an `<objective>`.
+        #[arg(long = "counts", conflicts_with = "objective")]
+        counts: bool,
+        /// Scope the listing with the shared `--filter` grammar
+        /// (`id=`, `file=[:LO-HI]`, `parent=`, `status=`). The
+        /// `cluster <objective>` mode (§6B) is `--filter
+        /// parent=<kanon:objective>` — it scopes the list to one proof
+        /// cluster (leaves carry `parent=`). Multiple `--filter` flags
+        /// AND together. No new grammar — reuses `filter.rs` verbatim.
+        #[arg(long = "filter", value_name = "KEY=VALUE", conflicts_with = "objective")]
+        filter: Vec<Filter>,
+    },
 }
 
 /// Subcommands under `aristo session`. Each maps to one substrate
@@ -961,6 +991,11 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 commands::canon::request_verify::run(&canon_id, notes)
             }
             CanonAction::Migrate => commands::canon::migrate::run(),
+            CanonAction::Suggestions {
+                objective,
+                counts,
+                filter,
+            } => commands::canon::suggestions::run(objective, counts, filter),
         },
     }
 }

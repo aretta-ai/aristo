@@ -16,5 +16,7 @@ pub(crate) mod refresh;
 pub(crate) mod reject;
 pub(crate) mod request_verify;
 pub(crate) mod runner;
+pub(crate) mod session_kind;
 pub(crate) mod show;
+pub(crate) mod suggestions;
 pub(crate) mod unbind;
