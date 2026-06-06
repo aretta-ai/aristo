@@ -180,12 +180,7 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
     if let Some(suggestions) = &response.suggestions {
         let qdir = queue::QueueDir::for_pipeline(args.ws, suggestions_mod::PIPELINE);
         let local = suggestions_mod::local_state(args.ws, &cache)?;
-        suggestions_mod::route_suggestions_into_queue(
-            &qdir,
-            suggestions,
-            &local,
-            &now_rfc3339(),
-        )?;
+        suggestions_mod::route_suggestions_into_queue(&qdir, suggestions, &local, &now_rfc3339())?;
     }
 
     Ok(CanonStepOutcome::Ok {

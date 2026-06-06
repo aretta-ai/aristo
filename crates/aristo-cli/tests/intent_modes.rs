@@ -99,8 +99,16 @@ fn filter_parent_scopes_to_one_cluster() {
     // cluster.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
-    seed_cluster(tmp.path(), "wal_protocol_correctness", "wal_find_frame_range_invariant");
-    seed_cluster(tmp.path(), "storage_compaction_correctness", "vacuum_atomic_under_crash");
+    seed_cluster(
+        tmp.path(),
+        "wal_protocol_correctness",
+        "wal_find_frame_range_invariant",
+    );
+    seed_cluster(
+        tmp.path(),
+        "storage_compaction_correctness",
+        "vacuum_atomic_under_crash",
+    );
 
     // Unfiltered: both clusters.
     aristo_in(tmp.path())
@@ -111,7 +119,12 @@ fn filter_parent_scopes_to_one_cluster() {
 
     // Filtered: just the WAL cluster.
     aristo_in(tmp.path())
-        .args(["canon", "suggestions", "--filter", "parent=wal_protocol_correctness"])
+        .args([
+            "canon",
+            "suggestions",
+            "--filter",
+            "parent=wal_protocol_correctness",
+        ])
         .assert()
         .success()
         .stdout(predicates::str::contains("1 cluster(s)"))
@@ -126,7 +139,11 @@ fn filter_parent_accepts_kanon_prefixed_objective() {
     // matches the bare cluster key.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
-    seed_cluster(tmp.path(), "wal_protocol_correctness", "wal_find_frame_range_invariant");
+    seed_cluster(
+        tmp.path(),
+        "wal_protocol_correctness",
+        "wal_find_frame_range_invariant",
+    );
 
     aristo_in(tmp.path())
         .args([
@@ -147,7 +164,11 @@ fn queue_status_counts_emit_no_session_no_writes() {
     // session is opened, nothing is mutated.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
-    seed_cluster(tmp.path(), "wal_protocol_correctness", "wal_find_frame_range_invariant");
+    seed_cluster(
+        tmp.path(),
+        "wal_protocol_correctness",
+        "wal_find_frame_range_invariant",
+    );
 
     let out = aristo_in(tmp.path())
         .args(["canon", "suggestions", "--counts"])
@@ -173,7 +194,11 @@ fn matches_only_and_suggestions_only_each_skip_the_other_stage() {
     // other.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
-    seed_cluster(tmp.path(), "wal_protocol_correctness", "wal_find_frame_range_invariant");
+    seed_cluster(
+        tmp.path(),
+        "wal_protocol_correctness",
+        "wal_find_frame_range_invariant",
+    );
 
     // suggestions-only: the queue, not the (empty) match cache.
     aristo_in(tmp.path())

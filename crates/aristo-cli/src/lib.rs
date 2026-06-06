@@ -733,7 +733,11 @@ pub(crate) enum CanonAction {
         /// parent=<kanon:objective>` — it scopes the list to one proof
         /// cluster (leaves carry `parent=`). Multiple `--filter` flags
         /// AND together. No new grammar — reuses `filter.rs` verbatim.
-        #[arg(long = "filter", value_name = "KEY=VALUE", conflicts_with = "objective")]
+        #[arg(
+            long = "filter",
+            value_name = "KEY=VALUE",
+            conflicts_with = "objective"
+        )]
         filter: Vec<Filter>,
     },
 }

@@ -159,8 +159,14 @@ fn suggestions_show_renders_objective_and_siblings() {
         "got: {stdout}"
     );
     assert!(stdout.contains("kanon: tier"), "got: {stdout}");
-    assert!(stdout.contains("wal_find_frame_range_invariant"), "got: {stdout}");
-    assert!(stdout.contains("wal_checkpoint_error_no_db_leak"), "got: {stdout}");
+    assert!(
+        stdout.contains("wal_find_frame_range_invariant"),
+        "got: {stdout}"
+    );
+    assert!(
+        stdout.contains("wal_checkpoint_error_no_db_leak"),
+        "got: {stdout}"
+    );
     // Subject-only: the card describes the user's invariants, never the
     // Lean model. The primary that dragged the cluster in is shown.
     assert!(
@@ -262,7 +268,11 @@ siblings = [
         .env("ARISTO_CANON_FIXTURE", &fixture_dir)
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let show = aristo_in(ws.path())
         .args(["canon", "suggestions", "wal_protocol_correctness"])

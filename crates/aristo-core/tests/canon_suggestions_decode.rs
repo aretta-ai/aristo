@@ -29,7 +29,9 @@ fn golden_decodes_into_one_cluster_with_parent_objective_and_five_siblings() {
     assert_eq!(resp.results[0][0].canon_id, "wal_commit_requires_fsync");
 
     // Exactly one cluster, aligned by annotation index.
-    let suggestions = resp.suggestions.expect("golden carries a suggestions field");
+    let suggestions = resp
+        .suggestions
+        .expect("golden carries a suggestions field");
     assert_eq!(suggestions.len(), 1, "one cluster, aligned to results[]");
     let cluster: &ClusterSuggestion = suggestions[0]
         .as_ref()

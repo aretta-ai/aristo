@@ -102,7 +102,10 @@ fn parent_first_then_accept_parent_opens_siblings() {
     seed_cluster(
         tmp.path(),
         "wal_protocol_correctness",
-        &["wal_find_frame_range_invariant", "wal_checkpoint_error_no_db_leak"],
+        &[
+            "wal_find_frame_range_invariant",
+            "wal_checkpoint_error_no_db_leak",
+        ],
     );
     aristo_in(tmp.path())
         .args(["session", "start", "intent-review", "--subject", "x"])
@@ -169,7 +172,10 @@ fn reject_parent_keeps_independent_match() {
     seed_cluster(
         tmp.path(),
         "wal_protocol_correctness",
-        &["wal_find_frame_range_invariant", "wal_checkpoint_error_no_db_leak"],
+        &[
+            "wal_find_frame_range_invariant",
+            "wal_checkpoint_error_no_db_leak",
+        ],
     );
     // The second sibling became a primary after merge.
     seed_pending_match(
@@ -238,7 +244,10 @@ fn reject_parent_with_no_independent_member_removes_the_whole_task() {
     seed_cluster(
         tmp.path(),
         "wal_protocol_correctness",
-        &["wal_find_frame_range_invariant", "wal_checkpoint_error_no_db_leak"],
+        &[
+            "wal_find_frame_range_invariant",
+            "wal_checkpoint_error_no_db_leak",
+        ],
     );
     aristo_in(tmp.path())
         .args(["session", "start", "intent-review", "--subject", "x"])
@@ -300,7 +309,8 @@ fn exit_defer_undecided_parks_remaining_items() {
         .success();
 
     let backlog = std::fs::read_to_string(
-        tmp.path().join(".aristo/sessions/backlog/intent-review.toml"),
+        tmp.path()
+            .join(".aristo/sessions/backlog/intent-review.toml"),
     )
     .unwrap();
     assert!(
