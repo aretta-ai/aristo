@@ -141,6 +141,7 @@ fn match_annotations_happy_path_round_trips() {
         effective_scopes: vec![":vanilla".into()],
         canon_version: "v0.2.0".into(),
         matched_at: "2026-06-15T09:14:22Z".into(),
+        suggestions: None,
     };
     let body = serde_json::to_string(&canned_response).unwrap();
     let (base, server) = spawn_mock(CannedResponse {
@@ -156,6 +157,7 @@ fn match_annotations_happy_path_round_trips() {
             applies_to: vec!["fn".into()],
         }],
         confidence_threshold: 0.85,
+        include_suggestions: false,
     };
     let resp = client
         .match_annotations(&req)
@@ -334,6 +336,7 @@ fn server_401_maps_to_auth_invalid() {
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.5,
+            include_suggestions: false,
         })
         .unwrap_err();
     assert!(
@@ -356,6 +359,7 @@ fn server_400_carries_message_body() {
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.3,
+            include_suggestions: false,
         })
         .unwrap_err();
     match err {
@@ -386,6 +390,7 @@ fn server_500_maps_to_server_error() {
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         })
         .unwrap_err();
     match err {
@@ -421,6 +426,7 @@ fn unreachable_server_maps_to_network_error() {
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         })
         .unwrap_err();
     assert!(
@@ -444,6 +450,7 @@ fn malformed_response_body_maps_to_decode_error() {
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         })
         .unwrap_err();
     assert!(matches!(err, CanonError::Decode(_)), "got {err:?}");

@@ -1,0 +1,88 @@
+{
+  "_comment": "GOLDEN /canon/match response for §17. Scenario: one annotation matched the leaf wal_commit_requires_fsync (P-014). toolsaurus (producer) MUST emit a response that matches this shape; aristo (consumer) MUST decode it. Objective is populated here to exercise the full post-Slice-0b shape; it MAY be null (siblings-only) pre-0b. Siblings exclude the primary (server dedup ①).",
+  "results": [
+    [
+      {
+        "canon_id": "wal_commit_requires_fsync",
+        "version": "v0.1.0",
+        "canonical_text": "A commit frame must reach stable storage via fsync before the transaction is reported as durable",
+        "confidence": 0.91,
+        "scope": "turso",
+        "prefix_tier": "aristos:",
+        "backed_by": "golden model + proofs + differential testing",
+        "linked": "arta_5b1c9f2a7e3d4068",
+        "verification": { "coverage_level": "tight", "test_binaries": ["wal_conform"] }
+      }
+    ]
+  ],
+  "suggestions": [
+    {
+      "for_canon_id": "wal_commit_requires_fsync",
+      "objective": {
+        "canon_id": "wal_protocol_correctness",
+        "version": "v0.1.0",
+        "canonical_text": "the WAL subsystem maintains LSN monotonicity, frame commitment ordering, recovery idempotency, checkpoint safety, and group-commit atomicity",
+        "scope": "turso",
+        "prefix_tier": "kanon:",
+        "backed_by": null,
+        "verification": { "coverage_level": "none", "test_binaries": [] },
+        "relationship": "parent"
+      },
+      "siblings": [
+        {
+          "canon_id": "wal_nbackfills_orders_with_recovery",
+          "version": "v0.1.0",
+          "canonical_text": "The nbackfills counter advances after frames are durable, so recovery never replays already-checkpointed frames",
+          "scope": "turso",
+          "prefix_tier": "aristos:",
+          "backed_by": "golden model + proofs + differential testing",
+          "verification": { "coverage_level": "partial", "test_binaries": ["wal_conform"] },
+          "relationship": "sibling"
+        },
+        {
+          "canon_id": "wal_find_frame_range_invariant",
+          "version": "v0.1.0",
+          "canonical_text": "find_frame never reads outside the live frame range [nbackfills, max_frame]",
+          "scope": "turso",
+          "prefix_tier": "aristos:",
+          "backed_by": "golden model + proofs + differential testing",
+          "verification": { "coverage_level": "tight", "test_binaries": ["wal_conform"] },
+          "relationship": "sibling"
+        },
+        {
+          "canon_id": "wal_initialized_reflects_sync_outcome",
+          "version": "v0.1.0",
+          "canonical_text": "The WAL initialized flag is set true only after a successful sync of the wal-header",
+          "scope": "turso",
+          "prefix_tier": "aristos:",
+          "backed_by": "golden model + proofs + differential testing",
+          "verification": { "coverage_level": "tight", "test_binaries": ["wal_conform"] },
+          "relationship": "sibling"
+        },
+        {
+          "canon_id": "wal_checkpoint_error_no_db_leak",
+          "version": "v0.1.0",
+          "canonical_text": "A checkpoint failure must not leak frames into the main database file",
+          "scope": "turso",
+          "prefix_tier": "aristos:",
+          "backed_by": "golden model + proofs + differential testing",
+          "verification": { "coverage_level": "tight", "test_binaries": ["wal_conform"] },
+          "relationship": "sibling"
+        },
+        {
+          "canon_id": "wal_truncate_atomic_under_concurrent_writers",
+          "version": "v0.1.0",
+          "canonical_text": "WAL truncate is atomic: no committed frame can be observed lost across the truncate operation",
+          "scope": "turso",
+          "prefix_tier": "aristos:",
+          "backed_by": "golden model + proofs + differential testing",
+          "verification": { "coverage_level": "tight", "test_binaries": ["wal_conform"] },
+          "relationship": "sibling"
+        }
+      ]
+    }
+  ],
+  "effective_scopes": ["turso", ":vanilla"],
+  "canon_version": "v0.2.0",
+  "matched_at": "2026-06-05T00:00:00Z"
+}

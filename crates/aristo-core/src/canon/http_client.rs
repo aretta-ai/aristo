@@ -290,6 +290,7 @@ mod tests {
             effective_scopes: vec![":vanilla".into()],
             canon_version: "v0.2.0".into(),
             matched_at: "2026-06-15T09:14:22Z".into(),
+            suggestions: None,
         };
         serde_json::to_string(&resp).unwrap()
     }
@@ -557,6 +558,7 @@ mod tests {
                 applies_to: vec!["fn".into()],
             }],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         };
     }
 }

@@ -96,7 +96,12 @@ const CRITIQUE: Skill = Skill {
     content: include_str!("aristo-critique.md"),
 };
 
-const BUNDLED: &[Skill] = &[AUTHORING, NEURAL_VERIFY, CRITIQUE];
+const INTENT_SUGGESTIONS: Skill = Skill {
+    name: "aristo-intent-suggestions",
+    content: include_str!("aristo-intent-suggestions.md"),
+};
+
+const BUNDLED: &[Skill] = &[AUTHORING, NEURAL_VERIFY, CRITIQUE, INTENT_SUGGESTIONS];
 
 #[cfg(test)]
 mod tests {
@@ -115,6 +120,106 @@ mod tests {
     fn future_skill_names_not_yet_bundled() {
         // Sentinels: these skills land in their consuming slices.
         assert!(find("aristo-mine-assertions").is_none()); // slice 24 (deferred)
+    }
+
+    #[test]
+    fn intent_suggestions_skill_is_bundled() {
+        let s = find("aristo-intent-suggestions")
+            .expect("aristo-intent-suggestions must be bundled (§17 Slice 4)");
+        let body = s.resolved_content();
+        // §17/D3/D9: the loop is owned by the intent-review session kind.
+        assert!(
+            body.contains("intent-review"),
+            "skill body must name the `intent-review` session kind it drives"
+        );
+        // §6A: the decision card is reused, not reinvented.
+        assert!(
+            body.contains("aristo canon show"),
+            "skill body must use `aristo canon show` as the decision card (reuse, not reinvent)"
+        );
+        // §6A: same-kind items are presented as a navigable batch.
+        assert!(
+            body.contains("batch"),
+            "skill body must teach the batch multi-Q decision pattern"
+        );
+        // §6A: the picker caps at 4 questions/page → larger sets paginate.
+        assert!(
+            body.contains("4 questions per page") || body.contains("4/page"),
+            "skill body must call out the ≤4-questions-per-page cap (paginate larger sets)"
+        );
+        // §6A: two-phase batch (decide → agent finds sites → confirm).
+        assert!(
+            body.contains("PHASE 1") && body.contains("PHASE 2") && body.contains("PHASE 3"),
+            "skill body must teach the two-phase batch (decide → find sites → confirm placements)"
+        );
+        // §6A snippet rule: Stage A rewrite = −/+ diff; Stage B adopt = pure +.
+        assert!(
+            body.contains("REWRITE") && body.contains("pure"),
+            "skill body must encode the −/+ rewrite vs pure-+ adopt snippet rule"
+        );
+        // §6B modes: backlog + status must both be taught.
+        assert!(
+            body.contains("backlog"),
+            "skill body must teach the `backlog` mode (--skip-canon, no new match)"
+        );
+        assert!(
+            body.contains("status"),
+            "skill body must teach the `status` mode (--counts, no session, no writes)"
+        );
+        // §6B: matches / suggestions stage selectors.
+        assert!(
+            body.contains("Stage A only") && body.contains("Stage B only"),
+            "skill body must teach the matches-only / suggestions-only stage selectors"
+        );
+        // §6B: subject scope via the reused filter grammar.
+        assert!(
+            body.contains("--filter parent=") && body.contains("--filter file="),
+            "skill body must teach the `cluster <objective>` / `for <file>` scope filters"
+        );
+        // §6B: zero-arg slash command (no /skill --flag).
+        assert!(
+            body.contains("zero-argument slash command"),
+            "skill body must declare it is a zero-arg slash command (NL/menu routing, no flags)"
+        );
+        // D4/D6: write path + parent-reject cascade discipline.
+        assert!(
+            body.contains("aristo stamp") && body.contains("aristo canon accept"),
+            "skill body must funnel adoption through stamp → canon accept (no new source mutator)"
+        );
+        assert!(
+            body.contains("parent-first") || body.contains("once per cluster"),
+            "skill body must encode the parent-first, once-per-cluster decision (D6)"
+        );
+        assert!(
+            body.contains("DRAGGED-IN") && body.contains("KEEP"),
+            "skill body must encode the D6 discard-dragged-in-only / keep-independent rule"
+        );
+        // Layer-3 session-guard discipline (mirrors critique/neural-verify).
+        assert!(
+            body.contains("aristo session active"),
+            "skill body's step 0 must check for an active review session (Layer 3 enforcement)"
+        );
+        assert!(
+            body.contains("aristo session start intent-review"),
+            "skill body must open an intent-review session before interactive review"
+        );
+        assert!(
+            body.contains("aristo session decide --item"),
+            "skill body must record per-item decisions via the substrate"
+        );
+        assert!(
+            body.contains("aristo session exit --defer-undecided"),
+            "skill body must offer defer-undecided so open items go to backlog, not silently dropped"
+        );
+        // Frontmatter sanity (mirrors the authoring-skill check).
+        assert!(
+            body.starts_with("---"),
+            "skill must start with YAML frontmatter"
+        );
+        assert!(
+            body.contains("name: aristo-intent-suggestions"),
+            "frontmatter must include the skill name"
+        );
     }
 
     #[test]

@@ -160,6 +160,7 @@ results = [
                 applies_to: vec!["fn".into()],
             }],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         };
         let resp = client.match_annotations(&req).unwrap();
         assert_eq!(resp.results.len(), 1);
@@ -181,6 +182,7 @@ results = [
         let req = CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.5,
+            include_suggestions: false,
         };
         let err = client.match_annotations(&req).unwrap_err();
         assert!(matches!(err, CanonError::Fixture(_)));
@@ -197,6 +199,7 @@ results = [
         let req = CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.5,
+            include_suggestions: false,
         };
         let err = client.match_annotations(&req).unwrap_err();
         assert!(matches!(err, CanonError::Fixture(_)));
@@ -363,6 +366,7 @@ current_backing = "specialized neural checker"
             effective_scopes: vec![":vanilla".into()],
             canon_version: "v0.2.0".into(),
             matched_at: "2026-06-15T09:14:22Z".into(),
+            suggestions: None,
         };
         let tmp = TempDir::new().unwrap();
         let toml_text = toml::to_string(&resp).unwrap();
@@ -372,6 +376,7 @@ current_backing = "specialized neural checker"
         let req = CanonMatchRequest {
             annotations: vec![],
             confidence_threshold: 0.5,
+            include_suggestions: false,
         };
         let loaded = client.match_annotations(&req).unwrap();
         assert_eq!(loaded, resp);

@@ -52,6 +52,14 @@ pub struct CanonMatchRequest {
     /// `stamp` sends `0.85`; `critique` sends `0.65`; tunable via
     /// `aristo.toml [canon] threshold_*`.
     pub confidence_threshold: f64,
+    /// Opt-in to the §17 proof-tree suggestions channel. When `true`,
+    /// the server expands each primary match into its proof-objective
+    /// cluster and attaches [`CanonMatchResponse::suggestions`].
+    /// Defaults to `false` so the existing match path stays
+    /// byte-identical on the wire (back-compat: old clients never send
+    /// the field; the server treats absence as `false`).
+    #[serde(default)]
+    pub include_suggestions: bool,
 }
 
 /// One annotation-shaped input to the batched match call.
@@ -86,6 +94,74 @@ pub struct CanonMatchResponse {
     pub canon_version: String,
     /// ISO-8601 timestamp of when the server computed this response.
     pub matched_at: String,
+    /// §17 proof-tree suggestions, aligned by annotation index to
+    /// [`results`](Self::results). One [`ClusterSuggestion`] per
+    /// requested annotation; entries are `None` where the annotation
+    /// had no cluster. The whole field is `None`/absent for clients
+    /// that did not set [`CanonMatchRequest::include_suggestions`]
+    /// (back-compat — old responses decode with `suggestions = None`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestions: Option<Vec<Option<ClusterSuggestion>>>,
+}
+
+// ─── §17 proof-tree suggestions ────────────────────────────────────────────
+
+/// One proof-objective cluster pulled in for a primary match. Mirrors
+/// `ClusterSuggestion` in `contract/suggestions.schema.json`.
+///
+/// The cluster hangs off the primary `for_canon_id`; it carries the
+/// `objective` (the `kanon:` proof-objective parent — `None` until
+/// Slice 0b authors objective entries) and the `siblings` (co-member
+/// leaf entries, deduped, with the primary excluded by the server —
+/// "dedup ①").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ClusterSuggestion {
+    /// The primary matched `canon_id` this cluster hangs off of.
+    pub for_canon_id: String,
+    /// The `kanon:` proof-objective (parent). `None` until Slice 0b
+    /// authors objective entries (siblings-only mode).
+    pub objective: Option<SuggestedEntry>,
+    /// Co-member leaf entries, deduped, with the primary excluded
+    /// (server "dedup ①"). May be empty.
+    pub siblings: Vec<SuggestedEntry>,
+}
+
+/// One suggested canon entry within a [`ClusterSuggestion`] — either
+/// the objective (parent) or a sibling leaf. Mirrors `SuggestedEntry`
+/// in `contract/suggestions.schema.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SuggestedEntry {
+    pub canon_id: String,
+    pub version: String,
+    pub canonical_text: String,
+    pub scope: String,
+    pub prefix_tier: PrefixTier,
+    /// `Some(_)` for `aristos:` tier; `None` for `kanon:` tier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backed_by: Option<String>,
+    /// Scope-aware verification metadata. Informational in Phase 1
+    /// (same carve-out as [`CanonMatch::verification`]). Defaults to
+    /// the empty metadata when the server omits it.
+    #[serde(default)]
+    pub verification: VerificationMetadata,
+    /// Where this entry sits relative to the primary. v1 emits only
+    /// `parent` (the objective) + `sibling` (co-member leaves).
+    pub relationship: Relationship,
+}
+
+/// Where a [`SuggestedEntry`] sits relative to the primary match.
+/// Mirrors the `relationship` enum in
+/// `contract/suggestions.schema.json`. v1 emits only `Parent` +
+/// `Sibling`; `Child` is reserved for the future Lean-DAG layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Relationship {
+    /// The proof-objective node — the cluster's parent.
+    Parent,
+    /// A co-member leaf obligation under the same objective.
+    Sibling,
+    /// Reserved for the future Lean-DAG sub-obligation layer.
+    Child,
 }
 
 /// One match candidate for one annotation.
@@ -230,7 +306,7 @@ pub fn synthesize_phase1_linked(canon_id: &str, version: &str) -> crate::index::
 
 /// Scope-aware verification metadata surfaced by the match response.
 /// Mirrors the coverage.yaml routing manifest's per-entry fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VerificationMetadata {
     /// `"tight"` | `"partial"` | `"informal"` | `"none"` per
     /// canon-strategy.md (the `relation` field on coverage entries).
@@ -424,6 +500,7 @@ mod tests {
                 applies_to: vec!["fn".into(), "method".into()],
             }],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         };
         let json = serde_json::to_string(&req).unwrap();
         let back: CanonMatchRequest = serde_json::from_str(&json).unwrap();
@@ -450,6 +527,7 @@ mod tests {
             effective_scopes: vec![":vanilla".into()],
             canon_version: "v0.2.0".into(),
             matched_at: "2026-06-15T09:14:22Z".into(),
+            suggestions: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         let back: CanonMatchResponse = serde_json::from_str(&json).unwrap();
@@ -708,6 +786,56 @@ mod tests {
     }
 
     #[test]
+    fn relationship_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_value(Relationship::Parent).unwrap(),
+            serde_json::json!("parent")
+        );
+        assert_eq!(
+            serde_json::to_value(Relationship::Sibling).unwrap(),
+            serde_json::json!("sibling")
+        );
+        assert_eq!(
+            serde_json::to_value(Relationship::Child).unwrap(),
+            serde_json::json!("child")
+        );
+        let back: Relationship = serde_json::from_str("\"parent\"").unwrap();
+        assert_eq!(back, Relationship::Parent);
+    }
+
+    #[test]
+    fn match_response_without_suggestions_omits_field() {
+        // include_suggestions defaults to false; the response carries
+        // no suggestions key — byte-identical to the pre-§17 wire shape.
+        let resp = CanonMatchResponse {
+            results: vec![],
+            effective_scopes: vec![":vanilla".into()],
+            canon_version: "v0.2.0".into(),
+            matched_at: "2026-06-15T09:14:22Z".into(),
+            suggestions: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(
+            !json.contains("suggestions"),
+            "expected suggestions to be omitted, got: {json}"
+        );
+    }
+
+    #[test]
+    fn old_response_decodes_with_suggestions_none() {
+        // Back-compat: a pre-§17 server response has no `suggestions`
+        // key. `#[serde(default)]` must decode it as `None`.
+        let raw = r#"{
+            "results": [],
+            "effective_scopes": [":vanilla"],
+            "canon_version": "v0.1.0",
+            "matched_at": "2026-05-22T18:04:51.080Z"
+        }"#;
+        let resp: CanonMatchResponse = serde_json::from_str(raw).unwrap();
+        assert!(resp.suggestions.is_none());
+    }
+
+    #[test]
     fn match_request_serializes_with_snake_case_keys() {
         // Important: server and SDK both expect snake_case wire form.
         // Field rename to camelCase here would break Slice 3.
@@ -717,6 +845,7 @@ mod tests {
                 applies_to: vec!["fn".into()],
             }],
             confidence_threshold: 0.85,
+            include_suggestions: false,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("annotation_text"), "got: {json}");
