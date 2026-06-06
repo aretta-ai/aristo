@@ -55,6 +55,14 @@ pub(crate) fn run() -> CliResult<()> {
                 m.confidence,
                 m.prefix_tier.as_prefix(),
             );
+            // Surface the next action: a ready-to-run accept command. Both
+            // positional args are bare — the annotation id (this entry's key)
+            // and the canon id — exactly what `canon accept` expects.
+            println!(
+                "               accept: aristo canon accept {} {}",
+                id.as_str(),
+                m.canon_id,
+            );
         }
         for m in &entry.accepted_matches {
             println!(

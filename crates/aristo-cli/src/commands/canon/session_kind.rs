@@ -138,9 +138,7 @@ impl SessionKind for IntentReviewSession {
         match IntentItem::parse(item_ref)? {
             // Primary / sibling reject: fingerprint the bare canon_id so
             // dedup ②/④ suppress it on future runs.
-            IntentItem::Match { canon_id, .. } => {
-                Ok(suggestions::rejection_fingerprint(&canon_id))
-            }
+            IntentItem::Match { canon_id, .. } => Ok(suggestions::rejection_fingerprint(&canon_id)),
             IntentItem::Sibling { canon_id, .. } => {
                 Ok(suggestions::rejection_fingerprint(&canon_id))
             }
@@ -359,19 +357,10 @@ mod tests {
         let kind = IntentReviewSession;
         let fp = suggestions::rejection_fingerprint("wal_find");
         // Same canon_id (match or sibling) ⇒ matches.
-        assert!(kind.matches_prior_rejection(
-            &ItemRef::from_opaque("sibling:obj#wal_find"),
-            &fp,
-        ));
-        assert!(kind.matches_prior_rejection(
-            &ItemRef::from_opaque("match:ann#wal_find"),
-            &fp,
-        ));
+        assert!(kind.matches_prior_rejection(&ItemRef::from_opaque("sibling:obj#wal_find"), &fp,));
+        assert!(kind.matches_prior_rejection(&ItemRef::from_opaque("match:ann#wal_find"), &fp,));
         // Different canon_id ⇒ no match.
-        assert!(!kind.matches_prior_rejection(
-            &ItemRef::from_opaque("sibling:obj#other"),
-            &fp,
-        ));
+        assert!(!kind.matches_prior_rejection(&ItemRef::from_opaque("sibling:obj#other"), &fp,));
         // Cluster parents are decided per-run, never auto-suppressed.
         assert!(!kind.matches_prior_rejection(&ItemRef::from_opaque("cluster:wal_find"), &fp));
     }

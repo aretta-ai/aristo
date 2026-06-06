@@ -101,11 +101,7 @@ impl SuggestionTask {
     pub(crate) fn key(&self) -> &str {
         match &self.objective {
             Some(obj) => &obj.canon_id,
-            None => self
-                .for_canon_ids
-                .first()
-                .map(String::as_str)
-                .unwrap_or(""),
+            None => self.for_canon_ids.first().map(String::as_str).unwrap_or(""),
         }
     }
 
@@ -438,7 +434,12 @@ fn run_show(ws: &Workspace, objective: &str) -> CliResult<()> {
 
     match &task.objective {
         Some(obj) => {
-            println!("objective: {} {} ({} tier)", obj.canon_id, obj.version, obj.prefix_tier.as_prefix());
+            println!(
+                "objective: {} {} ({} tier)",
+                obj.canon_id,
+                obj.version,
+                obj.prefix_tier.as_prefix()
+            );
             println!("  {}", obj.canonical_text);
         }
         None => println!("objective: (siblings-only — no objective entry yet)"),
@@ -593,9 +594,13 @@ mod tests {
     fn route_writes_one_task_per_cluster() {
         let (_tmp, qdir) = fresh_qdir();
         let suggestions = vec![Some(cluster("p1", Some("obj_a"), &["s1", "s2"]))];
-        let n =
-            route_suggestions_into_queue(&qdir, &suggestions, &empty_local(), "2026-06-05T00:00:00Z")
-                .unwrap();
+        let n = route_suggestions_into_queue(
+            &qdir,
+            &suggestions,
+            &empty_local(),
+            "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
         assert_eq!(n, 1);
         let tasks = read_queue(&qdir);
         assert_eq!(tasks.len(), 1);
@@ -620,7 +625,11 @@ mod tests {
         let tasks = read_queue(&qdir);
         assert_eq!(tasks.len(), 1);
         // Only s4 survives dedup ②.
-        let surviving: Vec<&str> = tasks[0].siblings.iter().map(|s| s.canon_id.as_str()).collect();
+        let surviving: Vec<&str> = tasks[0]
+            .siblings
+            .iter()
+            .map(|s| s.canon_id.as_str())
+            .collect();
         assert_eq!(surviving, vec!["s4"]);
     }
 
@@ -633,13 +642,21 @@ mod tests {
             Some(cluster("p1", Some("obj_a"), &["s1", "s2"])),
             Some(cluster("p2", Some("obj_a"), &["s2", "s3"])),
         ];
-        let n =
-            route_suggestions_into_queue(&qdir, &suggestions, &empty_local(), "2026-06-05T00:00:00Z")
-                .unwrap();
+        let n = route_suggestions_into_queue(
+            &qdir,
+            &suggestions,
+            &empty_local(),
+            "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
         assert_eq!(n, 1, "two primaries, same objective → one task");
         let tasks = read_queue(&qdir);
         assert_eq!(tasks.len(), 1);
-        let mut ids: Vec<&str> = tasks[0].siblings.iter().map(|s| s.canon_id.as_str()).collect();
+        let mut ids: Vec<&str> = tasks[0]
+            .siblings
+            .iter()
+            .map(|s| s.canon_id.as_str())
+            .collect();
         ids.sort();
         assert_eq!(ids, vec!["s1", "s2", "s3"], "siblings union, deduped");
         let mut primaries = tasks[0].for_canon_ids.clone();
@@ -654,9 +671,13 @@ mod tests {
             Some(cluster("p1", Some("obj_a"), &["s1"])),
             Some(cluster("p2", Some("obj_b"), &["s2"])),
         ];
-        let n =
-            route_suggestions_into_queue(&qdir, &suggestions, &empty_local(), "2026-06-05T00:00:00Z")
-                .unwrap();
+        let n = route_suggestions_into_queue(
+            &qdir,
+            &suggestions,
+            &empty_local(),
+            "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
         assert_eq!(n, 2);
     }
 
@@ -668,9 +689,8 @@ mod tests {
         // siblings-only cluster (no objective); its single sibling is
         // already bound → nothing to review → dropped entirely.
         let suggestions = vec![Some(cluster("p1", None, &["s1"]))];
-        let n =
-            route_suggestions_into_queue(&qdir, &suggestions, &local, "2026-06-05T00:00:00Z")
-                .unwrap();
+        let n = route_suggestions_into_queue(&qdir, &suggestions, &local, "2026-06-05T00:00:00Z")
+            .unwrap();
         assert_eq!(n, 0);
         assert!(read_queue(&qdir).is_empty());
     }
@@ -691,9 +711,13 @@ mod tests {
     fn null_cluster_entries_are_skipped() {
         let (_tmp, qdir) = fresh_qdir();
         let suggestions = vec![None, Some(cluster("p1", Some("obj_a"), &["s1"]))];
-        let n =
-            route_suggestions_into_queue(&qdir, &suggestions, &empty_local(), "2026-06-05T00:00:00Z")
-                .unwrap();
+        let n = route_suggestions_into_queue(
+            &qdir,
+            &suggestions,
+            &empty_local(),
+            "2026-06-05T00:00:00Z",
+        )
+        .unwrap();
         assert_eq!(n, 1);
     }
 }

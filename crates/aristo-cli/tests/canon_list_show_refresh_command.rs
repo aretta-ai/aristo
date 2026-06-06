@@ -148,6 +148,10 @@ fn list_after_stamp_shows_pending_match() {
         "expected pending match line; got: {stdout}"
     );
     assert!(
+        stdout.contains("aristo canon accept edit_page_cell_write_invariant"),
+        "expected a ready-to-run accept command under the pending match; got: {stdout}"
+    );
+    assert!(
         stdout.contains("totals:") && stdout.contains("1 pending"),
         "expected totals; got: {stdout}"
     );
