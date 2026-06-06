@@ -63,6 +63,14 @@ Nothing self-updates — the version stays pinned until you choose. The
 check is silent in CI and when output is piped; set
 `ARISTO_NO_UPDATE_NOTIFIER=1` to turn it off entirely.
 
+After upgrading the CLI, re-pin your installed agent skills so they match
+the new version: `aristo install-skills --check` reports any that are
+stale, and `aristo install-skills --update` re-pins them in place.
+`aristo status` and the post-command notice flag stale skills too. On
+Claude Code, `install-skills` also adds a SessionStart hook that flags
+stale skills as each session opens, so your agent can offer to refresh
+them — it never rewrites anything on its own.
+
 ## What a claim looks like
 
 ```rust
