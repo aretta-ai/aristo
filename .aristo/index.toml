@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.1"
-generated_at = "2026-06-05T23:21:46.825054Z"
+generated_at = "2026-06-06T06:47:06.280911Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -177,7 +177,7 @@ status = "unknown"
 text_hash = "sha256:d05709d79213543e866fd09811badd17d17df0d57152946b2c66498693254199"
 body_hash = "sha256:4fe4adc3a2cba99ae202933b7a666b3037c3c7dc525f2f9920792874109b80ef"
 file = "crates/aristo-cli/src/commands/canon/runner.rs"
-site = "fn collect_batch (line 223)"
+site = "fn collect_batch (line 240)"
 covered_region = "function"
 
 [canon_client_selection_test_mode_wins]
@@ -188,7 +188,7 @@ status = "unknown"
 text_hash = "sha256:033c97f2a4d696b548b44bbef0ada3a08f923198db4ad69b8d62951b350f404d"
 body_hash = "sha256:9075c81d009bdd17e6c6b20e5e3258a85ca39938d59257ac910e3ce17321362a"
 file = "crates/aristo-cli/src/commands/canon/runner.rs"
-site = "fn build_client (line 180)"
+site = "fn build_client (line 197)"
 covered_region = "function"
 
 [canon_merge_response_preserves_user_decisions]
@@ -199,7 +199,7 @@ status = "unknown"
 text_hash = "sha256:231001cb3b7f6d75fe746347c26fdb396c793ecc1fca2a72d1de808a97db03fb"
 body_hash = "sha256:8737e1f46bb364aa176f3711bef40e680ff511235c41ea3c0c6f46a31ccd5247"
 file = "crates/aristo-cli/src/commands/canon/runner.rs"
-site = "fn merge_response_into_cache (line 309)"
+site = "fn merge_response_into_cache (line 326)"
 covered_region = "function"
 
 [clear_active_pointer_is_idempotent_and_load_bearing_for_exit]
