@@ -430,3 +430,38 @@ You finish a slice with N new functions and zero intents, then promise yourself 
 - decide "no new intents needed for this slice" (which is the default story you tell yourself when the rationale has decayed).
 
 Both outcomes are silent quality losses. The fix is structural: write intents as you write the code, one at a time, in the same edit. The lint+stamp gates catch sloppy prose; only the concurrent-authoring discipline catches missed intents.
+
+## Diff mode — backfill skipped intents on uncommitted changes
+
+Concurrent authoring is the rule. **Diff mode is the one sanctioned exception**: a deliberate retro pass over your **uncommitted changes** to catch intents you skipped while heads-down on the code. Trigger it when the user asks to "backfill / sweep my changes for missed intents", "did I miss any annotations?", or before opening a PR.
+
+**The hard precondition — run it IN-CONTEXT.** Diff mode is only legitimate in the *same session that wrote the changes*, while the rationale is still in your head. The whole reason batching is banned is that the *why* decays; a retro pass recovers it only if you still remember it. So:
+
+- If you wrote this code earlier this session → you can recover the *why* → diff mode is valid.
+- If you're a fresh agent with no memory of these changes (e.g., picking up someone else's working tree) → you can only see the *what* → **do NOT run diff mode.** You'd manufacture WHAT-annotations that fail the content gate. Say so and stop.
+
+### Mechanism
+
+1. **Find the changed code.** Scope is the working tree + staged changes (NOT committed history):
+   ```bash
+   git diff --stat HEAD            # overview of what changed
+   git diff HEAD                   # the actual hunks (working tree + staged), new + modified code
+   ```
+   Read the hunks, not just the file names — you're looking at the specific functions / blocks / decisions that changed.
+
+2. **Find what's already covered vs. what drifted.** Cross-reference the index so you don't re-annotate covered sites and so you catch claims the change may have invalidated:
+   ```bash
+   aristo stamp --check            # body-drifted entries = annotations whose covered code changed
+   aristo show fn <name>           # what's already annotated on a changed function
+   ```
+   A **body-drifted** existing intent is a flag, not a backfill target: re-read it against the new code and decide whether the change *upheld* the claim (fine — re-stamp) or *invalidated* it (the claim must be rewritten or the code fixed — that's a verify concern, route it to `/aristo-verify`, don't silently re-stamp a now-false claim).
+
+3. **Per changed site lacking an annotation, apply the content gate HARD.** This is a retro pass, so be *stricter* than usual — the default answer is "no intent needed." Most changed lines are mechanical and earn nothing. Only a design decision that (a) a sharp reader would miss from the code alone AND (b) a plausible refactor could break silently passes. If you can't articulate the *why* from memory, that's the signal it either wasn't load-bearing or the rationale already decayed — skip it.
+
+4. **Propose, confirm, then write — no silent edits.** For each candidate that passes the gate, surface it via `AskUserQuestion` (the proposed intent text + its site in the `preview`) and write it only after the user confirms. Attach it to the load-bearing site, inline, exactly as in concurrent authoring. Batch the *proposals* into a navigable set (≤4 per page), but each is an individual decision — never bulk-insert.
+
+5. **Validate.** After the accepted intents are written: `aristo lint --check` → `aristo stamp`. Same gates as the normal loop.
+
+### Why diff mode is allowed when batching isn't
+
+Batching-at-end-of-slice fails because the rationale is *gone* by then. Diff mode is bounded differently: it runs **in the authoring session**, it applies the gate **harder** (default = skip), and it **confirms every write** — so it recovers genuinely-skipped intents without becoming a WHAT-annotation generator. If those three guardrails don't hold (fresh context, soft gate, or silent bulk insert), you're just batching, and the quality loss this whole skill warns about comes right back.

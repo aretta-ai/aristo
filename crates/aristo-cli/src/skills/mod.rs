@@ -628,6 +628,39 @@ mod tests {
     }
 
     #[test]
+    fn authoring_skill_teaches_diff_mode() {
+        // #5: the deliberate retro pass over uncommitted changes — the one
+        // sanctioned exception to "never batch", guarded by in-context + hard
+        // gate + confirm-before-write.
+        let s = find("aristo-authoring").unwrap();
+        let body = s.content;
+        assert!(
+            body.contains("Diff mode"),
+            "authoring skill must teach the diff (backfill) mode (#5)"
+        );
+        assert!(
+            body.contains("uncommitted"),
+            "diff mode must scope to uncommitted changes"
+        );
+        assert!(
+            body.contains("git diff"),
+            "diff mode must use git diff as the change source"
+        );
+        assert!(
+            body.contains("IN-CONTEXT") || body.contains("in-context"),
+            "diff mode must require running in-context (rationale still recoverable)"
+        );
+        assert!(
+            body.contains("AskUserQuestion"),
+            "diff mode must propose + confirm (no silent backfill edits)"
+        );
+        assert!(
+            body.contains("body-drift") || body.contains("body-drifted"),
+            "diff mode must reconcile body-drifted existing intents (stamp --check)"
+        );
+    }
+
+    #[test]
     fn authoring_skill_references_aristos_namespace_warning() {
         let s = find("aristo-authoring").unwrap();
         assert!(
