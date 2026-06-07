@@ -56,6 +56,25 @@ pub enum Status {
     Inconclusive,
 }
 
+#[aristo::intent(
+    "The terminal-clean states are exactly Verified, Tested, and Neural — \
+     an intent whose current code IS confirmed to hold under some \
+     verification method. Stale, Counterexample, Inconclusive, Unknown, \
+     and the B5b error states (Orphan / Forged / PendingDeepen) are NOT \
+     clean: each means the property is unproven, refuted, or untrusted for \
+     the current code. This is the single definition every surface — \
+     status counts, the badge rate, and the nudge engine's unverified \
+     backlog — shares, so they can never disagree on what 'verified' means.",
+    verify = "test",
+    id = "status_terminal_clean_is_verified_tested_neural"
+)]
+impl Status {
+    /// True iff this status is a terminal-clean (confirmed-verified) state.
+    pub fn is_terminal_clean(self) -> bool {
+        matches!(self, Status::Verified | Status::Tested | Status::Neural)
+    }
+}
+
 /// `verify` field value. Mixed-type per design (G1):
 ///
 /// - `false` (TOML bool): documentation only; no check ever runs.
@@ -153,5 +172,23 @@ mod tests {
     fn unknown_status_value_is_rejected() {
         let result: Result<Status, _> = serde_json::from_value(serde_json::json!("partial"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn terminal_clean_is_exactly_verified_tested_neural() {
+        for s in [Status::Verified, Status::Tested, Status::Neural] {
+            assert!(s.is_terminal_clean(), "{s:?} should be terminal-clean");
+        }
+        for s in [
+            Status::Stale,
+            Status::Orphan,
+            Status::Forged,
+            Status::Unknown,
+            Status::PendingDeepen,
+            Status::Counterexample,
+            Status::Inconclusive,
+        ] {
+            assert!(!s.is_terminal_clean(), "{s:?} must NOT be terminal-clean");
+        }
     }
 }

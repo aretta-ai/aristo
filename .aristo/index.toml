@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T17:23:02.857143Z"
+generated_at = "2026-06-07T19:37:39.27234Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -48,6 +48,17 @@ file = "crates/aristo-cli/src/skills/install.rs"
 site = "fn agents_md_uninstall (line 206)"
 covered_region = "function"
 
+[aggressiveness_off_is_hard_silence]
+kind = "intent"
+text = "Off MUST map to factor 0.0 — it is the global opt-out, and the scorer's fire test is `pressure * factor >= 1`, so only an exact 0.0 guarantees NOTHING ever fires regardless of how overdue a signal is. A non-zero `low` would let extreme pressure leak through a user who explicitly silenced nudges. The non-zero rungs are tunable defaults (D8); this table is the single place to retune global nudge sensitivity."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:d5308f52c19b1bdbe2ad0c5ff247fd394ebd8a023ee16033a87c9762f345ab81"
+body_hash = "sha256:9e55ec61a23448589024b098299619a39b160be66699b59ea8e567f9d88723dc"
+file = "crates/aristo-core/src/config/mod.rs"
+site = "impl Aggressiveness::factor (line 470)"
+covered_region = "function"
+
 [apply_findings_filters_open_by_default]
 kind = "intent"
 text = """`aristo critique --apply-findings` defaults to listing only findings whose `disposition` is `None` (open / not yet reviewed). Findings the user has already accepted, rejected, or deferred via `aristo session decide` stop re-surfacing on every apply — that's how the review substrate closes the loop. A refactor that re-surfaces every finding by default breaks the user's "I already triaged this" assumption and re-introduces the noise the substrate exists to filter. `--include-closed` is the explicit opt-back-in."""
@@ -92,6 +103,17 @@ file = "crates/aristo-cli/src/commands/index.rs"
 site = "fn atomic_write (line 326)"
 covered_region = "function"
 
+[authored_intents_are_exactly_the_index_intents]
+kind = "intent"
+text = "Authored intents are exactly the `IndexEntry::Intent` entries — every one, including documentation-only `verify = false` intents (still claims the user authored and may want to review). Assumes are excluded: they state external invariants, not reviewable claims. This is the SAME set the engine's review_backlog metric counts, so `aristo review` and the nudge can never report a different backlog size for the same index."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:9f309a1f2c52c2ed0340f99fd5f5ff771ffe47630fcf4c22f341f46de767323e"
+body_hash = "sha256:e8d1e8e1b02bfe7053a038d2395ee2824624653e171f26f66cbe4e8260cc7e17"
+file = "crates/aristo-cli/src/nudge/intents.rs"
+site = "fn authored_intents (line 25)"
+covered_region = "function"
+
 [backlog_append_is_read_modify_write_via_atomic]
 kind = "intent"
 text = "Appending to the backlog is read-modify-write: read the existing file, push the new entry, atomic-write the result. The `pending` bucket NEVER silently drops — every deferred item must land in this file. A refactor that used `OpenOptions::append` would lose atomicity (the backlog is TOML, not line-delimited; an interrupted append produces a non-parseable file)."
@@ -131,7 +153,7 @@ text = "`verification-rate` counts only intents (not assumes — assumes are ext
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:d9acd5595fafabd8927cfbe243159010c610e72f84590d787f70163b4f6e5069"
-body_hash = "sha256:12c760ffa255c45f18973ecf9cbd3a62f69a883521dcf4126fc2fd7255d9c040"
+body_hash = "sha256:f27e81adecb0639c63aa72742e8b8fb754c03f4262deb0aaffc21b4651a2ab41"
 file = "crates/aristo-cli/src/commands/badge.rs"
 site = "fn is_verified_state (line 220)"
 covered_region = "function"
@@ -587,6 +609,50 @@ file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn merge_status_from_prev (line 461)"
 covered_region = "function"
 
+[metrics_verifiable_excludes_assumes_and_doc_only_intents]
+kind = "intent"
+text = "The verifiable surface is intents with `verify != false` only — assumes are external invariants and never verified, and `verify = false` intents are documentation-only. `verified_clean` counts the verifiable intents in a terminal-clean status (the shared `Status::is_terminal_clean`), and `unverified` is exactly `verifiable - verified_clean`, so the three never disagree. The rate divides by `verifiable` (not by all intents), and is 0 when nothing is verifiable rather than a divide-by-zero."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:52b7fb9aaa1cdd9cf95be8e83b8af298a6746a8497f2d2119043f290b9b53b45"
+body_hash = "sha256:55e8c8089b540862a6aab7a1d7f9616868abc15e718d6b5e7995e20be7c5679a"
+file = "crates/aristo-core/src/metrics.rs"
+site = "impl Metrics (line 62)"
+covered_region = "impl_methods"
+
+[nudge_review_is_current_only_until_hash_drift]
+kind = "intent"
+text = "A review is current only while the annotation's text AND body hashes still match the snapshot taken when it was reviewed. Editing the claim or the covered code after review re-opens it (reads as unreviewed) — a reviewer approved a specific version, not the id forever. Without the hash check, a post-review edit would keep a stale 'reviewed' badge and the review backlog would under-count work that genuinely needs another look."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:522b7b87d9e82c64526676a2c889c4c85ec5cd9f664097d84418db5ef2fcf44d"
+body_hash = "sha256:5836f8fa2b7ec5d6a9f37f643b76eda2e951f90c421496ffe875f770cc6e756f"
+file = "crates/aristo-cli/src/nudge/state.rs"
+site = "impl NudgeState::is_reviewed (line 115)"
+covered_region = "function"
+
+[nudge_scorer_off_silences_and_order_is_static_priority]
+kind = "intent"
+text = "Two invariants the scorer must preserve. First, `aggressiveness = off` is an absolute silence: its factor is 0.0 and the fire test is `pressure * factor >= 1`, so no signal fires at any pressure — even an infinite one (a tier-up). Second, the surfaced order is the static SIGNALS priority order, NOT the pressures: a count-pressure and a fraction-pressure are incommensurable, so sorting by pressure would let a noisy low-priority signal jump the queue ahead of a review the user actually needs to see first."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:49a4a01352c3db6721786fcfa60d048158f7989ffe859083c1a460494d778faa"
+body_hash = "sha256:dbc43ab2643c2401bf194517b3674f181326662a79971676a39eeba0d4157597"
+file = "crates/aristo-cli/src/nudge/mod.rs"
+site = "fn score (line 228)"
+covered_region = "function"
+
+[nudge_union_is_read_only_and_tolerant]
+kind = "intent"
+text = "The union function is read-only and tolerant: it never mutates the workspace and never fails the caller on missing runtime state. Absent reviewed/proof-reviewed maps make everything read as unreviewed, an absent baseline disables the gain/slump signals, and an unreadable proofs dir contributes zero — degrade quietly. A nudge surface that errored or wrote files would turn an advisory into a workflow blocker, violating the engine's nudge-only posture (D3)."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:17427cceab6bab02b06161b728889eda24186d92dd43739f16b9d1802d71ebed"
+body_hash = "sha256:39a56812a96b7e6f06f91a89af81cfd931f94287273914f9ed088fda32b0581f"
+file = "crates/aristo-cli/src/commands/nudge.rs"
+site = "fn build_inputs (line 193)"
+covered_region = "function"
+
 [pending_and_claimed_share_parent_filesystem]
 kind = "assume"
 text = "The pending/ and claimed/ subdirectories share the same parent (the queue root under `.aristo/<pipeline>-queue/`), so cross-filesystem rename (EXDEV) is structurally impossible. A refactor that moved claimed/ to a different filesystem (e.g., tmpfs) would break the atomic claim by silently changing rename(2) semantics to copy+delete."
@@ -748,6 +814,28 @@ text_hash = "sha256:89b3688be7f8cfc39cc31503feabc7ecc3043351f5d22af073672c2bb5c8
 body_hash = "sha256:9fb80092b5a1510522e1bfa26f5991ee2e282186e5ec5ba6100392a3e5d39876"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
 site = "fn requeue (line 227)"
+covered_region = "function"
+
+[review_mark_validates_all_ids_before_writing]
+kind = "intent"
+text = "Marking validates EVERY requested id against the index before writing any review state: an unknown id (a typo, or an id that isn't an authored intent) marks nothing and errors. Partial marking on a bad batch would silently record some reviews and drop others, leaving the backlog disagreeing with what the user believes they reviewed."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:eab8b04c045da404119ce01ce1629d4b2fd25f1c188fdabd3e517ef063ebb442"
+body_hash = "sha256:2418cf7ea7bffbf6b0068430db350a8758e0810166895eaffd48f9522ea1712a"
+file = "crates/aristo-cli/src/commands/review.rs"
+site = "fn run_mark (line 67)"
+covered_region = "function"
+
+[review_new_vs_backlog_needs_a_baseline]
+kind = "intent"
+text = "New vs backlog is computed against the SessionStart edit-window baseline: an unreviewed intent is 'new' only when a baseline WAS captured and its id is absent from it (authored this session). With no baseline the split is suppressed (new_count = 0) rather than guessed — calling everything 'new' on a fresh checkout would misreport a long-standing backlog as this-session's work."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:1b7f1ceb706a487f4d943328c5566af04cbe753330a247505eaed4c35e91e3f0"
+body_hash = "sha256:cd1d109a548c30face26337cee6746fe02b8de911a7308c2b2e759ac9d32f32c"
+file = "crates/aristo-cli/src/commands/review.rs"
+site = "fn build_snapshot (line 166)"
 covered_region = "function"
 
 [rewrite_hashes_flag_is_migration_only_strict_default]
@@ -936,6 +1024,17 @@ body_hash = "sha256:fc20c6867c9bd0ce7685f43a2af1f49fa1a59c9fc34863f9715a18f6a311
 file = "crates/aristo-cli/src/commands/status.rs"
 site = "fn print_canon_health (line 145)"
 covered_region = "function"
+
+[status_terminal_clean_is_verified_tested_neural]
+kind = "intent"
+text = "The terminal-clean states are exactly Verified, Tested, and Neural — an intent whose current code IS confirmed to hold under some verification method. Stale, Counterexample, Inconclusive, Unknown, and the B5b error states (Orphan / Forged / PendingDeepen) are NOT clean: each means the property is unproven, refuted, or untrusted for the current code. This is the single definition every surface — status counts, the badge rate, and the nudge engine's unverified backlog — shares, so they can never disagree on what 'verified' means."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:6a553ed4f85fd1a06c81879fbdea45f6149b5dd16269a458c52dedf0ce4b8394"
+body_hash = "sha256:314c776644f33a5e306ba65b4ec889557c417d54c937d31cabbf2543a3efaf9d"
+file = "crates/aristo-core/src/index/enums.rs"
+site = "impl Status (line 59)"
+covered_region = "impl_methods"
 
 [status_tier_call_matches_badge_command_call]
 kind = "intent"
