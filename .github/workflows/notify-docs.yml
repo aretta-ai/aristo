@@ -7,9 +7,12 @@ name: "notify aristo-docs on docs change"
 #
 # Secret required:
 #   ARISTO_DOCS_DISPATCH_TOKEN — fine-grained PAT scoped to aretta-ai/aristo-docs
-#                                with Repository permissions → Actions: Read and
-#                                write. Add under Settings → Secrets and variables
-#                                → Actions.
+#                                with Repository permissions → Contents: Read and
+#                                write (Metadata: Read is auto-included). This is
+#                                what the repository_dispatch API endpoint needs —
+#                                NOT Actions (that's for workflow_dispatch). Add it
+#                                under the aristo repo's Settings → Secrets and
+#                                variables → Actions.
 
 on:
   push:
