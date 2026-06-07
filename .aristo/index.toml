@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T18:42:28.282652Z"
+generated_at = "2026-06-07T18:53:57.231596Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -639,7 +639,7 @@ status = "unknown"
 text_hash = "sha256:17427cceab6bab02b06161b728889eda24186d92dd43739f16b9d1802d71ebed"
 body_hash = "sha256:76dd420bf4ae25b8702ec4e2702fd8f923d2d7502ff933eb5b1a8b1bfe2d32b8"
 file = "crates/aristo-cli/src/commands/nudge.rs"
-site = "fn build_inputs (line 182)"
+site = "fn build_inputs (line 184)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
