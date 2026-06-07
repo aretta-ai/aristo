@@ -82,7 +82,7 @@ fn verify_neural_intent_writes_pending_request_file() {
         .assert()
         .success()
         .stdout(contains("1 entry pending neural verification"))
-        .stdout(contains("/aristo-neural-verify"));
+        .stdout(contains("/aristo-verify"));
 
     let task_path = tmp
         .path()

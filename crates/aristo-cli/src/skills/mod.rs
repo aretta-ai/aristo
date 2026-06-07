@@ -86,9 +86,9 @@ const AUTHORING: Skill = Skill {
     content: AUTHORING_BODY,
 };
 
-const NEURAL_VERIFY: Skill = Skill {
-    name: "aristo-neural-verify",
-    content: include_str!("aristo-neural-verify.md"),
+const VERIFY: Skill = Skill {
+    name: "aristo-verify",
+    content: include_str!("aristo-verify.md"),
 };
 
 const CRITIQUE: Skill = Skill {
@@ -108,7 +108,7 @@ const AUTHORED_REVIEW: Skill = Skill {
 
 const BUNDLED: &[Skill] = &[
     AUTHORING,
-    NEURAL_VERIFY,
+    VERIFY,
     CRITIQUE,
     INTENT_SUGGESTIONS,
     AUTHORED_REVIEW,
@@ -357,11 +357,63 @@ mod tests {
     }
 
     #[test]
-    fn neural_verify_skill_is_bundled() {
-        let s = find("aristo-neural-verify").expect("aristo-neural-verify must be bundled");
-        // The skill body must teach the validator's hard contract; spot-check
-        // a couple of load-bearing lines.
+    fn verify_skill_is_bundled() {
+        // #1/#2: aristo-neural-verify was generalized + renamed to aristo-verify
+        // (scope×mode menu + full server arm + card-driven results review). The
+        // neural worker contract below is PRESERVED verbatim — that's the
+        // load-bearing part the SDK validator depends on.
+        let s = find("aristo-verify").expect("aristo-verify must be bundled (Phase 18 #1/#2)");
         let body = s.resolved_content();
+        assert!(
+            body.contains("name: aristo-verify"),
+            "frontmatter must carry the renamed skill name"
+        );
+        assert!(
+            !body.contains("name: aristo-neural-verify"),
+            "the skill must be RENAMED, not aliased — no stale neural-verify name in frontmatter"
+        );
+
+        // ── #1: opening scope × mode menu (recipes over existing flags) ──
+        assert!(
+            body.contains("Changed · neural"),
+            "skill must open with the scope×mode menu (Changed·neural is the default)"
+        );
+        assert!(
+            body.contains("aristo verify --rerun"),
+            "skill must map 'Everything' to the existing --rerun flag"
+        );
+        assert!(
+            body.contains("aristo verify --view"),
+            "skill must teach re-attaching to the background full (server) session via --view"
+        );
+        assert!(
+            body.contains("aristo auth login"),
+            "skill must gate full/both on sign-in and offer `aristo auth login`"
+        );
+
+        // ── #2: card-driven results review, SUBJECT-ONLY, render-then-menu ──
+        assert!(
+            body.contains("SUBJECT-ONLY"),
+            "cards must be SUBJECT-ONLY (never reference the internal verification model)"
+        );
+        assert!(
+            body.contains("render the card first"),
+            "skill must encode RENDER-THEN-MENU (the user sees the card before the action menu)"
+        );
+        assert!(
+            body.contains("✗ Refuted") && body.contains("✓ Verified"),
+            "skill must define both the failure (DifferentialReport) and success cards"
+        );
+        assert!(
+            body.contains("Successes only"),
+            "results-review opening must include the Successes-only lane"
+        );
+        assert!(
+            body.contains("aristo verify --accept") && body.contains("--because"),
+            "the failure card's Waive action must use `aristo verify --accept … --because`"
+        );
+
+        // ── neural worker contract (PRESERVED verbatim from aristo-neural-verify) ──
         assert!(
             body.contains("`.aristo/pending-neural.toml`"),
             "skill body must reference the pending-request file the SDK writes"
@@ -435,15 +487,15 @@ mod tests {
              (GAP-9: repair budget accumulates across re-spawns)"
         );
         assert!(
-            body.contains("AskUserQuestion") && body.contains("interactive review"),
-            "skill body must teach the post-apply interactive review flow via AskUserQuestion"
+            body.contains("AskUserQuestion"),
+            "skill body must drive the review via AskUserQuestion menus"
         );
         assert!(
             body.contains("Every suggested annotation gets surfaced as an actionable question"),
             "skill body must encode the GSD-style interactive-suggestions rule"
         );
         assert!(
-            body.contains("confirmed via a second `AskUserQuestion`"),
+            body.contains("second `AskUserQuestion`"),
             "skill body must require two-step confirmation before any source edit \
              (no silent source mutation from skill orchestration)"
         );

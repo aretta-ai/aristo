@@ -5,8 +5,8 @@
 //! verification, and writes one task file per id under
 //! `.aristo/verify-queue/pending/<id>.toml` via [`pipeline::queue::enqueue`].
 //!
-//! Workers (subagents spawned by `aristo-neural-verify`) call
-//! `aristo verify --pop-next` to atomically claim one task at a time.
+//! Workers (subagents spawned by the `aristo-verify` skill's neural arm)
+//! call `aristo verify --pop-next` to atomically claim one task at a time.
 //! See [`crate::pipeline::queue`] for the directory layout + race-safety
 //! guarantees.
 

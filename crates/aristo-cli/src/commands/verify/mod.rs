@@ -295,9 +295,9 @@ fn emit_summary(stats: &Stats, pending_neural: usize, pending_test: usize, pendi
             "→ {pending_neural} {word} pending neural verification — enqueued under .aristo/verify-queue/pending/."
         );
         println!(
-            "  In Claude Code (or another agent with the aristo-neural-verify skill installed), run:"
+            "  In Claude Code (or another agent with the aristo-verify skill installed), run:"
         );
-        println!("    /aristo-neural-verify");
+        println!("    /aristo-verify");
         println!(
             "  to produce verdicts for each pending entry. The skill writes .aristo/proofs/<id>.proof"
         );

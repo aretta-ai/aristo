@@ -1,5 +1,5 @@
 //! `aristo verify --submit-verdict --id <id> --json <json>` — single-
-//! verdict write path used by the in-agent neural-verify skill.
+//! verdict write path used by the `aristo-verify` skill's neural arm.
 //!
 //! Subagents construct a JSON-serialized [`ProofFile`] body and invoke
 //! this command to land it on disk as `.aristo/proofs/<id>.proof`. The
