@@ -15,7 +15,7 @@
 //! bad state). The file is git-untracked: it is per-user runtime, like
 //! `.aristo/sessions/`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,12 @@ pub struct NudgeState {
     pub edits_since_annotation: usize,
     /// The edit-window baseline, if captured.
     pub baseline: Option<Baseline>,
+    /// The set of authored-intent ids present when the current edit window
+    /// began (captured at SessionStart). Powers #7's new-vs-backlog split: an
+    /// unreviewed intent is "new this session" when its id is absent from this
+    /// set, else "backlog". `None` means no window was captured (no hooks /
+    /// fresh checkout) — the split is then suppressed rather than guessed.
+    pub window_intent_ids: Option<BTreeSet<String>>,
     /// annotation id → review record.
     pub reviewed: BTreeMap<String, ReviewRecord>,
     /// proof id → reviewed.
@@ -178,6 +184,7 @@ mod tests {
                 score: 0.42,
                 tier: "Adept".into(),
             }),
+            window_intent_ids: Some(BTreeSet::from(["aret_a".to_string(), "aret_b".to_string()])),
             ..Default::default()
         };
         s.mark_reviewed("aret_abc12345", "sha256:t", "sha256:b");

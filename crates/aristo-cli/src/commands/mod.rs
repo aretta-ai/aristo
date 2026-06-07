@@ -17,6 +17,7 @@ pub(crate) mod list;
 pub(crate) mod metrics;
 pub(crate) mod nudge;
 pub(crate) mod rename;
+pub(crate) mod review;
 pub(crate) mod session;
 pub(crate) mod show;
 pub(crate) mod stamp;

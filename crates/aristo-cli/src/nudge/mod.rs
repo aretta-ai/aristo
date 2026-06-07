@@ -20,6 +20,7 @@
 use aristo_core::config::Aggressiveness;
 use aristo_core::metrics::Metrics;
 
+pub mod intents;
 pub mod state;
 pub mod throttle;
 

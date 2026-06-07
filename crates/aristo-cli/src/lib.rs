@@ -199,6 +199,20 @@ enum Commands {
         event: Option<String>,
     },
 
+    /// Review newly-authored intents (#7). With no flags, lists what awaits
+    /// review (split into new-this-session vs backlog when a baseline exists).
+    /// `--mark <id>` records intents as reviewed once you've looked at them.
+    Review {
+        /// Mark these authored intents reviewed (repeatable; comma-lists OK).
+        /// The whole batch is validated before anything is written.
+        #[arg(long = "mark", value_name = "ID")]
+        mark: Vec<String>,
+        /// Emit the review snapshot (or mark result) as JSON instead of a
+        /// human summary.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Check annotation prose for quality issues (rule-based; no LLM).
     Lint {
         /// Read-only mode: exit non-zero on `error` findings (or
@@ -913,6 +927,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::Status => commands::status::run(),
         Commands::Metrics { json } => commands::metrics::run(json),
         Commands::Nudge { event } => commands::nudge::run(event),
+        Commands::Review { mark, json } => commands::review::run(json, mark),
         Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
         Commands::Verify {
             filters,

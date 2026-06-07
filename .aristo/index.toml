@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T18:53:57.231596Z"
+generated_at = "2026-06-07T19:37:39.27234Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -101,6 +101,17 @@ text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6eb
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
 site = "fn atomic_write (line 326)"
+covered_region = "function"
+
+[authored_intents_are_exactly_the_index_intents]
+kind = "intent"
+text = "Authored intents are exactly the `IndexEntry::Intent` entries — every one, including documentation-only `verify = false` intents (still claims the user authored and may want to review). Assumes are excluded: they state external invariants, not reviewable claims. This is the SAME set the engine's review_backlog metric counts, so `aristo review` and the nudge can never report a different backlog size for the same index."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:9f309a1f2c52c2ed0340f99fd5f5ff771ffe47630fcf4c22f341f46de767323e"
+body_hash = "sha256:e8d1e8e1b02bfe7053a038d2395ee2824624653e171f26f66cbe4e8260cc7e17"
+file = "crates/aristo-cli/src/nudge/intents.rs"
+site = "fn authored_intents (line 25)"
 covered_region = "function"
 
 [backlog_append_is_read_modify_write_via_atomic]
@@ -617,7 +628,7 @@ status = "unknown"
 text_hash = "sha256:522b7b87d9e82c64526676a2c889c4c85ec5cd9f664097d84418db5ef2fcf44d"
 body_hash = "sha256:5836f8fa2b7ec5d6a9f37f643b76eda2e951f90c421496ffe875f770cc6e756f"
 file = "crates/aristo-cli/src/nudge/state.rs"
-site = "impl NudgeState::is_reviewed (line 109)"
+site = "impl NudgeState::is_reviewed (line 115)"
 covered_region = "function"
 
 [nudge_scorer_off_silences_and_order_is_static_priority]
@@ -628,7 +639,7 @@ status = "unknown"
 text_hash = "sha256:49a4a01352c3db6721786fcfa60d048158f7989ffe859083c1a460494d778faa"
 body_hash = "sha256:dbc43ab2643c2401bf194517b3674f181326662a79971676a39eeba0d4157597"
 file = "crates/aristo-cli/src/nudge/mod.rs"
-site = "fn score (line 227)"
+site = "fn score (line 228)"
 covered_region = "function"
 
 [nudge_union_is_read_only_and_tolerant]
@@ -637,9 +648,9 @@ text = "The union function is read-only and tolerant: it never mutates the works
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:17427cceab6bab02b06161b728889eda24186d92dd43739f16b9d1802d71ebed"
-body_hash = "sha256:76dd420bf4ae25b8702ec4e2702fd8f923d2d7502ff933eb5b1a8b1bfe2d32b8"
+body_hash = "sha256:39a56812a96b7e6f06f91a89af81cfd931f94287273914f9ed088fda32b0581f"
 file = "crates/aristo-cli/src/commands/nudge.rs"
-site = "fn build_inputs (line 184)"
+site = "fn build_inputs (line 193)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
@@ -803,6 +814,28 @@ text_hash = "sha256:89b3688be7f8cfc39cc31503feabc7ecc3043351f5d22af073672c2bb5c8
 body_hash = "sha256:9fb80092b5a1510522e1bfa26f5991ee2e282186e5ec5ba6100392a3e5d39876"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
 site = "fn requeue (line 227)"
+covered_region = "function"
+
+[review_mark_validates_all_ids_before_writing]
+kind = "intent"
+text = "Marking validates EVERY requested id against the index before writing any review state: an unknown id (a typo, or an id that isn't an authored intent) marks nothing and errors. Partial marking on a bad batch would silently record some reviews and drop others, leaving the backlog disagreeing with what the user believes they reviewed."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:eab8b04c045da404119ce01ce1629d4b2fd25f1c188fdabd3e517ef063ebb442"
+body_hash = "sha256:2418cf7ea7bffbf6b0068430db350a8758e0810166895eaffd48f9522ea1712a"
+file = "crates/aristo-cli/src/commands/review.rs"
+site = "fn run_mark (line 67)"
+covered_region = "function"
+
+[review_new_vs_backlog_needs_a_baseline]
+kind = "intent"
+text = "New vs backlog is computed against the SessionStart edit-window baseline: an unreviewed intent is 'new' only when a baseline WAS captured and its id is absent from it (authored this session). With no baseline the split is suppressed (new_count = 0) rather than guessed — calling everything 'new' on a fresh checkout would misreport a long-standing backlog as this-session's work."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:1b7f1ceb706a487f4d943328c5566af04cbe753330a247505eaed4c35e91e3f0"
+body_hash = "sha256:cd1d109a548c30face26337cee6746fe02b8de911a7308c2b2e759ac9d32f32c"
+file = "crates/aristo-cli/src/commands/review.rs"
+site = "fn build_snapshot (line 166)"
 covered_region = "function"
 
 [rewrite_hashes_flag_is_migration_only_strict_default]

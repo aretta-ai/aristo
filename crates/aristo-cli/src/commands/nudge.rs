@@ -14,7 +14,6 @@
 use std::io::Read;
 
 use aristo_core::config::{Aggressiveness, ConfigFile};
-use aristo_core::index::IndexEntry;
 use aristo_core::metrics::Metrics;
 use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
 
@@ -148,6 +147,16 @@ fn emit_for_event(
                 score: inputs.metrics.visible_score,
                 tier: inputs.metrics.tier.label().to_string(),
             });
+            // Snapshot the authored-intent id-set so #7 can split the review
+            // backlog into new-this-session vs carried-over. Best-effort: if
+            // the index can't be read, leave the window uncaptured (the split
+            // is then suppressed, not guessed).
+            state.window_intent_ids = read_index(&ws.index_path()).ok().map(|idx| {
+                crate::nudge::intents::authored_intents(&idx)
+                    .into_iter()
+                    .map(|i| i.id)
+                    .collect()
+            });
             state.edits_since_annotation = 0;
             let _ = state.save(&state_path);
             if aggressiveness.is_off() {
@@ -211,23 +220,14 @@ pub(crate) fn build_inputs(
     let metrics = Metrics::from_index(&index, &fn_counts, config.verify.default_method);
 
     // Unreviewed authored intents: every index intent the reviewed map doesn't
-    // currently vouch for (absent, unmarked, or hash-drifted).
-    let intent_keys: Vec<(String, String, String)> = index
-        .entries
-        .iter()
-        .filter_map(|(id, entry)| match entry {
-            IndexEntry::Intent(e) => Some((
-                id.as_str().to_string(),
-                e.text_hash.as_str().to_string(),
-                e.body_hash.as_str().to_string(),
-            )),
-            IndexEntry::Assume(_) => None,
-        })
-        .collect();
+    // currently vouch for (absent, unmarked, or hash-drifted). The same
+    // `authored_intents` enumeration `aristo review` reads, so the engine and
+    // the review surface can never report a different backlog.
+    let intents = crate::nudge::intents::authored_intents(&index);
     let unreviewed_intents = state.unreviewed_count(
-        intent_keys
+        intents
             .iter()
-            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str())),
+            .map(|i| (i.id.as_str(), i.text_hash.as_str(), i.body_hash.as_str())),
     );
 
     let proofs_awaiting_review = count_proofs_awaiting(ws, state);
