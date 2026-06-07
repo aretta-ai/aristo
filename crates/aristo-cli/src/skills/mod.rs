@@ -101,7 +101,18 @@ const INTENT_SUGGESTIONS: Skill = Skill {
     content: include_str!("aristo-intent-suggestions.md"),
 };
 
-const BUNDLED: &[Skill] = &[AUTHORING, NEURAL_VERIFY, CRITIQUE, INTENT_SUGGESTIONS];
+const AUTHORED_REVIEW: Skill = Skill {
+    name: "aristo-authored-review",
+    content: include_str!("aristo-authored-review.md"),
+};
+
+const BUNDLED: &[Skill] = &[
+    AUTHORING,
+    NEURAL_VERIFY,
+    CRITIQUE,
+    INTENT_SUGGESTIONS,
+    AUTHORED_REVIEW,
+];
 
 #[cfg(test)]
 mod tests {
@@ -219,6 +230,70 @@ mod tests {
         assert!(
             body.contains("name: aristo-intent-suggestions"),
             "frontmatter must include the skill name"
+        );
+    }
+
+    #[test]
+    fn authored_review_skill_is_bundled() {
+        let s = find("aristo-authored-review")
+            .expect("aristo-authored-review must be bundled (Phase 18 #7)");
+        let body = s.resolved_content();
+        // Frontmatter sanity.
+        assert!(
+            body.starts_with("---"),
+            "skill must start with YAML frontmatter"
+        );
+        assert!(
+            body.contains("name: aristo-authored-review"),
+            "frontmatter must include the skill name"
+        );
+        // The two CLI surfaces this skill drives.
+        assert!(
+            body.contains("aristo review --json"),
+            "skill body must teach listing the backlog via `aristo review --json`"
+        );
+        assert!(
+            body.contains("aristo review --mark"),
+            "skill body must teach marking reviewed via `aristo review --mark`"
+        );
+        // D9: the two review paths.
+        assert!(
+            body.contains("Critique-first") && body.contains("Review now"),
+            "skill body must offer both the Critique-first and Review-now paths (D9)"
+        );
+        // Critique-first reuses the existing critique command + skill.
+        assert!(
+            body.contains("aristo critique --filter id="),
+            "Critique-first must kick `aristo critique --filter id=` over the new intents"
+        );
+        // D11 guard ordering: kick critique BEFORE opening a session.
+        assert!(
+            body.contains("BEFORE") && body.contains("Guard ordering"),
+            "skill body must encode the D11 guard ordering (kick critique before a session)"
+        );
+        // Layer-3 session-guard discipline (mirrors the other review skills).
+        assert!(
+            body.contains("aristo session active"),
+            "skill body's step 0 must check for an active review session (Layer 3)"
+        );
+        // Menu-driven, paginated.
+        assert!(
+            body.contains("AskUserQuestion"),
+            "skill body must drive the review via AskUserQuestion menus"
+        );
+        assert!(
+            body.contains("4 questions per page") || body.contains("4/page"),
+            "skill body must call out the ≤4-questions-per-page cap (paginate larger sets)"
+        );
+        // Subject-only rule (never reference the model).
+        assert!(
+            body.contains("Subject-only") || body.contains("subject-only"),
+            "skill body must encode the subject-only rule"
+        );
+        // Source edits funnel through stamp (no direct .aristo/ state writes).
+        assert!(
+            body.contains("aristo stamp"),
+            "skill body must funnel source edits through `aristo stamp`"
         );
     }
 
