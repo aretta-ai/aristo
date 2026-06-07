@@ -243,15 +243,21 @@ pub(crate) fn build_inputs(
     // Local-only sign-in check (env var / config files; never network).
     let signed_in = aristo_core::auth::resolve_full().is_ok();
 
+    // Canon matching is paid (#10): only read the local cache + suggestions
+    // queue when signed in, so the canon signal does no work and stays silent
+    // otherwise (no upsell spam). The reader is tolerant — errors yield 0.
+    let canon_pending = if signed_in {
+        crate::commands::canon::suggestions::pending_total(ws)
+    } else {
+        0
+    };
+
     Ok(EngineInputs {
         metrics,
         edits_since_annotation: state.edits_since_annotation,
         unreviewed_intents,
         proofs_awaiting_review,
-        // TODO(S0d follow-up): read pending canon matches + suggestions from
-        // the local `.aristo/canon-matches.toml` + suggestions queue. Until
-        // then the (signed-in-gated) canon signal stays silent.
-        canon_pending: 0,
+        canon_pending,
         prior_score,
         tier_increased,
         signed_in,
@@ -371,6 +377,12 @@ fn backlog_summary(inputs: &EngineInputs) -> String {
         parts.push(format!(
             "{} intent(s) await review",
             inputs.unreviewed_intents
+        ));
+    }
+    if inputs.canon_pending > 0 {
+        parts.push(format!(
+            "{} canon match(es)/suggestion(s) pending",
+            inputs.canon_pending
         ));
     }
     if inputs.metrics.unverified > 0 {

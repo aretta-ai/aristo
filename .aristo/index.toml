@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T19:37:39.27234Z"
+generated_at = "2026-06-07T19:53:07.500091Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -222,6 +222,17 @@ text_hash = "sha256:231001cb3b7f6d75fe746347c26fdb396c793ecc1fca2a72d1de808a97db
 body_hash = "sha256:8737e1f46bb364aa176f3711bef40e680ff511235c41ea3c0c6f46a31ccd5247"
 file = "crates/aristo-cli/src/commands/canon/runner.rs"
 site = "fn merge_response_into_cache (line 326)"
+covered_region = "function"
+
+[canon_pending_counts_open_matches_plus_unclaimed_suggestions]
+kind = "intent"
+text = "`canon_pending` (#10) counts the canon work awaiting the user's review: open primary matches in the cache PLUS unclaimed suggestion tasks in the queue. Claimed tasks are excluded — they're already in flight, not waiting. It is tolerant: any read error yields 0, because it feeds a nudge and a nudge must never fail a workflow on missing or malformed cache state."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:43f94d0f8c9f2b3306365e3904b8b9a8c3a880de3eefe080ca8051a10b0547ce"
+body_hash = "sha256:625904622666f4f2bbdab5c03358af336813fa0b704d18f8c2f39f3a35121afe"
+file = "crates/aristo-cli/src/commands/canon/suggestions.rs"
+site = "fn pending_total (line 491)"
 covered_region = "function"
 
 [clear_active_pointer_is_idempotent_and_load_bearing_for_exit]
@@ -648,7 +659,7 @@ text = "The union function is read-only and tolerant: it never mutates the works
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:17427cceab6bab02b06161b728889eda24186d92dd43739f16b9d1802d71ebed"
-body_hash = "sha256:39a56812a96b7e6f06f91a89af81cfd931f94287273914f9ed088fda32b0581f"
+body_hash = "sha256:6a698b2b96c9ce048bdf33b04e70670dda917d265b5c7ced6b7872ff712e0f89"
 file = "crates/aristo-cli/src/commands/nudge.rs"
 site = "fn build_inputs (line 193)"
 covered_region = "function"
