@@ -9,6 +9,10 @@
 mod commands;
 mod error;
 mod filter;
+/// The nudge/progress engine (Phase 18 #9). Public so the as-yet-unwired
+/// scorer is part of the lib API surface; the `aristo nudge` emitter (S0d)
+/// is its in-crate consumer.
+pub mod nudge;
 mod pipeline;
 mod preflight;
 mod session;
@@ -176,6 +180,24 @@ enum Commands {
 
     /// Project-level summary (tier, counts, freshness).
     Status,
+
+    /// Machine-readable project metrics (counts, unverified backlog, tier).
+    /// The same `Metrics` value the nudge engine computes internally.
+    Metrics {
+        /// Emit the metrics as a JSON object instead of a human summary.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// The nudge/progress engine. With no `--event`, prints what the engine
+    /// would surface right now (human introspection). With `--event`, runs as
+    /// a Claude Code hook emitter (`post-tool-use` / `stop` / `session-start`)
+    /// — always exits 0 so a nudge can never break the agent's workflow.
+    Nudge {
+        /// Hook event to serve (omit for the human readout).
+        #[arg(long)]
+        event: Option<String>,
+    },
 
     /// Check annotation prose for quality issues (rule-based; no LLM).
     Lint {
@@ -889,6 +911,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         } => commands::show::run(&selector, output_mode(json, toml_out)),
         Commands::List { filters, json } => commands::list::run(&filters, json),
         Commands::Status => commands::status::run(),
+        Commands::Metrics { json } => commands::metrics::run(json),
+        Commands::Nudge { event } => commands::nudge::run(event),
         Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
         Commands::Verify {
             filters,

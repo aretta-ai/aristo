@@ -62,6 +62,8 @@ pub struct ConfigFile {
     pub index: IndexConfig,
     #[serde(default)]
     pub canon: CanonConfig,
+    #[serde(default)]
+    pub nudges: NudgesConfig,
 }
 
 // ─── [verify] ──────────────────────────────────────────────────────────────
@@ -430,6 +432,67 @@ fn default_threshold_critique() -> f64 {
     0.65
 }
 
+// ─── [nudges] ─────────────────────────────────────────────────────────────
+
+/// `[nudges]` — the proactive nudge/progress engine (Phase 18). A single
+/// `aggressiveness` knob scales every nudge's fire threshold (and the
+/// human-prompt cooldown); `off` silences the engine entirely — the global
+/// opt-out, mirroring `[canon] enabled = false`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NudgesConfig {
+    /// How eagerly the engine surfaces nudges. Higher lowers every
+    /// signal's fire threshold and shortens the human cooldown; `off`
+    /// disables all nudges. Default `medium`.
+    #[serde(default)]
+    pub aggressiveness: Aggressiveness,
+}
+
+/// Nudge aggressiveness ladder. Maps to a numeric factor `f` the scorer
+/// multiplies into each signal's normalized pressure: a signal fires when
+/// `pressure * f >= 1`, so higher `f` fires sooner. `Off` yields `f = 0`,
+/// the structural global opt-out (nothing can fire).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Aggressiveness {
+    /// No nudges at all (global opt-out).
+    Off,
+    /// Quietest: only large backlogs / strong signals surface.
+    Low,
+    /// Balanced default.
+    #[default]
+    Medium,
+    /// Eager: surfaces sooner and re-arms faster.
+    High,
+}
+
+impl Aggressiveness {
+    #[aristo::intent(
+        "Off MUST map to factor 0.0 — it is the global opt-out, and the \
+         scorer's fire test is `pressure * factor >= 1`, so only an exact \
+         0.0 guarantees NOTHING ever fires regardless of how overdue a \
+         signal is. A non-zero `low` would let extreme pressure leak \
+         through a user who explicitly silenced nudges. The non-zero rungs \
+         are tunable defaults (D8); this table is the single place to \
+         retune global nudge sensitivity.",
+        verify = "neural",
+        id = "aggressiveness_off_is_hard_silence"
+    )]
+    pub fn factor(self) -> f64 {
+        match self {
+            Aggressiveness::Off => 0.0,
+            Aggressiveness::Low => 0.6,
+            Aggressiveness::Medium => 1.0,
+            Aggressiveness::High => 1.6,
+        }
+    }
+
+    /// True when nudges are entirely disabled (`aggressiveness = "off"`).
+    pub fn is_off(self) -> bool {
+        matches!(self, Aggressiveness::Off)
+    }
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────
 
 fn default_true() -> bool {
@@ -466,6 +529,7 @@ mod tests {
         assert!(config.canon.enabled);
         assert!((config.canon.threshold_stamp - 0.85).abs() < f64::EPSILON);
         assert!((config.canon.threshold_critique - 0.65).abs() < f64::EPSILON);
+        assert_eq!(config.nudges.aggressiveness, Aggressiveness::Medium);
     }
 
     #[test]

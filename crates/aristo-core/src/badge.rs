@@ -38,6 +38,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::index::{IdNamespace, IndexEntry, IndexFile, Status, VerifyLevel, VerifyMethod};
@@ -63,7 +64,7 @@ const ASCENDENT_CUTOFF: f64 = 0.65;
 /// Visible-only projects (free-tier or paid-but-not-yet-server-bound)
 /// saturate at [`Tier::Ascendent`] regardless of how high the
 /// numeric score climbs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Tier {
     /// Seeking the path; has annotations, minimal verification.

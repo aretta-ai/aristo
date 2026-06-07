@@ -56,6 +56,16 @@
         }
       ]
     },
+    "nudges": {
+      "default": {
+        "aggressiveness": "medium"
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/NudgesConfig"
+        }
+      ]
+    },
     "stamp": {
       "default": {
         "hash_crate_root": false,
@@ -93,6 +103,39 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "Aggressiveness": {
+      "description": "Nudge aggressiveness ladder. Maps to a numeric factor `f` the scorer multiplies into each signal's normalized pressure: a signal fires when `pressure * f >= 1`, so higher `f` fires sooner. `Off` yields `f = 0`, the structural global opt-out (nothing can fire).",
+      "oneOf": [
+        {
+          "description": "No nudges at all (global opt-out).",
+          "type": "string",
+          "enum": [
+            "off"
+          ]
+        },
+        {
+          "description": "Quietest: only large backlogs / strong signals surface.",
+          "type": "string",
+          "enum": [
+            "low"
+          ]
+        },
+        {
+          "description": "Balanced default.",
+          "type": "string",
+          "enum": [
+            "medium"
+          ]
+        },
+        {
+          "description": "Eager: surfaces sooner and re-arms faster.",
+          "type": "string",
+          "enum": [
+            "high"
+          ]
+        }
+      ]
+    },
     "CacheStrategy": {
       "oneOf": [
         {
@@ -287,6 +330,22 @@
           ],
           "format": "uint32",
           "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "NudgesConfig": {
+      "description": "`[nudges]` — the proactive nudge/progress engine (Phase 18). A single `aggressiveness` knob scales every nudge's fire threshold (and the human-prompt cooldown); `off` silences the engine entirely — the global opt-out, mirroring `[canon] enabled = false`.",
+      "type": "object",
+      "properties": {
+        "aggressiveness": {
+          "description": "How eagerly the engine surfaces nudges. Higher lowers every signal's fire threshold and shortens the human cooldown; `off` disables all nudges. Default `medium`.",
+          "default": "medium",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Aggressiveness"
+            }
+          ]
         }
       },
       "additionalProperties": false
