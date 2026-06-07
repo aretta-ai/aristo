@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T11:45:06.05003Z"
+generated_at = "2026-06-07T17:23:02.857143Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -584,7 +584,7 @@ status = "unknown"
 text_hash = "sha256:a0ac0dfb85cc50c166523567c4bfd7d2cc183ecc395958d41da9aa6e244a2528"
 body_hash = "sha256:0ad71651760b091640468ba31f1cea494e3dd98388b1617a7ebc7682da274e58"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn merge_status_from_prev (line 451)"
+site = "fn merge_status_from_prev (line 461)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
@@ -855,7 +855,7 @@ text = "When an annotation is removed from source, its `.aristo/proofs/ <id>.pro
 verify = "test"
 status = "unknown"
 text_hash = "sha256:f273e9c3f077b6655bbcc902eec137681122b44324cdda36b0c0f55575f5c04c"
-body_hash = "sha256:4b41922cfa85bcf54ed35c6a723613517a5975342a6dcbe5d8dac7d48f1741b7"
+body_hash = "sha256:fad71ce4786575225e2f1829f8fb923bba6fe736c839a4fd56ab8b76e43ed382"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn archive_orphan_proofs (line 196)"
 covered_region = "function"
@@ -879,7 +879,7 @@ status = "unknown"
 text_hash = "sha256:7aa1a43ab12db7def381e3477b17eb84c05886c6d216d522eea3acce5026d328"
 body_hash = "sha256:7a6d39b3607d76d95ed4c71ce177babbfd84a03b1bf9fb6cc935eb9f38bfd7e3"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn derive_bindings_from_cache (line 370)"
+site = "fn derive_bindings_from_cache (line 380)"
 covered_region = "function"
 
 [stamp_disposition_uses_atomic_write]
@@ -901,7 +901,7 @@ status = "unknown"
 text_hash = "sha256:e96146b0be6943cf68b8afb11f8e71010b1d292ee4480d879dcfaecbd69d9664"
 body_hash = "sha256:7a7bf34976b4c0747b6e39e5dc0260cdc7bfc0aa648375b9dc76a41f3f542b81"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn gc_archived_proofs (line 243)"
+site = "fn gc_archived_proofs (line 253)"
 covered_region = "function"
 
 [stamp_runs_canon_step_after_index_write]
@@ -923,7 +923,7 @@ status = "unknown"
 text_hash = "sha256:fcc13e212642853f58685fda05d0dd533c4d41919c6af9750d46836cdb4606ef"
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn warn_on_counterexamples (line 274)"
+site = "fn warn_on_counterexamples (line 284)"
 covered_region = "function"
 
 [status_canon_health_is_offline_only]

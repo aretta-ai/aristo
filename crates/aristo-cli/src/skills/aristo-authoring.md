@@ -77,7 +77,7 @@ Write intents as English sentences with the precision of a spec. Closer to POSIX
 
 **Why prose-spec, not formal logic:** the audience is everyday developers (and other agents), not formal-methods experts. A Coq-style formula alienates the reader. A direct English sentence stating the invariant is precise enough.
 
-**When "why" content is allowed:** only when the design choice itself IS the implicit invariant. "A low-entropy id silently committed would be worse than a failed run the user can retry" is load-bearing — it's the design judgment a refactor would reverse without realizing the implication. "So that lint reformatting doesn't invalidate stamps" is filler motivation; the rule itself is the spec.
+**When "why" content is allowed:** only when the design choice itself IS the implicit invariant. "Crashing loudly is better than limping on with a half-built config" is load-bearing — it's the design judgment a refactor would reverse without realizing the implication. "So that lint reformatting doesn't invalidate stamps" is filler motivation; the rule itself is the spec.
 
 ## Setting `verify`
 
@@ -250,29 +250,28 @@ Why: dropped "so that lint-induced reformatting…" (motivation), dropped the pa
 ❌ Before (`verify = "test"`, but no test can capture "panic is the right failure mode"):
 ```rust
 #[aristo::intent(
-    "generate_opaque_id always returns a parseable AnnotationId with the \
-     `aret_` prefix. The OS RNG (getrandom) is the source of entropy; if \
-     it fails (extremely rare — usually a misconfigured kernel), this \
-     function panics rather than returning a Result. The reasoning: a \
-     stamped id with weak entropy is worse than a crashed run.",
+    "load_defaults panics rather than returning a Result when the embedded \
+     default config fails to parse. That default is compiled into the \
+     binary, so a parse failure (extremely rare — usually a broken build) \
+     means the binary itself is corrupt. The reasoning: crashing loudly is \
+     better than limping on with a half-built config.",
     verify = "test",
-    id = "generate_opaque_id_always_parses"
+    id = "load_defaults_panics_on_corrupt_embedded_config"
 )]
 ```
 
 ✅ After (`verify = "neural"` — the load-bearing claim is the design choice):
 ```rust
 #[aristo::intent(
-    "Opaque ids carry enough entropy that collisions across a project are \
-     negligible. If the OS can't produce randomness, the stamp crashes; a \
-     low-entropy id silently committed would be worse than a failed run \
-     the user can retry.",
+    "The default config is compiled into the binary, so if it fails to \
+     parse the binary is corrupt; crashing loudly is better than limping \
+     on with a half-built config.",
     verify = "neural",
-    id = "generate_opaque_id_always_parses"
+    id = "load_defaults_panics_on_corrupt_embedded_config"
 )]
 ```
 
-Why: dropped "(extremely rare — usually a misconfigured kernel)" (commentary) and "The reasoning:" (meta-narrative). Kept the "would be worse than a failed run" judgment because that IS the invariant a refactor would reverse ("return Result for good error handling"). Shifted verify to `"neural"` because the claim is a design judgment, not a runtime property.
+Why: dropped "(extremely rare — usually a broken build)" (commentary) and "The reasoning:" (meta-narrative). Kept the "better than limping on" judgment because that IS the invariant a refactor would reverse ("return Result for good error handling"). Shifted verify to `"neural"` because the claim is a design judgment, not a runtime property.
 
 ### Name the refactor trap explicitly
 

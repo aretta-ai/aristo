@@ -218,14 +218,24 @@ fn archive_orphan_proofs(ws: &crate::Workspace, summary: &StampSummary) -> CliRe
         if !matches!(change.kind, NotableKind::Removed) {
             continue;
         }
-        let filename = format!("{}.proof", change.id.as_str().replace(':', "__"));
-        let from = proofs_dir.join(&filename);
+        let stem = change.id.as_str().replace(':', "__");
+        let from = proofs_dir.join(format!("{stem}.proof"));
         if from.is_file() {
             fs::create_dir_all(&archive_dir).map_err(|e| CliError::Other {
                 message: format!("creating proof archive {}: {e}", archive_dir.display()),
                 exit_code: 1,
             })?;
-            let to = archive_dir.join(&filename);
+            // Never clobber a previously-archived verdict for the same id (an
+            // id can be orphaned more than once — e.g. removed, re-added, and
+            // removed again). Uniquify with a counter, keeping the `.proof`
+            // extension so `--gc` still collects it. This upholds the ID-D5
+            // promise that archiving never loses a verdict.
+            let mut to = archive_dir.join(format!("{stem}.proof"));
+            let mut n = 1u32;
+            while to.exists() {
+                to = archive_dir.join(format!("{stem}.{n}.proof"));
+                n += 1;
+            }
             fs::rename(&from, &to).map_err(|e| CliError::Other {
                 message: format!("archiving orphan proof {}: {e}", from.display()),
                 exit_code: 1,
