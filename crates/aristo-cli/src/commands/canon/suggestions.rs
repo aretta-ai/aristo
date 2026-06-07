@@ -463,25 +463,19 @@ fn run_show(ws: &Workspace, objective: &str) -> CliResult<()> {
     Ok(())
 }
 
-fn run_counts(ws: &Workspace) -> CliResult<()> {
-    let cache_path = ws.canon_matches_path();
-    let cache = CanonMatchesFile::read(&cache_path).map_err(CliError::Io)?;
+/// The two "awaiting review" canon numbers: open primary matches in the cache,
+/// and unclaimed suggestion tasks in the queue. Shared by the `--counts`
+/// readout and the nudge engine's `canon_pending` signal so both agree on what
+/// "pending" means. Claimed tasks are excluded — they're already in flight.
+fn pending_raw(ws: &Workspace) -> CliResult<(usize, usize)> {
+    let cache = CanonMatchesFile::read(&ws.canon_matches_path()).map_err(CliError::Io)?;
+    let match_pending = cache
+        .entries
+        .values()
+        .flat_map(|e| &e.pending_matches)
+        .filter(|m| matches!(m.disposition, Disposition::Open))
+        .count();
 
-    // Matches: pending = open primary matches in the cache. We don't
-    // distinguish new-vs-carried here (no prior snapshot to diff
-    // against in the read-only path), so everything open is "pending"
-    // and "new" is 0 — Slice 3's session seeding does the new/carried
-    // split. Reported here for the menu's at-a-glance count.
-    let mut match_pending = 0usize;
-    for entry in cache.entries.values() {
-        for m in &entry.pending_matches {
-            if matches!(m.disposition, Disposition::Open) {
-                match_pending += 1;
-            }
-        }
-    }
-
-    let tasks = read_all_tasks(ws)?;
     let qdir = QueueDir::for_pipeline(ws, PIPELINE);
     let pending_in_queue = if qdir.pending_dir().is_dir() {
         std::fs::read_dir(qdir.pending_dir())?
@@ -491,6 +485,31 @@ fn run_counts(ws: &Workspace) -> CliResult<()> {
     } else {
         0
     };
+    Ok((match_pending, pending_in_queue))
+}
+
+#[aristo::intent(
+    "`canon_pending` (#10) counts the canon work awaiting the user's review: \
+     open primary matches in the cache PLUS unclaimed suggestion tasks in the \
+     queue. Claimed tasks are excluded — they're already in flight, not \
+     waiting. It is tolerant: any read error yields 0, because it feeds a \
+     nudge and a nudge must never fail a workflow on missing or malformed \
+     cache state.",
+    verify = "test",
+    id = "canon_pending_counts_open_matches_plus_unclaimed_suggestions"
+)]
+/// Total canon work awaiting review (open matches + unclaimed suggestion
+/// tasks), for the nudge engine's `canon_pending` signal. Tolerant: any read
+/// error yields 0.
+pub(crate) fn pending_total(ws: &Workspace) -> usize {
+    pending_raw(ws).map(|(m, q)| m + q).unwrap_or(0)
+}
+
+fn run_counts(ws: &Workspace) -> CliResult<()> {
+    // `pending_raw` gives open matches + unclaimed queue tasks; the menu count
+    // also reports the in-flight (claimed) tasks, which it derives here.
+    let (match_pending, pending_in_queue) = pending_raw(ws)?;
+    let tasks = read_all_tasks(ws)?;
     let claimed_in_queue = tasks.len().saturating_sub(pending_in_queue);
 
     let counts = Counts {
@@ -588,6 +607,92 @@ mod tests {
             out.push(toml::from_str::<SuggestionTask>(&raw).unwrap());
         }
         out
+    }
+
+    #[test]
+    fn pending_total_is_zero_for_a_fresh_workspace() {
+        // No cache, no queue → tolerant 0 (a nudge must never fail on this).
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace {
+            root: tmp.path().to_path_buf(),
+        };
+        assert_eq!(pending_total(&ws), 0);
+    }
+
+    #[test]
+    fn pending_total_counts_open_matches_and_unclaimed_tasks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace {
+            root: tmp.path().to_path_buf(),
+        };
+        std::fs::create_dir_all(ws.aristo_dir()).unwrap();
+        // One OPEN primary match in the cache.
+        std::fs::write(
+            ws.canon_matches_path(),
+            r#"
+[__meta__]
+schema_version = 1
+
+[foo]
+last_match_text_hash = "blake3:x"
+canon_fetched_at = "2026-06-15T09:14:22Z"
+
+[[foo.pending_matches]]
+canon_id = "x"
+version = "v0.1.0"
+canonical_text = "y"
+canon_version = "v0.2.0"
+confidence = 0.9
+prefix_tier = "aristos:"
+linked = "arta_x"
+disposition = "open"
+found_at = "2026-06-15T09:14:22Z"
+found_by = "aristo stamp"
+"#,
+        )
+        .unwrap();
+        // Two unclaimed suggestion tasks in the queue.
+        let qdir = QueueDir::for_pipeline(&ws, PIPELINE);
+        std::fs::create_dir_all(qdir.pending_dir()).unwrap();
+        std::fs::write(qdir.pending_dir().join("t1.toml"), "x").unwrap();
+        std::fs::write(qdir.pending_dir().join("t2.toml"), "x").unwrap();
+
+        assert_eq!(pending_total(&ws), 3, "1 open match + 2 unclaimed tasks");
+    }
+
+    #[test]
+    fn pending_total_excludes_non_open_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace {
+            root: tmp.path().to_path_buf(),
+        };
+        std::fs::create_dir_all(ws.aristo_dir()).unwrap();
+        // A skipped match does not count as pending review work.
+        std::fs::write(
+            ws.canon_matches_path(),
+            r#"
+[__meta__]
+schema_version = 1
+
+[foo]
+last_match_text_hash = "blake3:x"
+canon_fetched_at = "2026-06-15T09:14:22Z"
+
+[[foo.pending_matches]]
+canon_id = "x"
+version = "v0.1.0"
+canonical_text = "y"
+canon_version = "v0.2.0"
+confidence = 0.9
+prefix_tier = "aristos:"
+linked = "arta_x"
+disposition = "skipped"
+found_at = "2026-06-15T09:14:22Z"
+found_by = "aristo stamp"
+"#,
+        )
+        .unwrap();
+        assert_eq!(pending_total(&ws), 0);
     }
 
     #[test]
