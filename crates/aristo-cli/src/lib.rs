@@ -189,6 +189,10 @@ enum Commands {
         json: bool,
     },
 
+    /// Show what the nudge/progress engine would surface right now
+    /// (introspection; the hook-driven emitter lands next).
+    Nudge,
+
     /// Check annotation prose for quality issues (rule-based; no LLM).
     Lint {
         /// Read-only mode: exit non-zero on `error` findings (or
@@ -902,6 +906,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::List { filters, json } => commands::list::run(&filters, json),
         Commands::Status => commands::status::run(),
         Commands::Metrics { json } => commands::metrics::run(json),
+        Commands::Nudge => commands::nudge::run(),
         Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
         Commands::Verify {
             filters,
