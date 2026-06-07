@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T17:51:49.558495Z"
+generated_at = "2026-06-07T18:07:08.516654Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -608,6 +608,17 @@ body_hash = "sha256:55e8c8089b540862a6aab7a1d7f9616868abc15e718d6b5e7995e20be7c5
 file = "crates/aristo-core/src/metrics.rs"
 site = "impl Metrics (line 62)"
 covered_region = "impl_methods"
+
+[nudge_scorer_off_silences_and_order_is_static_priority]
+kind = "intent"
+text = "Two invariants the scorer must preserve. First, `aggressiveness = off` is an absolute silence: its factor is 0.0 and the fire test is `pressure * factor >= 1`, so no signal fires at any pressure — even an infinite one (a tier-up). Second, the surfaced order is the static SIGNALS priority order, NOT the pressures: a count-pressure and a fraction-pressure are incommensurable, so sorting by pressure would let a noisy low-priority signal jump the queue ahead of a review the user actually needs to see first."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:49a4a01352c3db6721786fcfa60d048158f7989ffe859083c1a460494d778faa"
+body_hash = "sha256:2b5dd192c5067f7e75b0e215bd9a5f0243187f89b39818b216d48d99885d8e62"
+file = "crates/aristo-cli/src/nudge/mod.rs"
+site = "fn score (line 218)"
+covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
 kind = "assume"

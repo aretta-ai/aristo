@@ -9,6 +9,10 @@
 mod commands;
 mod error;
 mod filter;
+/// The nudge/progress engine (Phase 18 #9). Public so the as-yet-unwired
+/// scorer is part of the lib API surface; the `aristo nudge` emitter (S0d)
+/// is its in-crate consumer.
+pub mod nudge;
 mod pipeline;
 mod preflight;
 mod session;
