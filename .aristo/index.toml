@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T17:23:02.857143Z"
+generated_at = "2026-06-07T17:34:51.057594Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -46,6 +46,17 @@ text_hash = "sha256:1033936bd224f14b75c286e4c8b2df9321719a0dfcd8de8ddf3d930d8a91
 body_hash = "sha256:9c756bf103f3f04ad0c2a049fc33cb586b5267b2fb3812ae4142d4331eafb564"
 file = "crates/aristo-cli/src/skills/install.rs"
 site = "fn agents_md_uninstall (line 206)"
+covered_region = "function"
+
+[aggressiveness_off_is_hard_silence]
+kind = "intent"
+text = "Off MUST map to factor 0.0 — it is the global opt-out, and the scorer's fire test is `pressure * factor >= 1`, so only an exact 0.0 guarantees NOTHING ever fires regardless of how overdue a signal is. A non-zero `low` would let extreme pressure leak through a user who explicitly silenced nudges. The non-zero rungs are tunable defaults (D8); this table is the single place to retune global nudge sensitivity."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:d5308f52c19b1bdbe2ad0c5ff247fd394ebd8a023ee16033a87c9762f345ab81"
+body_hash = "sha256:9e55ec61a23448589024b098299619a39b160be66699b59ea8e567f9d88723dc"
+file = "crates/aristo-core/src/config/mod.rs"
+site = "impl Aggressiveness::factor (line 472)"
 covered_region = "function"
 
 [apply_findings_filters_open_by_default]
