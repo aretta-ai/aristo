@@ -79,12 +79,18 @@ impl Signal {
     }
 }
 
-/// A signal that fired, with the pressure that fired it.
+/// A signal that fired, with the pressure that fired it and the raw
+/// `metric`/`base` (so the throttle can apply a material-increase re-arm
+/// against the same numbers).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fired {
     pub id: &'static str,
     pub audience: Audience,
     pub pressure: f64,
+    /// The raw pressure numerator `m` (`pressure == metric / base`).
+    pub metric: f64,
+    /// The signal's pressure denominator `b`.
+    pub base: f64,
 }
 
 /// The registry. Order IS priority for the human surface: the congrats
@@ -234,12 +240,15 @@ pub fn score(inputs: &EngineInputs, aggressiveness: Aggressiveness) -> Decision 
     let factor = aggressiveness.factor();
     let mut decision = Decision::default();
     for signal in SIGNALS {
-        let pressure = signal.pressure(inputs);
+        let metric = (signal.metric)(inputs);
+        let pressure = metric / signal.base;
         if pressure * factor >= 1.0 {
             let fired = Fired {
                 id: signal.id,
                 audience: signal.audience,
                 pressure,
+                metric,
+                base: signal.base,
             };
             match signal.audience {
                 Audience::Human => decision.human.push(fired),

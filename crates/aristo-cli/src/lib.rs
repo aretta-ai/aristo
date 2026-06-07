@@ -189,9 +189,15 @@ enum Commands {
         json: bool,
     },
 
-    /// Show what the nudge/progress engine would surface right now
-    /// (introspection; the hook-driven emitter lands next).
-    Nudge,
+    /// The nudge/progress engine. With no `--event`, prints what the engine
+    /// would surface right now (human introspection). With `--event`, runs as
+    /// a Claude Code hook emitter (`post-tool-use` / `stop` / `session-start`)
+    /// — always exits 0 so a nudge can never break the agent's workflow.
+    Nudge {
+        /// Hook event to serve (omit for the human readout).
+        #[arg(long)]
+        event: Option<String>,
+    },
 
     /// Check annotation prose for quality issues (rule-based; no LLM).
     Lint {
@@ -906,7 +912,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::List { filters, json } => commands::list::run(&filters, json),
         Commands::Status => commands::status::run(),
         Commands::Metrics { json } => commands::metrics::run(json),
-        Commands::Nudge => commands::nudge::run(),
+        Commands::Nudge { event } => commands::nudge::run(event),
         Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
         Commands::Verify {
             filters,

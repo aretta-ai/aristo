@@ -1,7 +1,9 @@
-//! `aristo nudge` — the nudge/progress engine's union function + (S0d) the
-//! introspection readout. The hook-driven emitter (`--event`) and throttle
-//! land in the next slice; this one wires the engine end-to-end and lets a
-//! human (or the #12 status skill) see what the engine *would* surface.
+//! `aristo nudge` — the nudge/progress engine's union function + surfaces
+//! (Phase 18 #9, S0d). With no `--event` it prints what the engine would
+//! surface (human introspection); with `--event <post-tool-use|stop|
+//! session-start>` it runs as a Claude Code hook emitter and ALWAYS exits 0
+//! (a nudge must never break the agent). The hook install + the live spike
+//! that validates the Stop-hook contract land in S0d.3.
 //!
 //! The union function [`build_inputs`] is the COMPUTE join the scorer reads:
 //! the index-derived [`Metrics`] plus the runtime facts only the cli can see
@@ -9,26 +11,174 @@
 //! read-only and never fails the caller on missing pieces — a nudge surface
 //! must degrade quietly, never break a workflow.
 
-use aristo_core::config::ConfigFile;
+use std::io::Read;
+
+use aristo_core::config::{Aggressiveness, ConfigFile};
 use aristo_core::index::IndexEntry;
 use aristo_core::metrics::Metrics;
 use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
 
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::read_index;
-use crate::nudge::state::{NudgeState, STATE_FILENAME};
-use crate::nudge::{score, Audience, EngineInputs};
+use crate::nudge::state::{Baseline, NudgeState, STATE_FILENAME};
+use crate::nudge::{score, throttle, Audience, Decision, EngineInputs};
 use crate::{CliError, CliResult, Workspace};
 
-pub(crate) fn run() -> CliResult<()> {
+/// Which Claude Code hook event this invocation is serving (or `None` for the
+/// human introspection readout).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HookEvent {
+    PostToolUse,
+    Stop,
+    SessionStart,
+}
+
+fn parse_event(raw: &str) -> Option<HookEvent> {
+    match raw {
+        "post-tool-use" | "PostToolUse" => Some(HookEvent::PostToolUse),
+        "stop" | "Stop" => Some(HookEvent::Stop),
+        "session-start" | "SessionStart" => Some(HookEvent::SessionStart),
+        _ => None,
+    }
+}
+
+pub(crate) fn run(event: Option<String>) -> CliResult<()> {
     let ws = workspace_or_error()?;
     let config = ws.load_config();
-    let state = NudgeState::load(&ws.aristo_dir().join(STATE_FILENAME));
-    let inputs = build_inputs(&ws, &config, &state)?;
     let aggressiveness = config.nudges.aggressiveness;
-    let decision = score(&inputs, aggressiveness);
-    print_readout(&inputs, aggressiveness, &decision);
+
+    // No --event → human introspection readout (the only mode that prints to
+    // a human and may surface an error).
+    let Some(raw) = event else {
+        let state = NudgeState::load(&ws.aristo_dir().join(STATE_FILENAME));
+        let inputs = build_inputs(&ws, &config, &state)?;
+        let decision = score(&inputs, aggressiveness);
+        print_readout(&inputs, aggressiveness, &decision);
+        return Ok(());
+    };
+
+    // Hook mode: a nudge hook must NEVER break the agent. Swallow every error
+    // and exit 0 — the worst case is "no nudge this turn".
+    let _ = emit_for_event(&ws, &config, aggressiveness, &raw);
     Ok(())
+}
+
+fn emit_for_event(
+    ws: &Workspace,
+    config: &ConfigFile,
+    aggressiveness: Aggressiveness,
+    raw_event: &str,
+) -> CliResult<()> {
+    let Some(event) = parse_event(raw_event) else {
+        return Ok(()); // unknown event → silent
+    };
+    let state_path = ws.aristo_dir().join(STATE_FILENAME);
+    let mut state = NudgeState::load(&state_path);
+    let now = now_epoch();
+
+    match event {
+        HookEvent::PostToolUse => {
+            // Count edit-like tool calls toward the authoring-debt signal.
+            if stdin_tool_is_edit() {
+                state.edits_since_annotation = state.edits_since_annotation.saturating_add(1);
+                let _ = state.save(&state_path);
+            }
+            if aggressiveness.is_off() {
+                return Ok(());
+            }
+            let inputs = build_inputs(ws, config, &state)?;
+            let decision = score(&inputs, aggressiveness);
+            // Agent surface (authoring_debt). Throttle it too so it doesn't
+            // nag on every edit once over threshold.
+            if let Some(f) = decision.agent.iter().find(|f| f.id == "authoring_debt") {
+                if throttle::may_surface(
+                    state.throttle.get(f.id),
+                    now,
+                    aggressiveness,
+                    f.metric,
+                    f.base,
+                ) {
+                    emit_agent_reminder(inputs.edits_since_annotation);
+                    state.throttle.insert(
+                        f.id.to_string(),
+                        throttle::record_after_surface(now, f.metric),
+                    );
+                    let _ = state.save(&state_path);
+                }
+            }
+        }
+        HookEvent::Stop => {
+            if aggressiveness.is_off() {
+                return Ok(());
+            }
+            let inputs = build_inputs(ws, config, &state)?;
+            let decision = score(&inputs, aggressiveness);
+            // Consolidated human nudge: surface if ANY fired human signal
+            // clears its throttle. Update records for the ones that did.
+            let cleared: Vec<crate::nudge::Fired> = decision
+                .human
+                .iter()
+                .filter(|f| {
+                    throttle::may_surface(
+                        state.throttle.get(f.id),
+                        now,
+                        aggressiveness,
+                        f.metric,
+                        f.base,
+                    )
+                })
+                .cloned()
+                .collect();
+            if !cleared.is_empty() {
+                emit_stop_reminder(&decision, &inputs);
+                for f in &cleared {
+                    state.throttle.insert(
+                        f.id.to_string(),
+                        throttle::record_after_surface(now, f.metric),
+                    );
+                }
+                let _ = state.save(&state_path);
+            }
+        }
+        HookEvent::SessionStart => {
+            // Capture the edit-window baseline + reset the edit counter, then
+            // re-surface any standing backlog as additionalContext.
+            let inputs = build_inputs(ws, config, &state)?;
+            state.baseline = Some(Baseline {
+                score: inputs.metrics.visible_score,
+                tier: inputs.metrics.tier.label().to_string(),
+            });
+            state.edits_since_annotation = 0;
+            let _ = state.save(&state_path);
+            if aggressiveness.is_off() {
+                return Ok(());
+            }
+            let decision = score(&inputs, aggressiveness);
+            if !decision.human.is_empty() {
+                emit_session_start_context(&decision, &inputs);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn now_epoch() -> u64 {
+    time::OffsetDateTime::now_utc().unix_timestamp().max(0) as u64
+}
+
+/// Read the PostToolUse hook payload from stdin and decide whether the tool
+/// was an edit-like (source-mutating) call. Tolerant: any parse failure or
+/// absent stdin counts as "not an edit" (don't bump on uncertainty).
+fn stdin_tool_is_edit() -> bool {
+    let mut buf = String::new();
+    if std::io::stdin().read_to_string(&mut buf).is_err() || buf.trim().is_empty() {
+        return false;
+    }
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&buf) else {
+        return false;
+    };
+    let tool = json.get("tool_name").and_then(|v| v.as_str()).unwrap_or("");
+    matches!(tool, "Edit" | "Write" | "MultiEdit" | "NotebookEdit")
 }
 
 #[aristo::intent(
@@ -161,5 +311,102 @@ fn print_readout(
     for fired in &decision.agent {
         let _ = Audience::Agent; // audiences are surfaced on different channels
         println!("  · [agent] {} (pressure {:.2})", fired.id, fired.pressure);
+    }
+}
+
+// ─── hook emit (D10: the CLI nudges the AGENT; the agent talks to the human) ──
+
+/// PostToolUse agent reminder: prod the coding agent to capture intent.
+fn emit_agent_reminder(edits: usize) {
+    println!("<system-reminder>");
+    println!(
+        "Aristo: {edits} source edits since your last annotation. If any of \
+         them embodied a non-obvious decision (a chosen invariant, a \
+         refactor trap, an intentional-not-incomplete choice), capture it now \
+         with an `aristo::intent` while the rationale is fresh — see the \
+         aristo-authoring skill. Skip if the edits were purely mechanical."
+    );
+    println!("</system-reminder>");
+}
+
+/// Stop consolidated nudge: a hook can't pop an AskUserQuestion (D10), so it
+/// nudges the AGENT to offer the user the recommended review at a natural
+/// pause. Subject-only — about the user's own annotations/verification.
+fn emit_stop_reminder(decision: &Decision, inputs: &EngineInputs) {
+    println!("<system-reminder>");
+    println!("Aristo progress nudge — {}.", backlog_summary(inputs));
+    if let Some(rec) = decision.recommended() {
+        println!(
+            "At a natural pause, offer the user: {}. Don't interrupt mid-task.",
+            recommended_phrase(rec)
+        );
+    }
+    println!("</system-reminder>");
+}
+
+/// SessionStart additionalContext: re-surface standing backlog so the agent
+/// can offer a review early in the session. Same JSON shape the skills hook
+/// uses.
+fn emit_session_start_context(decision: &Decision, inputs: &EngineInputs) {
+    let mut context = format!("Aristo: {}.", backlog_summary(inputs));
+    if let Some(rec) = decision.recommended() {
+        context.push_str(&format!(
+            " When the user reaches a natural pause, offer: {}.",
+            recommended_phrase(rec)
+        ));
+    }
+    let json = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": context,
+        }
+    });
+    println!("{json}");
+}
+
+/// A subject-only one-line summary of the standing backlog.
+fn backlog_summary(inputs: &EngineInputs) -> String {
+    let mut parts = Vec::new();
+    if inputs.unreviewed_intents > 0 {
+        parts.push(format!(
+            "{} intent(s) await review",
+            inputs.unreviewed_intents
+        ));
+    }
+    if inputs.metrics.unverified > 0 {
+        parts.push(format!(
+            "{} of {} intents unverified",
+            inputs.metrics.unverified, inputs.metrics.verifiable
+        ));
+    }
+    if inputs.proofs_awaiting_review > 0 {
+        parts.push(format!(
+            "{} proof(s) await review",
+            inputs.proofs_awaiting_review
+        ));
+    }
+    if parts.is_empty() {
+        format!(
+            "tier {} (score {:.2})",
+            inputs.metrics.tier.label(),
+            inputs.metrics.visible_score
+        )
+    } else {
+        parts.join(" · ")
+    }
+}
+
+/// Map a signal id to the low-friction action the agent should offer.
+fn recommended_phrase(signal_id: &str) -> &'static str {
+    match signal_id {
+        "congrats" => "a quick note on the progress just made (tier/score went up)",
+        "review_backlog" => {
+            "an intent review — Critique-first runs in the background while you continue"
+        }
+        "canon_pending" => "a look at the pending canon matches (aristo-intent-suggestions)",
+        "verify_backlog" => "running `aristo verify` (can run in the background)",
+        "proof_review_backlog" => "a review of the freshly-verified proofs",
+        "score_slump" => "shoring up coverage — annotate or verify to recover the score",
+        _ => "a review of the outstanding aristo items",
     }
 }
