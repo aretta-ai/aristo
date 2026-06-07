@@ -52,8 +52,8 @@ ok: 0 lint findings.
 $ aristo verify --check --strict
 ok: 0 annotations verified, 0 skipped (documentation-only).
 → 2 entries pending neural verification — enqueued under .aristo/verify-queue/pending/.
-  In Claude Code (or another agent with the aristo-neural-verify skill installed), run:
-    /aristo-neural-verify
+  In Claude Code (or another agent with the aristo-verify skill installed), run:
+    /aristo-verify
   to produce verdicts for each pending entry. The skill writes .aristo/proofs/<id>.proof
   files; run `aristo verify --apply-verdicts` to validate and apply them to the index.
 

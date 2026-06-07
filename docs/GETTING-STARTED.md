@@ -16,7 +16,7 @@ are in the [glossary](./GLOSSARY.md).
 - **Your agent verifies them — and brings the results back.** It
   checks each claim against the code, then surfaces every verdict for
   you to accept or refuse. Nothing it concludes lands until you say
-  so. (The `aristo-neural-verify` and `aristo-critique` skills.)
+  so. (The `aristo-verify` and `aristo-critique` skills.)
 - **The git hook keeps the index honest.** Every commit re-hashes
   each function body and flags any claim whose code has drifted. You
   never run `aristo stamp` by hand.
@@ -85,7 +85,7 @@ The claim is recorded but not yet verified. Your agent verifies it —
 in Claude Code:
 
 ```
-/aristo-neural-verify
+/aristo-verify
 ```
 
 The skill reads each pending claim against its function and produces
@@ -119,7 +119,7 @@ longer does what its claim says. The next commit's stamp catches it:
 
 The verification no longer applies to this code, so the claim is
 flagged **stale** — loudly, before it ships. Your agent re-runs
-`/aristo-neural-verify` on the stale entry. This time the critic
+`/aristo-verify` on the stale entry. This time the critic
 reads the new body against "returns a value within [lo, hi]" and
 finds it false:
 
