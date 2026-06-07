@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T17:34:51.057594Z"
+generated_at = "2026-06-07T17:51:49.558495Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -56,7 +56,7 @@ status = "unknown"
 text_hash = "sha256:d5308f52c19b1bdbe2ad0c5ff247fd394ebd8a023ee16033a87c9762f345ab81"
 body_hash = "sha256:9e55ec61a23448589024b098299619a39b160be66699b59ea8e567f9d88723dc"
 file = "crates/aristo-core/src/config/mod.rs"
-site = "impl Aggressiveness::factor (line 472)"
+site = "impl Aggressiveness::factor (line 470)"
 covered_region = "function"
 
 [apply_findings_filters_open_by_default]
@@ -142,7 +142,7 @@ text = "`verification-rate` counts only intents (not assumes — assumes are ext
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:d9acd5595fafabd8927cfbe243159010c610e72f84590d787f70163b4f6e5069"
-body_hash = "sha256:12c760ffa255c45f18973ecf9cbd3a62f69a883521dcf4126fc2fd7255d9c040"
+body_hash = "sha256:f27e81adecb0639c63aa72742e8b8fb754c03f4262deb0aaffc21b4651a2ab41"
 file = "crates/aristo-cli/src/commands/badge.rs"
 site = "fn is_verified_state (line 220)"
 covered_region = "function"
@@ -598,6 +598,17 @@ file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn merge_status_from_prev (line 461)"
 covered_region = "function"
 
+[metrics_verifiable_excludes_assumes_and_doc_only_intents]
+kind = "intent"
+text = "The verifiable surface is intents with `verify != false` only — assumes are external invariants and never verified, and `verify = false` intents are documentation-only. `verified_clean` counts the verifiable intents in a terminal-clean status (the shared `Status::is_terminal_clean`), and `unverified` is exactly `verifiable - verified_clean`, so the three never disagree. The rate divides by `verifiable` (not by all intents), and is 0 when nothing is verifiable rather than a divide-by-zero."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:52b7fb9aaa1cdd9cf95be8e83b8af298a6746a8497f2d2119043f290b9b53b45"
+body_hash = "sha256:55e8c8089b540862a6aab7a1d7f9616868abc15e718d6b5e7995e20be7c5679a"
+file = "crates/aristo-core/src/metrics.rs"
+site = "impl Metrics (line 62)"
+covered_region = "impl_methods"
+
 [pending_and_claimed_share_parent_filesystem]
 kind = "assume"
 text = "The pending/ and claimed/ subdirectories share the same parent (the queue root under `.aristo/<pipeline>-queue/`), so cross-filesystem rename (EXDEV) is structurally impossible. A refactor that moved claimed/ to a different filesystem (e.g., tmpfs) would break the atomic claim by silently changing rename(2) semantics to copy+delete."
@@ -947,6 +958,17 @@ body_hash = "sha256:fc20c6867c9bd0ce7685f43a2af1f49fa1a59c9fc34863f9715a18f6a311
 file = "crates/aristo-cli/src/commands/status.rs"
 site = "fn print_canon_health (line 145)"
 covered_region = "function"
+
+[status_terminal_clean_is_verified_tested_neural]
+kind = "intent"
+text = "The terminal-clean states are exactly Verified, Tested, and Neural — an intent whose current code IS confirmed to hold under some verification method. Stale, Counterexample, Inconclusive, Unknown, and the B5b error states (Orphan / Forged / PendingDeepen) are NOT clean: each means the property is unproven, refuted, or untrusted for the current code. This is the single definition every surface — status counts, the badge rate, and the nudge engine's unverified backlog — shares, so they can never disagree on what 'verified' means."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:6a553ed4f85fd1a06c81879fbdea45f6149b5dd16269a458c52dedf0ce4b8394"
+body_hash = "sha256:314c776644f33a5e306ba65b4ec889557c417d54c937d31cabbf2543a3efaf9d"
+file = "crates/aristo-core/src/index/enums.rs"
+site = "impl Status (line 59)"
+covered_region = "impl_methods"
 
 [status_tier_call_matches_badge_command_call]
 kind = "intent"

@@ -177,6 +177,14 @@ enum Commands {
     /// Project-level summary (tier, counts, freshness).
     Status,
 
+    /// Machine-readable project metrics (counts, unverified backlog, tier).
+    /// The same `Metrics` value the nudge engine computes internally.
+    Metrics {
+        /// Emit the metrics as a JSON object instead of a human summary.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Check annotation prose for quality issues (rule-based; no LLM).
     Lint {
         /// Read-only mode: exit non-zero on `error` findings (or
@@ -889,6 +897,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         } => commands::show::run(&selector, output_mode(json, toml_out)),
         Commands::List { filters, json } => commands::list::run(&filters, json),
         Commands::Status => commands::status::run(),
+        Commands::Metrics { json } => commands::metrics::run(json),
         Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
         Commands::Verify {
             filters,

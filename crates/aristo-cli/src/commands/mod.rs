@@ -14,6 +14,7 @@ pub(crate) mod install_skills_hook;
 pub(crate) mod lang;
 pub(crate) mod lint;
 pub(crate) mod list;
+pub(crate) mod metrics;
 pub(crate) mod rename;
 pub(crate) mod session;
 pub(crate) mod show;

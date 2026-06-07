@@ -26,6 +26,7 @@ pub mod git;
 pub mod hash;
 pub mod id;
 pub mod index;
+pub mod metrics;
 pub mod proof;
 pub mod spec;
 pub mod update_check;

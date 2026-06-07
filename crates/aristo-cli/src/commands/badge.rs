@@ -229,7 +229,9 @@ impl Counters {
     id = "badge_verification_rate_counts_only_terminal_clean_intents"
 )]
 fn is_verified_state(status: Status) -> bool {
-    matches!(status, Status::Verified | Status::Tested | Status::Neural)
+    // Delegates to the single shared definition (A2) so the badge rate, the
+    // status counts, and the nudge engine can never disagree on "verified".
+    status.is_terminal_clean()
 }
 
 // ─── SVG rendering ────────────────────────────────────────────────────
@@ -491,6 +493,59 @@ mod tests {
         ]);
         let c = Counters::from(&index);
         assert_eq!(c.verification_rate_pct, 50);
+    }
+
+    #[test]
+    fn metrics_and_badge_agree_on_verified_clean_count() {
+        // A2 anti-drift: the badge's verification_rate_pct and the nudge
+        // engine's Metrics derive their "verified" numerator from ONE shared
+        // definition (Status::is_terminal_clean). This pins the two surfaces
+        // together so a future change to one can't silently diverge.
+        use aristo_core::metrics::Metrics;
+        let index = make_index(vec![
+            (
+                "a",
+                intent(
+                    VerifyLevel::Method(VerifyMethod::Neural),
+                    Status::Neural,
+                    false,
+                ),
+            ), // clean
+            (
+                "b",
+                intent(
+                    VerifyLevel::Method(VerifyMethod::Test),
+                    Status::Stale,
+                    false,
+                ),
+            ), // not clean
+            (
+                "c",
+                intent(
+                    VerifyLevel::Method(VerifyMethod::Full),
+                    Status::Verified,
+                    false,
+                ),
+            ), // clean
+            (
+                "d",
+                intent(VerifyLevel::Bool(false), Status::Unknown, false),
+            ), // doc-only
+            ("e", assume()), // assume
+        ]);
+        let counters = Counters::from(&index);
+        let metrics = Metrics::from_index(&index, &BTreeMap::new(), None);
+
+        assert_eq!(metrics.intents, 4, "4 intents (assume excluded)");
+        assert_eq!(metrics.verified_clean, 2, "a + c are terminal-clean");
+        // The badge's published rate (verified-clean / all-intents) must be
+        // reproducible from the same shared count the engine reports.
+        let expected_pct =
+            ((metrics.verified_clean as f64 / metrics.intents as f64) * 100.0).round() as u32;
+        assert_eq!(
+            counters.verification_rate_pct, expected_pct,
+            "badge rate must derive from the same verified-clean count the engine sees"
+        );
     }
 
     // ─── rendering via badge-maker (shields-parity output) ───────────
