@@ -36,6 +36,13 @@
 # structurally impossible.
 .aristo/sessions/
 
+# Nudge/progress engine state (Phase 18 #9): the reviewed map, edit-window
+# baseline, edit counter, and per-signal throttle. Per-user runtime — like
+# `.aristo/sessions/`, the *effects* of reviews reach git via normal commits;
+# this file is a personal audit trail. (Consumer-repo gitignore wiring is
+# deferred to #9 / audit A3; hand-maintained here for dogfooding.)
+.aristo/nudge-state.toml
+
 # Per-pipeline queue state — pending tasks, claimed-in-flight entries,
 # and the workers' atomic-rename machinery. Runtime only; a fresh clone
 # computes its own queue on the next `aristo verify` / `aristo critique`.

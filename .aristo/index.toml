@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T18:07:08.516654Z"
+generated_at = "2026-06-07T18:10:15.04238Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -609,6 +609,17 @@ file = "crates/aristo-core/src/metrics.rs"
 site = "impl Metrics (line 62)"
 covered_region = "impl_methods"
 
+[nudge_review_is_current_only_until_hash_drift]
+kind = "intent"
+text = "A review is current only while the annotation's text AND body hashes still match the snapshot taken when it was reviewed. Editing the claim or the covered code after review re-opens it (reads as unreviewed) — a reviewer approved a specific version, not the id forever. Without the hash check, a post-review edit would keep a stale 'reviewed' badge and the review backlog would under-count work that genuinely needs another look."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:522b7b87d9e82c64526676a2c889c4c85ec5cd9f664097d84418db5ef2fcf44d"
+body_hash = "sha256:5836f8fa2b7ec5d6a9f37f643b76eda2e951f90c421496ffe875f770cc6e756f"
+file = "crates/aristo-cli/src/nudge/state.rs"
+site = "impl NudgeState::is_reviewed (line 109)"
+covered_region = "function"
+
 [nudge_scorer_off_silences_and_order_is_static_priority]
 kind = "intent"
 text = "Two invariants the scorer must preserve. First, `aggressiveness = off` is an absolute silence: its factor is 0.0 and the fire test is `pressure * factor >= 1`, so no signal fires at any pressure — even an infinite one (a tier-up). Second, the surfaced order is the static SIGNALS priority order, NOT the pressures: a count-pressure and a fraction-pressure are incommensurable, so sorting by pressure would let a noisy low-priority signal jump the queue ahead of a review the user actually needs to see first."
@@ -617,7 +628,7 @@ status = "unknown"
 text_hash = "sha256:49a4a01352c3db6721786fcfa60d048158f7989ffe859083c1a460494d778faa"
 body_hash = "sha256:2b5dd192c5067f7e75b0e215bd9a5f0243187f89b39818b216d48d99885d8e62"
 file = "crates/aristo-cli/src/nudge/mod.rs"
-site = "fn score (line 218)"
+site = "fn score (line 220)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]

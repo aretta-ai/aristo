@@ -20,6 +20,8 @@
 use aristo_core::config::Aggressiveness;
 use aristo_core::metrics::Metrics;
 
+pub mod state;
+
 /// Who a fired signal is addressed to. The two are surfaced through
 /// different channels (D4/D10): the agent gets an inline `<system-reminder>`;
 /// the human gets the consolidated review prompt the agent pops.
