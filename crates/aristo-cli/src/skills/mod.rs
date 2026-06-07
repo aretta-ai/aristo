@@ -106,12 +106,24 @@ const AUTHORED_REVIEW: Skill = Skill {
     content: include_str!("aristo-authored-review.md"),
 };
 
+const STATUS: Skill = Skill {
+    name: "aristo-status",
+    content: include_str!("aristo-status.md"),
+};
+
+const HELP: Skill = Skill {
+    name: "aristo-help",
+    content: include_str!("aristo-help.md"),
+};
+
 const BUNDLED: &[Skill] = &[
     AUTHORING,
     VERIFY,
     CRITIQUE,
     INTENT_SUGGESTIONS,
     AUTHORED_REVIEW,
+    STATUS,
+    HELP,
 ];
 
 #[cfg(test)]
@@ -516,6 +528,73 @@ mod tests {
             body.contains("aristo session exit --defer-undecided"),
             "skill body must offer defer-undecided as the early-stop path \
              so un-decided proofs go to backlog, not silently dropped"
+        );
+    }
+
+    #[test]
+    fn help_skill_is_bundled_and_covers_the_whole_suite() {
+        let s = find("aristo-help").expect("aristo-help must be bundled (Phase 18 #11)");
+        let body = s.resolved_content();
+        assert!(body.starts_with("---"), "skill must start with frontmatter");
+        assert!(
+            body.contains("name: aristo-help"),
+            "frontmatter must carry the skill name"
+        );
+        // Anti-drift: aristo-help must name EVERY bundled skill, so adding a
+        // skill without documenting it here fails this test (forces the sync).
+        for skill in bundled() {
+            assert!(
+                body.contains(skill.name),
+                "aristo-help must mention `{}` — a bundled skill is undocumented in the suite overview",
+                skill.name
+            );
+        }
+        // It must teach scenario flows, not just a skill list.
+        assert!(
+            body.contains("scenario flows") || body.contains("Example scenario"),
+            "aristo-help must give example end-to-end scenario flows"
+        );
+        assert!(
+            body.contains("fix-or-waive") || body.contains("fix or waive"),
+            "aristo-help must cover the failure → fix-or-waive flow"
+        );
+    }
+
+    #[test]
+    fn status_skill_is_bundled() {
+        let s = find("aristo-status").expect("aristo-status must be bundled (Phase 18 #12)");
+        let body = s.resolved_content();
+        assert!(body.starts_with("---"), "skill must start with frontmatter");
+        assert!(
+            body.contains("name: aristo-status"),
+            "frontmatter must carry the skill name"
+        );
+        // Reads the real reporting commands (one source of truth; no recompute).
+        assert!(
+            body.contains("aristo metrics --json"),
+            "skill must read metrics via `aristo metrics --json`"
+        );
+        assert!(
+            body.contains("aristo status"),
+            "skill must read the full breakdown via `aristo status`"
+        );
+        assert!(
+            body.contains("aristo review --json"),
+            "skill must surface the review backlog via `aristo review --json`"
+        );
+        // Next-action recommendation routes through the #9 engine, not a parallel nudge.
+        assert!(
+            body.contains("aristo nudge"),
+            "skill must take its recommended next action from `aristo nudge` (the #9 engine)"
+        );
+        // Read-only + subject-only discipline.
+        assert!(
+            body.contains("read-only") || body.contains("Read-only"),
+            "skill must declare it is read-only (no mutation)"
+        );
+        assert!(
+            body.contains("Subject-only") || body.contains("subject-only"),
+            "skill must encode the subject-only rule"
         );
     }
 
