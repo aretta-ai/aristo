@@ -21,6 +21,7 @@ use aristo_core::config::Aggressiveness;
 use aristo_core::metrics::Metrics;
 
 pub mod state;
+pub mod throttle;
 
 /// Who a fired signal is addressed to. The two are surfaced through
 /// different channels (D4/D10): the agent gets an inline `<system-reminder>`;
