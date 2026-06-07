@@ -204,11 +204,12 @@ fn stamp_check_mode_also_surfaces_counterexamples() {
 }
 
 #[test]
-fn stamp_cascades_proof_deletion_when_annotation_removed() {
-    // GAP-10: when an annotation is removed from source, stamp also
-    // deletes the orphan .aristo/proofs/<id>.proof file. Otherwise the
-    // proof rots silently; if the id is later re-introduced, the stale
-    // verdict re-attaches to a fresh definition.
+fn stamp_archives_orphan_proof_when_annotation_removed() {
+    // ID-D5: when an annotation is removed from source, stamp MOVES its
+    // orphan .aristo/proofs/<id>.proof into .aristo/archive/proofs/ instead
+    // of hard-deleting it. The proof leaves the active set (so re-introducing
+    // the id can't re-attach a stale verdict) but stays recoverable — which
+    // is what makes a legitimate id change (reword/rename) non-destructive.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     write_lib(
@@ -229,19 +230,29 @@ fn stamp_cascades_proof_deletion_when_annotation_removed() {
         .arg("stamp")
         .assert()
         .success()
-        .stderr(contains("removed orphan proof"))
+        .stderr(contains("archived orphan proof"))
         .stderr(contains("doomed.proof"));
 
+    let archived = tmp.path().join(".aristo/archive/proofs/doomed.proof");
     assert!(
         !proofs_dir.join("doomed.proof").exists(),
-        "orphan proof must be cascaded-deleted"
+        "orphan proof must leave the active proofs/ dir"
+    );
+    assert!(
+        archived.exists(),
+        "orphan proof must be archived (recoverable), not deleted"
+    );
+    assert_eq!(
+        fs::read_to_string(&archived).unwrap(),
+        "[verdict]\nfake = true\n",
+        "archived proof must be the original file, byte-for-byte"
     );
 }
 
 #[test]
-fn stamp_check_does_not_delete_orphan_proofs() {
-    // --check is CI mode; must not mutate the workspace, even to
-    // delete legitimate orphans. The summary still reports them.
+fn stamp_check_does_not_archive_orphan_proofs() {
+    // --check is CI mode; must not mutate the workspace, even to archive
+    // legitimate orphans. The summary still reports them.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     write_lib(
@@ -261,7 +272,86 @@ fn stamp_check_does_not_delete_orphan_proofs() {
 
     assert!(
         proofs_dir.join("doomed.proof").exists(),
-        "--check mode must NOT delete proof files (CI safety)"
+        "--check must NOT touch proof files (CI safety)"
+    );
+    assert!(
+        !tmp.path()
+            .join(".aristo/archive/proofs/doomed.proof")
+            .exists(),
+        "--check must NOT archive either"
+    );
+}
+
+#[test]
+fn stamp_gc_purges_archived_orphan_proofs() {
+    // `aristo stamp --gc` is the only hard-delete path: it empties the
+    // archive. Without --gc the archive accumulates (recoverable).
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("doomed", verify = "neural", id = "doomed")] fn d() {}"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let proofs_dir = tmp.path().join(".aristo/proofs");
+    fs::create_dir_all(&proofs_dir).unwrap();
+    fs::write(proofs_dir.join("doomed.proof"), "[verdict]\nfake = true\n").unwrap();
+
+    // Remove → archives the proof.
+    write_lib(tmp.path(), "// no annotations\n");
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let archived = tmp.path().join(".aristo/archive/proofs/doomed.proof");
+    assert!(archived.exists(), "precondition: proof archived");
+
+    // gc purges the archive.
+    aristo_in(tmp.path())
+        .args(["stamp", "--gc"])
+        .assert()
+        .success()
+        .stdout(contains("gc: removed 1 archived proof"));
+    assert!(!archived.exists(), "--gc must purge archived proofs");
+}
+
+#[test]
+fn stamp_reword_archives_old_proof_keeping_it_recoverable() {
+    // The headline ID-D5 property: when an idless annotation is reworded its
+    // deterministic id changes, so the OLD id's proof is orphaned. It must be
+    // ARCHIVED (recoverable), never hard-deleted — a reword should not
+    // silently destroy verification work.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("returns one", verify = "neural")] fn k() -> i32 { 1 }"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let id1 = only_id(&read_index(tmp.path()));
+    let proofs_dir = tmp.path().join(".aristo/proofs");
+    fs::create_dir_all(&proofs_dir).unwrap();
+    fs::write(
+        proofs_dir.join(format!("{id1}.proof")),
+        "[verdict]\nok = true\n",
+    )
+    .unwrap();
+
+    // Reword → id changes (old id removed, new id new).
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("returns the value one", verify = "neural")] fn k() -> i32 { 1 }"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+
+    let id2 = only_id(&read_index(tmp.path()));
+    assert_ne!(id2, id1);
+    assert!(
+        !proofs_dir.join(format!("{id1}.proof")).exists(),
+        "old id's proof leaves the active set"
+    );
+    assert!(
+        tmp.path()
+            .join(format!(".aristo/archive/proofs/{id1}.proof"))
+            .exists(),
+        "old id's proof is archived, not destroyed by the reword"
     );
 }
 
@@ -416,6 +506,277 @@ fn check_mode_does_not_corrupt_existing_index_on_diff() {
         before, after,
         "--check must leave the index file byte-identical"
     );
+}
+
+// ─── deterministic ids (Phase 18 #13) ──────────────────────────────────────
+
+fn only_id(idx: &aristo_core::index::IndexFile) -> String {
+    assert_eq!(idx.entries.len(), 1, "expected exactly one entry");
+    idx.entries.keys().next().unwrap().as_str().to_owned()
+}
+
+#[test]
+fn stamp_idless_annotation_id_and_status_survive_restamp() {
+    // REGRESSION (Task #13): idless annotations used to get a fresh RANDOM id
+    // on every stamp, so the id-keyed index could never re-associate them —
+    // each re-stamp read the entry as removed+new, silently resetting its
+    // verification status to Unknown and cascade-deleting its `.proof`.
+    // Deterministic ids fix it: the SAME annotation mints the SAME id, so
+    // status AND proof survive a no-op re-stamp.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("the function returns a constant", verify = "neural")] fn k() -> i32 { 7 }"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+
+    let id1 = only_id(&read_index(tmp.path()));
+    assert!(id1.starts_with("aret_"), "idless → opaque id, got {id1}");
+
+    // Simulate a prior `aristo verify`: set Neural status + plant the proof.
+    force_status(tmp.path(), &id1, aristo_core::index::Status::Neural);
+    let proofs_dir = tmp.path().join(".aristo/proofs");
+    fs::create_dir_all(&proofs_dir).unwrap();
+    let proof_path = proofs_dir.join(format!("{id1}.proof"));
+    fs::write(&proof_path, "[verdict]\nfake = true\n").unwrap();
+
+    // Re-stamp with NO source change.
+    aristo_in(tmp.path())
+        .arg("stamp")
+        .assert()
+        .success()
+        .stdout(contains("unchanged: 1"))
+        .stdout(contains("removed: 0"));
+
+    let idx2 = read_index(tmp.path());
+    assert_eq!(
+        only_id(&idx2),
+        id1,
+        "deterministic id must be stable across stamps"
+    );
+    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx2, &id1) {
+        assert_eq!(
+            e.status,
+            aristo_core::index::Status::Neural,
+            "status must survive a no-op re-stamp (the bug reset it to Unknown)"
+        );
+    } else {
+        panic!("expected Intent");
+    }
+    assert!(
+        proof_path.exists(),
+        "proof must survive a no-op re-stamp (the bug cascade-deleted it)"
+    );
+}
+
+#[test]
+fn stamp_idless_body_edit_keeps_id_and_marks_stale() {
+    // Editing the covered CODE (not the text) must NOT change a deterministic
+    // id — body drift is tracked separately via body_hash. Id stable; status
+    // flips to Stale so the user re-verifies against the new code.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("returns a constant", verify = "neural")] fn k() -> i32 { 1 }"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let id1 = only_id(&read_index(tmp.path()));
+    force_status(tmp.path(), &id1, aristo_core::index::Status::Neural);
+    // Plant the proof too: a body edit must KEEP the proof (id is stable, so
+    // the entry is never Removed → never archived). Only re-verification (a
+    // later `aristo verify` against the new body) supersedes it.
+    let proofs_dir = tmp.path().join(".aristo/proofs");
+    fs::create_dir_all(&proofs_dir).unwrap();
+    let proof_path = proofs_dir.join(format!("{id1}.proof"));
+    fs::write(&proof_path, "[verdict]\nok = true\n").unwrap();
+
+    // Edit ONLY the body — same intent text, same fn name (site).
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("returns a constant", verify = "neural")] fn k() -> i32 { 2 }"#,
+    );
+    aristo_in(tmp.path())
+        .arg("stamp")
+        .assert()
+        .success()
+        .stdout(contains("body-drifted: 1"));
+
+    let idx2 = read_index(tmp.path());
+    assert_eq!(only_id(&idx2), id1, "body edit must not change the id");
+    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx2, &id1) {
+        assert_eq!(e.status, aristo_core::index::Status::Stale);
+    } else {
+        panic!("expected Intent");
+    }
+    assert!(
+        proof_path.exists(),
+        "body edit keeps the proof in the active set (id unchanged → not orphaned)"
+    );
+    assert!(
+        !tmp.path()
+            .join(format!(".aristo/archive/proofs/{id1}.proof"))
+            .exists(),
+        "body edit must NOT archive the proof"
+    );
+}
+
+#[test]
+fn stamp_idless_reword_changes_id() {
+    // Rewording the claim IS an identity change → the deterministic id
+    // changes (old id removed, new id new).
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("returns one", verify = "neural")] fn k() -> i32 { 1 }"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let id1 = only_id(&read_index(tmp.path()));
+
+    write_lib(
+        tmp.path(),
+        r#"#[aristo::intent("returns the value one", verify = "neural")] fn k() -> i32 { 1 }"#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let id2 = only_id(&read_index(tmp.path()));
+    assert_ne!(id2, id1, "rewording the claim must change the id");
+}
+
+#[test]
+fn stamp_idless_duplicates_get_distinct_ordinal_ids() {
+    // Two idless annotations with identical kind+text+site must NOT collide —
+    // the source-order ordinal disambiguates them so BOTH land in the index
+    // (with random ids this happened by luck; deterministic ids would alias
+    // without the ordinal).
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"
+            fn f() {
+                aristo::intent_stmt!("loop body is independent");
+                let _a = 1;
+                aristo::intent_stmt!("loop body is independent");
+                let _b = 2;
+            }
+        "#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let ids1: Vec<String> = read_index(tmp.path())
+        .entries
+        .keys()
+        .map(|k| k.as_str().to_owned())
+        .collect();
+    assert_eq!(
+        ids1.len(),
+        2,
+        "duplicate-text intents must both index (ordinal disambiguates)"
+    );
+
+    // Re-stamp unchanged source: the SAME two ids must reappear (the ordinal
+    // path is itself deterministic). Under the old random scheme the two
+    // would be fresh ids every stamp, so this is a real regression guard.
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let ids2: Vec<String> = read_index(tmp.path())
+        .entries
+        .keys()
+        .map(|k| k.as_str().to_owned())
+        .collect();
+    assert_eq!(
+        ids1, ids2,
+        "ordinal-disambiguated ids must be stable across stamps"
+    );
+}
+
+#[test]
+fn stamp_explicit_id_untouched_while_idless_reword_changes() {
+    // explicit-ids-untouched: a user-written id= passes through verbatim and
+    // is NEVER re-hashed into an aret_ id — it stays byte-identical even
+    // across a reword (the exact edit that DOES re-anchor an idless id).
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        r#"
+            #[aristo::intent("explicit one", verify = "test", id = "explicit_kept")] fn a() {}
+            #[aristo::intent("idless one", verify = "test")] fn b() {}
+        "#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let idx1 = read_index(tmp.path());
+    let explicit = aristo_core::index::AnnotationId::parse("explicit_kept").unwrap();
+    assert!(
+        idx1.entries.contains_key(&explicit),
+        "explicit id used verbatim"
+    );
+    let idless1 = idx1
+        .entries
+        .keys()
+        .find(|k| k.as_str().starts_with("aret_"))
+        .expect("idless sibling got an aret_ id")
+        .as_str()
+        .to_owned();
+
+    // Reword BOTH texts.
+    write_lib(
+        tmp.path(),
+        r#"
+            #[aristo::intent("explicit one reworded", verify = "test", id = "explicit_kept")] fn a() {}
+            #[aristo::intent("idless one reworded", verify = "test")] fn b() {}
+        "#,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let idx2 = read_index(tmp.path());
+    assert!(
+        idx2.entries.contains_key(&explicit),
+        "explicit id is untouched by a reword (still aliases the user string)"
+    );
+    let idless2 = idx2
+        .entries
+        .keys()
+        .find(|k| k.as_str().starts_with("aret_"))
+        .expect("idless sibling still has an aret_ id")
+        .as_str()
+        .to_owned();
+    assert_ne!(idless1, idless2, "the idless id re-anchors on a reword");
+}
+
+#[test]
+fn stamp_double_orphan_does_not_clobber_earlier_archived_proof() {
+    // ID-D5 invariant: archiving never LOSES a verdict. If the same id is
+    // orphaned twice (removed, re-added with a different proof, removed
+    // again), the second archive must not overwrite the first.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    let src = r#"#[aristo::intent("doomed", verify = "neural", id = "doomed")] fn d() {}"#;
+    let proofs_dir = tmp.path().join(".aristo/proofs");
+    let archive_dir = tmp.path().join(".aristo/archive/proofs");
+
+    // Round 1: stamp, plant proof v1, remove → archives doomed.proof (v1).
+    write_lib(tmp.path(), src);
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    fs::create_dir_all(&proofs_dir).unwrap();
+    fs::write(proofs_dir.join("doomed.proof"), "v1\n").unwrap();
+    write_lib(tmp.path(), "// nothing\n");
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+
+    // Round 2: re-add same id, plant proof v2, remove again → must archive
+    // v2 WITHOUT clobbering the archived v1.
+    write_lib(tmp.path(), src);
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    fs::write(proofs_dir.join("doomed.proof"), "v2\n").unwrap();
+    write_lib(tmp.path(), "// nothing\n");
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+
+    let archived: Vec<String> = fs::read_dir(&archive_dir)
+        .unwrap()
+        .map(|e| fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect();
+    assert_eq!(archived.len(), 2, "both archived verdicts must be retained");
+    assert!(archived.contains(&"v1\n".to_string()), "v1 must survive");
+    assert!(archived.contains(&"v2\n".to_string()), "v2 must survive");
 }
 
 #[test]

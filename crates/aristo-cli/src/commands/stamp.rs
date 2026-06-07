@@ -47,7 +47,7 @@ use crate::{CliError, CliResult};
     verify = "test",
     id = "stamp_check_never_writes"
 )]
-pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool) -> CliResult<()> {
+pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool, gc: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
     // `--check` is read-only (no writes), so it bypasses the
     // session guard. Mutating runs refuse while a session is active.
@@ -90,9 +90,9 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool) -> CliResu
 
     let summary = merge_status_from_prev(&mut entries, prev_index.as_ref());
     if !check {
-        // Skip the cascade in --check mode; CI shouldn't mutate the
-        // workspace. The summary still surfaces what would be deleted.
-        cascade_delete_orphan_proofs(&ws, &summary)?;
+        // Skip in --check mode; CI shouldn't mutate the workspace. The
+        // summary still surfaces what would move.
+        archive_orphan_proofs(&ws, &summary)?;
     }
     print_summary(&summary);
 
@@ -139,6 +139,10 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool) -> CliResu
     //    against the freshly-stamped ids). Skipped under --check so
     //    CI doesn't make outbound network calls. ─────────────────────
     run_canon_step_for_stamp(&ws, &index, skip_canon, refresh_canon)?;
+
+    if gc {
+        gc_archived_proofs(&ws)?;
+    }
 
     println!();
     let n = index.entries.len();
@@ -191,38 +195,89 @@ fn run_canon_step_for_stamp(
 
 #[aristo::intent(
     "When an annotation is removed from source, its `.aristo/proofs/ \
-     <id>.proof` file (if any) is also deleted as part of `aristo \
-     stamp`. The proof is verdict-ABOUT-id; without the id it's an \
-     orphan that would either rot silently or — if the id is ever \
-     re-introduced under the same name — re-attach a stale verdict to \
-     a fresh definition. Skipped in --check mode (CI must not mutate \
-     the workspace); the summary still reports what would be removed.",
+     <id>.proof` file (if any) is MOVED to `.aristo/archive/proofs/ \
+     <id>.proof` — archived, not deleted. The proof is verdict-ABOUT-id, \
+     so it must leave the active proof set; otherwise re-introducing the \
+     id would re-attach a stale verdict to a fresh definition. But \
+     hard-deleting on every stamp silently destroyed verification work \
+     whenever an id legitimately changed (a reword or rename re-anchors \
+     the deterministic id), so the proof is retained where it can be \
+     recovered — `aristo stamp --gc` is the only path that purges the \
+     archive. Skipped in --check mode (CI must not mutate the \
+     workspace); the summary still reports what would move.",
     verify = "test",
-    id = "stamp_cascades_proof_deletion_on_removed_annotations"
+    id = "stamp_archives_orphan_proofs_on_removed_annotations"
 )]
-fn cascade_delete_orphan_proofs(ws: &crate::Workspace, summary: &StampSummary) -> CliResult<()> {
+fn archive_orphan_proofs(ws: &crate::Workspace, summary: &StampSummary) -> CliResult<()> {
     let proofs_dir = ws.aristo_dir().join("proofs");
     if !proofs_dir.is_dir() {
         return Ok(());
     }
+    let archive_dir = ws.aristo_dir().join("archive").join("proofs");
     for change in &summary.notable {
         if !matches!(change.kind, NotableKind::Removed) {
             continue;
         }
-        let filename = format!("{}.proof", change.id.as_str().replace(':', "__"));
-        let path = proofs_dir.join(filename);
-        if path.is_file() {
-            fs::remove_file(&path).map_err(|e| CliError::Other {
-                message: format!("removing orphan proof {}: {e}", path.display()),
+        let stem = change.id.as_str().replace(':', "__");
+        let from = proofs_dir.join(format!("{stem}.proof"));
+        if from.is_file() {
+            fs::create_dir_all(&archive_dir).map_err(|e| CliError::Other {
+                message: format!("creating proof archive {}: {e}", archive_dir.display()),
+                exit_code: 1,
+            })?;
+            // Never clobber a previously-archived verdict for the same id (an
+            // id can be orphaned more than once — e.g. removed, re-added, and
+            // removed again). Uniquify with a counter, keeping the `.proof`
+            // extension so `--gc` still collects it. This upholds the ID-D5
+            // promise that archiving never loses a verdict.
+            let mut to = archive_dir.join(format!("{stem}.proof"));
+            let mut n = 1u32;
+            while to.exists() {
+                to = archive_dir.join(format!("{stem}.{n}.proof"));
+                n += 1;
+            }
+            fs::rename(&from, &to).map_err(|e| CliError::Other {
+                message: format!("archiving orphan proof {}: {e}", from.display()),
                 exit_code: 1,
             })?;
             eprintln!(
-                "  • {}: also removed orphan proof {}",
+                "  • {}: archived orphan proof → {}",
                 change.id,
-                path.strip_prefix(&ws.root).unwrap_or(&path).display()
+                to.strip_prefix(&ws.root).unwrap_or(&to).display()
             );
         }
     }
+    Ok(())
+}
+
+#[aristo::intent(
+    "Archiving makes `aristo stamp` non-destructive: an orphaned proof is \
+     moved aside, never deleted, so a stray stamp can't lose a verdict. The \
+     archive at `.aristo/archive/proofs/` is reclaimed only by the explicit, \
+     opt-in `aristo stamp --gc`; nothing purges it implicitly or \
+     automatically.",
+    verify = "test",
+    id = "stamp_gc_is_the_only_purge_of_archived_proofs"
+)]
+fn gc_archived_proofs(ws: &crate::Workspace) -> CliResult<()> {
+    let archive_dir = ws.aristo_dir().join("archive").join("proofs");
+    if !archive_dir.is_dir() {
+        println!("→ gc: no archived proofs to remove.");
+        return Ok(());
+    }
+    let mut removed = 0usize;
+    for entry in fs::read_dir(&archive_dir).map_err(CliError::Io)? {
+        let path = entry.map_err(CliError::Io)?.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("proof") {
+            fs::remove_file(&path).map_err(|e| CliError::Other {
+                message: format!("gc removing {}: {e}", path.display()),
+                exit_code: 1,
+            })?;
+            removed += 1;
+        }
+    }
+    let noun = if removed == 1 { "proof" } else { "proofs" };
+    println!("→ gc: removed {removed} archived {noun}.");
     Ok(())
 }
 

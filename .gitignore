@@ -48,6 +48,17 @@
 # the .proof deletion (text-drift); they're transient by design.
 .aristo/proofs/*.proof.bak
 
+# Archived orphan proofs (Task #13 / ID-D5): when an annotation is removed
+# or its id changes (reword/rename), `aristo stamp` MOVES the now-orphaned
+# `.proof` here instead of deleting it, so a verdict is never lost to a
+# stray stamp. It is a local recovery net — recoverable on the machine that
+# stamped, purged only by the explicit `aristo stamp --gc` — so it is not
+# committed. NOTE: this ignore is currently hand-maintained here (aristo
+# dogfooding only). `aristo init` does NOT yet wire it for consumer repos —
+# shared `.aristo/` gitignore management is deferred to Phase 18 #9 (audit
+# A3); until then a consumer repo would see the archive in `git status`.
+.aristo/archive/
+
 # trycmd runs scenario commands in-place against `tests/cmd/active/*.in/`
 # (no temp-dir isolation). Commands that write outputs (e.g.
 # `aristo badge --out=docs/badge.svg`) leave artifacts behind. These

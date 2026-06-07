@@ -6,23 +6,32 @@
 //!    (slice 17+); not auto-applied because text-derived ids may clash
 //!    with existing entries or just be clumsy.
 //!
-//! 2. [`generate_opaque_id`] — fallback when no readable suggestion is
-//!    accepted (or when text is too sparse to derive one). Produces an
-//!    `aret_<8 base32-alphanumeric>` opaque id with 40 bits of entropy.
-//!    Per design (B5b), opaque ids are tool-managed; they NEVER come from
-//!    user input and the `aristo_check` cargo feature rejects them in
-//!    source.
+//! 2. [`deterministic_id`] — the id `aristo stamp` actually assigns when
+//!    `id` is unset. A content-addressed `aret_<8>` id derived from the
+//!    annotation's *identity*: kind + normalized text + enclosing site
+//!    (plus a source-order ordinal, appended only when those collide).
+//!    Being a pure function of identity, it is STABLE across stamps —
+//!    re-running `aristo stamp` re-mints the same id, so the index
+//!    re-associates the entry's prior status and `.proof` instead of
+//!    churning it as removed+new. An earlier version minted a fresh
+//!    *random* id (`getrandom`) on every stamp, which silently orphaned
+//!    proofs and reset verification status; this content-addressed scheme
+//!    fixes that. Per design (B5b), opaque ids are tool-managed; they
+//!    NEVER come from user input and the `aristo_check` cargo feature
+//!    rejects them in source.
 
-use crate::index::AnnotationId;
+use crate::index::{AnnotationId, AnnotationKind};
 
 /// Suggested length for the readable-from-text path: take roughly the
 /// first 4 useful words and cap at this many characters total. Short
 /// enough to skim; long enough to disambiguate.
 const READABLE_TARGET_LEN: usize = 32;
 
-/// Number of random characters in an opaque id's body. 8 base32-style
-/// chars = 40 bits of entropy ≈ 1.1e12 distinct ids — well clear of any
-/// reasonable per-project collision risk.
+/// Number of characters in an opaque id's body. 8 base32-style chars over a
+/// 31-symbol alphabet ≈ 31^8 ≈ 8.5e11 distinct ids — well clear of any
+/// reasonable per-project collision risk. With [`deterministic_id`] these
+/// are derived from the annotation's identity (not random), and the ordinal
+/// disambiguates the only structured collision (identical kind+text+site).
 const OPAQUE_BODY_LEN: usize = 8;
 
 /// Base32-style alphabet (Crockford-ish: lowercase letters + digits, no
@@ -62,26 +71,76 @@ pub fn snake_case_from_text(text: &str) -> Option<String> {
     Some(out)
 }
 
+/// Tag bytes mixed into the hash so an intent and an assume with otherwise
+/// identical (text, site) never collide on the same id.
+fn kind_tag(kind: AnnotationKind) -> &'static [u8] {
+    match kind {
+        AnnotationKind::Intent => b"intent",
+        AnnotationKind::Assume => b"assume",
+    }
+}
+
+/// The collision bucket an idless annotation falls into for ordinal
+/// disambiguation. Two annotations share a bucket — and therefore must get
+/// distinct `ordinal`s to avoid minting the *same* [`deterministic_id`] — iff
+/// this key matches. It is exactly the (kind, normalized-text, site) triple
+/// the id hashes over before the ordinal, so the caller (`aristo stamp`) can
+/// count occurrences without re-implementing the normalization rule.
+pub fn id_bucket_key(
+    kind: AnnotationKind,
+    text: &str,
+    site_label: &str,
+) -> (AnnotationKind, String, String) {
+    (
+        kind,
+        crate::hash::normalize_text(text),
+        site_label.to_string(),
+    )
+}
+
 #[aristo::intent(
-    "Opaque ids carry enough entropy that collisions across a project are \
-     negligible. If the OS can't produce randomness, the stamp crashes; a \
-     low-entropy id silently committed would be worse than a failed run \
-     the user can retry.",
-    verify = "neural",
-    id = "generate_opaque_id_always_parses"
+    "A stamp-assigned id is a pure function of the annotation's identity — \
+     its kind, its whitespace-normalized text, and its enclosing site label \
+     (plus a source-order ordinal only when those three collide). The same \
+     annotation therefore mints the same id on every `aristo stamp`, which \
+     is what lets the index re-associate its prior status and proof instead \
+     of treating it as removed-then-new. Editing the covered CODE does not \
+     change the id — that is body-hash drift, tracked separately; only \
+     rewording the claim or renaming/moving the enclosing item does. The id \
+     stays inside the `aret_` namespace charset so it always parses.",
+    verify = "test",
+    id = "deterministic_id_is_pure_function_of_identity"
 )]
-pub fn generate_opaque_id() -> AnnotationId {
-    let mut bytes = [0u8; OPAQUE_BODY_LEN];
-    getrandom::getrandom(&mut bytes)
-        .expect("OS RNG failed; aborting rather than emitting a low-entropy id");
+pub fn deterministic_id(
+    kind: AnnotationKind,
+    text: &str,
+    site_label: &str,
+    ordinal: usize,
+) -> AnnotationId {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(kind_tag(kind));
+    hasher.update([0u8]);
+    hasher.update(crate::hash::normalize_text(text).as_bytes());
+    hasher.update([0u8]);
+    hasher.update(site_label.as_bytes());
+    if ordinal > 0 {
+        // Appended only when >0 so the common unique case hashes purely as
+        // kind+text+site — an ordinal added unconditionally would make every
+        // id depend on duplicate-scan order even when there are no dups.
+        hasher.update([0u8]);
+        hasher.update((ordinal as u64).to_le_bytes());
+    }
+    let digest = hasher.finalize();
 
     let mut s = String::with_capacity("aret_".len() + OPAQUE_BODY_LEN);
     s.push_str("aret_");
-    for byte in bytes {
+    for &byte in digest.iter().take(OPAQUE_BODY_LEN) {
         let idx = (byte as usize) % OPAQUE_ALPHABET.len();
         s.push(OPAQUE_ALPHABET[idx] as char);
     }
-    AnnotationId::parse(&s).expect("opaque-id alphabet stays inside aret_ namespace charset")
+    AnnotationId::parse(&s).expect("deterministic-id alphabet stays inside aret_ namespace charset")
 }
 
 #[cfg(test)]
@@ -161,43 +220,125 @@ mod tests {
         }
     }
 
-    // ─── generate_opaque_id ───────────────────────────────────────────────
+    // ─── deterministic_id ─────────────────────────────────────────────────
 
-    #[test]
-    fn opaque_id_has_aret_prefix() {
-        let id = generate_opaque_id();
-        assert!(id.as_str().starts_with("aret_"), "got: {id}");
+    fn det(kind: AnnotationKind, text: &str, site: &str, ord: usize) -> String {
+        deterministic_id(kind, text, site, ord).as_str().to_owned()
     }
 
     #[test]
-    fn opaque_id_has_expected_length() {
-        let id = generate_opaque_id();
+    fn deterministic_id_has_aret_prefix_and_length() {
+        let id = deterministic_id(AnnotationKind::Intent, "some claim", "fn foo", 0);
+        assert!(id.as_str().starts_with("aret_"), "got: {id}");
         assert_eq!(id.as_str().len(), "aret_".len() + OPAQUE_BODY_LEN);
     }
 
     #[test]
-    fn opaque_id_uses_safe_alphabet_only() {
-        let id = generate_opaque_id();
+    fn deterministic_id_uses_safe_alphabet_only() {
+        let id = deterministic_id(AnnotationKind::Assume, "another claim", "struct Bar", 3);
         let body = id.as_str().strip_prefix("aret_").unwrap();
         for ch in body.chars() {
             assert!(
                 OPAQUE_ALPHABET.contains(&(ch as u8)),
-                "opaque id contains char `{ch}` not in alphabet"
+                "deterministic id contains char `{ch}` not in alphabet"
             );
         }
     }
 
     #[test]
-    fn opaque_ids_are_distinct_with_high_probability() {
-        // 40 bits of entropy → collision rate of ~1e-12 across 1000 draws.
-        // Test asserts no collisions in 1000 (vacuously passes if RNG works).
-        let mut seen = std::collections::HashSet::new();
-        for _ in 0..1000 {
-            let id = generate_opaque_id();
-            assert!(
-                seen.insert(id.as_str().to_owned()),
-                "duplicate opaque id within 1000 draws — RNG is broken"
-            );
+    fn deterministic_id_output_always_parses() {
+        // Every output must round-trip through AnnotationId — the whole point
+        // is to feed the index without further validation.
+        for (kind, text, site, ord) in [
+            (
+                AnnotationKind::Intent,
+                "the function returns x",
+                "fn f",
+                0usize,
+            ),
+            (AnnotationKind::Assume, "caller holds the lock", "fn g", 5),
+            (AnnotationKind::Intent, "短い説明", "fn h", 1),
+            (AnnotationKind::Intent, "", "fn empty_text", 0),
+        ] {
+            let id = deterministic_id(kind, text, site, ord);
+            AnnotationId::parse(id.as_str())
+                .unwrap_or_else(|e| panic!("({kind:?},{text:?},{site:?},{ord}) → {id}: {e}"));
         }
+    }
+
+    #[test]
+    fn deterministic_id_is_stable_for_same_inputs() {
+        // THE core fix: identical inputs ⇒ byte-identical id, on every call.
+        let a = det(
+            AnnotationKind::Intent,
+            "balance is preserved",
+            "fn balance",
+            0,
+        );
+        let b = det(
+            AnnotationKind::Intent,
+            "balance is preserved",
+            "fn balance",
+            0,
+        );
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn deterministic_id_changes_with_text() {
+        let a = det(AnnotationKind::Intent, "claim one", "fn f", 0);
+        let b = det(AnnotationKind::Intent, "claim two", "fn f", 0);
+        assert_ne!(a, b, "rewording the claim must change the id");
+    }
+
+    #[test]
+    fn deterministic_id_changes_with_site() {
+        // Renaming/moving the enclosing item re-anchors the id (ID-D4).
+        let a = det(AnnotationKind::Intent, "same claim", "fn old_name", 0);
+        let b = det(AnnotationKind::Intent, "same claim", "fn new_name", 0);
+        assert_ne!(a, b, "moving to a new site must change the id");
+    }
+
+    #[test]
+    fn deterministic_id_changes_with_kind() {
+        // An intent and an assume with identical text+site must not collide.
+        let i = det(AnnotationKind::Intent, "same words", "fn f", 0);
+        let a = det(AnnotationKind::Assume, "same words", "fn f", 0);
+        assert_ne!(i, a, "kind is part of the identity");
+    }
+
+    #[test]
+    fn deterministic_id_ignores_text_whitespace() {
+        // Whitespace-only text differences normalize away (same rule as
+        // text_hash), so they mint the same id — reformatting prose is not
+        // an identity change.
+        let a = det(AnnotationKind::Intent, "hello   world", "fn f", 0);
+        let b = det(AnnotationKind::Intent, "  hello world  ", "fn f", 0);
+        let c = det(AnnotationKind::Intent, "hello\n\tworld", "fn f", 0);
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+    }
+
+    #[test]
+    fn deterministic_id_distinct_ordinals_differ() {
+        // Two idless annotations sharing kind+text+site get disambiguated by
+        // source-order ordinal (ID-D2) so they don't collide in the index.
+        let zero = det(AnnotationKind::Intent, "dup", "fn f", 0);
+        let one = det(AnnotationKind::Intent, "dup", "fn f", 1);
+        let two = det(AnnotationKind::Intent, "dup", "fn f", 2);
+        assert_ne!(zero, one);
+        assert_ne!(one, two);
+        assert_ne!(zero, two);
+    }
+
+    #[test]
+    fn id_bucket_key_collapses_whitespace_and_includes_kind() {
+        // The bucket key must collapse whitespace exactly like the id hash so
+        // the ordinal counter groups whitespace-variant texts together.
+        let k1 = id_bucket_key(AnnotationKind::Intent, "a  b", "fn f");
+        let k2 = id_bucket_key(AnnotationKind::Intent, "a b", "fn f");
+        assert_eq!(k1, k2);
+        let k3 = id_bucket_key(AnnotationKind::Assume, "a b", "fn f");
+        assert_ne!(k1, k3, "kind is part of the bucket");
     }
 }

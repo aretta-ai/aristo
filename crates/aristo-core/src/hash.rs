@@ -45,7 +45,11 @@ pub fn body_hash(body: &str) -> Sha256 {
     Sha256::from_bytes(body.as_bytes())
 }
 
-fn normalize_text(text: &str) -> String {
+/// Collapse a text annotation to its canonical form for hashing: trim the
+/// ends and squash internal whitespace runs to a single space. Public so the
+/// id generator and `aristo stamp`'s ordinal bucketing share one definition
+/// of "the same text" with [`text_hash`].
+pub fn normalize_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut last_was_ws = false;
     for ch in text.trim().chars() {
