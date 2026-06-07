@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
-generated_by = "aristo stamp 0.2.1"
-generated_at = "2026-06-06T06:47:06.280911Z"
+generated_by = "aristo stamp 0.2.2"
+generated_at = "2026-06-07T11:45:06.05003Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -89,7 +89,7 @@ status = "unknown"
 text_hash = "sha256:bdb434ee177536ea137913a9c9ef700c2e326b2a07d2ad1942321b17e6ebff73"
 body_hash = "sha256:bfc96b6fc698f698f92a72755df20ac53d9efed94db82d515643affe8cd3c0c5"
 file = "crates/aristo-cli/src/commands/index.rs"
-site = "fn atomic_write (line 300)"
+site = "fn atomic_write (line 326)"
 covered_region = "function"
 
 [backlog_append_is_read_modify_write_via_atomic]
@@ -147,13 +147,13 @@ file = "crates/aristo-core/src/hash.rs"
 site = "fn body_hash (line 37)"
 covered_region = "function"
 
-[build_entries_assigns_opaque_ids_when_missing]
+[build_entries_assigns_deterministic_ids_when_missing]
 kind = "intent"
-text = "Every discovered annotation gets an id, sourced in this order: user-written `id =`, then a snake_case slug derived from the text, then a random `aret_…` opaque id. The build never returns an entry without an id; there is no `unindexed` half-state."
+text = "Every discovered annotation gets an id: the user-written `id =` if present, otherwise a deterministic content-addressed `aret_…` id derived from the annotation's kind, text, and site. The build never returns an entry without an id; there is no `unindexed` half-state. Because the generated id is a pure function of identity, re-stamping unchanged source mints the same ids, so the index keeps each entry's prior status and proof instead of churning it as removed-then-new."
 verify = "test"
 status = "unknown"
-text_hash = "sha256:6cb86fd27bdf5161b150d5d06437183caf0091c7dca492ce7e8ad8a68ba0d31d"
-body_hash = "sha256:08a59064ddd2845c867d55c711553d64af148390de40a71655bf924e1b75221d"
+text_hash = "sha256:835e597071eca39003c926dbd50101ee6401c431c5ef0aabe0309f88379cdcc0"
+body_hash = "sha256:794754af4b47760b8e41fcfa6b471ec7579e21bc491aa98d2c4057cd1a37b9b8"
 file = "crates/aristo-cli/src/commands/index.rs"
 site = "fn build_entries (line 111)"
 covered_region = "function"
@@ -334,6 +334,17 @@ file = "crates/aristo-core/src/cycle.rs"
 site = "fn detect_cycles (line 52)"
 covered_region = "function"
 
+[deterministic_id_is_pure_function_of_identity]
+kind = "intent"
+text = "A stamp-assigned id is a pure function of the annotation's identity — its kind, its whitespace-normalized text, and its enclosing site label (plus a source-order ordinal only when those three collide). The same annotation therefore mints the same id on every `aristo stamp`, which is what lets the index re-associate its prior status and proof instead of treating it as removed-then-new. Editing the covered CODE does not change the id — that is body-hash drift, tracked separately; only rewording the claim or renaming/moving the enclosing item does. The id stays inside the `aret_` namespace charset so it always parses."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:500b4cb072fd8c8049633156383943cecd212b7ae447d7d6216a629cda55d918"
+body_hash = "sha256:4790fbb7b2ac871e61992865427fba4a0f065d67e238a970d66dded3bb1c0f15"
+file = "crates/aristo-core/src/id.rs"
+site = "fn deterministic_id (line 101)"
+covered_region = "function"
+
 [did_you_mean_threshold_filters_noise]
 kind = "intent"
 text = 'The Levenshtein threshold is tuned to suppress unrelated ids: too loose floods the user with noise, too tight hides real typos. Both regressions silently erode trust in the "did you mean" signal until it gets ignored.'
@@ -488,17 +499,6 @@ file = "crates/aristo-cli/src/preflight.rs"
 site = "fn freshness_check (line 39)"
 covered_region = "function"
 
-[generate_opaque_id_always_parses]
-kind = "intent"
-text = "Opaque ids carry enough entropy that collisions across a project are negligible. If the OS can't produce randomness, the stamp crashes; a low-entropy id silently committed would be worse than a failed run the user can retry."
-verify = "neural"
-status = "unknown"
-text_hash = "sha256:8c78075691a5d6635a2438199e8d9355f2ca83e21d62902954ff350d62ba6d53"
-body_hash = "sha256:02e8d00de9d2692ee062267f4c81fa7f5000f977a89bb0f34b25489dea39ee9b"
-file = "crates/aristo-core/src/id.rs"
-site = "fn generate_opaque_id (line 65)"
-covered_region = "function"
-
 [init_is_idempotent]
 kind = "intent"
 text = "A second invocation never errors and never overwrites existing files. Each pre-existing artifact is noted; only missing ones get created."
@@ -584,7 +584,7 @@ status = "unknown"
 text_hash = "sha256:a0ac0dfb85cc50c166523567c4bfd7d2cc183ecc395958d41da9aa6e244a2528"
 body_hash = "sha256:0ad71651760b091640468ba31f1cea494e3dd98388b1617a7ebc7682da274e58"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn merge_status_from_prev (line 406)"
+site = "fn merge_status_from_prev (line 451)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
@@ -849,15 +849,15 @@ file = "crates/aristo-cli/src/skills/install.rs"
 site = "fn file_copy_state (line 83)"
 covered_region = "function"
 
-[stamp_cascades_proof_deletion_on_removed_annotations]
+[stamp_archives_orphan_proofs_on_removed_annotations]
 kind = "intent"
-text = "When an annotation is removed from source, its `.aristo/proofs/ <id>.proof` file (if any) is also deleted as part of `aristo stamp`. The proof is verdict-ABOUT-id; without the id it's an orphan that would either rot silently or — if the id is ever re-introduced under the same name — re-attach a stale verdict to a fresh definition. Skipped in --check mode (CI must not mutate the workspace); the summary still reports what would be removed."
+text = "When an annotation is removed from source, its `.aristo/proofs/ <id>.proof` file (if any) is MOVED to `.aristo/archive/proofs/ <id>.proof` — archived, not deleted. The proof is verdict-ABOUT-id, so it must leave the active proof set; otherwise re-introducing the id would re-attach a stale verdict to a fresh definition. But hard-deleting on every stamp silently destroyed verification work whenever an id legitimately changed (a reword or rename re-anchors the deterministic id), so the proof is retained where it can be recovered — `aristo stamp --gc` is the only path that purges the archive. Skipped in --check mode (CI must not mutate the workspace); the summary still reports what would move."
 verify = "test"
 status = "unknown"
-text_hash = "sha256:d03b32ef9843b1113f8100e2416538a428fddb56edd67b4fba971f58041b5b65"
-body_hash = "sha256:f4b85e3430910f576b56f53491d48206f8710025adb6edfa42a1ba24beab271e"
+text_hash = "sha256:f273e9c3f077b6655bbcc902eec137681122b44324cdda36b0c0f55575f5c04c"
+body_hash = "sha256:4b41922cfa85bcf54ed35c6a723613517a5975342a6dcbe5d8dac7d48f1741b7"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn cascade_delete_orphan_proofs (line 192)"
+site = "fn archive_orphan_proofs (line 196)"
 covered_region = "function"
 
 [stamp_check_never_writes]
@@ -866,7 +866,7 @@ text = "When `--check` is set, `aristo stamp` never writes the index. CI relies 
 verify = "test"
 status = "unknown"
 text_hash = "sha256:46c84821843266195127e5ae086761da1c7aaefddb116c6ba041da7c7aa993e0"
-body_hash = "sha256:75dc9b8fdddffce27996564a132bf3406f352a8483ed3db63bb0d77060728b5d"
+body_hash = "sha256:869c79be5b26a6855023b2957f5e994c22fddcc158fb9c45c17bc8de6b2621bd"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn run (line 42)"
 covered_region = "function"
@@ -879,7 +879,7 @@ status = "unknown"
 text_hash = "sha256:7aa1a43ab12db7def381e3477b17eb84c05886c6d216d522eea3acce5026d328"
 body_hash = "sha256:7a6d39b3607d76d95ed4c71ce177babbfd84a03b1bf9fb6cc935eb9f38bfd7e3"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn derive_bindings_from_cache (line 325)"
+site = "fn derive_bindings_from_cache (line 370)"
 covered_region = "function"
 
 [stamp_disposition_uses_atomic_write]
@@ -893,6 +893,17 @@ file = "crates/aristo-cli/src/commands/critique/session_kind.rs"
 site = "fn stamp_disposition (line 197)"
 covered_region = "function"
 
+[stamp_gc_is_the_only_purge_of_archived_proofs]
+kind = "intent"
+text = "Archiving makes `aristo stamp` non-destructive: an orphaned proof is moved aside, never deleted, so a stray stamp can't lose a verdict. The archive at `.aristo/archive/proofs/` is reclaimed only by the explicit, opt-in `aristo stamp --gc`; nothing purges it implicitly or automatically."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:e96146b0be6943cf68b8afb11f8e71010b1d292ee4480d879dcfaecbd69d9664"
+body_hash = "sha256:7a7bf34976b4c0747b6e39e5dc0260cdc7bfc0aa648375b9dc76a41f3f542b81"
+file = "crates/aristo-cli/src/commands/stamp.rs"
+site = "fn gc_archived_proofs (line 243)"
+covered_region = "function"
+
 [stamp_runs_canon_step_after_index_write]
 kind = "intent"
 text = "Canon-match runs AFTER index write so the freshly-stamped ids are what get cached. Running it before would mean re-stamping a body-drifted entry could cache against the *prior* id (the stamp-assigned opaque). Order is load-bearing — flipping it would silently surface canon findings on stale ids."
@@ -901,7 +912,7 @@ status = "unknown"
 text_hash = "sha256:b800bc5d89327791c0954b686837a79920ecad7fd633fa8171db9400a2c99f37"
 body_hash = "sha256:15d4e147afb93aa5d8e1205860cdb240fcc6b1057d7496bb457566d6408c6485"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn run_canon_step_for_stamp (line 153)"
+site = "fn run_canon_step_for_stamp (line 157)"
 covered_region = "function"
 
 [stamp_surfaces_counterexamples_loudly]
@@ -912,7 +923,7 @@ status = "unknown"
 text_hash = "sha256:fcc13e212642853f58685fda05d0dd533c4d41919c6af9750d46836cdb4606ef"
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn warn_on_counterexamples (line 229)"
+site = "fn warn_on_counterexamples (line 274)"
 covered_region = "function"
 
 [status_canon_health_is_offline_only]

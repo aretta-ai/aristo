@@ -140,6 +140,13 @@ enum Commands {
         /// `aristo canon refresh && aristo stamp`.
         #[arg(long = "refresh-canon", conflicts_with = "skip_canon")]
         refresh_canon: bool,
+        /// Garbage-collect archived orphan proofs after stamping. Removed
+        /// annotations' `.proof` files are normally *archived* (moved to
+        /// `.aristo/archive/proofs/`) so a stray stamp never loses a verdict;
+        /// `--gc` is the only path that hard-deletes them. No-op under
+        /// `--check` (CI must not mutate the workspace).
+        #[arg(long = "gc")]
+        gc: bool,
     },
 
     /// Look up an annotation by id, fn / mod / struct name, or file:line.
@@ -873,7 +880,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             check,
             skip_canon,
             refresh_canon,
-        } => commands::stamp::run(check, skip_canon, refresh_canon),
+            gc,
+        } => commands::stamp::run(check, skip_canon, refresh_canon, gc),
         Commands::Show {
             selector,
             json,
