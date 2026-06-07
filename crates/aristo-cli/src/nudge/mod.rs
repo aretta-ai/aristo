@@ -1,9 +1,9 @@
 //! The nudge/progress engine's DECIDE leg (Phase 18 #9, S0c).
 //!
-//! A plug-and-play scorer over a registry of [`Signal`]s. Each signal turns
+//! A plug-and-play scorer over a registry of `Signal`s. Each signal turns
 //! some engine input into a raw "pressure" `m`; the scorer normalizes it by
 //! the signal's base `b` and scales by the configured aggressiveness factor
-//! `f`, firing iff `pressure * f >= 1`. Adding a nudge is one [`SIGNALS`]
+//! `f`, firing iff `pressure * f >= 1`. Adding a nudge is one `SIGNALS`
 //! entry — the scorer, ordering, and (later) throttle/render are generic.
 //!
 //! Two design invariants this module enforces:
@@ -14,7 +14,7 @@
 //!   in `aristo-core::config`).
 //! - **Ordering is fixed priority, not pressure.** Pressures of counts and
 //!   fractions are incommensurable, so the surfaced order is the static
-//!   [`SIGNALS`] order (congrats banner, then review > canon > verify >
+//!   `SIGNALS` order (congrats banner, then review > canon > verify >
 //!   proof-review > slump); the Agent-audience signal is a separate surface.
 
 use aristo_core::config::Aggressiveness;
