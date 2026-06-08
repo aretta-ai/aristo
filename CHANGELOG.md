@@ -15,6 +15,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - intents: tightened the `aristo critique` annotations — replaced the "footgun"/"balloon" colloquialisms with precise wording and dropped an unstable `README L4` line reference. Invariants unchanged.
 - intents: cleaned up the nudge annotations — removed an implementation-history spike reference (`S0a`) and informal phrasing ("silently-dead", "tier-up", `SAME` emphasis). Invariants unchanged.
 - intents: cleaned up the session-guard, stamp, and rename annotations — removed internal jargon ("slop-drift"), redundant emphasis ("loud, unmissable"), and a slice-scoped deferral note. Invariants unchanged.
+- intents: cleaned up the install-skills, index, workspace, and scan-ids annotations — removed a `slice 32` coupling and colloquialisms ("modulo", "churning", "at first typo"). Invariants unchanged.
 
 ## [0.2.3] — 2026-06-08
 
