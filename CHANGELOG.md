@@ -18,6 +18,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - intents: cleaned up the install-skills, index, workspace, and scan-ids annotations — removed a `slice 32` coupling and colloquialisms ("modulo", "churning", "at first typo"). Invariants unchanged.
 - docs: recorded a deferred note (`docs/deferred/critique-philosophy-context.md`) that `aristo critique` workers don't receive the authoring PHILOSOPHY.md, so their findings reflect generic prose norms rather than house taste — with two fix options for a later pass.
 - intents: tightened the abort-confirmation annotation — "any typo'd subcommand" became "any unintended invocation", since the risk is any unintended abort, not specifically a typo. Invariant unchanged.
+- chore: re-stamped `.aristo/index.toml` and the per-annotation doc artifacts to match the intent-text edits in this changeset (derived files; no behavior or invariant change).
 
 ## [0.2.3] — 2026-06-08
 
