@@ -260,6 +260,40 @@ pub fn score(inputs: &EngineInputs, aggressiveness: Aggressiveness) -> Decision 
     decision
 }
 
+#[aristo::intent(
+    "Scoring the authoring-debt (agent) signal needs ONLY the edit counter — \
+     never the index-derived Metrics. The PostToolUse hook that drives it \
+     fires on every edit, so it must not walk the source tree per edit; this \
+     scores the one signal straight from the counter, reusing the registry's \
+     base and the identical `pressure * factor >= 1` fire rule so it can't \
+     drift from `score`.",
+    verify = "test",
+    id = "score_authoring_debt_needs_no_index_walk"
+)]
+/// Score ONLY the `authoring_debt` signal, from the edit counter alone — no
+/// `EngineInputs`/`Metrics` and so no source walk (PostToolUse fires on every
+/// edit and must stay cheap). Returns the [`Fired`] (carrying metric + base
+/// for the throttle) when it fires.
+pub fn score_authoring_debt(
+    edits_since_annotation: usize,
+    aggressiveness: Aggressiveness,
+) -> Option<Fired> {
+    let signal = SIGNALS.iter().find(|s| s.id == "authoring_debt")?;
+    let metric = edits_since_annotation as f64;
+    let pressure = metric / signal.base;
+    if pressure * aggressiveness.factor() >= 1.0 {
+        Some(Fired {
+            id: signal.id,
+            audience: signal.audience,
+            pressure,
+            metric,
+            base: signal.base,
+        })
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,6 +440,31 @@ mod tests {
         let d = score(&i, Aggressiveness::Medium);
         assert!(d.agent.iter().any(|f| f.id == "authoring_debt"));
         assert!(d.human.iter().all(|f| f.id != "authoring_debt"));
+    }
+
+    #[test]
+    fn score_authoring_debt_agrees_with_full_score() {
+        // The counter-only fast path must match what the full scorer decides
+        // for authoring_debt at the same edit count + aggressiveness.
+        for edits in [0usize, 2, 3, 10] {
+            for agg in [
+                Aggressiveness::Off,
+                Aggressiveness::Low,
+                Aggressiveness::Medium,
+                Aggressiveness::High,
+            ] {
+                let mut i = inputs();
+                i.edits_since_annotation = edits;
+                let full = score(&i, agg)
+                    .agent
+                    .iter()
+                    .any(|f| f.id == "authoring_debt");
+                let fast = score_authoring_debt(edits, agg).is_some();
+                assert_eq!(full, fast, "edits={edits} agg={agg:?}");
+            }
+        }
+        // Off is a hard silence even at a huge count.
+        assert!(score_authoring_debt(1000, Aggressiveness::Off).is_none());
     }
 
     #[test]

@@ -22,4 +22,5 @@ pub(crate) mod session;
 pub(crate) mod show;
 pub(crate) mod stamp;
 pub(crate) mod status;
+pub(crate) mod statusline;
 pub(crate) mod verify;

@@ -1,9 +1,22 @@
 //! `aristo nudge` — the nudge/progress engine's union function + surfaces
 //! (Phase 18 #9, S0d). With no `--event` it prints what the engine would
-//! surface (human introspection); with `--event <post-tool-use|stop|
-//! session-start>` it runs as a Claude Code hook emitter and ALWAYS exits 0
-//! (a nudge must never break the agent). The hook install + the live spike
-//! that validates the Stop-hook contract land in S0d.3.
+//! surface (human introspection); with `--event <post-tool-use|
+//! user-prompt-submit|session-start>` it runs as a Claude Code hook emitter
+//! and ALWAYS exits 0 (a nudge must never break the agent).
+//!
+//! **Surface contract (v2, validated by the S0a spike — corrects SPINE-PLAN
+//! D10).** A hook only reaches the agent's context via
+//! `hookSpecificOutput.additionalContext` JSON — a plain `<system-reminder>`
+//! to stdout lands in the transcript but NOT in the model's context (proven:
+//! the old Stop/PostToolUse plain-stdout reminders never reached the agent;
+//! the SessionStart additionalContext did). And `Stop` does not deliver at
+//! all. So every surface here emits `additionalContext`, and the per-turn
+//! human nudge rides `UserPromptSubmit` (fires at the start of every turn,
+//! incl. the first — reliably reaches the agent without forcing continuation).
+//! `Stop` is dropped (an old `--event stop` parses as unknown → silent).
+//! `SessionStart` is compute-only: it captures the edit-window baseline and
+//! resets the counter, surfacing nothing (the next `UserPromptSubmit` carries
+//! the backlog). The ambient user-facing surface is `aristo statusline`.
 //!
 //! The union function [`build_inputs`] is the COMPUTE join the scorer reads:
 //! the index-derived [`Metrics`] plus the runtime facts only the cli can see
@@ -28,15 +41,18 @@ use crate::{CliError, CliResult, Workspace};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HookEvent {
     PostToolUse,
-    Stop,
+    UserPromptSubmit,
     SessionStart,
 }
 
 fn parse_event(raw: &str) -> Option<HookEvent> {
     match raw {
         "post-tool-use" | "PostToolUse" => Some(HookEvent::PostToolUse),
-        "stop" | "Stop" => Some(HookEvent::Stop),
+        "user-prompt-submit" | "UserPromptSubmit" => Some(HookEvent::UserPromptSubmit),
         "session-start" | "SessionStart" => Some(HookEvent::SessionStart),
+        // `stop`/`Stop` deliberately unhandled → silent: a Stop hook's stdout
+        // never reaches the agent, so the per-turn nudge moved to
+        // UserPromptSubmit. An already-installed `--event stop` no-ops here.
         _ => None,
     }
 }
@@ -85,11 +101,13 @@ fn emit_for_event(
             if aggressiveness.is_off() {
                 return Ok(());
             }
-            let inputs = build_inputs(ws, config, &state)?;
-            let decision = score(&inputs, aggressiveness);
-            // Agent surface (authoring_debt). Throttle it too so it doesn't
-            // nag on every edit once over threshold.
-            if let Some(f) = decision.agent.iter().find(|f| f.id == "authoring_debt") {
+            // authoring_debt scores off the counter alone — NO build_inputs /
+            // source walk (this hook fires on every edit; it must stay cheap).
+            // Agent surface via additionalContext (the only channel that
+            // reaches the agent); throttled so it doesn't nag once over the
+            // threshold.
+            let edits = state.edits_since_annotation;
+            if let Some(f) = crate::nudge::score_authoring_debt(edits, aggressiveness) {
                 if throttle::may_surface(
                     state.throttle.get(f.id),
                     now,
@@ -97,7 +115,7 @@ fn emit_for_event(
                     f.metric,
                     f.base,
                 ) {
-                    emit_agent_reminder(inputs.edits_since_annotation);
+                    print_additional_context("PostToolUse", &authoring_debt_context(edits));
                     state.throttle.insert(
                         f.id.to_string(),
                         throttle::record_after_surface(now, f.metric),
@@ -106,14 +124,16 @@ fn emit_for_event(
                 }
             }
         }
-        HookEvent::Stop => {
+        HookEvent::UserPromptSubmit => {
+            // The consolidated human nudge — at the START of each turn (incl.
+            // the first), reaching the agent via additionalContext without
+            // forcing continuation. Surface if ANY fired human signal clears
+            // its throttle; the cooldown gates per-turn spam.
             if aggressiveness.is_off() {
                 return Ok(());
             }
             let inputs = build_inputs(ws, config, &state)?;
             let decision = score(&inputs, aggressiveness);
-            // Consolidated human nudge: surface if ANY fired human signal
-            // clears its throttle. Update records for the ones that did.
             let cleared: Vec<crate::nudge::Fired> = decision
                 .human
                 .iter()
@@ -129,7 +149,10 @@ fn emit_for_event(
                 .cloned()
                 .collect();
             if !cleared.is_empty() {
-                emit_stop_reminder(&decision, &inputs);
+                print_additional_context(
+                    "UserPromptSubmit",
+                    &review_nudge_context(&decision, &inputs),
+                );
                 for f in &cleared {
                     state.throttle.insert(
                         f.id.to_string(),
@@ -140,8 +163,9 @@ fn emit_for_event(
             }
         }
         HookEvent::SessionStart => {
-            // Capture the edit-window baseline + reset the edit counter, then
-            // re-surface any standing backlog as additionalContext.
+            // Compute-only: capture the edit-window baseline + reset the edit
+            // counter. Surface NOTHING — the next UserPromptSubmit carries the
+            // backlog (SessionStart surfacing is premature + once-only).
             let inputs = build_inputs(ws, config, &state)?;
             state.baseline = Some(Baseline {
                 score: inputs.metrics.visible_score,
@@ -159,13 +183,6 @@ fn emit_for_event(
             });
             state.edits_since_annotation = 0;
             let _ = state.save(&state_path);
-            if aggressiveness.is_off() {
-                return Ok(());
-            }
-            let decision = score(&inputs, aggressiveness);
-            if !decision.human.is_empty() {
-                emit_session_start_context(&decision, &inputs);
-            }
         }
     }
     Ok(())
@@ -320,54 +337,63 @@ fn print_readout(
     }
 }
 
-// ─── hook emit (D10: the CLI nudges the AGENT; the agent talks to the human) ──
+// ─── hook emit: the agent's context is reached ONLY via additionalContext ──
+// A hook only injects into the model's context through
+// `hookSpecificOutput.additionalContext` (the S0a spike proved a plain
+// `<system-reminder>` to stdout does not). The CLI nudges the AGENT; the agent
+// is the one that talks to the human (pops the review skill / AskUserQuestion).
 
-/// PostToolUse agent reminder: prod the coding agent to capture intent.
-fn emit_agent_reminder(edits: usize) {
-    println!("<system-reminder>");
-    println!(
+#[aristo::intent(
+    "A hook reaches the agent's context ONLY through \
+     `hookSpecificOutput.additionalContext`; a plain string (even a literal \
+     `<system-reminder>`) printed to a hook's stdout lands in the transcript \
+     but never in the model's context (the S0a spike: the old Stop/PostToolUse \
+     stdout reminders never reached the agent, the SessionStart \
+     additionalContext did). Every agent-facing nudge MUST use this JSON \
+     envelope — emitting bare text would be a silently-dead nudge.",
+    verify = "test",
+    id = "nudge_reaches_agent_only_via_additional_context"
+)]
+/// The Claude Code hook `additionalContext` envelope for `event_name` — the
+/// only channel that injects into the agent's context.
+fn additional_context_json(event_name: &str, context: &str) -> serde_json::Value {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": event_name,
+            "additionalContext": context,
+        }
+    })
+}
+
+/// Emit the `additionalContext` envelope to stdout.
+fn print_additional_context(event_name: &str, context: &str) {
+    println!("{}", additional_context_json(event_name, context));
+}
+
+/// PostToolUse agent nudge body: prod the coding agent to capture intent.
+fn authoring_debt_context(edits: usize) -> String {
+    format!(
         "Aristo: {edits} source edits since your last annotation. If any of \
-         them embodied a non-obvious decision (a chosen invariant, a \
-         refactor trap, an intentional-not-incomplete choice), capture it now \
-         with an `aristo::intent` while the rationale is fresh — see the \
+         them embodied a non-obvious decision (a chosen invariant, a refactor \
+         trap, an intentional-not-incomplete choice), capture it now with an \
+         `aristo::intent` while the rationale is fresh — see the \
          aristo-authoring skill. Skip if the edits were purely mechanical."
-    );
-    println!("</system-reminder>");
+    )
 }
 
-/// Stop consolidated nudge: a hook can't pop an AskUserQuestion (D10), so it
-/// nudges the AGENT to offer the user the recommended review at a natural
-/// pause. Subject-only — about the user's own annotations/verification.
-fn emit_stop_reminder(decision: &Decision, inputs: &EngineInputs) {
-    println!("<system-reminder>");
-    println!("Aristo progress nudge — {}.", backlog_summary(inputs));
-    if let Some(rec) = decision.recommended() {
-        println!(
-            "At a natural pause, offer the user: {}. Don't interrupt mid-task.",
-            recommended_phrase(rec)
-        );
-    }
-    println!("</system-reminder>");
-}
-
-/// SessionStart additionalContext: re-surface standing backlog so the agent
-/// can offer a review early in the session. Same JSON shape the skills hook
-/// uses.
-fn emit_session_start_context(decision: &Decision, inputs: &EngineInputs) {
-    let mut context = format!("Aristo: {}.", backlog_summary(inputs));
+/// UserPromptSubmit consolidated nudge body: a hook can't pop an
+/// AskUserQuestion, so it nudges the AGENT to offer the user the recommended
+/// review at a natural pause. Subject-only — about the user's own
+/// annotations/verification.
+fn review_nudge_context(decision: &Decision, inputs: &EngineInputs) -> String {
+    let mut context = format!("Aristo progress nudge — {}.", backlog_summary(inputs));
     if let Some(rec) = decision.recommended() {
         context.push_str(&format!(
-            " When the user reaches a natural pause, offer: {}.",
+            " At a natural pause, offer the user: {}. Don't interrupt mid-task.",
             recommended_phrase(rec)
         ));
     }
-    let json = serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": context,
-        }
-    });
-    println!("{json}");
+    context
 }
 
 /// A subject-only one-line summary of the standing backlog.
@@ -420,5 +446,45 @@ fn recommended_phrase(signal_id: &str) -> &'static str {
         "proof_review_backlog" => "a review of the freshly-verified proofs",
         "score_slump" => "shoring up coverage — annotate or verify to recover the score",
         _ => "a review of the outstanding aristo items",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn additional_context_envelope_carries_event_and_context() {
+        let v = additional_context_json("UserPromptSubmit", "hello backlog");
+        assert_eq!(v["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit");
+        assert_eq!(
+            v["hookSpecificOutput"]["additionalContext"],
+            "hello backlog"
+        );
+        // It is JSON (the only channel that injects), NOT a bare <system-reminder>.
+        let s = v.to_string();
+        assert!(s.contains("hookSpecificOutput"));
+        assert!(!s.contains("<system-reminder>"));
+    }
+
+    #[test]
+    fn parse_event_drops_stop_and_keeps_the_v2_events() {
+        assert_eq!(parse_event("post-tool-use"), Some(HookEvent::PostToolUse));
+        assert_eq!(
+            parse_event("user-prompt-submit"),
+            Some(HookEvent::UserPromptSubmit)
+        );
+        assert_eq!(parse_event("session-start"), Some(HookEvent::SessionStart));
+        // Stop is dropped — an already-installed `--event stop` no-ops silently.
+        assert_eq!(parse_event("stop"), None);
+        assert_eq!(parse_event("Stop"), None);
+        assert_eq!(parse_event("nonsense"), None);
+    }
+
+    #[test]
+    fn authoring_debt_context_names_the_count_and_the_skill() {
+        let c = authoring_debt_context(4);
+        assert!(c.contains("4 source edits"));
+        assert!(c.contains("aristo-authoring"));
     }
 }
