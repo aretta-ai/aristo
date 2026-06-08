@@ -112,7 +112,7 @@ pub(crate) fn run_apply_findings(_ws: &Workspace, include_closed: bool) -> CliRe
 
 #[aristo::intent(
     "Canonicalize findings are surfaced alongside agentic critique \
-     findings in `aristo critique --apply-findings` per README L4 — \
+     findings in `aristo critique --apply-findings` — \
      they originate from `.aristo/canon-matches.toml::pending_matches`, \
      not from the `.critique` files the other five categories live in. \
      A regression that read only the .critique files would silently \

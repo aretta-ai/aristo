@@ -12,6 +12,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - intents: corrected the source-order extract annotation — its refactor-trap now names real reordering refactors (sorting, or collecting through an unordered structure) instead of "hashing", which produces a digest and never reorders the result.
 - intents: cleaned up the `aristo doc` annotations — removed stale slice/mockup planning labels (`slice-30`, `slice 29`, `I1`) and the colloquial "cheap", with no change to the documented behavior.
 - intents: clarified the `aristo verify` annotations — replaced the `Bool(false)`/shared-arm implementation detail with the behavioral skip rule, and stated the exhaustive-failure and grounding-rejection rationales in plain terms. Invariants unchanged.
+- intents: tightened the `aristo critique` annotations — replaced the "footgun"/"balloon" colloquialisms with precise wording and dropped an unstable `README L4` line reference. Invariants unchanged.
 
 ## [0.2.3] — 2026-06-08
 
