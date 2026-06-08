@@ -378,7 +378,7 @@ fn expand_by_depth(full: &IndexFile, matched: IndexFile, depth: u32) -> IndexFil
 
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
-        Filter::Id(want) => id.as_str() == want,
+        Filter::Id(wants) => wants.iter().any(|w| id.as_str() == w),
         Filter::File { path, line_range } => {
             if file_of(entry) != path {
                 return false;
@@ -391,8 +391,13 @@ fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
                 },
             }
         }
-        Filter::Parent(want) => parent_ids(entry).iter().any(|p| p.as_str() == want),
-        Filter::Status(want) => crate::commands::show::status_label(status_of(entry)) == want,
+        Filter::Parent(wants) => parent_ids(entry)
+            .iter()
+            .any(|p| wants.iter().any(|w| p.as_str() == w)),
+        Filter::Status(wants) => {
+            let label = crate::commands::show::status_label(status_of(entry));
+            wants.iter().any(|w| label == w)
+        }
     }
 }
 
@@ -510,7 +515,7 @@ mod tests {
     #[test]
     fn filter_index_id_keeps_only_matching() {
         let idx = make_index();
-        let filtered = filter_index(idx, &[Filter::Id("b".into())]);
+        let filtered = filter_index(idx, &[Filter::Id(vec!["b".into()])]);
         assert_eq!(filtered.entries.len(), 1);
         assert!(filtered
             .entries
@@ -540,7 +545,7 @@ mod tests {
     #[test]
     fn filter_index_parent_finds_children() {
         let idx = make_index();
-        let filtered = filter_index(idx, &[Filter::Parent("a".into())]);
+        let filtered = filter_index(idx, &[Filter::Parent(vec!["a".into()])]);
         // b is the only child of a.
         assert_eq!(filtered.entries.len(), 1);
         assert!(filtered
@@ -551,7 +556,7 @@ mod tests {
     #[test]
     fn filter_index_status_keeps_matching_state() {
         let idx = make_index();
-        let filtered = filter_index(idx, &[Filter::Status("stale".into())]);
+        let filtered = filter_index(idx, &[Filter::Status(vec!["stale".into()])]);
         assert_eq!(filtered.entries.len(), 1);
         assert!(filtered
             .entries
@@ -569,7 +574,7 @@ mod tests {
                     path: "src/a.rs".into(),
                     line_range: None,
                 },
-                Filter::Status("verified".into()),
+                Filter::Status(vec!["verified".into()]),
             ],
         );
         assert_eq!(filtered.entries.len(), 1);
@@ -581,7 +586,7 @@ mod tests {
     #[test]
     fn filter_index_no_matches_returns_empty_keeps_meta() {
         let idx = make_index();
-        let filtered = filter_index(idx, &[Filter::Id("does_not_exist".into())]);
+        let filtered = filter_index(idx, &[Filter::Id(vec!["does_not_exist".into()])]);
         assert!(filtered.entries.is_empty());
         assert_eq!(filtered.meta.schema_version, 1);
     }
@@ -605,7 +610,7 @@ mod tests {
     #[test]
     fn expand_by_depth_zero_returns_matched_unchanged() {
         let idx = make_index();
-        let matched = filter_index(idx.clone(), &[Filter::Id("a".into())]);
+        let matched = filter_index(idx.clone(), &[Filter::Id(vec!["a".into()])]);
         let expanded = expand_by_depth(&idx, matched.clone(), 0);
         assert_eq!(
             expanded.entries.keys().collect::<Vec<_>>(),
@@ -617,7 +622,7 @@ mod tests {
     fn expand_by_depth_one_picks_up_immediate_descendants() {
         let idx = make_index();
         // a is the parent of b. Filter to {a}; depth=1 should pull in b.
-        let matched = filter_index(idx.clone(), &[Filter::Id("a".into())]);
+        let matched = filter_index(idx.clone(), &[Filter::Id(vec!["a".into()])]);
         let expanded = expand_by_depth(&idx, matched, 1);
         let keys: Vec<&str> = expanded.entries.keys().map(|k| k.as_str()).collect();
         assert!(keys.contains(&"a"));
@@ -632,7 +637,7 @@ mod tests {
     fn expand_by_depth_one_picks_up_immediate_ancestors() {
         let idx = make_index();
         // Filter to {b}; depth=1 should pull in b's parent a (but not c).
-        let matched = filter_index(idx.clone(), &[Filter::Id("b".into())]);
+        let matched = filter_index(idx.clone(), &[Filter::Id(vec!["b".into()])]);
         let expanded = expand_by_depth(&idx, matched, 1);
         let keys: Vec<&str> = expanded.entries.keys().map(|k| k.as_str()).collect();
         assert!(keys.contains(&"a"));
@@ -681,7 +686,7 @@ mod tests {
             entries,
         };
         // Start at {a}; depth=1 should reach b but not c.
-        let matched = filter_index(idx.clone(), &[Filter::Id("a".into())]);
+        let matched = filter_index(idx.clone(), &[Filter::Id(vec!["a".into()])]);
         let exp1 = expand_by_depth(&idx, matched.clone(), 1);
         assert!(exp1
             .entries

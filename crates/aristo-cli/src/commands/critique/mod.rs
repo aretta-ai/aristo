@@ -219,7 +219,7 @@ fn matches_all(id: &AnnotationId, entry: &IndexEntry, filters: &[Filter]) -> boo
 
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
-        Filter::Id(want) => id.as_str() == want,
+        Filter::Id(wants) => wants.iter().any(|w| id.as_str() == w),
         Filter::File { path, line_range } => {
             if file_of(entry) != path {
                 return false;
@@ -232,11 +232,14 @@ fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
                 },
             }
         }
-        Filter::Parent(want) => match parent_ids(entry) {
-            Some(ids) => ids.iter().any(|p| p.as_str() == want),
+        Filter::Parent(wants) => match parent_ids(entry) {
+            Some(ids) => ids.iter().any(|p| wants.iter().any(|w| p.as_str() == w)),
             None => false,
         },
-        Filter::Status(want) => crate::commands::show::status_label(status_of(entry)) == want,
+        Filter::Status(wants) => {
+            let label = crate::commands::show::status_label(status_of(entry));
+            wants.iter().any(|w| label == w)
+        }
     }
 }
 

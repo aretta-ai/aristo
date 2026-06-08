@@ -326,16 +326,19 @@ fn matches_all(id: &AnnotationId, entry: &IndexEntry, filters: &[Filter]) -> boo
 
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
-        Filter::Id(want) => id.as_str() == want,
+        Filter::Id(wants) => wants.iter().any(|w| id.as_str() == w),
         // verify ignores the optional line_range (introduced by slice
         // 27.7 for critique scope; verify's "verify everything in this
         // file" semantic is unchanged).
         Filter::File { path, .. } => file_of(entry) == path,
-        Filter::Parent(want) => match parent_ids(entry) {
-            Some(ids) => ids.any_match(want),
+        Filter::Parent(wants) => match parent_ids(entry) {
+            Some(ids) => wants.iter().any(|w| ids.any_match(w)),
             None => false,
         },
-        Filter::Status(want) => crate::commands::show::status_label(status_of(entry)) == want,
+        Filter::Status(wants) => {
+            let label = crate::commands::show::status_label(status_of(entry));
+            wants.iter().any(|w| label == w)
+        }
     }
 }
 

@@ -48,7 +48,7 @@ fn parse_filters(filter_strings: &[String]) -> CliResult<Vec<Filter>> {
 
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
-        Filter::Id(want) => id.as_str() == want,
+        Filter::Id(wants) => wants.iter().any(|w| id.as_str() == w),
         Filter::File { path, .. } => match entry {
             // list ignores the optional line_range (slice 27.7 added it
             // for critique scope; list's "show me everything in this
@@ -56,11 +56,14 @@ fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
             IndexEntry::Intent(e) => e.file == *path,
             IndexEntry::Assume(e) => e.file == *path,
         },
-        Filter::Parent(want) => match parent_of(entry) {
-            Some(link) => link.iter().any(|p| p.as_str() == want),
+        Filter::Parent(wants) => match parent_of(entry) {
+            Some(link) => link.iter().any(|p| wants.iter().any(|w| p.as_str() == w)),
             None => false,
         },
-        Filter::Status(want) => status_label(status_of(entry)) == want,
+        Filter::Status(wants) => {
+            let label = status_label(status_of(entry));
+            wants.iter().any(|w| label == w)
+        }
     }
 }
 
