@@ -115,7 +115,7 @@ pub(crate) fn walk_options_from_workspace(ws: &Workspace) -> CliResult<WalkOptio
      returns an entry without an id; there is no `unindexed` half-state. \
      Because the generated id is a pure function of identity, re-stamping \
      unchanged source mints the same ids, so the index keeps each entry's \
-     prior status and proof instead of churning it as removed-then-new.",
+     prior status and proof instead of treating it as removed-then-new.",
     verify = "test",
     id = "build_entries_assigns_deterministic_ids_when_missing"
 )]

@@ -8,6 +8,19 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- intents: corrected the rejection-log append annotation — its lock-free justification now cites `O_APPEND` end-of-file semantics instead of a misapplied POSIX `PIPE_BUF` guarantee (which covers pipes/FIFOs, not regular-file writes).
+- intents: corrected the source-order extract annotation — its refactor-trap now names real reordering refactors (sorting, or collecting through an unordered structure) instead of "hashing", which produces a digest and never reorders the result.
+- intents: cleaned up the `aristo doc` annotations — removed stale slice/mockup planning labels (`slice-30`, `slice 29`, `I1`) and the colloquial "cheap", with no change to the documented behavior.
+- intents: clarified the `aristo verify` annotations — replaced the `Bool(false)`/shared-arm implementation detail with the behavioral skip rule, and stated the exhaustive-failure and grounding-rejection rationales in plain terms. Invariants unchanged.
+- intents: tightened the `aristo critique` annotations — replaced the "footgun"/"balloon" colloquialisms with precise wording and dropped an unstable `README L4` line reference. Invariants unchanged.
+- intents: cleaned up the nudge annotations — removed an implementation-history spike reference (`S0a`) and informal phrasing ("silently-dead", "tier-up", `SAME` emphasis). Invariants unchanged.
+- intents: cleaned up the session-guard, stamp, and rename annotations — removed internal jargon ("slop-drift"), redundant emphasis ("loud, unmissable"), and a slice-scoped deferral note. Invariants unchanged.
+- intents: cleaned up the install-skills, index, workspace, and scan-ids annotations — removed a `slice 32` coupling and colloquialisms ("modulo", "churning", "at first typo"). Invariants unchanged.
+- docs: recorded a deferred note (`docs/deferred/critique-philosophy-context.md`) that `aristo critique` workers don't receive the authoring PHILOSOPHY.md, so their findings reflect generic prose norms rather than house taste — with two fix options for a later pass.
+- intents: tightened the abort-confirmation annotation — "any typo'd subcommand" became "any unintended invocation", since the risk is any unintended abort, not specifically a typo. Invariant unchanged.
+- chore: re-stamped `.aristo/index.toml` and the per-annotation doc artifacts to match the intent-text edits in this changeset (derived files; no behavior or invariant change).
+- intents: resolved the 4 previously-deferred critique findings — tightened the critique cache-stamp annotation (kept the atomicity invariant and its failure mode, dropped a planning reference) and removed a sibling cross-reference from the critique submit annotation; affirmed the apply-sweep and lang cheat-sheet annotations unchanged. Invariants unchanged.
+
 ## [0.2.3] — 2026-06-08
 
 Agent-facing progress engine and a completed skill suite. Aristo now nudges you to review and verify your own annotations at natural moments, shows an ambient status line, and ships the full set of `/aristo-*` skills. Annotation ids are also now deterministic, which fixes a bug that could orphan proofs.

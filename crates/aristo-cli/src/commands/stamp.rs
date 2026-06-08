@@ -283,7 +283,7 @@ fn gc_archived_proofs(ws: &crate::Workspace) -> CliResult<()> {
 
 #[aristo::intent(
     "Every `aristo stamp` run that finds a Counterexample-status entry \
-     emits a loud, unmissable warning enumerating each id, file, and \
+     emits a prominent warning enumerating each id, file, and \
      site. There is no `aristo accept-counterexample` to silence this; \
      a counterexample is a definite refutation and stays visible until \
      either the code is fixed (→ body drift → Status::Stale → re-verify) \

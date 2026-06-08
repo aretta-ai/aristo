@@ -82,9 +82,10 @@ pub enum ExtractError {
 }
 
 #[aristo::intent(
-    "Annotations return in source order — top of file first. Sorting or \
-     hashing the result would silently break stable index ordering and \
-     the test fixtures that index into it positionally.",
+    "Annotations return in source order — top of file first. Sorting the \
+     result, or collecting it through any unordered structure, would \
+     silently break stable index ordering and the test fixtures that index \
+     into it positionally.",
     verify = "test",
     id = "extract_returns_annotations_in_source_order"
 )]

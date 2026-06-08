@@ -124,7 +124,7 @@ pub(crate) fn run_abort(yes: bool) -> CliResult<()> {
      posture matches every other destructive aristo command (no \
      `aristo stamp --force` without explicit opt-in). A refactor that \
      defaulted to yes would silently drop a session's audit trail on \
-     any typo'd subcommand.",
+     any unintended invocation.",
     verify = "neural",
     id = "abort_requires_explicit_confirmation"
 )]
