@@ -18,8 +18,7 @@ use crate::{CliError, CliResult, Workspace};
      prints `accepted: sha256:<hex>` to stdout for the orchestrator's \
      integrity check. Validation gates schema enums + focal-id-in-index \
      + text staleness anchor + per-finding rationale presence; any \
-     failure short-circuits before write_proof_atomic. Same shape as \
-     submit-verdict, different payload schema.",
+     failure short-circuits before write_proof_atomic.",
     verify = "neural",
     id = "submit_findings_is_only_write_path_for_critiques"
 )]

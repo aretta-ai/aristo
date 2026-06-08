@@ -31,8 +31,8 @@ pub(crate) mod validator;
     "`aristo critique` requires an explicit `--filter` (id or file). \
      Default scope is NOT all annotations — an unbounded codebase sweep \
      is an expensive LLM operation and shouldn't be the accidental path. \
-     A refactor that defaults to `--all` would turn `aristo critique` \
-     into a footgun the first time a user runs it on a large project.",
+     A refactor that defaults to `--all` would fire an unbounded, \
+     expensive LLM sweep the first time a user runs it on a large project.",
     verify = "neural",
     id = "critique_requires_explicit_filter_no_implicit_all"
 )]
@@ -219,7 +219,7 @@ fn matches_all(id: &AnnotationId, entry: &IndexEntry, filters: &[Filter]) -> boo
 
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
-        Filter::Id(want) => id.as_str() == want,
+        Filter::Id(wants) => wants.iter().any(|w| id.as_str() == w),
         Filter::File { path, line_range } => {
             if file_of(entry) != path {
                 return false;
@@ -232,11 +232,14 @@ fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
                 },
             }
         }
-        Filter::Parent(want) => match parent_ids(entry) {
-            Some(ids) => ids.iter().any(|p| p.as_str() == want),
+        Filter::Parent(wants) => match parent_ids(entry) {
+            Some(ids) => ids.iter().any(|p| wants.iter().any(|w| p.as_str() == w)),
             None => false,
         },
-        Filter::Status(want) => crate::commands::show::status_label(status_of(entry)) == want,
+        Filter::Status(wants) => {
+            let label = crate::commands::show::status_label(status_of(entry));
+            wants.iter().any(|w| label == w)
+        }
     }
 }
 

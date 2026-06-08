@@ -74,9 +74,9 @@ pub(crate) struct ValidationFailure {
     "The validator collects EVERY failure into one report rather than \
      short-circuiting on the first. The user (or in-agent repair loop) \
      needs the complete list to fix in one pass; short-circuiting \
-     forces N round-trips for N failures, which doesn't compose with \
-     the bounded-attempts budget (the verifier would burn its budget \
-     fixing failures one at a time).",
+     forces N round-trips for N failures, and under a bounded-attempts \
+     repair budget each round-trip consumes one attempt without \
+     resolving the rest.",
     verify = "test",
     id = "validator_collects_all_failures_not_short_circuit"
 )]
@@ -490,8 +490,8 @@ fn check_one_ground(
 
 #[aristo::intent(
     "Cited intent/assume grounds are rejected when (a) the id is \
-     dangling, (b) the cited entry is verify=false (docs-only — not \
-     load-bearing for a proof), or (c) the cited entry is Status::\
+     dangling, (b) the cited entry is verify=false (documentation-only \
+     and not load-bearing for a proof), or (c) the cited entry is Status::\
      Counterexample (refuted — building on it would launder a refuted \
      claim back into Verified). A refactor that downgrades any of \
      these to warnings would let proofs ground in claims the project \

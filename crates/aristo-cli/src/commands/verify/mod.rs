@@ -326,16 +326,19 @@ fn matches_all(id: &AnnotationId, entry: &IndexEntry, filters: &[Filter]) -> boo
 
 fn matches_filter(id: &AnnotationId, entry: &IndexEntry, f: &Filter) -> bool {
     match f {
-        Filter::Id(want) => id.as_str() == want,
+        Filter::Id(wants) => wants.iter().any(|w| id.as_str() == w),
         // verify ignores the optional line_range (introduced by slice
         // 27.7 for critique scope; verify's "verify everything in this
         // file" semantic is unchanged).
         Filter::File { path, .. } => file_of(entry) == path,
-        Filter::Parent(want) => match parent_ids(entry) {
-            Some(ids) => ids.any_match(want),
+        Filter::Parent(wants) => match parent_ids(entry) {
+            Some(ids) => wants.iter().any(|w| ids.any_match(w)),
             None => false,
         },
-        Filter::Status(want) => crate::commands::show::status_label(status_of(entry)) == want,
+        Filter::Status(wants) => {
+            let label = crate::commands::show::status_label(status_of(entry));
+            wants.iter().any(|w| label == w)
+        }
     }
 }
 
@@ -374,11 +377,11 @@ fn parent_ids(entry: &IndexEntry) -> Option<&aristo_core::index::ParentLink> {
     "`assume` entries have no `verify` field by design — they describe \
      external trust (OS guarantees, library invariants, environment \
      contracts), not properties of THIS code, so there is no internal \
-     method that could verify them. They resolve to Bool(false) here \
-     (the same arm as opt-out intents) so the dispatcher's single \
-     skip-without-skill path handles both. A refactor that tries to \
-     verify assumes would either invent a verification semantic the \
-     design rejects or fail trying.",
+     method that could verify them. They take the same \
+     skip-without-verification path the dispatcher uses for opt-out \
+     intents, so neither needs a verification skill. A refactor that \
+     tries to verify assumes would either invent a verification \
+     semantic the design rejects or fail trying.",
     verify = "neural",
     id = "verify_assumes_are_documentation_only_by_design"
 )]

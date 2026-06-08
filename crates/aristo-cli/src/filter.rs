@@ -4,20 +4,31 @@
 //! Form: `<key>=<value>`. Allowed keys: `id`, `file`, `parent`, `status`.
 //! Multiple `--filter` flags AND together at the call site (not modeled
 //! here — this type represents a single filter clause).
+//!
+//! The `id`, `parent`, and `status` values may be comma-separated
+//! (`id=a,b,c`): the members form a value-level OR — the clause matches
+//! an annotation whose id (resp. parent / status) equals ANY listed
+//! member. `file` takes a single path (its optional `:<LO>-<HI>` range
+//! suffix would make a comma ambiguous, and a path may legitimately
+//! contain a comma).
 
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Filter {
-    Id(String),
+    /// Match if the annotation id equals any member of the set.
+    /// `id=a,b` → `["a", "b"]`; `id=a` → `["a"]`.
+    Id(Vec<String>),
     /// Match by file path, optionally restricted to a closed line
     /// range. Syntax: `file=<path>` or `file=<path>:<LO>-<HI>`.
     File {
         path: String,
         line_range: Option<(u32, u32)>,
     },
-    Parent(String),
-    Status(String),
+    /// Match if any of the annotation's parents equals any member.
+    Parent(Vec<String>),
+    /// Match if the annotation's status label equals any member.
+    Status(Vec<String>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -75,15 +86,42 @@ impl FromStr for Filter {
             });
         }
         match key {
-            "id" => Ok(Filter::Id(value.to_string())),
+            "id" => parse_value_set(key, value).map(Filter::Id),
             "file" => parse_file_value(s, value),
-            "parent" => Ok(Filter::Parent(value.to_string())),
-            "status" => Ok(Filter::Status(value.to_string())),
+            "parent" => parse_value_set(key, value).map(Filter::Parent),
+            "status" => parse_value_set(key, value).map(Filter::Status),
             other => Err(FilterParseError::UnknownKey {
                 key: other.to_string(),
             }),
         }
     }
+}
+
+#[aristo::intent(
+    "`id`, `parent`, and `status` values split on `,` into a value-level \
+     OR set (`id=a,b` matches a OR b); members are trimmed and empties \
+     dropped, and an all-empty value (`id=,`) is `EmptyValue`. `file` is \
+     deliberately NOT comma-split — its optional `:<LO>-<HI>` range \
+     suffix and the fact that a path may contain a `,` make splitting \
+     ambiguous. A refactor that routed `file` through this helper \"for \
+     consistency\" would silently break range parsing and comma-bearing \
+     paths.",
+    verify = "test",
+    id = "filter_value_set_comma_splits_scalar_keys_not_file"
+)]
+fn parse_value_set(key: &str, value: &str) -> Result<Vec<String>, FilterParseError> {
+    let members: Vec<String> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(String::from)
+        .collect();
+    if members.is_empty() {
+        return Err(FilterParseError::EmptyValue {
+            key: key.to_string(),
+        });
+    }
+    Ok(members)
 }
 
 /// Split `<path>[:<LO>-<HI>]` into a `Filter::File`. The `:` separator
@@ -155,7 +193,66 @@ mod tests {
     fn parses_id() {
         assert_eq!(
             "id=foo".parse::<Filter>().unwrap(),
-            Filter::Id("foo".into())
+            Filter::Id(vec!["foo".into()])
+        );
+    }
+
+    #[test]
+    fn parses_id_comma_list_into_value_set() {
+        // J2 grammar: `id=a,b,c` is a comma-separated OR set, NOT a single
+        // literal id "a,b,c". Regression test for the bug where the whole
+        // value was kept verbatim and matched nothing.
+        assert_eq!(
+            "id=a,b,c".parse::<Filter>().unwrap(),
+            Filter::Id(vec!["a".into(), "b".into(), "c".into()])
+        );
+    }
+
+    #[test]
+    fn comma_members_are_trimmed_and_empties_dropped() {
+        assert_eq!(
+            "id=a, b ,,c,".parse::<Filter>().unwrap(),
+            Filter::Id(vec!["a".into(), "b".into(), "c".into()])
+        );
+    }
+
+    #[test]
+    fn all_empty_comma_value_rejected() {
+        // `id=,` and `id=, ,` have no non-empty member → EmptyValue.
+        assert!(matches!(
+            "id=,".parse::<Filter>().unwrap_err(),
+            FilterParseError::EmptyValue { .. }
+        ));
+        assert!(matches!(
+            "id=, ,".parse::<Filter>().unwrap_err(),
+            FilterParseError::EmptyValue { .. }
+        ));
+    }
+
+    #[test]
+    fn parent_and_status_also_comma_split() {
+        assert_eq!(
+            "parent=a,b".parse::<Filter>().unwrap(),
+            Filter::Parent(vec!["a".into(), "b".into()])
+        );
+        assert_eq!(
+            "status=verified,stale".parse::<Filter>().unwrap(),
+            Filter::Status(vec!["verified".into(), "stale".into()])
+        );
+    }
+
+    #[test]
+    fn file_value_is_not_comma_split() {
+        // `file` keeps commas verbatim — a path may contain one, and the
+        // optional `:<LO>-<HI>` range grammar would make a comma split
+        // ambiguous. Guards the intent
+        // filter_value_set_comma_splits_scalar_keys_not_file.
+        assert_eq!(
+            "file=a,b.rs".parse::<Filter>().unwrap(),
+            Filter::File {
+                path: "a,b.rs".into(),
+                line_range: None,
+            }
         );
     }
 
@@ -225,7 +322,7 @@ mod tests {
     fn parses_parent() {
         assert_eq!(
             "parent=root_invariants".parse::<Filter>().unwrap(),
-            Filter::Parent("root_invariants".into())
+            Filter::Parent(vec!["root_invariants".into()])
         );
     }
 
@@ -233,7 +330,7 @@ mod tests {
     fn parses_status() {
         assert_eq!(
             "status=verified".parse::<Filter>().unwrap(),
-            Filter::Status("verified".into())
+            Filter::Status(vec!["verified".into()])
         );
     }
 
@@ -243,7 +340,7 @@ mod tests {
         // inside (rare for ids/paths but possible) survive.
         assert_eq!(
             "id=foo=bar".parse::<Filter>().unwrap(),
-            Filter::Id("foo=bar".into())
+            Filter::Id(vec!["foo=bar".into()])
         );
     }
 
@@ -252,7 +349,7 @@ mod tests {
         // `aristos:` prefix contains a colon, not an equals — must round-trip.
         assert_eq!(
             "id=aristos:my_thing".parse::<Filter>().unwrap(),
-            Filter::Id("aristos:my_thing".into())
+            Filter::Id(vec!["aristos:my_thing".into()])
         );
     }
 

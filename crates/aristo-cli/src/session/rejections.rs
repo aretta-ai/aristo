@@ -45,14 +45,13 @@ pub struct RejectionEntry {
 }
 
 #[aristo::intent(
-    "Rejection-log writes use `OpenOptions::append(true).create(true)` \
-     plus a single `write_all` of the JSON line + `\\n`. No locking is \
-     needed because (a) the file is per-workspace and gitignored, so \
-     no cross-team writers; (b) writes are line-sized and POSIX \
-     guarantees write atomicity for buffers ≤ PIPE_BUF (4 KiB on \
-     Linux/macOS, well above any single JSON rejection record). A \
-     refactor that read-modify-wrote the whole file would lose this \
-     property and need explicit locking.",
+    "Rejection-log writes open with `OpenOptions::append(true).create(true)` \
+     and append the serialized JSON line. No locking is needed: the file is \
+     per-workspace and gitignored, so there are no cross-process writers \
+     outside a single user session, and within a session the single-writer \
+     flow appends under `O_APPEND`, which positions each write at \
+     end-of-file. A refactor that read-modify-wrote the whole file would \
+     lose this property and need explicit locking.",
     verify = "neural",
     id = "rejection_log_append_relies_on_posix_write_atomicity"
 )]
