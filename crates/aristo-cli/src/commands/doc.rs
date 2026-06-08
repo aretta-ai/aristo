@@ -157,7 +157,7 @@ fn run_check(ws: &Workspace, index: &IndexFile, include_status: bool) -> CliResu
      id↔filename mapping across the SDK. A regression that picks a \
      different escape (or uses the raw id with `:`) would create \
      platform-specific filename failures (`:` is illegal on Windows / \
-     macOS HFS+) AND silently break the slice-30 proc-macro that \
+     macOS HFS+) AND silently break the doc-embedding proc-macro that \
      reads these files via `include_str!`.",
     verify = "neural",
     id = "doc_per_annotation_filename_uses_id_safe"
@@ -278,7 +278,7 @@ fn file_unchanged(path: &Path, rendered: &str) -> bool {
 }
 
 #[aristo::intent(
-    "Per-annotation markdown structure is locked by the I1 `samples.md` \
+    "Per-annotation markdown structure is locked by the `samples.md` \
      mockup: header line (`**Aristo verified intent — \\`<id>\\`**` for \
      intents, `**Aristo assumption — \\`<id>\\`**` for assumes), blank \
      line, body text verbatim, blank line, `<sub>` metadata line, \
@@ -402,9 +402,9 @@ fn verify_label(level: VerifyLevel) -> &'static str {
 #[aristo::intent(
     "`aristo doc --summary` writes the crate-root `_summary.md` ONLY — \
      it does not also run the per-annotation pass. Combining both is \
-     `aristo doc --include-graph` (slice 29). A regression that made \
+     `aristo doc --include-graph`. A regression that made \
      `--summary` imply per-annotation writes would surprise users who \
-     opted into the cheap summary-only flow for CI gates.",
+     opted into the lightweight summary-only flow for CI gates.",
     verify = "neural",
     id = "doc_summary_writes_summary_only"
 )]
