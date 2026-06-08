@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
-generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-08T02:46:09.139374Z"
+generated_by = "aristo stamp 0.2.3"
+generated_at = "2026-06-08T08:25:51.269956Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -1093,13 +1093,24 @@ covered_region = "function"
 
 [statusline_is_read_only_and_tolerant]
 kind = "intent"
-text = "The statusline is read-only and TOLERANT: on any failure — no workspace, an unreadable index, or nudges globally off — it prints nothing and exits 0. The status bar re-renders on every turn, so a statusline that errored or wrote files would corrupt the bar or thrash the workspace on every keystroke. Silence is the correct degraded state."
+text = "The statusline is read-only and TOLERANT: on any failure — no workspace, an unreadable index, or nudges globally off — it prints nothing and exits 0. The status bar re-renders on every turn, so a statusline that errored or wrote files would corrupt the bar or thrash the workspace on every keystroke. Silence is the correct degraded state. It also stays CHEAP: index + nudge-state + the session pointer + a stat of the annotated files + a local sign-in check, never a source-tree walk."
 verify = "test"
 status = "unknown"
-text_hash = "sha256:005c9fef461bbb6cecf519d93cc85f2f6cc1fd1987aff92cfb6542c341192ff0"
-body_hash = "sha256:e7f6c869aca7f761afdefb5bf1d67e8f34b1abf01138013e7f8ef603e50c59d0"
+text_hash = "sha256:64373b11f53dfba65c35aa543c64af2ec5060b11f4cf019bcf0cb1cd7c6f608c"
+body_hash = "sha256:e9fd4a6bbd2e0737ed731f310bd8a32c69da5c16d85703aa213201052c31e118"
 file = "crates/aristo-cli/src/commands/statusline.rs"
-site = "fn run (line 22)"
+site = "fn run (line 56)"
+covered_region = "function"
+
+[statusline_staleness_is_cheap_and_conservative]
+kind = "intent"
+text = "The bar's staleness count is cheap and conservative: an intent is stale if it is recorded broken (Status::Stale or Counterexample) OR it is currently terminal-clean but its source file's mtime is newer than the index's (edited since the last stamp, so its proof may be clobbered). The mtime test is a FILE-level heuristic — it over-counts versus a per-function body-hash recompute, which is the right bias for a 're-verify' warning and avoids the per-render source parse the bar forbids. When either mtime is unreadable it does NOT warn (tolerant: omission over a false alarm). Unknown/Inconclusive are not stale, only unverified."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:c7dba72a608b34cb3fd0450946ac146f12a6f33035e922ecc00e6bd509c73179"
+body_hash = "sha256:c9feca222887ba671292951a234dc1f27660fcd121cfd5460e26f8ba256bdabe"
+file = "crates/aristo-cli/src/commands/statusline.rs"
+site = "fn intent_is_stale (line 231)"
 covered_region = "function"
 
 [stmt_form_intents_use_open_visit_descent_not_whitelist]

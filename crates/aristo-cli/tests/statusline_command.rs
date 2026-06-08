@@ -30,13 +30,16 @@ fn statusline_shows_backlog_for_an_unverified_unreviewed_intent() {
         .assert()
         .success();
 
+    // v2 Hybrid format: review = remaining count, verify = done/total coverage.
+    // The fresh intent is unreviewed and not yet terminal-clean → "1 review",
+    // "0/1 verified" (no cached tier in a non-session invocation).
     aristo_in(tmp.path())
         .arg("statusline")
         .assert()
         .success()
         .stdout(contains("aristo"))
-        .stdout(contains("review"))
-        .stdout(contains("unverified"));
+        .stdout(contains("1 review"))
+        .stdout(contains("0/1 verified"));
 }
 
 #[test]
