@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-08T07:40:37.240546Z"
+generated_at = "2026-06-08T08:05:23.578791Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -254,7 +254,7 @@ status = "unknown"
 text_hash = "sha256:87b254306718e308a695b5b66558c8ca80dc9e28cbf5629544e7b2a5e4ed4b5d"
 body_hash = "sha256:9f54785949cb6e6028d71c0fe7bbc4edbf1790b96b5cc4a6d940c513fb6ca9ad"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
-site = "fn format_all_confirmation (line 282)"
+site = "fn format_all_confirmation (line 285)"
 covered_region = "function"
 
 [critique_apply_stamps_cache_on_success]
@@ -331,7 +331,7 @@ status = "unknown"
 text_hash = "sha256:69093923520528f8073dbb349408b7dd147b700f64067b61887e6779a226db8f"
 body_hash = "sha256:e52b7d0a967aee592c885d6c269837712e19c8a1073340b1f1c5d4509a4d94b7"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
-site = "fn critique_is_current (line 365)"
+site = "fn critique_is_current (line 368)"
 covered_region = "function"
 
 [critique_staged_filter_intersects_with_explicit_filter]
@@ -342,7 +342,7 @@ status = "unknown"
 text_hash = "sha256:cce4ec8895ba175ad4e5b711ca5928008099f518093b3560147c7522112527cc"
 body_hash = "sha256:8f8e22fec83c5d4862e13c534b4652d3c7b4b17c88adab4abcac6cf0df4e2239"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
-site = "fn staged_files_or_error (line 322)"
+site = "fn staged_files_or_error (line 325)"
 covered_region = "function"
 
 [critique_validator_checks_schema_and_focal_id_in_index]
@@ -519,6 +519,17 @@ text_hash = "sha256:e68e0275aaceb3c75bf229228ef75a8d12504be0ae6bca8e3486fb60b71b
 body_hash = "sha256:7ecabc28c1397e30fc52eb57bfda58f56ea52491d86d9710f77214115e3f1e36"
 file = "crates/aristo-cli/src/skills/install.rs"
 site = "fn file_copy_uninstall (line 140)"
+covered_region = "function"
+
+[filter_value_set_comma_splits_scalar_keys_not_file]
+kind = "intent"
+text = '`id`, `parent`, and `status` values split on `,` into a value-level OR set (`id=a,b` matches a OR b); members are trimmed and empties dropped, and an all-empty value (`id=,`) is `EmptyValue`. `file` is deliberately NOT comma-split — its optional `:<LO>-<HI>` range suffix and the fact that a path may contain a `,` make splitting ambiguous. A refactor that routed `file` through this helper "for consistency" would silently break range parsing and comma-bearing paths.'
+verify = "test"
+status = "unknown"
+text_hash = "sha256:9ea6313f642a46c7b4ed662b96a6039a466d9d6d9f715c3df3dc74c1e1a6d2c8"
+body_hash = "sha256:32826442125e0ece15aef6a240e423cee686d6cff6c2df88c3e26abb1d35edad"
+file = "crates/aristo-cli/src/filter.rs"
+site = "fn parse_value_set (line 100)"
 covered_region = "function"
 
 [freshness_check_compares_source_mtimes_to_index]
@@ -1264,7 +1275,7 @@ status = "unknown"
 text_hash = "sha256:d26cb01329f074cbfd5acc0d3b31c04f8b15e15f96c228a60413dba8fe1fcf92"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 373)"
+site = "fn resolve_verify_level (line 376)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -1275,7 +1286,7 @@ status = "unknown"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 385)"
+site = "fn resolve_verify_level (line 388)"
 covered_region = "function"
 
 [verify_false_arm_is_intentional_skip]
@@ -1330,7 +1341,7 @@ status = "unknown"
 text_hash = "sha256:ec349c62caa14bf353768509d1662e6ec68dc8d5d703d542e698ca3c5fb1089f"
 body_hash = "sha256:92a9f4dcd35a81ce63e0cd198bee192b970574abf1a2282d7fc7dd2b693f163c"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn skip_because_proof_still_holds (line 410)"
+site = "fn skip_because_proof_still_holds (line 413)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]

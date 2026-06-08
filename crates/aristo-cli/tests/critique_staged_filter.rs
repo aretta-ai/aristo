@@ -198,6 +198,27 @@ fn staged_intersects_with_filter_id_clause() {
 }
 
 #[test]
+fn filter_id_comma_list_enqueues_each_listed_id() {
+    // J2 unified grammar: `id=a,b` is a comma-separated OR set, NOT a
+    // single literal id "a,b". Regression for the bug where the whole
+    // value was kept verbatim, matched no annotation, and left the queue
+    // empty. End-to-end via the CLI so it survives the Filter refactor.
+    let tmp = make_two_file_project();
+    let repo = tmp.path();
+
+    aristo_in(repo)
+        .args(["critique", "--filter", "id=ann_in_a,ann_in_b"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        queue_ids(repo),
+        vec!["ann_in_a", "ann_in_b"],
+        "comma-list must enqueue BOTH ids; the pre-fix bug matched neither",
+    );
+}
+
+#[test]
 fn critique_without_filter_or_staged_errors_with_actionable_message() {
     // The filter-required guard still fires when neither --filter nor
     // --staged nor --all is provided.

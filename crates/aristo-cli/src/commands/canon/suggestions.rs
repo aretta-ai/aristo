@@ -316,7 +316,7 @@ fn bare(id: &str) -> &str {
 /// through (the seeding/match stages honor them). Clauses AND together.
 fn task_passes_filter(task: &SuggestionTask, filter: &[Filter]) -> bool {
     filter.iter().all(|f| match f {
-        Filter::Parent(p) => task.key() == bare(p),
+        Filter::Parent(ps) => ps.iter().any(|p| task.key() == bare(p)),
         _ => true,
     })
 }
