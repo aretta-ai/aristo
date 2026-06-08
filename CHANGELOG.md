@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 - intents: corrected the rejection-log append annotation — its lock-free justification now cites `O_APPEND` end-of-file semantics instead of a misapplied POSIX `PIPE_BUF` guarantee (which covers pipes/FIFOs, not regular-file writes).
+- intents: corrected the source-order extract annotation — its refactor-trap now names real reordering refactors (sorting, or collecting through an unordered structure) instead of "hashing", which produces a digest and never reorders the result.
 
 ## [0.2.3] — 2026-06-08
 
