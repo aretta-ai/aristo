@@ -28,9 +28,9 @@ use crate::{CliError, CliResult};
      other two). Layer 1 is the only one that's mechanically \
      enforceable — the hook is advisory and the skill body is \
      documentation. A refactor that bypasses the guard for any \
-     mutating command re-introduces the slop-drift failure mode the \
-     substrate exists to prevent: artifacts get committed without the \
-     user noticing they bypassed review.",
+     mutating command re-introduces the failure mode the substrate \
+     exists to prevent: artifacts get committed without the user \
+     noticing they bypassed review.",
     verify = "neural",
     id = "every_mutating_command_calls_ensure_no_active_session"
 )]

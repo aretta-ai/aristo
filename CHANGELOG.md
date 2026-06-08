@@ -14,6 +14,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - intents: clarified the `aristo verify` annotations — replaced the `Bool(false)`/shared-arm implementation detail with the behavioral skip rule, and stated the exhaustive-failure and grounding-rejection rationales in plain terms. Invariants unchanged.
 - intents: tightened the `aristo critique` annotations — replaced the "footgun"/"balloon" colloquialisms with precise wording and dropped an unstable `README L4` line reference. Invariants unchanged.
 - intents: cleaned up the nudge annotations — removed an implementation-history spike reference (`S0a`) and informal phrasing ("silently-dead", "tier-up", `SAME` emphasis). Invariants unchanged.
+- intents: cleaned up the session-guard, stamp, and rename annotations — removed internal jargon ("slop-drift"), redundant emphasis ("loud, unmissable"), and a slice-scoped deferral note. Invariants unchanged.
 
 ## [0.2.3] — 2026-06-08
 

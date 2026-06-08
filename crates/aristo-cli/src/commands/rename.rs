@@ -60,9 +60,8 @@ pub(crate) fn run(old_id: &str, new_id: &str, dry_run: bool) -> CliResult<()> {
      and refuses with structural drift — the user reverts or completes \
      manually. The reverse order (index first, source last) would leave \
      the user with an index pointing at ids the source doesn't define, \
-     making `aristo show` / `aristo list` lie. No real transactional \
-     rollback ships in slice 32 (out-of-scope per HANDOFF); 'best-effort \
-     recoverable' is the contract.",
+     making `aristo show` / `aristo list` lie. There is no transactional \
+     rollback; 'best-effort recoverable' is the contract.",
     verify = "test",
     id = "rename_writes_index_last_for_recoverable_partial_failure"
 )]
