@@ -16,6 +16,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - intents: cleaned up the nudge annotations — removed an implementation-history spike reference (`S0a`) and informal phrasing ("silently-dead", "tier-up", `SAME` emphasis). Invariants unchanged.
 - intents: cleaned up the session-guard, stamp, and rename annotations — removed internal jargon ("slop-drift"), redundant emphasis ("loud, unmissable"), and a slice-scoped deferral note. Invariants unchanged.
 - intents: cleaned up the install-skills, index, workspace, and scan-ids annotations — removed a `slice 32` coupling and colloquialisms ("modulo", "churning", "at first typo"). Invariants unchanged.
+- docs: recorded a deferred note (`docs/deferred/critique-philosophy-context.md`) that `aristo critique` workers don't receive the authoring PHILOSOPHY.md, so their findings reflect generic prose norms rather than house taste — with two fix options for a later pass.
 
 ## [0.2.3] — 2026-06-08
 
