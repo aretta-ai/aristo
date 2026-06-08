@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- intents: corrected the rejection-log append annotation — its lock-free justification now cites `O_APPEND` end-of-file semantics instead of a misapplied POSIX `PIPE_BUF` guarantee (which covers pipes/FIFOs, not regular-file writes).
+
 ## [0.2.3] — 2026-06-08
 
 Agent-facing progress engine and a completed skill suite. Aristo now nudges you to review and verify your own annotations at natural moments, shows an ambient status line, and ships the full set of `/aristo-*` skills. Annotation ids are also now deterministic, which fixes a bug that could orphan proofs.
