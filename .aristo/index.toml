@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-08T07:13:39.202927Z"
+generated_at = "2026-06-08T07:40:37.240546Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -259,10 +259,10 @@ covered_region = "function"
 
 [critique_apply_stamps_cache_on_success]
 kind = "intent"
-text = "`aristo critique --apply-findings` stamps `last_critiqued_at_text_hash` + `last_critique_finding_count` on each accepted critique's IntentEntry in the same operation that validates the .critique file. The cache and the on-disk .critique MUST be updated together: a writer that stamps before validate or skips the stamp leaves readers seeing stale-cache + fresh-file divergence (the cache claims a critique is current when the file says otherwise, or vice versa). Idempotent: re-running on an unchanged .critique re-writes the same values. AssumeEntry is skipped (the cache fields are IntentEntry-only by design — assumes are documentation-only annotations per A5 and don't have the same cache lifecycle as verifiable intents)."
+text = "`aristo critique --apply-findings` stamps `last_critiqued_at_text_hash` and `last_critique_finding_count` onto each accepted critique's IntentEntry in the same operation that validates the .critique file. The cache and the on-disk .critique MUST be updated together: stamping before validation, or skipping the stamp, leaves readers with stale-cache + fresh-file divergence (the cache claims a critique is current when the file says otherwise, or vice versa). Idempotent: re-running on an unchanged .critique rewrites the same values. AssumeEntry is skipped — the cache fields are IntentEntry-only by design."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:0f0612b48b5498ce64b74e80ff95eb22016dee585fca7c9f299ca030de16c482"
+text_hash = "sha256:6cd369fd3b9003967a87a163ec77c92df803b7e1a1958bab7ca23977f116ac38"
 body_hash = "sha256:b2884768e6c38a7837b55624c433b3a728c76e9755ea558f407f1839837f64b0"
 file = "crates/aristo-cli/src/commands/critique/apply.rs"
 site = "fn stamp_critique_cache (line 308)"
@@ -1126,10 +1126,10 @@ covered_region = "function"
 
 [submit_findings_is_only_write_path_for_critiques]
 kind = "intent"
-text = "`aristo critique --submit-findings` is the SINGLE creation path for `.aristo/critiques/<id>.critique` files (subagents have no Write-tool access — critique workers have Bash only). On accept, prints `accepted: sha256:<hex>` to stdout for the orchestrator's integrity check. Validation gates schema enums + focal-id-in-index + text staleness anchor + per-finding rationale presence; any failure short-circuits before write_proof_atomic. Same shape as submit-verdict, different payload schema."
+text = "`aristo critique --submit-findings` is the SINGLE creation path for `.aristo/critiques/<id>.critique` files (subagents have no Write-tool access — critique workers have Bash only). On accept, prints `accepted: sha256:<hex>` to stdout for the orchestrator's integrity check. Validation gates schema enums + focal-id-in-index + text staleness anchor + per-finding rationale presence; any failure short-circuits before write_proof_atomic."
 verify = "neural"
 status = "unknown"
-text_hash = "sha256:2e2274c6035c3e2ce4e30951db71b59bd04abe6fac1d64c09dd19c0d0a4d1ba0"
+text_hash = "sha256:64be086d214c2f982b11d29774378b350eb1eba6d595d8707f54a35a93249f79"
 body_hash = "sha256:32dc975d18fbefea3b073dfa3e03d87a922593a5b6af1828e754a7afdb084a57"
 file = "crates/aristo-cli/src/commands/critique/submit.rs"
 site = "fn run_submit_findings (line 14)"

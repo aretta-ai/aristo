@@ -19,6 +19,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - docs: recorded a deferred note (`docs/deferred/critique-philosophy-context.md`) that `aristo critique` workers don't receive the authoring PHILOSOPHY.md, so their findings reflect generic prose norms rather than house taste — with two fix options for a later pass.
 - intents: tightened the abort-confirmation annotation — "any typo'd subcommand" became "any unintended invocation", since the risk is any unintended abort, not specifically a typo. Invariant unchanged.
 - chore: re-stamped `.aristo/index.toml` and the per-annotation doc artifacts to match the intent-text edits in this changeset (derived files; no behavior or invariant change).
+- intents: resolved the 4 previously-deferred critique findings — tightened the critique cache-stamp annotation (kept the atomicity invariant and its failure mode, dropped a planning reference) and removed a sibling cross-reference from the critique submit annotation; affirmed the apply-sweep and lang cheat-sheet annotations unchanged. Invariants unchanged.
 
 ## [0.2.3] — 2026-06-08
 
