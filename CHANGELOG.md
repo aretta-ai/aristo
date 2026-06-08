@@ -13,6 +13,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - intents: cleaned up the `aristo doc` annotations — removed stale slice/mockup planning labels (`slice-30`, `slice 29`, `I1`) and the colloquial "cheap", with no change to the documented behavior.
 - intents: clarified the `aristo verify` annotations — replaced the `Bool(false)`/shared-arm implementation detail with the behavioral skip rule, and stated the exhaustive-failure and grounding-rejection rationales in plain terms. Invariants unchanged.
 - intents: tightened the `aristo critique` annotations — replaced the "footgun"/"balloon" colloquialisms with precise wording and dropped an unstable `README L4` line reference. Invariants unchanged.
+- intents: cleaned up the nudge annotations — removed an implementation-history spike reference (`S0a`) and informal phrasing ("silently-dead", "tier-up", `SAME` emphasis). Invariants unchanged.
 
 ## [0.2.3] — 2026-06-08
 
