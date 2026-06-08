@@ -47,6 +47,31 @@ const SESSION_START_COMMAND: &str = "aristo install-skills --hook-format 2>/dev/
 /// Marker substring identifying the SessionStart staleness hook.
 const SESSION_START_MARKER: &str = "aristo install-skills --hook-format";
 
+// ─── nudge surface v2 (Phase 18 #9): the engine's hook surfaces ──────────────
+// All emit via `hookSpecificOutput.additionalContext` (the only channel that
+// reaches the agent — the S0a spike). Same tolerant `2>/dev/null || true`
+// fallback so a stale on-PATH aristo never breaks a session. Behaviour is
+// gated at runtime by `[nudges] aggressiveness` (off → silent), so these
+// install unconditionally for Claude Code.
+
+/// PostToolUse: the authoring-debt nudge (edit counter → "annotate" reminder).
+const POST_TOOL_USE_COMMAND: &str = "aristo nudge --event post-tool-use 2>/dev/null || true";
+const POST_TOOL_USE_MARKER: &str = "aristo nudge --event post-tool-use";
+
+/// UserPromptSubmit: the consolidated per-turn review/verify/score nudge (the
+/// Stop replacement — Stop's output never reached the agent).
+const USER_PROMPT_NUDGE_COMMAND: &str =
+    "aristo nudge --event user-prompt-submit 2>/dev/null || true";
+const USER_PROMPT_NUDGE_MARKER: &str = "aristo nudge --event user-prompt-submit";
+
+/// SessionStart: compute-only baseline capture (surfaces nothing itself).
+const SESSION_START_NUDGE_COMMAND: &str = "aristo nudge --event session-start 2>/dev/null || true";
+const SESSION_START_NUDGE_MARKER: &str = "aristo nudge --event session-start";
+
+/// statusLine: the ambient user-facing status segment.
+const STATUSLINE_COMMAND: &str = "aristo statusline 2>/dev/null || true";
+const STATUSLINE_MARKER: &str = "aristo statusline";
+
 /// Settings file path under `<root>/.claude/`.
 fn settings_path(root: &Path) -> std::path::PathBuf {
     root.join(".claude").join("settings.json")
@@ -183,6 +208,110 @@ pub fn uninstall_claude_hook(root: &Path) -> CliResult<bool> {
 /// Remove the `SessionStart` skill-staleness hook.
 pub fn uninstall_session_start_hook(root: &Path) -> CliResult<bool> {
     uninstall_hook_from(root, "SessionStart", SESSION_START_MARKER)
+}
+
+// ─── nudge surface v2 install/uninstall ─────────────────────────────────────
+
+/// Install all nudge-engine surfaces for Claude Code: the PostToolUse,
+/// UserPromptSubmit, and SessionStart hooks plus the statusLine. Idempotent.
+pub fn install_nudge_surface(root: &Path) -> CliResult<()> {
+    install_hook_into(
+        root,
+        "PostToolUse",
+        POST_TOOL_USE_MARKER,
+        post_tool_use_entry(),
+    )?;
+    install_hook_into(
+        root,
+        "UserPromptSubmit",
+        USER_PROMPT_NUDGE_MARKER,
+        user_prompt_nudge_entry(),
+    )?;
+    install_hook_into(
+        root,
+        "SessionStart",
+        SESSION_START_NUDGE_MARKER,
+        session_start_nudge_entry(),
+    )?;
+    install_statusline(root)?;
+    Ok(())
+}
+
+/// Remove all nudge-engine surfaces. Each removal preserves any non-aristo
+/// hooks and only touches a statusLine that is ours.
+pub fn uninstall_nudge_surface(root: &Path) -> CliResult<()> {
+    uninstall_hook_from(root, "PostToolUse", POST_TOOL_USE_MARKER)?;
+    uninstall_hook_from(root, "UserPromptSubmit", USER_PROMPT_NUDGE_MARKER)?;
+    uninstall_hook_from(root, "SessionStart", SESSION_START_NUDGE_MARKER)?;
+    uninstall_statusline(root)?;
+    Ok(())
+}
+
+#[aristo::intent(
+    "Installing the statusLine NEVER clobbers an existing one: settings.json's \
+     `statusLine` is a single value (not an append-safe array), so a user who \
+     already configured a status line keeps it — aristo only sets it when the \
+     field is absent. Uninstall removes it only when it is aristo's own \
+     (its command mentions the aristo statusline marker).",
+    verify = "test",
+    id = "statusline_install_never_clobbers_user_config"
+)]
+fn install_statusline(root: &Path) -> CliResult<bool> {
+    let path = settings_path(root);
+    let mut value = read_settings(&path)?;
+    let obj = ensure_object(&mut value);
+    if obj.contains_key("statusLine") {
+        return Ok(false); // respect the user's existing statusLine
+    }
+    obj.insert(
+        "statusLine".to_string(),
+        serde_json::json!({ "type": "command", "command": STATUSLINE_COMMAND }),
+    );
+    write_settings(&path, &value)?;
+    Ok(true)
+}
+
+fn uninstall_statusline(root: &Path) -> CliResult<bool> {
+    let path = settings_path(root);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let mut value = read_settings(&path)?;
+    let Some(obj) = value.as_object_mut() else {
+        return Ok(false);
+    };
+    let is_ours = obj
+        .get("statusLine")
+        .map(|v| entry_mentions_hook(v, STATUSLINE_MARKER))
+        .unwrap_or(false);
+    if is_ours {
+        obj.remove("statusLine");
+        write_settings(&path, &value)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// `PostToolUse` entry: matched to the edit-like tools (the nudge emitter
+/// also re-checks the tool name from stdin).
+fn post_tool_use_entry() -> Value {
+    serde_json::json!({
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [ { "type": "command", "command": POST_TOOL_USE_COMMAND } ]
+    })
+}
+
+fn user_prompt_nudge_entry() -> Value {
+    serde_json::json!({
+        "matcher": ".*",
+        "hooks": [ { "type": "command", "command": USER_PROMPT_NUDGE_COMMAND } ]
+    })
+}
+
+fn session_start_nudge_entry() -> Value {
+    serde_json::json!({
+        "hooks": [ { "type": "command", "command": SESSION_START_NUDGE_COMMAND } ]
+    })
 }
 
 fn ensure_object(value: &mut Value) -> &mut Map<String, Value> {
@@ -346,5 +475,79 @@ mod tests {
         install_claude_hook(tmp.path()).unwrap();
         assert!(uninstall_claude_hook(tmp.path()).unwrap());
         assert!(!uninstall_claude_hook(tmp.path()).unwrap());
+    }
+
+    #[test]
+    fn nudge_surface_installs_all_three_hooks_plus_statusline() {
+        let tmp = TempDir::new().unwrap();
+        install_nudge_surface(tmp.path()).unwrap();
+        let body = std::fs::read_to_string(settings_path(tmp.path())).unwrap();
+        assert!(body.contains(POST_TOOL_USE_MARKER));
+        assert!(body.contains(USER_PROMPT_NUDGE_MARKER));
+        assert!(body.contains(SESSION_START_NUDGE_MARKER));
+        assert!(body.contains(STATUSLINE_MARKER));
+        // Stop is intentionally NOT installed (its output never reaches the agent).
+        assert!(!body.contains("--event stop"));
+        assert!(!body.contains("\"Stop\""));
+    }
+
+    #[test]
+    fn nudge_surface_install_is_idempotent() {
+        let tmp = TempDir::new().unwrap();
+        install_nudge_surface(tmp.path()).unwrap();
+        install_nudge_surface(tmp.path()).unwrap();
+        let body = std::fs::read_to_string(settings_path(tmp.path())).unwrap();
+        assert_eq!(body.matches(POST_TOOL_USE_COMMAND).count(), 1);
+        assert_eq!(body.matches(USER_PROMPT_NUDGE_COMMAND).count(), 1);
+        assert_eq!(body.matches(STATUSLINE_COMMAND).count(), 1);
+    }
+
+    #[test]
+    fn nudge_surface_coexists_with_the_session_and_staleness_hooks() {
+        let tmp = TempDir::new().unwrap();
+        install_claude_hook(tmp.path()).unwrap(); // session-active (UserPromptSubmit)
+        install_session_start_hook(tmp.path()).unwrap(); // staleness (SessionStart)
+        install_nudge_surface(tmp.path()).unwrap();
+        let body = std::fs::read_to_string(settings_path(tmp.path())).unwrap();
+        // Both the pre-existing aristo hooks and the new nudge hooks are present.
+        assert!(body.contains(HOOK_MARKER)); // session active
+        assert!(body.contains(SESSION_START_MARKER)); // staleness
+        assert!(body.contains(USER_PROMPT_NUDGE_MARKER));
+        assert!(body.contains(SESSION_START_NUDGE_MARKER));
+    }
+
+    #[test]
+    fn statusline_install_does_not_clobber_an_existing_one() {
+        let tmp = TempDir::new().unwrap();
+        let settings = settings_path(tmp.path());
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        std::fs::write(
+            &settings,
+            r#"{ "statusLine": { "type": "command", "command": "my_custom_bar" } }"#,
+        )
+        .unwrap();
+        assert!(
+            !install_statusline(tmp.path()).unwrap(),
+            "must not overwrite a user statusLine"
+        );
+        let body = std::fs::read_to_string(&settings).unwrap();
+        assert!(body.contains("my_custom_bar"));
+        assert!(!body.contains(STATUSLINE_COMMAND));
+        // …and uninstall leaves the user's statusLine alone (not ours).
+        assert!(!uninstall_statusline(tmp.path()).unwrap());
+        assert!(std::fs::read_to_string(&settings)
+            .unwrap()
+            .contains("my_custom_bar"));
+    }
+
+    #[test]
+    fn nudge_surface_uninstall_removes_only_aristo_entries() {
+        let tmp = TempDir::new().unwrap();
+        install_nudge_surface(tmp.path()).unwrap();
+        uninstall_nudge_surface(tmp.path()).unwrap();
+        let body = std::fs::read_to_string(settings_path(tmp.path())).unwrap();
+        assert!(!body.contains(POST_TOOL_USE_MARKER));
+        assert!(!body.contains(USER_PROMPT_NUDGE_MARKER));
+        assert!(!body.contains(STATUSLINE_COMMAND));
     }
 }

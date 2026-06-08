@@ -191,13 +191,21 @@ enum Commands {
 
     /// The nudge/progress engine. With no `--event`, prints what the engine
     /// would surface right now (human introspection). With `--event`, runs as
-    /// a Claude Code hook emitter (`post-tool-use` / `stop` / `session-start`)
-    /// — always exits 0 so a nudge can never break the agent's workflow.
+    /// a Claude Code hook emitter (`post-tool-use` / `user-prompt-submit` /
+    /// `session-start`) — always exits 0 so a nudge can never break the
+    /// agent's workflow. Agent-facing output uses `additionalContext` (the
+    /// only channel that reaches the model); `Stop` is intentionally not
+    /// served (its output never reaches the agent).
     Nudge {
         /// Hook event to serve (omit for the human readout).
         #[arg(long)]
         event: Option<String>,
     },
+
+    /// Ambient one-line status segment for the Claude Code `statusLine`
+    /// (e.g. `aristo  3 review · 2 unverified · Apprentice`). Read-only;
+    /// prints nothing when there's no workspace or nudges are off.
+    Statusline,
 
     /// Review newly-authored intents (#7). With no flags, lists what awaits
     /// review (split into new-this-session vs backlog when a baseline exists).
@@ -927,6 +935,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::Status => commands::status::run(),
         Commands::Metrics { json } => commands::metrics::run(json),
         Commands::Nudge { event } => commands::nudge::run(event),
+        Commands::Statusline => commands::statusline::run(),
         Commands::Review { mark, json } => commands::review::run(json, mark),
         Commands::Lint { check, fix, strict } => commands::lint::run(check, fix, strict),
         Commands::Verify {

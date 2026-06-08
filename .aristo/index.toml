@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.2"
-generated_at = "2026-06-07T19:53:07.500091Z"
+generated_at = "2026-06-08T02:46:09.139374Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -551,7 +551,7 @@ status = "unknown"
 text_hash = "sha256:9cb4356aacef3066c29135e3eb68ee56bd482752df4eab394a26687bb4fee8e8"
 body_hash = "sha256:c42c6102bd77459be15f1ed1515943e4ad2fdc34c4beb3d4646df01775e925e9"
 file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn install_hook_into (line 82)"
+site = "fn install_hook_into (line 107)"
 covered_region = "function"
 
 [install_skills_scope_symmetry]
@@ -631,6 +631,17 @@ file = "crates/aristo-core/src/metrics.rs"
 site = "impl Metrics (line 62)"
 covered_region = "impl_methods"
 
+[nudge_reaches_agent_only_via_additional_context]
+kind = "intent"
+text = "A hook reaches the agent's context ONLY through `hookSpecificOutput.additionalContext`; a plain string (even a literal `<system-reminder>`) printed to a hook's stdout lands in the transcript but never in the model's context (the S0a spike: the old Stop/PostToolUse stdout reminders never reached the agent, the SessionStart additionalContext did). Every agent-facing nudge MUST use this JSON envelope — emitting bare text would be a silently-dead nudge."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:ac76ddc9d55031dee1c281e8d229ff7ad11e1528f15504df49289da9226780aa"
+body_hash = "sha256:77493839fc119526bcab1e0d8f62c3185dfda1fc4da08353cd1955296adbb5a7"
+file = "crates/aristo-cli/src/commands/nudge.rs"
+site = "fn additional_context_json (line 346)"
+covered_region = "function"
+
 [nudge_review_is_current_only_until_hash_drift]
 kind = "intent"
 text = "A review is current only while the annotation's text AND body hashes still match the snapshot taken when it was reviewed. Editing the claim or the covered code after review re-opens it (reads as unreviewed) — a reviewer approved a specific version, not the id forever. Without the hash check, a post-review edit would keep a stale 'reviewed' badge and the review backlog would under-count work that genuinely needs another look."
@@ -661,7 +672,7 @@ status = "unknown"
 text_hash = "sha256:17427cceab6bab02b06161b728889eda24186d92dd43739f16b9d1802d71ebed"
 body_hash = "sha256:6a698b2b96c9ce048bdf33b04e70670dda917d265b5c7ced6b7872ff712e0f89"
 file = "crates/aristo-cli/src/commands/nudge.rs"
-site = "fn build_inputs (line 193)"
+site = "fn build_inputs (line 210)"
 covered_region = "function"
 
 [pending_and_claimed_share_parent_filesystem]
@@ -871,6 +882,17 @@ file = "crates/aristo-core/src/walk/scan_ids.rs"
 site = "fn scan_id_occurrences (line 67)"
 covered_region = "function"
 
+[score_authoring_debt_needs_no_index_walk]
+kind = "intent"
+text = "Scoring the authoring-debt (agent) signal needs ONLY the edit counter — never the index-derived Metrics. The PostToolUse hook that drives it fires on every edit, so it must not walk the source tree per edit; this scores the one signal straight from the counter, reusing the registry's base and the identical `pressure * factor >= 1` fire rule so it can't drift from `score`."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:cc3ffc853d038a1fdd06b82d8236e74b37da4065de6e71a2cfdd770f17781bec"
+body_hash = "sha256:e3ce1842067ab47993b57f53d0c3672c2027a7de0b52c33ced0a0590a44d850f"
+file = "crates/aristo-cli/src/nudge/mod.rs"
+site = "fn score_authoring_debt (line 263)"
+covered_region = "function"
+
 [session_active_is_noop_outside_workspace]
 kind = "intent"
 text = "`aristo session active` is wired into Claude Code's UserPromptSubmit hook (Layer 2). The hook fires on EVERY prompt across EVERY project, not only aristo workspaces. So `active` must exit 0 with empty stdout when run outside an aristo workspace — a hard error would block every prompt in any non-aristo project the user opens. The interactive form (no `--hook-format`) follows the same rule for symmetry: an active session can only exist within a workspace anyway, so no-workspace and no-session are observationally identical at the CLI surface."
@@ -1058,6 +1080,28 @@ file = "crates/aristo-cli/src/commands/status.rs"
 site = "fn compute_project_tier (line 268)"
 covered_region = "function"
 
+[statusline_install_never_clobbers_user_config]
+kind = "intent"
+text = "Installing the statusLine NEVER clobbers an existing one: settings.json's `statusLine` is a single value (not an append-safe array), so a user who already configured a status line keeps it — aristo only sets it when the field is absent. Uninstall removes it only when it is aristo's own (its command mentions the aristo statusline marker)."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:5cf9b9994c71bbc597356a1fcdbc24f12f44b145e667d61e7a4c2c4c04816552"
+body_hash = "sha256:7cda889306436c16c4b2ea2f4afc2498ac1b10bf2fe4d365fce597e81f0ea471"
+file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
+site = "fn install_statusline (line 250)"
+covered_region = "function"
+
+[statusline_is_read_only_and_tolerant]
+kind = "intent"
+text = "The statusline is read-only and TOLERANT: on any failure — no workspace, an unreadable index, or nudges globally off — it prints nothing and exits 0. The status bar re-renders on every turn, so a statusline that errored or wrote files would corrupt the bar or thrash the workspace on every keystroke. Silence is the correct degraded state."
+verify = "test"
+status = "unknown"
+text_hash = "sha256:005c9fef461bbb6cecf519d93cc85f2f6cc1fd1987aff92cfb6542c341192ff0"
+body_hash = "sha256:e7f6c869aca7f761afdefb5bf1d67e8f34b1abf01138013e7f8ef603e50c59d0"
+file = "crates/aristo-cli/src/commands/statusline.rs"
+site = "fn run (line 22)"
+covered_region = "function"
+
 [stmt_form_intents_use_open_visit_descent_not_whitelist]
 kind = "intent"
 text = "stmt-form intents are discovered via syn::Visit's full descent (visit_block + default traversal of every Expr variant), NOT a hand-rolled whitelist of expression kinds. A whitelist silently drops macros nested inside any unenumerated context — match arms, closures, unsafe blocks, async blocks, try blocks, let initializers — and the failure mode is invisible (the intent doesn't appear in `aristo list`, can't be cited as a ground in a proof, and skips the freshness check). The Visit-based descent is open by default; new syn::Expr variants get visited automatically."
@@ -1143,7 +1187,7 @@ status = "unknown"
 text_hash = "sha256:7c052ede0fce6c52efca830d4b479d0bca75033b0b6ac0bf111827fbdffdbf65"
 body_hash = "sha256:63f64377ee2cc32be1f03ea4cb56c9badc88ea481cee9df2bbf5fe1fb8672108"
 file = "crates/aristo-cli/src/commands/install_skills_hook.rs"
-site = "fn uninstall_hook_from (line 129)"
+site = "fn uninstall_hook_from (line 154)"
 covered_region = "function"
 
 [uninstall_skills_reverses_install]
@@ -1165,7 +1209,7 @@ status = "unknown"
 text_hash = "sha256:2912a7446cba9fa220b88cb66a2bf4be70a186d1f32800ac3cbc1b511fc65c46"
 body_hash = "sha256:a98870f81df795fee8469f0a01e968aaded6d266ea2fd5b4b9de6f0ce31fef22"
 file = "crates/aristo-cli/src/commands/install_skills.rs"
-site = "fn update_scopes (line 626)"
+site = "fn update_scopes (line 633)"
 covered_region = "function"
 
 [validator_collects_all_failures_not_short_circuit]

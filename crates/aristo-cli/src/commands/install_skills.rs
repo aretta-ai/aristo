@@ -240,6 +240,11 @@ fn install_file_copy_agent(agent: Agent, root: &std::path::Path) -> CliResult<()
         } else {
             println!("  • Skill-staleness SessionStart hook already present: {settings_display}");
         }
+        // Nudge-engine surface (Phase 18 #9): PostToolUse + UserPromptSubmit +
+        // SessionStart hooks + the ambient statusLine. Idempotent; gated at
+        // runtime by `[nudges] aggressiveness` (off → silent).
+        super::install_skills_hook::install_nudge_surface(root)?;
+        println!("  • Wrote nudge-engine hooks + statusLine to: {settings_display}");
     }
     Ok(())
 }
@@ -280,6 +285,8 @@ fn uninstall_file_copy_agent(agent: Agent, root: &std::path::Path) -> CliResult<
             println!("  • Removed skill-staleness SessionStart hook from: {settings_display}");
             removed += 1;
         }
+        // Nudge-engine surface (hooks + our statusLine, never a user's).
+        super::install_skills_hook::uninstall_nudge_surface(root)?;
     }
     Ok(removed)
 }
