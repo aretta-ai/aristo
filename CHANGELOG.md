@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 - docs: `docs/ROADMAP.md` is back, opening **Phase 2 — the `aristo::instrument` surface**. The plan covers three new macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) landing across slices 36–42 for v0.2.5, plus the architecture summary, scope-out list (catalog CLI deferred), and the Turso-fork verification target.
+- macros: scaffold the new `aristo::instrument` surface behind the opt-in `aristo_instrument` cargo feature. Three proc-macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) compile as pass-through stubs today; real codegen lands across slices 37–40. The thread-local runtime hook (`set_hook` + `__yield_point`) is already live, so fault-injection harnesses can register callbacks immediately.
 
 ## [0.2.4] — 2026-06-08
 
