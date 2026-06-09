@@ -38,7 +38,7 @@ Apply this when considering a candidate instrumentation site. The gate filters o
 
 1. **Does a verification or differential-testing harness actually need this?** If no harness exists or is planned, don't pre-instrument speculatively. The macros aren't free — `#[derive(Inspect)]` emits per-field accessors; `yield_point!` produces a runtime call site.
 2. **Is the alternative materially worse?** A hand-written accessor is sometimes clearer than `#[derive(Inspect)]` when the projection logic is complex. Use the macro when it reduces boilerplate, not just for symmetry.
-3. **Does the SUT shape support it?** `Inspect` works for `SkipMap<K, V>` in v1. Other collections, scalars, and atomics aren't supported — for those, hand-write the accessor and revisit when a future slice expands the macro.
+3. **Does the SUT shape support it?** `Inspect` is type-agnostic by design, but the v0.2.5 / v0.2.6 implementation ships with `SkipMap<K, V>` field support only — other collections (`BTreeMap`, `HashMap`, `Vec`), scalars, and atomics error at the macro level with `"only supports SkipMap<K, V> fields in v1"`. This is implementation debt, not a deferred-by-design constraint (see `docs/decisions/instrument-surface.md` § "Implementation debt"). For those shapes today, hand-write the accessor; flag the gap when the user hits it so they know to track the widening.
 
 If the answers are no / no / no, skip the macro and either hand-write the accessor or defer.
 

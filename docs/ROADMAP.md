@@ -49,7 +49,10 @@ Total: **13–18 commits, ~3–4 weeks of focused work** under aristo's CLAUDE.m
 
 - **Catalog format CLI** (handoff §8 Q5). A future `aristo instrument catalog` subcommand that codifies the `ACCESSORS.md` row schema is a Phase 3 candidate; consumer side stays a convention for now.
 - **Skill suite extras.** `aristo-instrumenting-philosophy.md` (per CLAUDE.md §10A) lands once feedback cases accumulate. `aristo-instrument-suggestions.md` (parallel to `aristo-intent-suggestions.md`) lands when a second consumer is on board to ground recommendations.
-- **`Inspect` beyond `SkipMap`.** `BTreeMap`, `HashMap`, `Vec`, atomic loads, scalar projections of `Option<T>` are deliberately deferred. v1 covers the only shape every current consumer needs.
+
+### Implementation debt landed in v0.2.5 / v0.2.6 (not deferred design)
+
+- **`Inspect` field-shape widening.** The slice-37 locked API was type-agnostic — bare `#[inspect]` cloning into the appropriate snapshot shape for any field type, `#[inspect(T)]` projecting via `From<&V>` similarly, with collection-vs-scalar coverage in the trybuild matrix. The v0.2.5 / v0.2.6 implementation narrowed to `SkipMap<K, V>` fields only as a shipping shortcut; the macro errors with `"only supports SkipMap<K, V> fields in v1"` for anything else. This is **implementation debt to close**, not deferred design — widening is additive and breaks no v0.2.6 consumer. See `docs/decisions/instrument-surface.md` § "Implementation debt".
 
 ### Verification target
 
@@ -59,7 +62,7 @@ End-to-end success criterion: the Turso fork at `../turso-mvcc-diff` (branch `ar
 
 ## Future phases (sketch)
 
-- **Phase 3 — catalog tool + skill suite expansion.** `aristo instrument catalog` CLI; `aristo-instrumenting-philosophy.md` from accumulated cases; `aristo-instrument-suggestions.md`.
+- **Phase 3 — catalog tool + skill suite expansion.** `aristo instrument catalog` CLI; `aristo-instrumenting-philosophy.md` from accumulated cases; `aristo-instrument-suggestions.md`. (The "Inspect beyond SkipMap" item that previously appeared here is **implementation debt**, not Phase 3 design — see the "Implementation debt landed in v0.2.5 / v0.2.6" section above.)
 - **Phase 4 — second AI-consumer onboarding.** HelixDB or future SUT integration; mining new patterns from a second consumer's feedback loop.
 
 These are sketches, not commitments — Phase 2's outcome will reshape them.
