@@ -14,6 +14,8 @@
 //! id) — `aristo stamp` populates the rest from source position.
 
 mod inject;
+#[cfg(feature = "aristo_instrument")]
+mod instrument;
 mod validate;
 
 use proc_macro::TokenStream;
@@ -202,4 +204,40 @@ pub fn assume_stmt(input: TokenStream) -> TokenStream {
         Ok(()) => TokenStream::new(),
         Err(err) => err.to_compile_error().into(),
     }
+}
+
+/// `#[derive(aristo::instrument::Inspect)]`
+///
+/// Derive macro for emitting snapshot accessors over `SkipMap<K, V>`
+/// fields tagged with `#[inspect(snapshot = T, name = "...")]`. Slice 36
+/// ships a parse-and-discard stub; the `inspect_<field>()` codegen lands
+/// in slice 37 (see `docs/ROADMAP.md` Phase 2).
+#[cfg(feature = "aristo_instrument")]
+#[proc_macro_derive(Inspect, attributes(inspect))]
+pub fn instrument_inspect(input: TokenStream) -> TokenStream {
+    instrument::inspect::derive(input)
+}
+
+/// `#[aristo::instrument::expose_pub(as = "...")]`
+///
+/// Attribute macro that emits a feature-gated `pub` wrapper around a
+/// `pub(crate)` function (slice 38) or a sibling `pub` twin of a
+/// `pub(crate)` type or `impl` block (slice 39). Slice 36 is a
+/// pass-through stub.
+#[cfg(feature = "aristo_instrument")]
+#[proc_macro_attribute]
+pub fn expose_pub(attr: TokenStream, item: TokenStream) -> TokenStream {
+    instrument::expose_pub::attribute(attr, item)
+}
+
+/// `aristo::instrument::yield_point!("label")`
+///
+/// Function-like macro that emits a call into the runtime hook
+/// `aristo::instrument::__yield_point` when the `aristo_instrument`
+/// feature is on; expands to nothing otherwise. Slice 36 is a stub
+/// (empty expansion either way); slice 40 wires the runtime call.
+#[cfg(feature = "aristo_instrument")]
+#[proc_macro]
+pub fn yield_point(input: TokenStream) -> TokenStream {
+    instrument::yield_point::function_like(input)
 }

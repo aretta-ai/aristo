@@ -39,6 +39,15 @@ aristo_check = []
 # ids). Off by default so non-doc-rendering builds aren't paying the
 # include-time read cost.
 aristo_doc = []
+# aristo_instrument: gates the three Phase 2 proc-macros — `Inspect`
+# derive, `expose_pub` attribute, `yield_point!` function-like — that
+# make private state observable to verification harnesses. Independent
+# from `aristo_check` / `aristo_doc`. Off by default; consumers turn it
+# on transitively via `aristo/aristo_instrument` and typically alias
+# their preferred flag name onto it (e.g. `differential-accessors =
+# ["aristo/aristo_instrument"]`). Slice 36 ships stubs; real codegen
+# lands in slices 37–40 per `docs/ROADMAP.md` Phase 2.
+aristo_instrument = []
 
 [dependencies]
 proc-macro2 = "1.0"
@@ -51,6 +60,18 @@ syn = { version = "2.0", features = ["full"] }
 # `cargo package` can't resolve. Path-only deps are stripped during
 # publish-tarball preparation; locally they still resolve via the
 # workspace.
-aristo = { path = "../aristo" }
+#
+# `features = ["aristo_instrument"]` is force-on for the dev-dep only,
+# so trybuild fixtures + integration tests can use the
+# `aristo::instrument::*` re-exports without re-running cargo with
+# explicit `--features`. The end-user opt-in story is untouched —
+# downstream consumers pull in aristo without dev-deps, so the feature
+# stays off by default in production builds.
+aristo = { path = "../aristo", features = ["aristo_instrument"] }
+# crossbeam-skiplist supplies the `SkipMap<K, V>` type the `Inspect`
+# derive (slice 37+) tags as the supported collection. Dev-only because
+# only trybuild fixtures + integration tests need it; downstream
+# consumers bring their own copy of crossbeam-skiplist.
+crossbeam-skiplist = "0.1"
 tempfile = "3.10"
 trybuild = "1.0"

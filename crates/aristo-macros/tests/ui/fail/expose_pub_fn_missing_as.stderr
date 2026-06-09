@@ -1,0 +1,7 @@
+error: unexpected end of input, `#[expose_pub]` on a function requires `as = "<wrapper_name>"` (pick a distinct name so the wrapper doesn't collide with the original)
+ --> tests/ui/fail/expose_pub_fn_missing_as.rs:8:1
+  |
+8 | #[expose_pub]
+  | ^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `expose_pub` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,5 @@
+error: `#[derive(Inspect)]` requires a struct with named fields
+ --> tests/ui/fail/inspect_unnamed_fields.rs:9:12
+  |
+9 | pub struct Tuple(u64, u32);
+  |            ^^^^^

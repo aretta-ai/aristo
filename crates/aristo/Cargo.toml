@@ -28,6 +28,12 @@ aristo_check = ["aristo-macros/aristo_check"]
 # Pass-through to aristo-macros/aristo_doc — gates rustdoc injection of
 # `.aristo/doc/<id-safe>.md` content above each annotated item. Slice 30.
 aristo_doc = ["aristo-macros/aristo_doc"]
+# aristo_instrument: gates the Phase 2 `aristo::instrument` module —
+# proc-macro re-exports (`Inspect`, `expose_pub`, `yield_point`) plus
+# the inline runtime hook (`set_hook`, `__yield_point`) that the
+# `yield_point!` expansion calls. Independent from aristo_check /
+# aristo_doc. Off by default; see docs/ROADMAP.md Phase 2.
+aristo_instrument = ["aristo-macros/aristo_instrument"]
 
 [dependencies]
 aristo-macros = { workspace = true }
