@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.2.6] — 2026-06-09
+
+Patch — fixes a generic-struct codegen bug in the `Inspect` derive that v0.2.5 shipped. The Turso fork's `MvStore<Clock: LogicalClock>` was the canary; any `#[derive(Inspect)]` struct with generic params would have hit the same E0107 "missing generics for struct" error at the consumer side. The fix lands alongside a new trybuild pass case that locks the generics-handling shape in place.
+
 - fix(macros): `#[derive(aristo::instrument::Inspect)]` now correctly threads the struct's generic parameters, type-params, and `where` clauses through the emitted impl header. v0.2.5 emitted `impl MvStore { ... }` for `struct MvStore<Clock: LogicalClock>`, failing E0107 "missing generics for struct" at the consumer side — exposed by the Turso fork's `aretta-mvcc-differential-accessors` build. Fixed by applying the standard `input.generics.split_for_impl()` idiom; locked in place by a new `inspect_generic_struct` trybuild pass case so future generic shapes (lifetimes, multi-param, `where` clauses) can't silently regress.
 
 ## [0.2.5] — 2026-06-09
