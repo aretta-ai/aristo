@@ -60,6 +60,18 @@ syn = { version = "2.0", features = ["full"] }
 # `cargo package` can't resolve. Path-only deps are stripped during
 # publish-tarball preparation; locally they still resolve via the
 # workspace.
-aristo = { path = "../aristo" }
+#
+# `features = ["aristo_instrument"]` is force-on for the dev-dep only,
+# so trybuild fixtures + integration tests can use the
+# `aristo::instrument::*` re-exports without re-running cargo with
+# explicit `--features`. The end-user opt-in story is untouched —
+# downstream consumers pull in aristo without dev-deps, so the feature
+# stays off by default in production builds.
+aristo = { path = "../aristo", features = ["aristo_instrument"] }
+# crossbeam-skiplist supplies the `SkipMap<K, V>` type the `Inspect`
+# derive (slice 37+) tags as the supported collection. Dev-only because
+# only trybuild fixtures + integration tests need it; downstream
+# consumers bring their own copy of crossbeam-skiplist.
+crossbeam-skiplist = "0.1"
 tempfile = "3.10"
 trybuild = "1.0"

@@ -1,0 +1,5 @@
+error: `#[inspect(...)]` only supports `SkipMap<K, V>` fields in v1 (other collection types and scalars are deferred to a future release)
+  --> tests/ui/fail/inspect_not_skipmap.rs:10:5
+   |
+10 |     items: Vec<u64>,
+   |     ^^^^^
