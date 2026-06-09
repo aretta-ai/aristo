@@ -12,6 +12,8 @@ When the user invokes this skill (typically `/aristo-help`, or "what aristo skil
 
 - **`aristo-authoring`** — capture intent *as you code*. Annotate the non-obvious decisions (a chosen invariant, a refactor trap, a deliberate-not-incomplete choice) with `#[aristo::intent]` while the rationale is fresh. **Benefit:** the *why* is recorded at the load-bearing site, in the user's words, where it can be verified — not lost to a stale comment.
 
+- **`aristo-instrumenting`** — apply the `aristo::instrument::*` macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) to make private SUT state observable to verification harnesses. Counterpart to `aristo-authoring` for the mechanical layer (annotations are claims about behavior; instrumentation makes state checkable). **Benefit:** harness-side observability without copy-pasted macro code per consumer.
+
 - **`aristo-verify`** — verify intents and review the results. Opens a scope × mode menu (changed·neural by default, offline; full/both run server proofs in the background, sign-in gated), dispatches local one-shot workers and/or a server session, then walks the verdicts card by card (subject-only failure + success cards; fix-or-waive). **Benefit:** every claim is checked against the code, and nothing it concludes lands until the user accepts it.
 
 - **`aristo-critique`** — agentic prose-review of the annotations themselves (rephrasing, parent-shape, vocabulary, scope, clarity). Advisory only; never blocks, never edits source. **Benefit:** opinionated feedback that makes the claims sharper, opt-in.
