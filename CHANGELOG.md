@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- docs(adr, roadmap, skill): clarify that the `Inspect` derive's `SkipMap`-only constraint in v0.2.5 / v0.2.6 is **implementation debt**, not a deferred-by-design choice. The slice-37 locked API was type-agnostic (per-shape codegen for collections, scalars, and atomics); the narrowing happened during slice-37 implementation when the `extract_skipmap_kv` dispatch from the original handoff's v1 scope was kept and the design amendment we'd locked got dropped on the floor. The ADR's new "Implementation debt" section, the ROADMAP's reframed Phase-3 listing, and the `aristo-instrumenting` skill's content-gate guidance all now name the gap honestly. No code change — v0.2.6's macro surface is unchanged. The widening (per-shape codegen for `BTreeMap`, `HashMap`, `Vec`, scalars, atomics) is purely additive and breaks no v0.2.6 consumer; it lands when the work is prioritised.
+
 ## [0.2.6] — 2026-06-09
 
 Patch — fixes a generic-struct codegen bug in the `Inspect` derive that v0.2.5 shipped. The Turso fork's `MvStore<Clock: LogicalClock>` was the canary; any `#[derive(Inspect)]` struct with generic params would have hit the same E0107 "missing generics for struct" error at the consumer side. The fix lands alongside a new trybuild pass case that locks the generics-handling shape in place.

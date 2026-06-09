@@ -82,13 +82,26 @@ The handoff places `_pending/instrument/<NN>_<name>.md` scenarios for the trybui
 ### Negative
 
 - Adds one feature flag + one runtime symbol to the meta-crate's public surface. Not free, but bounded.
-- v1 supports `SkipMap` only for `Inspect`. Other collection types (`BTreeMap`, `HashMap`, `Vec`) and scalar fields error at the macro level with a clear deferred-to-Phase-3 message. Consumers with other collections hand-write the accessor.
+- **`Inspect` ships narrower than the locked design** (see "Implementation debt" below). Consumers with non-`SkipMap` field types hand-write the accessor until the debt closes.
 
-### Out of scope (Phase 3 candidates)
+## Implementation debt — `Inspect` narrowed to `SkipMap`
+
+The locked slice-37 design was **type-agnostic**: bare `#[inspect]` cloning V into the appropriate snapshot shape for the field type (`Vec<(K, V)>` for `SkipMap` / `BTreeMap` / `HashMap`, `Vec<V>` for `Vec<V>`, owned `V` for scalars and atomics), and `#[inspect(T)]` projecting via `From<&V>` similarly. The locked-API table in the slice-37 discussion explicitly enumerated per-shape return types and called out "collection + scalar" trybuild coverage.
+
+What v0.2.5 / v0.2.6 actually shipped is **`SkipMap` fields only** — any other field type errors at the macro level with `"only supports SkipMap<K, V> fields in v1 (other collection types and scalars are deferred to a future release)"`. The error text and the original "Out of scope (Phase 3 candidates)" list both made the gap look like a deferred-by-design choice; it wasn't. It was an implementation shortcut taken during slice-37 codegen — the `extract_skipmap_kv` dispatch was reused from the handoff doc's narrower v1 scope and the design amendment we'd actually locked got dropped on the floor.
+
+This section exists to record the gap honestly so future readers don't reverse-engineer the narrowing as a locked design choice. The narrow surface is what's stable in v0.2.5 / v0.2.6; widening to the full locked-design shape is **purely additive** (no consumer of v0.2.6's surface breaks) and is genuine outstanding work — implementation debt to close, not deferred design. Tracked in the "Outstanding implementation work" list below.
+
+## Outstanding implementation work
+
+Closing these doesn't change the surface for existing consumers; each is additive.
+
+- **`Inspect` field-shape widening.** Per-shape codegen for `BTreeMap<K, V>`, `HashMap<K, V>`, `Vec<V>`, scalars, atomics, and the scalar projection of `Option<T>` form. Matches the slice-37 locked-API table. Trybuild matrix widens to cover each shape × each mode.
+- **`yield_point!` in `const fn` detection.** Macro-level diagnostic when the call site is `const fn`, replacing the cryptic rustc downstream error. v1 lets rustc speak; worth a custom diagnostic if it proves confusing in real use.
+
+## Out of scope (genuine Phase 3 candidates)
 
 - **Catalog format CLI** (handoff §8 Q5). A future `aristo instrument catalog` subcommand that codifies the `ACCESSORS.md` row schema. Not in v0.2.5; consumer side stays a convention.
-- **Inspect beyond SkipMap.** BTreeMap, HashMap, Vec, atomic loads, scalar projections of `Option<T>` — deferred.
-- **`yield_point!` in `const fn`.** Detection + clear error. v1 lets the natural rustc error fire ("calls in const fns are limited to ...").
 - **Skill suite expansion.** `aristo-instrumenting-philosophy.md` (per CLAUDE.md §10A) lands once feedback cases accumulate. `aristo-instrument-suggestions.md` (parallel to `aristo-intent-suggestions.md`) lands when a second consumer is on board to ground recommendations.
 
 ## References
