@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- docs: `docs/ROADMAP.md` is back, opening **Phase 2 — the `aristo::instrument` surface**. The plan covers three new macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) landing across slices 36–42 for v0.2.5, plus the architecture summary, scope-out list (catalog CLI deferred), and the Turso-fork verification target.
+
 ## [0.2.4] — 2026-06-08
 
 - feat(statusline): the `aristo statusline` segment is redesigned into an ambient **progress + staleness** bar. It shows your tier, the review backlog, verify coverage as a `done/total` fraction (a green check when a track is complete), and a new amber `N stale` warning when a verified function's source has drifted since the last stamp (a cheap mtime check that hints to re-verify before a proof is clobbered). While a review session is open it takes over the line to show `open/total` items and that `stamp`/`verify` are paused. Canon-pending shows only when signed in. Color is decoration with a clean `NO_COLOR` degrade, and it stays read-only and cheap (no source walk).
