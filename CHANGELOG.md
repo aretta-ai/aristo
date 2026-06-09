@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- fix(macros): `#[derive(aristo::instrument::Inspect)]` now correctly threads the struct's generic parameters, type-params, and `where` clauses through the emitted impl header. v0.2.5 emitted `impl MvStore { ... }` for `struct MvStore<Clock: LogicalClock>`, failing E0107 "missing generics for struct" at the consumer side — exposed by the Turso fork's `aretta-mvcc-differential-accessors` build. Fixed by applying the standard `input.generics.split_for_impl()` idiom; locked in place by a new `inspect_generic_struct` trybuild pass case so future generic shapes (lifetimes, multi-param, `where` clauses) can't silently regress.
+
 ## [0.2.5] — 2026-06-09
 
 Closes **Phase 2 — the `aristo::instrument` surface**. Three new proc-macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) ship under `aristo::instrument`, gated by the opt-in `aristo_instrument` cargo feature, with a thread-local runtime hook for fault-injection harnesses. The consumer-side driver — the Turso fork's `aretta-mvcc-differential-accessors` branch — can now drop ~350 LoC of hand-rolled macro code once it bumps to this release. Per slices 36–42 of `docs/ROADMAP.md`.

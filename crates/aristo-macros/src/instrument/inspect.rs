@@ -35,6 +35,12 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
     let struct_name = &input.ident;
+    // Thread the struct's generic params, ty-params, and where-clause
+    // through the emitted impl header so `impl Store<Clock>` (not bare
+    // `impl Store`) lands. The standard `syn` idiom; required for
+    // structs with generic / lifetime / `where` parameters. See the
+    // `inspect_generic_struct` regression case (v0.2.6).
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let named_fields = match &input.data {
         Data::Struct(data) => match &data.fields {
@@ -105,7 +111,7 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl #struct_name {
+        impl #impl_generics #struct_name #ty_generics #where_clause {
             #(#accessors)*
         }
     };
