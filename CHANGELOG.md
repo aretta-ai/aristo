@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-06-09
+
+Closes **Phase 2 — the `aristo::instrument` surface**. Three new proc-macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) ship under `aristo::instrument`, gated by the opt-in `aristo_instrument` cargo feature, with a thread-local runtime hook for fault-injection harnesses. The consumer-side driver — the Turso fork's `aretta-mvcc-differential-accessors` branch — can now drop ~350 LoC of hand-rolled macro code once it bumps to this release. Per slices 36–42 of `docs/ROADMAP.md`.
+
 - docs: `docs/ROADMAP.md` is back, opening **Phase 2 — the `aristo::instrument` surface**. The plan covers three new macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) landing across slices 36–42 for v0.2.5, plus the architecture summary, scope-out list (catalog CLI deferred), and the Turso-fork verification target.
 - macros: scaffold the new `aristo::instrument` surface behind the opt-in `aristo_instrument` cargo feature. Three proc-macros (`Inspect` derive, `expose_pub` attribute, `yield_point!` function-like) compile as pass-through stubs today; real codegen lands across slices 37–40. The thread-local runtime hook (`set_hook` + `__yield_point`) is already live, so fault-injection harnesses can register callbacks immediately.
 - macros: `#[derive(aristo::instrument::Inspect)]` now generates real accessors over `SkipMap<K, V>` fields. Two modes: bare `#[inspect]` clones each V into the snapshot (`Vec<(K, V)>`); `#[inspect(SnapshotType)]` projects each V through the user's `impl From<&V> for SnapshotType` (`Vec<(K, SnapshotType)>`). Either form accepts `name = "..."` to override the default `inspect_<field>` method-name suffix. v1 covers `SkipMap` only — `BTreeMap`, `HashMap`, `Vec`, and scalar fields error with a clear message and are deferred. **Spec deviation note:** the original handoff doc proposed only `#[inspect(snapshot = T)]`; the bare-clone form and positional `T` syntax are amendments locked in this slice and will be reflected in the slice-41 ADR.
