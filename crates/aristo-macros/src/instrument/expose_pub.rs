@@ -44,16 +44,19 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn, LitStr, Pat, Signature};
+use syn::{
+    parse_quote, FnArg, Ident, ImplItem, Item, ItemEnum, ItemFn, ItemImpl, ItemStruct, ItemType,
+    LitStr, Pat, Signature, Visibility,
+};
 
 pub(crate) fn attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item_ts2 = TokenStream2::from(item.clone());
 
     // `ItemFn` parses any function-shaped item (free fn, method,
     // associated fn) — the syntactic shape is identical across all
-    // three. Other item kinds (struct/enum/impl-block/etc.) fall
-    // through to the deferred-to-slice-39 error below.
-    if let Ok(item_fn) = syn::parse::<ItemFn>(item) {
+    // three. Try it first; if it parses, route to the slice-38
+    // function-form expander.
+    if let Ok(item_fn) = syn::parse::<ItemFn>(item.clone()) {
         let args = match syn::parse::<FnAttrArgs>(attr) {
             Ok(a) => a,
             Err(e) => return e.to_compile_error().into(),
@@ -61,13 +64,51 @@ pub(crate) fn attribute(attr: TokenStream, item: TokenStream) -> TokenStream {
         return expand_fn(args, item_fn).into();
     }
 
+    // Type and impl-block forms (slice 39). These FORBID `as = "..."`
+    // because renaming a type or every method in an impl block would
+    // break every reference. The attribute must be empty.
+    if let Ok(parsed_item) = syn::parse::<Item>(item) {
+        if let Err(e) = parse_empty_attr(attr) {
+            return e.to_compile_error().into();
+        }
+        match parsed_item {
+            Item::Enum(item_enum) => return expand_enum(item_enum).into(),
+            Item::Struct(item_struct) => return expand_struct(item_struct).into(),
+            Item::Type(item_type) => return expand_type_alias(item_type).into(),
+            Item::Impl(item_impl) => return expand_impl_block(item_impl).into(),
+            other => {
+                return syn::Error::new_spanned(
+                    other,
+                    "`#[expose_pub]` supports `fn`, `enum`, `struct`, `type`, and `impl` blocks; \
+                     other item kinds are not supported",
+                )
+                .to_compile_error()
+                .into();
+            }
+        }
+    }
+
     syn::Error::new_spanned(
         item_ts2,
-        "`#[expose_pub]` on this item kind is not yet supported \
-         (type / impl-block forms land in slice 39 of docs/ROADMAP.md)",
+        "`#[expose_pub]` couldn't parse the annotated item; \
+         expected `fn`, `enum`, `struct`, `type`, or `impl`",
     )
     .to_compile_error()
     .into()
+}
+
+/// Type and impl-block forms forbid `as = "..."`. Any non-empty attr
+/// is reported with a hint about why renaming would break the world.
+fn parse_empty_attr(attr: TokenStream) -> syn::Result<()> {
+    let ts2 = TokenStream2::from(attr);
+    if ts2.is_empty() {
+        return Ok(());
+    }
+    Err(syn::Error::new_spanned(
+        ts2,
+        "`#[expose_pub]` on a type / impl-block does not accept arguments \
+         (renaming a type breaks every reference; the macro raises visibility in place)",
+    ))
 }
 
 /// Parsed `#[expose_pub(as = "...")]` for function form.
@@ -153,6 +194,54 @@ fn item_mentions_self_type(item_fn: &ItemFn) -> bool {
     item_fn.sig.to_tokens(&mut tokens);
     item_fn.block.to_tokens(&mut tokens);
     tokens.to_string().contains("Self")
+}
+
+/// Raise an enum's visibility to `pub` and tag it `#[doc(hidden)]`.
+/// The macro is expected to be wrapped in `#[cfg_attr(feature = ...,
+/// aristo::instrument::expose_pub)]` at the call site, so this
+/// expansion only runs when the consumer's feature is on.
+fn expand_enum(mut item: ItemEnum) -> TokenStream2 {
+    item.vis = pub_visibility();
+    quote! {
+        #[doc(hidden)]
+        #item
+    }
+}
+
+fn expand_struct(mut item: ItemStruct) -> TokenStream2 {
+    item.vis = pub_visibility();
+    quote! {
+        #[doc(hidden)]
+        #item
+    }
+}
+
+fn expand_type_alias(mut item: ItemType) -> TokenStream2 {
+    item.vis = pub_visibility();
+    quote! {
+        #[doc(hidden)]
+        #item
+    }
+}
+
+/// Raise every method's visibility to `pub` inside an impl block, in
+/// place. The block itself doesn't have a visibility (impls are always
+/// anonymous), so this is the only valid interpretation of
+/// "expose this impl publicly." Non-method items (associated consts,
+/// associated types) are left unchanged — they're rare and have
+/// independent semantics.
+fn expand_impl_block(mut item: ItemImpl) -> TokenStream2 {
+    for impl_item in item.items.iter_mut() {
+        if let ImplItem::Fn(fn_item) = impl_item {
+            fn_item.vis = pub_visibility();
+            fn_item.attrs.insert(0, parse_quote!(#[doc(hidden)]));
+        }
+    }
+    quote! { #item }
+}
+
+fn pub_visibility() -> Visibility {
+    parse_quote!(pub)
 }
 
 /// Collect the argument identifiers from a signature, skipping the

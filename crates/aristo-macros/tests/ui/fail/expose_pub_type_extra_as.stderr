@@ -1,0 +1,5 @@
+error: `#[expose_pub]` on a type / impl-block does not accept arguments (renaming a type breaks every reference; the macro raises visibility in place)
+ --> tests/ui/fail/expose_pub_type_extra_as.rs:8:14
+  |
+8 | #[expose_pub(as = "RenamedParsedOp")]
+  |              ^^^^^^^^^^^^^^^^^^^^^^
