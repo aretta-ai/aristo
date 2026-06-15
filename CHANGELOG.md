@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- docs: new `docs/aristo-api-spec.md` — a single agent-targeted API reference covering both `aristo::intent` / `aristo::assume` (logical layer) and `aristo::instrument::{Inspect, expose_pub, yield_point!}` (mechanical layer) pinned to v0.2.6. Optimized for hand-off to an agent operating in a fresh Rust codebase: setup + feature flags, per-macro signatures + examples + error catalogues, the `cfg_attr` consumer pattern, a quick decision tree, common pitfalls, and cross-references. Honest about the SkipMap-only implementation debt; safe to ship to consumers without misleading them.
 - docs(adr, roadmap, skill): clarify that the `Inspect` derive's `SkipMap`-only constraint in v0.2.5 / v0.2.6 is **implementation debt**, not a deferred-by-design choice. The slice-37 locked API was type-agnostic (per-shape codegen for collections, scalars, and atomics); the narrowing happened during slice-37 implementation when the `extract_skipmap_kv` dispatch from the original handoff's v1 scope was kept and the design amendment we'd locked got dropped on the floor. The ADR's new "Implementation debt" section, the ROADMAP's reframed Phase-3 listing, and the `aristo-instrumenting` skill's content-gate guidance all now name the gap honestly. No code change — v0.2.6's macro surface is unchanged. The widening (per-shape codegen for `BTreeMap`, `HashMap`, `Vec`, scalars, atomics) is purely additive and breaks no v0.2.6 consumer; it lands when the work is prioritised.
 
 ## [0.2.6] — 2026-06-09
