@@ -139,10 +139,30 @@ so larger sets **paginate** (e.g. 5 siblings = a page of 4 + a page of 1); say "
 - **Reuse, don't reinvent:** the decision card is literally the output of `aristo canon show <id>`
   — no bespoke card layout.
 
-### The snippet rule (locked) — −/+ vs pure-+
+### The snippet rule (locked) — Stage A labeled rewrite vs Stage B pure-+
 
-- **Stage A accept = REWRITE** an annotation that already exists → render a `−`/`+` diff
-  (your text out, canonical text in).
+- **Stage A accept = REWRITE** an annotation that already exists. Do **NOT** render this as a
+  `−`/`+` diff. A diff prefixes every line of the user's current wording with `−`, so the whole
+  block reads as "all your text is being deleted" — confusing, because accept *replaces* the
+  wording, it doesn't remove it. Instead show a **labeled before/after** so it is obvious which
+  line is the current wording and which is the canonical replacement:
+
+  ```
+  Your text:     <the annotation's current wording>
+  Match (NEW):   <the canonical text your wording becomes on accept>
+  ```
+
+  **Color (preferred, if the renderer supports fenced syntax highlighting):** put the pair in a
+  ` ```diff ` fence so the two lines are tinted differently. Leave `Your text:` unprefixed
+  (neutral) and prefix `Match (NEW):` with `+` so it renders green (the new wording). Do **not**
+  prefix the user's line with `−`: nothing is deleted, and a red block is the exact confusion this
+  rule removes.
+
+  ```diff
+    Your text:    <your annotation's current wording>
+  + Match (NEW):  <the canonical wording it will be rewritten to>
+  ```
+
 - **Stage B adopt = ADD** a new annotation → render a **pure `+`** addition, with surrounding
   lines shown as plain context (nothing is replaced).
 - **The canonical text is fixed by canon.** "Edit text/site first" edits the *site* (or hands the
@@ -160,7 +180,8 @@ Present them as a **navigable batch** (≤4/page, paginate). For each match the 
 
 ```
 per match:  Accept (rewrite + bind) · Reject (keep your wording) · Skip · Back
-  preview on Accept = the source REWRITE as a −/+ diff (your text out, canonical in)
+  preview on Accept = a labeled before/after (NOT a diff): "Your text:" = your current wording,
+    "Match (NEW):" = the canonical text it becomes on accept (see the snippet rule above)
   preview on the card = aristo canon show <canon_id>
 ```
 
@@ -273,8 +294,11 @@ mutation and the session guard blocks it while a session is open.
 
 - ❌ Skipping Step 0's `aristo session active` check. Layer-3 enforcement is the last line of
   defense; some agents jump straight to a decision and bypass the SDK pre-check.
-- ❌ Rendering a Stage B adopt as a `−`/`+` diff. Adopt is a **pure `+`** addition — nothing of
-  the user's is replaced. Only Stage A accept (rewrite of an existing annotation) is a diff.
+- ❌ Rendering a Stage A accept as a `−`/`+` diff. A diff prefixes every line of the user's wording
+  with `−`, which reads as "all your text is being deleted" and is the confusion this rule removes.
+  Stage A is a **labeled before/after** ("Your text:" vs "Match (NEW):").
+- ❌ Rendering a Stage B adopt as a `−`/`+` diff. Adopt is a **pure `+`** addition; nothing of the
+  user's is replaced.
 - ❌ Inventing a bespoke decision card. The card is `aristo canon show <id>` output, reused.
 - ❌ Cramming more than 4 questions onto one page. The picker caps at 4 — paginate and say
   "page 1 of 2".

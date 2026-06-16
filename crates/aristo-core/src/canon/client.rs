@@ -74,7 +74,7 @@ pub enum CanonError {
     /// reset). Caller should warn once and skip canon for this run
     /// — cached matches remain valid.
     Network(String),
-    /// 2-second timeout per L3's graceful-degradation policy.
+    /// 8-second timeout per L3's graceful-degradation policy.
     /// Same treatment as [`CanonError::Network`].
     Timeout,
     /// Server returned 4xx (other than 401). Common cases:
@@ -105,7 +105,7 @@ impl fmt::Display for CanonError {
             ),
             CanonError::Auth(e) => write!(f, "canon auth error: {e}"),
             CanonError::Network(msg) => write!(f, "canon network error: {msg}"),
-            CanonError::Timeout => write!(f, "canon request timed out (>2s)"),
+            CanonError::Timeout => write!(f, "canon request timed out (>8s)"),
             CanonError::BadRequest { status, message } => {
                 write!(f, "canon server returned HTTP {status}: {message}")
             }

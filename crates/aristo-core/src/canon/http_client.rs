@@ -4,7 +4,7 @@
 //! contract in `../aretta-sdk/docs/mockups/13-canon-and-matching/README.md`
 //! §L3:
 //!
-//! - **2-second timeout** → [`CanonError::Timeout`]
+//! - **8-second timeout** → [`CanonError::Timeout`]
 //! - **DNS / connect failure** → [`CanonError::Network`]
 //! - **401** → [`CanonError::Auth`] wrapping `AuthError::Invalid`
 //! - **400** (e.g., confidence threshold below `0.5` floor) →
@@ -37,8 +37,11 @@ use super::Token;
 pub const DEFAULT_BASE_URL: &str = crate::auth::ServerUrl::PROD;
 
 /// L3 graceful-degradation timeout. Applies to each individual
-/// request (not the whole operation).
-pub const REQUEST_TIMEOUT_SECS: u64 = 2;
+/// request (not the whole operation). Covers connect + TLS handshake +
+/// full round-trip; `stamp` is a one-shot process so every canon call
+/// pays a cold connection, and the toolsaurus embedding + KNN path adds
+/// ~0.5-1.1s, so a tight budget skips otherwise-successful matches.
+pub const REQUEST_TIMEOUT_SECS: u64 = 8;
 
 /// HTTP-backed [`CanonClient`] impl.
 ///
