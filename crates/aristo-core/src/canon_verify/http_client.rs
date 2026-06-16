@@ -5,9 +5,9 @@
 //! entry; the client clones it into its pre-formatted header).
 //!
 //! The transport uses a longer per-request timeout than canon-match
-//! does (canon-match's 2 s graceful-degradation budget doesn't apply
+//! does (canon-match's 8 s graceful-degradation budget doesn't apply
 //! here — verification is a user-initiated long-running task).
-//! `?wait=N` server hold-times can extend beyond 2 s when implemented.
+//! `?wait=N` server hold-times can extend beyond 8 s when implemented.
 
 use std::time::Duration;
 
