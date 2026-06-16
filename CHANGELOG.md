@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- skills: the `aristo-intent-suggestions` review applies the labeled `(NEW)` treatment to canon SUGGESTIONS too (not just primary matches): a suggested sibling or objective is shown as `Suggested intent (NEW): <text>` rather than a removal-style diff, and the placement preview now shows the enclosing scope's signature plus the first 1-2 body lines (so you can see which function you're annotating) with only the new annotation line marked as an addition.
+- skills: `aristo-authoring` and `aristo-intent-suggestions` now teach deliberate annotation placement. The element an annotation attaches to is the scope Aristo hashes for staleness, so a change inside it re-triggers verification: pick the smallest element where every internal change should force a re-check (too broad churns the proof on unrelated edits; too narrow lets real changes pass a now-stale proof silently), and use the statement form to tighten scope inside a larger function.
+
 ## [0.2.7] — 2026-06-16
 
 Patch: canon-match reliability and review-UX polish for the daily `stamp` loop. Raises the canon-match request timeout so cold-connection matches stop timing out spuriously, and replaces the confusing removal-style diff in the `aristo-intent-suggestions` review with a labeled before/after. Also lands the queued `Inspect`-scope documentation clarification.

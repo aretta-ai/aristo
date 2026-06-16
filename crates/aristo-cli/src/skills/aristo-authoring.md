@@ -107,6 +107,16 @@ If you find yourself writing the same invariant twice on different functions in 
 - Keep it on the lower-level enforcement site (the one whose code would have to change to break the invariant).
 - Delete it from the higher-level orchestration site.
 
+## Scope: the annotation site is the staleness boundary
+
+The code element an annotation attaches to is not just a label, it is the **scope that triggers re-checking.** Aristo hashes the body of that element; when the body changes, the intent's verification goes stale and is re-checked on the next run. So choosing the site is choosing the boundary at which a code change forces the intent to be re-verified. Place it with deliberation:
+
+- **The site should encompass exactly the code whose change could affect the invariant.** Ask: "if someone edits this code, does the intent need to be re-checked?" The smallest element for which the answer is *yes for every change inside it, and no for changes outside it* is the right site.
+- **Too broad is churn.** Annotating a large function, `impl`, or `mod` when the invariant only concerns a few lines means every unrelated edit inside that span marks the proof stale and re-queues a re-check. The user learns to ignore staleness, which defeats the signal.
+- **Too narrow is dangerous.** Annotating a tiny helper that does *not* contain the load-bearing logic means real changes to the code that actually governs the invariant never drift the hash, so a now-invalid proof keeps reporting as verified. This is the worse failure: silent staleness.
+- **Use the statement form to tighten scope.** When the enclosing function does more than the invariant covers, attach `aristo::intent_stmt!(...)` to the specific statement, block, or loop that carries the property rather than putting the attribute on the whole function. The statement's span becomes the staleness boundary.
+- **Use the attribute form when the whole item is the unit.** If any change to the function / struct / impl could plausibly affect the property, the item-level attribute is correct and a tighter scope would miss real drift.
+
 ## One annotation, one invariant
 
 If a draft body has two distinct invariants, split them into two annotations OR move one to a more appropriate site. Mixed intents read as motivation prose and lose precision in both halves.
