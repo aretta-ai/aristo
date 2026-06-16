@@ -163,8 +163,29 @@ so larger sets **paginate** (e.g. 5 siblings = a page of 4 + a page of 1); say "
   + Match (NEW):  <the canonical wording it will be rewritten to>
   ```
 
-- **Stage B adopt = ADD** a new annotation → render a **pure `+`** addition, with surrounding
-  lines shown as plain context (nothing is replaced).
+- **Stage B adopt = ADD** a new annotation. Same failure mode as Stage A applies: do **NOT** render
+  the suggested intent as a `−`/`+` diff or any block where the text is prefixed with `−`. Nothing
+  of the user's is touched, so a removal-style block is misleading. When you show a suggested
+  sibling or objective for a decision, label it:
+
+  ```
+  Suggested intent (NEW):
+    <the canonical text of the sibling / objective>
+  ```
+
+  When you show the **placement** (Phase 3), give enough context that the target scope is
+  unambiguous: include the signature line of the item the annotation attaches to (the `fn` / `impl`
+  / `struct` / etc. it sits directly above) **and** the first 1-2 lines inside that scope's body,
+  so the user can see *what* they are annotating, not just a bare insertion point. Render this
+  surrounding code as plain context and mark only the new annotation line as an addition. In a
+  ` ```diff ` fence, prefix just that one line with `+` (renders green); leave the existing code
+  unprefixed. Never prefix the existing code or the suggested text with `−`. Shape (placeholders):
+
+  ```diff
+  + #[aristo::intent(text = "<canonical text>", parent = "<kanon:objective>")]
+    <signature line of the target fn / impl / struct>
+        <first 1-2 lines of its body, as plain context>
+  ```
 - **The canonical text is fixed by canon.** "Edit text/site first" edits the *site* (or hands the
   site choice to the agent); it does **not** reword the canonical phrasing.
 
@@ -232,6 +253,9 @@ cluster gate:  Explore cluster · Reject cluster · Skip · Back
 per sibling:  Adopt · Reject · Skip      preview = aristo canon show <canon_id> card
 ```
 
+When you surface the suggested text for the decision, label it `Suggested intent (NEW):` (see the
+snippet rule) — never a `−`/`+` removal block.
+
 Record each: Adopt is buffered (don't write yet); Reject →
 `aristo session decide --item sibling:<key>#<canon-id> --bucket rejected [--note "..."]`
 (fingerprints the canon_id). Siblings matching a prior rejection are auto-suppressed (dedup ④,
@@ -243,11 +267,21 @@ its `applies_to` + `canonical_text` + `description` (via `aristo canon show <can
 **Site-finding is YOUR job** (the agent): locate the load-bearing site(s) where the invariant
 should be asserted. Propose a HIGH/MEDIUM-confidence primary site plus alternates.
 
+**Choose the site as a staleness boundary, not just a topical match.** The element you attach to is
+the scope Aristo hashes for re-checking: when its body changes, the adopted intent is re-verified.
+Pick the smallest element whose every change should force a re-check and whose surrounding changes
+should not (use the statement form to tighten scope inside a larger function). Too broad re-queues
+the proof on unrelated edits; too narrow lets real changes to the governing code pass a now-stale
+proof silently. See the `aristo-authoring` skill's "Scope: the annotation site is the staleness
+boundary" for the full rationale.
+
 **PHASE 3 — batch-CONFIRM placements** (multi-Q, navigable, ≤4/page):
 
 ```
 per adopt:  Confirm — write here · Try a different site · Edit text/site first · Skip
-  preview on Confirm         = surrounding code with the new intent as a PURE + addition
+  preview on Confirm         = the target scope's signature line + first 1-2 body lines as plain
+                               context, with ONLY the new annotation line marked as an addition (a
+                               single `+`/green line); never a removal block, never a bare insertion point
   preview on Different site   = the next candidate site (compare by arrowing)
   each candidate carries a confidence (HIGH/MEDIUM) in its sub-line
 ```
@@ -297,8 +331,10 @@ mutation and the session guard blocks it while a session is open.
 - ❌ Rendering a Stage A accept as a `−`/`+` diff. A diff prefixes every line of the user's wording
   with `−`, which reads as "all your text is being deleted" and is the confusion this rule removes.
   Stage A is a **labeled before/after** ("Your text:" vs "Match (NEW):").
-- ❌ Rendering a Stage B adopt as a `−`/`+` diff. Adopt is a **pure `+`** addition; nothing of the
-  user's is replaced.
+- ❌ Rendering a Stage B suggestion (sibling/objective) as a `−`/`+` diff or an all-`−` block. The
+  same removal-block confusion as Stage A applies: nothing of the user's is touched. Show the
+  suggested text labeled `Suggested intent (NEW):`, and the placement as plain context with only
+  the new annotation line marked `+` (green).
 - ❌ Inventing a bespoke decision card. The card is `aristo canon show <id>` output, reused.
 - ❌ Cramming more than 4 questions onto one page. The picker caps at 4 — paginate and say
   "page 1 of 2".
