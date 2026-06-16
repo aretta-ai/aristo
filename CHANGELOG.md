@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.2.8] — 2026-06-16
+
+Patch: skill-only review-UX and authoring-guidance polish. Carries the labeled `(NEW)` rendering into canon suggestions (and gives the placement preview real scope context), and teaches both authoring and suggestion-adoption to place annotations deliberately because the annotation site is the staleness boundary.
+
 - skills: the `aristo-intent-suggestions` review applies the labeled `(NEW)` treatment to canon SUGGESTIONS too (not just primary matches): a suggested sibling or objective is shown as `Suggested intent (NEW): <text>` rather than a removal-style diff, and the placement preview now shows the enclosing scope's signature plus the first 1-2 body lines (so you can see which function you're annotating) with only the new annotation line marked as an addition.
 - skills: `aristo-authoring` and `aristo-intent-suggestions` now teach deliberate annotation placement. The element an annotation attaches to is the scope Aristo hashes for staleness, so a change inside it re-triggers verification: pick the smallest element where every internal change should force a re-check (too broad churns the proof on unrelated edits; too narrow lets real changes pass a now-stale proof silently), and use the statement form to tighten scope inside a larger function.
 
