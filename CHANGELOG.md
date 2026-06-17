@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.2.9] — 2026-06-17
+
+Patch: canon accept now opts the annotation into verification automatically. Accepting a match sets the `verify` level to the canon tier (`aristos:` → `"full"`, `kanon:` → `"neural"`), so canon-bound intents no longer get stranded at the local `"test"` default.
+
 - feat(canon): `aristo canon accept` now sets the annotation's `verify` level to match the canon tier, in addition to rewriting the text and id. A backed leaf (`aristos:`) becomes `verify = "full"` (server-side conformance); an unbacked objective (`kanon:`) becomes `verify = "neural"` (agent review). This overrides any prior `verify` (including an omitted/`true` value, which otherwise resolves to the local `"test"` default and never reaches verification). Accepting a canon match is opting the annotation into verification, so the level it can actually be checked at is now set automatically.
 
 ## [0.2.8] — 2026-06-16
