@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- feat(canon): `aristo canon accept` now sets the annotation's `verify` level to match the canon tier, in addition to rewriting the text and id. A backed leaf (`aristos:`) becomes `verify = "full"` (server-side conformance); an unbacked objective (`kanon:`) becomes `verify = "neural"` (agent review). This overrides any prior `verify` (including an omitted/`true` value, which otherwise resolves to the local `"test"` default and never reaches verification). Accepting a canon match is opting the annotation into verification, so the level it can actually be checked at is now set automatically.
+
 ## [0.2.8] — 2026-06-16
 
 Patch: skill-only review-UX and authoring-guidance polish. Carries the labeled `(NEW)` rendering into canon suggestions (and gives the placement preview real scope context), and teaches both authoring and suggestion-adoption to place annotations deliberately because the annotation site is the staleness boundary.

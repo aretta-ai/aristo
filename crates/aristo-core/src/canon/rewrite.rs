@@ -12,7 +12,7 @@
 //!
 //! After (aristos: tier):
 //! ```text
-//! #[aristo::intent(id = "aristos:cell_written_exactly_once_per_page_edit", text = "edit_page writes each cell exactly once", verify = "neural")]
+//! #[aristo::intent(id = "aristos:cell_written_exactly_once_per_page_edit", text = "edit_page writes each cell exactly once", verify = "full")]
 //! ```
 //!
 //! `cargo fmt` reformats the multi-arg attribute to the multi-line shape
@@ -23,10 +23,6 @@
 //!
 //! - The attribute's path (`aristo::intent` vs bare `intent`) is left
 //!   untouched — only the argument list inside `(...)` is rewritten.
-//! - An existing `verify = ...` argument is preserved verbatim. If the
-//!   user wrote `verify = "test"` or `verify = false`, that survives.
-//!   If `verify` is absent, no `verify` arg is added — the macro's
-//!   default (neural) kicks in at expansion time.
 //! - An existing `parent = "..."` (single or array) is preserved.
 //!
 //! ## What is replaced
@@ -35,6 +31,12 @@
 //!   as a named `text = "<canonical_text>"` arg.
 //! - Any existing `id = "..."` is replaced by the canon-prefixed form
 //!   (`aristos:<canon_id>` or `kanon:<canon_id>` depending on tier).
+//! - `verify` is **set to the tier's verification level**, overriding any
+//!   existing value: `aristos:` (backed leaf) → `verify = "full"`,
+//!   `kanon:` (unbacked objective) → `verify = "neural"`. Accepting a canon
+//!   match opts the annotation into verification, so a prior `verify = true`
+//!   / omitted (which resolves to the local `"test"` default) is corrected
+//!   to the level the canon tier supports.
 //!
 //! ## Scope
 //!
@@ -194,9 +196,17 @@ pub fn compute_rewrite(
     // documented `text` arg).
     args.push(escape_string(&request.canonical_text));
     args.push(format!("id = {}", escape_string(&prefixed_id)));
-    if let Some(verify) = &parsed.verify_tokens {
-        args.push(format!("verify = {verify}"));
-    }
+    // Accepting a canon match binds the annotation to a verifiable canon
+    // entry, so set `verify` to the tier's level (overriding any existing
+    // value): backed leaves (`aristos:`) get server-side conformance
+    // (`"full"`); unbacked objectives (`kanon:`) get agent review
+    // (`"neural"`). Without this an entry authored `verify = true` / omitted
+    // resolves to the local `"test"` default and never reaches verification.
+    let verify_value = match request.prefix_tier {
+        PrefixTier::Aristos => "\"full\"",
+        PrefixTier::Kanon => "\"neural\"",
+    };
+    args.push(format!("verify = {verify_value}"));
     if let Some(parent) = &parsed.parent_tokens {
         args.push(format!("parent = {parent}"));
     }
@@ -295,13 +305,11 @@ impl<'ast> Visit<'ast> for AttrFinder<'ast> {
 /// exactly into the rewrite. Everything else (unknown keys) is dropped
 /// silently — same tolerance as the extractor.
 struct ExistingArgs {
-    verify_tokens: Option<String>,
     parent_tokens: Option<String>,
 }
 
 impl syn::parse::Parse for ExistingArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut verify_tokens = None;
         let mut parent_tokens = None;
 
         if input.is_empty() {
@@ -320,8 +328,9 @@ impl syn::parse::Parse for ExistingArgs {
             input.parse::<syn::Token![=]>()?;
             match key.to_string().as_str() {
                 "verify" => {
-                    let expr: syn::Expr = input.parse()?;
-                    verify_tokens = Some(expr_to_token_string(&expr));
+                    // Drained + discarded: canon accept overrides `verify`
+                    // with the tier's level (see `compute_rewrite`).
+                    let _: syn::Expr = input.parse()?;
                 }
                 "parent" => {
                     // Could be `"x"` or `[..]`. Either way, capture as
@@ -354,21 +363,8 @@ impl syn::parse::Parse for ExistingArgs {
                 }
             }
         }
-        Ok(Self {
-            verify_tokens,
-            parent_tokens,
-        })
+        Ok(Self { parent_tokens })
     }
-}
-
-fn expr_to_token_string(expr: &syn::Expr) -> String {
-    // proc_macro2 doesn't ship its own ToTokens impl for syn::Expr;
-    // we already depend on `syn` which re-exports `quote`. Use the
-    // re-export so we don't add a new top-level dep.
-    use syn::__private::ToTokens;
-    let mut out = proc_macro2::TokenStream::new();
-    expr.to_tokens(&mut out);
-    out.to_string()
 }
 
 fn escape_string(s: &str) -> String {
@@ -464,6 +460,8 @@ mod tests {
         );
         // Original prose is gone — replaced.
         assert!(!post.contains("should be written exactly"), "post: {post}");
+        // aristos: tier sets verify = "full".
+        assert!(post.contains(r#"verify = "full""#), "post: {post}");
         // Re-parse the rewritten source as a sanity check that we
         // produced syntactically valid Rust.
         let _: syn::File =
@@ -485,31 +483,35 @@ mod tests {
             "post: {post}"
         );
         assert!(!post.contains("aristos:"), "post: {post}");
+        // kanon: tier sets verify = "neural".
+        assert!(post.contains(r#"verify = "neural""#), "post: {post}");
     }
 
     #[test]
-    fn existing_verify_arg_is_preserved() {
+    fn existing_verify_arg_is_overridden_to_aristos_full() {
+        // Accept overrides whatever `verify` the user wrote with the tier
+        // level — `aristos:` → `"full"`.
         let src = "#[aristo::intent(\"x\", verify = \"test\")]\nfn f() {}\n";
         let req = aristos_req("foo", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
-        assert!(post.contains(r#"verify = "test""#), "post: {post}");
+        assert!(post.contains(r#"verify = "full""#), "post: {post}");
+        assert!(!post.contains(r#"verify = "test""#), "post: {post}");
         // Re-parses cleanly.
         let _: syn::File = syn::parse_str(&post).expect("must parse");
     }
 
     #[test]
-    fn existing_verify_bool_arg_is_preserved_verbatim() {
-        // `verify = true` / `verify = false` are valid expressions; the
-        // rewrite must round-trip them as bare keywords, not as strings.
+    fn existing_verify_bool_arg_is_overridden_to_tier_level() {
+        // Even an explicit `verify = false` (doc-only) is corrected to the
+        // tier level on accept — the annotation is now canon-bound.
         let src = "#[aristo::intent(\"x\", verify = false)]\nfn f() {}\n";
         let req = aristos_req("foo", "y", 1);
         let rw = compute_rewrite(src, &req).expect("rewrite");
         let post = apply_rewrite(src, &rw);
-        assert!(
-            post.contains("verify = false") || post.contains("verify=false"),
-            "post: {post}"
-        );
+        assert!(post.contains(r#"verify = "full""#), "post: {post}");
+        assert!(!post.contains("verify = false"), "post: {post}");
+        let _: syn::File = syn::parse_str(&post).expect("must parse");
     }
 
     #[test]
@@ -566,7 +568,9 @@ fn edit_page() {}
             post.contains(r#""edit_page writes each cell exactly once""#),
             "post: {post}"
         );
-        assert!(post.contains(r#"verify = "test""#), "post: {post}");
+        // The authored `verify = "test"` is overridden to the aristos: level.
+        assert!(post.contains(r#"verify = "full""#), "post: {post}");
+        assert!(!post.contains(r#"verify = "test""#), "post: {post}");
         // Re-parses.
         let _: syn::File = syn::parse_str(&post).expect("must parse");
     }
