@@ -209,8 +209,9 @@ per match:  Accept (rewrite + bind) · Reject (keep your wording) · Skip · Bac
 Record each decision against the session:
 
 - **Accept** → `aristo session decide --item match:<annotation-id>#<canon-id> --bucket accepted`.
-  The kind's `on_accept` rewrites the annotation to canonical + binds (reuse of `aristo canon
-  accept`). The annotation already exists — accept rewrites it.
+  The kind's `on_accept` rewrites the annotation to canonical text, **sets `verify` to the canon
+  tier's level** (`aristos:` → `"full"`, `kanon:` → `"neural"`, overriding any prior value), and
+  binds (reuse of `aristo canon accept`). The annotation already exists — accept rewrites it.
 - **Reject** → `aristo session decide --item match:<annotation-id>#<canon-id> --bucket rejected
   [--note "..."]`. Fingerprints the `canon_id` so it's suppressed on future runs.
 - **Skip / defer** → `aristo session decide --item match:<annotation-id>#<canon-id> --bucket
