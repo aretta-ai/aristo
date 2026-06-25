@@ -32,7 +32,7 @@ use std::fs;
 use std::path::Path;
 
 use aristo_core::canon::cache::CanonMatchesFile;
-use aristo_core::index::{AnnotationId, BindingState, IdNamespace, IndexEntry, IndexFile};
+use aristo_core::index::{AnnotationId, BindingState, IdNamespace, IndexEntry};
 use aristo_core::walk::{scan_id_occurrences, IdOccurrenceKind};
 
 use crate::commands::index::workspace_or_error;
@@ -75,7 +75,7 @@ pub(crate) fn apply_unbind(ws: &Workspace, prefixed_id_raw: &str) -> CliResult<(
 
     // Load index, locate the entry under the prefixed id.
     let index_path = ws.index_path();
-    let mut index = read_index(&index_path)?;
+    let mut index = crate::commands::show::load_index(ws)?;
     let entry = index
         .entries
         .get(&prefixed_id)
@@ -199,21 +199,4 @@ fn atomic_write_bytes(target: &Path, content: &[u8]) -> CliResult<()> {
     fs::write(&tmp, content).map_err(CliError::Io)?;
     fs::rename(&tmp, target).map_err(CliError::Io)?;
     Ok(())
-}
-
-fn read_index(path: &Path) -> CliResult<IndexFile> {
-    if !path.is_file() {
-        return Err(CliError::Other {
-            message: format!(
-                "no .aristo/index.toml at {} — run `aristo stamp` first",
-                path.display()
-            ),
-            exit_code: 2,
-        });
-    }
-    let text = fs::read_to_string(path).map_err(CliError::Io)?;
-    toml::from_str(&text).map_err(|e| CliError::Other {
-        message: format!("parsing {}: {e}", path.display()),
-        exit_code: 1,
-    })
 }

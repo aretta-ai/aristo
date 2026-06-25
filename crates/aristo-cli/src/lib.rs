@@ -255,6 +255,14 @@ enum Commands {
         /// Treat warn-severity verification outcomes as failure too.
         #[arg(long)]
         strict: bool,
+        /// Audit mode: regenerate the index in memory and validate every
+        /// `.aristo/proofs/<id>.proof` against current source. Reports
+        /// fresh / stale / refuted / orphan counts; with `--strict`, exits
+        /// non-zero on any stale, counterexample, or orphan proof. The CI
+        /// freshness gate (replaces `aristo stamp --check`) — no dispatch,
+        /// no network, no token.
+        #[arg(long = "audit")]
+        audit: bool,
         /// Apply pending verdict files in `.aristo/proofs/` to the
         /// index. Reads every `<id>.proof`, runs the mechanical
         /// validator, and (if it passes) flips the entry's status.
@@ -943,6 +951,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             rerun,
             check,
             strict,
+            audit,
             apply_verdicts,
             rewrite_hashes,
             submit_verdict,
@@ -961,6 +970,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             rerun,
             check,
             strict,
+            audit,
             apply_verdicts,
             rewrite_hashes,
             submit_verdict,

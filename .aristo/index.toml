@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
 generated_by = "aristo stamp 0.2.9"
-generated_at = "2026-06-25T05:19:10.906048Z"
+generated_at = "2026-06-25T06:24:16.83267Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -65,7 +65,7 @@ text = """`aristo critique --apply-findings` defaults to listing only findings w
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:f5d4795d9ecf51391849d08e8a50341d24dcddaaf54736d36774e8ae2e8c8aa7"
-body_hash = "sha256:097f7425b4bf709051ac57c7bf810b510b81061c6ce21617c0c89177d9004435"
+body_hash = "sha256:ec8149b790646c048a94b5b4a61d883c95f10215c289a4d7ae5ad7e6c40ce09c"
 file = "crates/aristo-cli/src/commands/critique/apply.rs"
 site = "fn run_apply_findings (line 24)"
 covered_region = "function"
@@ -307,7 +307,7 @@ text = "`aristo critique` requires an explicit `--filter` (id or file). Default 
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:2d96b20eeba58b6794ec00ea2807105e2395785c1d46b3ebf622c12a9b59b251"
-body_hash = "sha256:a43dc59455226f12761bf00728cd8d23a45f6ac1638ac5bbf7e23a8ae21c4df4"
+body_hash = "sha256:250e35c0ce75e57dbdcae0b8ca56ca995c2ff95116273a5d45b6c5ffba8b0712"
 file = "crates/aristo-cli/src/commands/critique/mod.rs"
 site = "fn run (line 30)"
 covered_region = "function"
@@ -626,7 +626,7 @@ text = "Status is sourced from `.aristo/proofs/`, not carried from a prior commi
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:48506304b5399d10a02e5e9925b0f15c75a9df88aa90c776641f5e863bd8fd38"
-body_hash = "sha256:2ac72f6ebd871d60a6b4b6e874f0905555932321c6b0281c6c27879cfa8e2ac8"
+body_hash = "sha256:53aee3be267885c6024472ed83a393718cd63c6e492ee5a1cba31d8e9dd602bb"
 file = "crates/aristo-cli/src/commands/stamp.rs"
 site = "fn merge_status_from_proofs (line 616)"
 covered_region = "function"
@@ -692,7 +692,7 @@ text = "The union function is read-only and tolerant: it never mutates the works
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:17427cceab6bab02b06161b728889eda24186d92dd43739f16b9d1802d71ebed"
-body_hash = "sha256:6a698b2b96c9ce048bdf33b04e70670dda917d265b5c7ced6b7872ff712e0f89"
+body_hash = "sha256:d1fd639baa8ba6b77f351fda83660f5fe298997f36e7997214c345f74432d4f4"
 file = "crates/aristo-cli/src/commands/nudge.rs"
 site = "fn build_inputs (line 210)"
 covered_region = "function"
@@ -1308,7 +1308,18 @@ status = "unknown"
 text_hash = "sha256:d26cb01329f074cbfd5acc0d3b31c04f8b15e15f96c228a60413dba8fe1fcf92"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 376)"
+site = "fn resolve_verify_level (line 489)"
+covered_region = "function"
+
+[verify_audit_reds_on_stale_refuted_or_orphan_not_unknown]
+kind = "intent"
+text = "`verify --audit` is the freshness gate that replaces `aristo stamp --check` once the index is a gitignored cache. It regenerates the index from source + `.aristo/proofs/` (never trusting a possibly-stale committed cache) and, under `--strict`, exits non-zero on any STALE (code drifted since verification), COUNTEREXAMPLE (refuted), or ORPHAN proof (a `.proof` whose annotation no longer exists). It deliberately does NOT fail on `unknown` (never-verified is a legitimate starting state, not a regression). A deleted `.proof` surfaces as the now-`unknown` entry plus a tracked-file deletion in the diff, not as an audit failure."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:71807e003a91706f85ad64428be32e356999943ccd120c89c8d15d8ebeffbbf8"
+body_hash = "sha256:c10505731edd7f330a972382d8223a99df17bf04eecc63bce402b37ff16d21a2"
+file = "crates/aristo-cli/src/commands/verify/mod.rs"
+site = "fn run_audit (line 247)"
 covered_region = "function"
 
 [verify_bool_true_resolves_through_project_default]
@@ -1319,7 +1330,7 @@ status = "unknown"
 text_hash = "sha256:98cd0efced314712df6f2fc59cbd60d95bed2c03b6670f5e9086aeca59a2c684"
 body_hash = "sha256:47a6992664050a69cc2739f41caab782724deba6a78e93f1763149535cc150cb"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn resolve_verify_level (line 388)"
+site = "fn resolve_verify_level (line 501)"
 covered_region = "function"
 
 [verify_false_arm_is_intentional_skip]
@@ -1330,7 +1341,7 @@ status = "unknown"
 text_hash = "sha256:abb61b58993697f0c741e36ed6ee821fe7a7539a6ecf6d316900e292f7198a93"
 body_hash = "sha256:e4def345cc196a3718bc5c5cbbe6a9f763632a5344e00562f09685eec5feed11"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run (line 147)"
+site = "fn run (line 156)"
 covered_region = "statement"
 
 [verify_migrates_legacy_pending_neural_toml_to_queue]
@@ -1350,9 +1361,9 @@ text = "`aristo verify --pop-next` is the worker-facing API: it atomically claim
 verify = "neural"
 status = "unknown"
 text_hash = "sha256:0da73449029c5ac290374f71589048e283bb0c913c998a23d1c344347f81978e"
-body_hash = "sha256:74a7875b3adf5c47c7af8c22f122f1298f0e82ba013e1528b398ef9fa5944145"
+body_hash = "sha256:c10505731edd7f330a972382d8223a99df17bf04eecc63bce402b37ff16d21a2"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run_pop_next (line 225)"
+site = "fn run_audit (line 234)"
 covered_region = "function"
 
 [verify_queue_status_is_non_destructive_peek]
@@ -1363,7 +1374,7 @@ status = "unknown"
 text_hash = "sha256:c1d5e4f08bfc2116718b94c7334dfdffdcf7981731e2e20d067e5dc617cdc608"
 body_hash = "sha256:96de1a2fc087ab877a852c94a7abb823017bad3e2c12318f4ea51e808c24a791"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn run_queue_status (line 251)"
+site = "fn run_queue_status (line 364)"
 covered_region = "function"
 
 [verify_skip_consults_validator_not_just_status]
@@ -1374,7 +1385,7 @@ status = "unknown"
 text_hash = "sha256:ec349c62caa14bf353768509d1662e6ec68dc8d5d703d542e698ca3c5fb1089f"
 body_hash = "sha256:92a9f4dcd35a81ce63e0cd198bee192b970574abf1a2282d7fc7dd2b693f163c"
 file = "crates/aristo-cli/src/commands/verify/mod.rs"
-site = "fn skip_because_proof_still_holds (line 413)"
+site = "fn skip_because_proof_still_holds (line 526)"
 covered_region = "function"
 
 [walk_directory_is_deterministic]

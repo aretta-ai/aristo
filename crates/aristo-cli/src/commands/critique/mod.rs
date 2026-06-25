@@ -14,7 +14,7 @@
 use aristo_core::index::{AnnotationId, IndexEntry};
 
 use crate::commands::index::workspace_or_error;
-use crate::commands::show::read_index;
+use crate::commands::show::load_index;
 use crate::filter::Filter;
 use crate::pipeline;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
@@ -56,7 +56,7 @@ pub(crate) fn run(
 ) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
-    let index = read_index(&ws.index_path())?;
+    let index = load_index(&ws)?;
 
     // Reads (pop_next, queue_status) bypass the session guard;
     // workers must keep functioning so an open session of any kind
