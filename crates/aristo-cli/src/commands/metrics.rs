@@ -12,12 +12,10 @@ use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
 
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::load_index;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
 pub(crate) fn run(json: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
     let index = load_index(&ws)?;
 
     // Walk source for the per-module fn surface the coverage score needs as

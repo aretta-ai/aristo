@@ -28,7 +28,6 @@ use aristo_core::index::{
 
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::load_index;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult, Workspace};
 
 pub(crate) fn run(
@@ -38,7 +37,6 @@ pub(crate) fn run(
     include_graph: bool,
 ) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
     let index = load_index(&ws)?;
 
     if check {

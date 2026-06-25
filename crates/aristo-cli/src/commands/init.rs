@@ -30,22 +30,26 @@ use crate::{CliError, CliResult};
 /// 3. `aristo lint --check` — fail-fast on annotation quality
 ///    issues. Mirrors J6's default `pre_commit = "check"` mode.
 ///
-/// `aristo` must be on `PATH` for the hook to execute — `cargo install
-/// aristo-cli` satisfies this for end users. The hook echoes each command
-/// to stderr before running so commit-time output makes the gate
-/// visible in the user's terminal.
+/// This hook is an OPTIONAL convenience, not the enforcement boundary: the
+/// index is a gitignored local cache, so freshness is enforced in CI by
+/// `aristo verify --audit`, not here. If `aristo` is not on `PATH` (e.g. a
+/// fork checkout where the contributor never ran `cargo install aristo-cli`),
+/// the hook skips silently (`command -v` guard) rather than aborting every
+/// commit with `command not found`.
 ///
-/// The `-e` shell option propagates any non-zero exit from `stamp`,
-/// `doc`, or `lint --check` as the hook's exit code, which aborts the
-/// commit.
+/// When the binary IS present, the `-e` shell option propagates any non-zero
+/// exit from `doc` or `lint --check` as the hook's exit code.
 const PRE_COMMIT_HOOK: &str = "\
 #!/usr/bin/env bash
-# Aristo pre-commit hook. Installed by `aristo init`.
-# Refreshes .aristo/index.toml + .aristo/doc/<id>.md files, then runs
-# lint --check on the index. Non-zero exit aborts the commit.
+# Aristo pre-commit hook (OPTIONAL convenience; installed by `aristo init`).
+# The index is a gitignored local cache, so this hook is NOT an enforcement
+# boundary — CI (`aristo verify --audit`) is. It refreshes the local cache and
+# the committed .aristo/doc/<id>.md artifacts, then lints annotation prose.
+# Skips silently when the aristo binary is absent (e.g. a fork checkout).
+command -v aristo >/dev/null 2>&1 || exit 0
 set -e
 
-echo \"-> aristo stamp\" >&2
+echo \"-> aristo stamp (refresh local cache)\" >&2
 aristo stamp >&2
 
 echo \"-> aristo doc\" >&2

@@ -30,13 +30,11 @@ use aristo_core::index::{AnnotationId, IdNamespace, IndexEntry, IndexFile, Paren
 use aristo_core::walk::{scan_id_occurrences, IdOccurrence, IdOccurrenceKind};
 
 use crate::commands::index::workspace_or_error;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult, Workspace};
 
 /// Entry point invoked from `lib::dispatch`.
 pub(crate) fn run(old_id: &str, new_id: &str, dry_run: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
     let index = crate::commands::show::load_index(&ws)?;
 
     let parsed = parse_and_validate(old_id, new_id, &index)?;

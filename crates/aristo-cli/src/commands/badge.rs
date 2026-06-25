@@ -34,7 +34,6 @@ use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
 
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::load_index;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +100,6 @@ impl Metric {
 
 pub(crate) fn run(out: Option<PathBuf>, style: Style, metric: Metric) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
     let index = load_index(&ws)?;
 
     let counters = Counters::from(&index);
@@ -165,8 +163,8 @@ fn write_to_file(
      advisory output goes to stderr — never to stdout. A regression that \
      emitted a progress line to stdout in this mode would corrupt the \
      SVG, breaking any consumer that pipes `aristo badge > foo.svg`. \
-     The freshness-preflight advisory already lives on stderr; the \
-     badge command MUST inherit that discipline for the no-`--out` path.",
+     Every diagnostic (warnings, hints) MUST stay on stderr for the \
+     no-`--out` path.",
     verify = "neural",
     id = "badge_stdout_mode_keeps_svg_uncorrupted"
 )]

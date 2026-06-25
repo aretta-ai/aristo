@@ -70,27 +70,6 @@ fn populated_workspace_breaks_down_counts() {
 }
 
 #[test]
-fn status_emits_stale_preflight_when_source_newer_than_index() {
-    let tmp = tempfile::tempdir().unwrap();
-    init_with_three_annotations(tmp.path());
-
-    // Touch the source file to bump its mtime past the index's.
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    fs::write(
-        tmp.path().join("src/lib.rs"),
-        r#"#[aristo::intent("alpha", verify = "test", id = "alpha")] fn a() {}"#,
-    )
-    .unwrap();
-
-    aristo_in(tmp.path())
-        .arg("status")
-        .assert()
-        .success()
-        .stderr(contains("may be stale relative to source"))
-        .stderr(contains("Run `aristo stamp`"));
-}
-
-#[test]
 fn status_no_warning_when_index_is_fresh() {
     let tmp = tempfile::tempdir().unwrap();
     init_with_three_annotations(tmp.path());

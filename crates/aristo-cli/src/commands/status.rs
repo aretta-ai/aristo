@@ -19,13 +19,10 @@ use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
 
 use crate::commands::index::workspace_or_error;
 use crate::commands::show::{load_index, status_label};
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
 pub(crate) fn run() -> CliResult<()> {
     let ws = workspace_or_error()?;
-    let report = freshness_check(&ws);
-    emit_advisory_if_stale(&report);
     let index = load_index(&ws)?;
 
     println!();

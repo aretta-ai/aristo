@@ -14,7 +14,6 @@ mod filter;
 /// is its in-crate consumer.
 pub mod nudge;
 mod pipeline;
-mod preflight;
 mod session;
 mod skills;
 mod update_notify;

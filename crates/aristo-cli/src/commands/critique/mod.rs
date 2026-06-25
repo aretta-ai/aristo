@@ -17,7 +17,6 @@ use crate::commands::index::workspace_or_error;
 use crate::commands::show::load_index;
 use crate::filter::Filter;
 use crate::pipeline;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::workspace::Workspace;
 use crate::{CliError, CliResult};
 
@@ -55,7 +54,6 @@ pub(crate) fn run(
     json: Option<String>,
 ) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
     let index = load_index(&ws)?;
 
     // Reads (pop_next, queue_status) bypass the session guard;

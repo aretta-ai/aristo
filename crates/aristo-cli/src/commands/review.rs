@@ -25,7 +25,6 @@ use crate::commands::index::workspace_or_error;
 use crate::commands::show::{load_index, status_label, verify_label};
 use crate::nudge::intents::{authored_intents, AuthoredIntent};
 use crate::nudge::state::{NudgeState, STATE_FILENAME};
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
 /// Schema version of the `--json` snapshot (bump on a breaking shape change).
@@ -33,7 +32,6 @@ const REVIEW_SCHEMA_VERSION: u32 = 1;
 
 pub(crate) fn run(json: bool, mark: Vec<String>) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
     let index = load_index(&ws)?;
     let authored = authored_intents(&index);
     let state_path = ws.aristo_dir().join(STATE_FILENAME);

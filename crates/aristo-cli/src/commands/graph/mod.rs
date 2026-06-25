@@ -25,7 +25,6 @@ use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Status, VerifyLeve
 use crate::commands::index::{atomic_write, workspace_or_error};
 use crate::commands::show::load_index;
 use crate::filter::Filter;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
 
 pub(crate) mod dot;
@@ -72,7 +71,6 @@ pub(crate) fn run(
     include_status: bool,
 ) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
     let index = load_index(&ws)?;
 
     let format = Format::parse(format).map_err(|message| CliError::Other {
