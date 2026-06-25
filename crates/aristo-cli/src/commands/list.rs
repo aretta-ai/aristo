@@ -10,7 +10,7 @@ use aristo_core::index::{AnnotationId, IndexEntry, ParentLink};
 use serde::Serialize;
 
 use crate::commands::index::workspace_or_error;
-use crate::commands::show::{read_index, status_label, verify_label};
+use crate::commands::show::{load_index, status_label, verify_label};
 use crate::filter::Filter;
 use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult};
@@ -18,7 +18,7 @@ use crate::{CliError, CliResult};
 pub(crate) fn run(filter_strings: &[String], json: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
-    let index = read_index(&ws.index_path())?;
+    let index = load_index(&ws)?;
     let filters = parse_filters(filter_strings)?;
 
     let matches: Vec<(&AnnotationId, &IndexEntry)> = index

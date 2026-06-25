@@ -35,7 +35,7 @@ pub(crate) enum OutputMode {
 pub(crate) fn run(selector: &str, mode: OutputMode) -> CliResult<()> {
     let ws = workspace_or_error()?;
     emit_advisory_if_stale(&freshness_check(&ws));
-    let index = read_index(&ws.index_path())?;
+    let index = load_index(&ws)?;
     let parsed = parse_selector(selector);
     match parsed {
         Selector::Id(raw) => show_by_id(&ws, &index, &raw, mode),
