@@ -37,7 +37,11 @@ use crate::commands::canon::runner::{
 use crate::commands::index::{
     atomic_write, build_entries, now_rfc3339, walk_options_from_workspace, workspace_or_error,
 };
+use crate::commands::verify::apply::derived_status;
+use crate::commands::verify::pending::proof_path_for;
+use crate::commands::verify::validator::validate;
 use crate::{CliError, CliResult};
+use aristo_core::proof::ProofFile;
 
 #[aristo::intent(
     "When `--check` is set, `aristo stamp` never writes the index. CI \
@@ -354,7 +358,7 @@ fn read_existing_index(path: &std::path::Path) -> CliResult<Option<IndexFile>> {
 /// Outcomes per-id after merging old/new statuses. Reported in stamp's
 /// human-readable summary.
 #[derive(Debug, Default)]
-struct StampSummary {
+pub(crate) struct StampSummary {
     new_count: usize,
     unchanged_count: usize,
     body_changed_count: usize,
@@ -394,7 +398,7 @@ enum NotableKind {
     verify = "test",
     id = "stamp_derives_canon_binding_from_cache"
 )]
-fn derive_bindings_from_cache(
+pub(crate) fn derive_bindings_from_cache(
     entries: &mut std::collections::BTreeMap<AnnotationId, IndexEntry>,
     cache: &CanonMatchesFile,
 ) {
@@ -552,6 +556,142 @@ fn merge_status_from_prev(
     summary
 }
 
+#[aristo::intent(
+    "`regenerate_index` rebuilds the full index in memory from source + \
+     `.aristo/proofs/` + `.aristo/canon-matches.toml`, with no dependency on a \
+     committed `.aristo/index.toml`. Same walk, cycle check, and binding \
+     derivation as `aristo stamp`, but status is sourced from proofs \
+     (`merge_status_from_proofs`), not carried from a prior index file. This is \
+     what lets the index become a gitignored local cache: any reader can call \
+     `load_index` and get correct, fresh status without the file existing.",
+    verify = "neural",
+    id = "regenerate_index_rebuilds_in_memory_without_a_committed_index"
+)]
+pub(crate) fn regenerate_index(ws: &crate::Workspace) -> CliResult<IndexFile> {
+    let walk_opts = walk_options_from_workspace(ws)?;
+    let discovered = walk_directory_with(&ws.root, &walk_opts).map_err(|e| CliError::Other {
+        message: format!("walk failed: {e}"),
+        exit_code: 1,
+    })?;
+    let (mut entries, parents_map) = build_entries(&discovered, &ws.root)?;
+    detect_cycles(&parents_map).map_err(|e| CliError::Other {
+        message: format!("{e}\n\nFix the cycle and re-run."),
+        exit_code: 2,
+    })?;
+    let cache = CanonMatchesFile::read(&ws.canon_matches_path()).map_err(|e| CliError::Other {
+        message: format!("reading {}: {e}", ws.canon_matches_path().display()),
+        exit_code: 1,
+    })?;
+    derive_bindings_from_cache(&mut entries, &cache);
+    merge_status_from_proofs(&mut entries, ws)?;
+    Ok(IndexFile {
+        meta: Meta {
+            schema_version: 1,
+            generated_by: Some(format!("aristo regenerate {}", env!("CARGO_PKG_VERSION"))),
+            generated_at: Some(now_rfc3339()),
+            source_root: Some(".".to_string()),
+        },
+        entries,
+    })
+}
+
+/// Phase-1 focal status for one entry given its already-parsed proof.
+/// Anchors valid -> the proof's verdict status; drifted -> Stale. Pure: no
+/// validator, no cross-entry dependency, no I/O. A `None`/no-proof case is
+/// handled by the caller (left as the build_entries `Unknown` default).
+fn focal_status_from_proof(
+    entry_text_hash: &aristo_core::index::Sha256,
+    entry_body_hash: &aristo_core::index::Sha256,
+    pf: &ProofFile,
+) -> Status {
+    let anchors_ok = &pf.verdict.produced_at_text_hash == entry_text_hash
+        && &pf.verdict.produced_at_body_hash == entry_body_hash;
+    if anchors_ok {
+        derived_status(pf)
+    } else {
+        Status::Stale
+    }
+}
+
+#[aristo::intent(
+    "Status is sourced from `.aristo/proofs/`, not carried from a prior \
+     committed index. For each entry the matching `.proof` is loaded and its \
+     `produced_at_text_hash`/`produced_at_body_hash` anchors checked against \
+     the entry's current hashes: anchors valid -> the proof's verdict; \
+     drifted -> Stale; no proof -> Unknown (left as built). A second pass \
+     re-runs the full validator against a snapshot carrying the first pass's \
+     statuses, so the refuted-sibling-ground guard fires and a clean status \
+     is demoted to Stale when the proof no longer validates. This is the \
+     source of truth once the index becomes a gitignored cache; running it \
+     while every entry is still Unknown would let a proof launder grounding \
+     in a refuted sibling, so the two-phase ordering is load-bearing.",
+    verify = "neural",
+    id = "merge_status_from_proofs_sources_status_from_proof_files"
+)]
+pub(crate) fn merge_status_from_proofs(
+    entries: &mut std::collections::BTreeMap<AnnotationId, IndexEntry>,
+    ws: &crate::Workspace,
+) -> CliResult<StampSummary> {
+    let mut summary = StampSummary::default();
+
+    // PHASE 1 — focal anchor check only (no cross-entry dependency).
+    let mut focal: Vec<(AnnotationId, Status)> = Vec::new();
+    for (id, entry) in entries.iter() {
+        let path = proof_path_for(ws, id);
+        let Ok(raw) = fs::read_to_string(&path) else {
+            // No proof on disk -> leave the Unknown that build_entries set.
+            continue;
+        };
+        let Ok(pf) = ProofFile::parse(&raw) else {
+            // Unparseable proof -> treat as no verdict; leave Unknown.
+            continue;
+        };
+        let (body_h, text_h, _) = entry_facets(entry);
+        focal.push((id.clone(), focal_status_from_proof(text_h, body_h, &pf)));
+    }
+    for (id, st) in &focal {
+        if let Some(e) = entries.get_mut(id) {
+            set_status(e, *st);
+        }
+    }
+
+    // PHASE 2 — full validate against a snapshot that now carries the
+    // Phase-1 statuses, so `check_index_ground` can see a refuted sibling.
+    let snapshot = IndexFile {
+        meta: Meta {
+            schema_version: 1,
+            generated_by: None,
+            generated_at: None,
+            source_root: None,
+        },
+        entries: entries.clone(),
+    };
+    for (id, st) in &focal {
+        // Drifted entries are already Stale; only re-validate the ones a
+        // clean/verdict status was assigned to.
+        if matches!(st, Status::Stale) {
+            continue;
+        }
+        let path = proof_path_for(ws, id);
+        let Ok(raw) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(pf) = ProofFile::parse(&raw) else {
+            continue;
+        };
+        if validate(id, &pf, &snapshot, &ws.root).is_empty() {
+            summary.unchanged_count += 1;
+        } else {
+            if let Some(e) = entries.get_mut(id) {
+                set_status(e, Status::Stale);
+            }
+            summary.body_changed_count += 1;
+        }
+    }
+
+    Ok(summary)
+}
+
 fn entry_facets(
     entry: &IndexEntry,
 ) -> (
@@ -591,6 +731,260 @@ fn print_summary(s: &StampSummary) {
                     change.id
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod proofs_join_tests {
+    use super::*;
+    use aristo_core::index::{
+        AnnotationKind, BindingState, CoveredRegion, IntentEntry, Sha256, VerifyLevel, VerifyMethod,
+    };
+    use aristo_core::proof::{
+        Gap, InconclusiveBody, Proof, PropertyKind, SuggestedAnnotation, VerdictMeta, VerdictType,
+        VerifiedBody,
+    };
+    use std::collections::BTreeMap;
+    use tempfile::TempDir;
+
+    fn sha(c: char) -> Sha256 {
+        Sha256::parse(&format!("sha256:{}", c.to_string().repeat(64))).unwrap()
+    }
+
+    fn aid(s: &str) -> AnnotationId {
+        AnnotationId::parse(s).unwrap()
+    }
+
+    fn intent(text_h: Sha256, body_h: Sha256) -> IndexEntry {
+        IndexEntry::Intent(IntentEntry {
+            text: "x".into(),
+            verify: VerifyLevel::Method(VerifyMethod::Neural),
+            status: Status::Unknown,
+            text_hash: text_h,
+            body_hash: body_h,
+            file: "src/lib.rs".into(),
+            site: "fn foo (line 1)".into(),
+            covered_region: CoveredRegion::Function,
+            binding: BindingState::Local,
+            parent: None,
+            last_critiqued_at_text_hash: None,
+            last_critique_finding_count: None,
+        })
+    }
+
+    fn proof(t: VerdictType, text_h: Sha256, body_h: Sha256, attempts: u32) -> ProofFile {
+        ProofFile {
+            verdict: VerdictMeta {
+                r#type: t,
+                method: VerifyMethod::Neural,
+                produced_at_text_hash: text_h,
+                produced_at_body_hash: body_h,
+                produced_by: "test".into(),
+                verifier_model: None,
+                attempts,
+                property_kind: PropertyKind::Invariant,
+            },
+            verified: matches!(t, VerdictType::Verified).then(|| VerifiedBody {
+                proof: Proof {
+                    conclusion: "x".into(),
+                    steps: vec![],
+                },
+            }),
+            counterexample: None,
+            inconclusive: matches!(t, VerdictType::Inconclusive).then(|| InconclusiveBody {
+                partial_proof: None,
+                gap: Gap {
+                    description: "x".into(),
+                    unfilled_path: "0".into(),
+                    // One suggestion whose text does not collide with any index
+                    // entry, so a fresh inconclusive body passes the validator.
+                    suggested_annotations: vec![SuggestedAnnotation {
+                        kind: AnnotationKind::Assume,
+                        suggested_text: "a brand new invariant to close the gap".into(),
+                        at_site: "fn foo (line 1)".into(),
+                        rationale: "needed".into(),
+                        would_close_path: None,
+                    }],
+                },
+            }),
+        }
+    }
+
+    fn make_ws() -> (TempDir, crate::Workspace) {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("aristo.toml"),
+            "[verify]\ndefault_method = \"neural\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(tmp.path().join(".aristo").join("proofs")).unwrap();
+        std::fs::write(
+            tmp.path().join(".aristo").join("index.toml"),
+            "[__meta__]\nschema_version = 1\n",
+        )
+        .unwrap();
+        let ws = crate::Workspace::find(Some(tmp.path())).unwrap();
+        (tmp, ws)
+    }
+
+    fn write_proof(ws: &crate::Workspace, id: &str, pf: &ProofFile) {
+        let filename = format!("{}.proof", id.replace(':', "__"));
+        let path = ws.aristo_dir().join("proofs").join(filename);
+        std::fs::write(path, pf.to_toml().unwrap()).unwrap();
+    }
+
+    // ─── Phase 1 (pure anchor logic) ────────────────────────────────────
+
+    #[test]
+    fn focal_status_anchors_match_maps_each_verdict() {
+        let (th, bh) = (sha('a'), sha('b'));
+        assert_eq!(
+            focal_status_from_proof(
+                &th,
+                &bh,
+                &proof(VerdictType::Verified, th.clone(), bh.clone(), 1)
+            ),
+            Status::Neural
+        );
+        assert_eq!(
+            focal_status_from_proof(
+                &th,
+                &bh,
+                &proof(VerdictType::Counterexample, th.clone(), bh.clone(), 1)
+            ),
+            Status::Counterexample
+        );
+        assert_eq!(
+            focal_status_from_proof(
+                &th,
+                &bh,
+                &proof(VerdictType::Inconclusive, th.clone(), bh.clone(), 1)
+            ),
+            Status::Inconclusive
+        );
+    }
+
+    #[test]
+    fn focal_status_text_or_body_drift_is_stale() {
+        let (th, bh) = (sha('a'), sha('b'));
+        // text drift (sha chars must be valid lowercase hex)
+        assert_eq!(
+            focal_status_from_proof(
+                &th,
+                &bh,
+                &proof(VerdictType::Verified, sha('c'), bh.clone(), 1)
+            ),
+            Status::Stale
+        );
+        // body drift
+        assert_eq!(
+            focal_status_from_proof(
+                &th,
+                &bh,
+                &proof(VerdictType::Verified, th.clone(), sha('c'), 1)
+            ),
+            Status::Stale
+        );
+    }
+
+    // ─── Two-phase, on disk ─────────────────────────────────────────────
+
+    #[test]
+    fn no_proof_leaves_unknown() {
+        let (_tmp, ws) = make_ws();
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("foo"), intent(sha('a'), sha('b')));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        let (_, _, st) = entry_facets(&entries[&aid("foo")]);
+        assert_eq!(st, Status::Unknown);
+    }
+
+    #[test]
+    fn anchors_match_and_valid_proof_survives_phase2() {
+        // Guards against an "always demote" regression: a valid, anchor-matching
+        // proof must keep its verdict through Phase 2. A no-partial-proof
+        // inconclusive with one non-colliding suggestion is the lightest body
+        // that passes the full validator (no proof tree / grounds to satisfy).
+        let (_tmp, ws) = make_ws();
+        let (th, bh) = (sha('a'), sha('b'));
+        write_proof(
+            &ws,
+            "foo",
+            &proof(VerdictType::Inconclusive, th.clone(), bh.clone(), 1),
+        );
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("foo"), intent(th, bh));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        let (_, _, st) = entry_facets(&entries[&aid("foo")]);
+        assert_eq!(st, Status::Inconclusive);
+    }
+
+    #[test]
+    fn anchors_match_but_proof_invalid_demotes_to_stale() {
+        // attempts=0 is a guaranteed validator rejection. Phase 1 alone would
+        // map this to Neural (see focal_status test); the full two-phase join
+        // must demote it to Stale.
+        let (_tmp, ws) = make_ws();
+        let (th, bh) = (sha('a'), sha('b'));
+        let invalid = proof(VerdictType::Verified, th.clone(), bh.clone(), 0);
+        assert_eq!(
+            focal_status_from_proof(&th, &bh, &invalid),
+            Status::Neural,
+            "precondition: Phase 1 would call this clean"
+        );
+        write_proof(&ws, "foo", &invalid);
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("foo"), intent(th, bh));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        let (_, _, st) = entry_facets(&entries[&aid("foo")]);
+        assert_eq!(st, Status::Stale);
+    }
+
+    #[test]
+    fn anchor_drift_is_stale_on_disk() {
+        let (_tmp, ws) = make_ws();
+        // proof produced against different hashes than the entry now has.
+        write_proof(
+            &ws,
+            "foo",
+            &proof(VerdictType::Verified, sha('c'), sha('d'), 1),
+        );
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("foo"), intent(sha('a'), sha('b')));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        let (_, _, st) = entry_facets(&entries[&aid("foo")]);
+        assert_eq!(st, Status::Stale);
+    }
+
+    #[test]
+    fn refinement_join_is_never_clean_without_a_valid_matching_proof() {
+        // The load-bearing safety property: the only path to a terminal-clean
+        // status is a valid, anchor-matching proof. Drift, absence, and
+        // invalid proofs all yield non-clean statuses.
+        let (_tmp, ws) = make_ws();
+        write_proof(
+            &ws,
+            "drift",
+            &proof(VerdictType::Verified, sha('c'), sha('d'), 1),
+        ); // anchor drift
+        write_proof(
+            &ws,
+            "invalid",
+            &proof(VerdictType::Verified, sha('a'), sha('b'), 0),
+        ); // invalid
+           // "absent" has no proof file.
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("drift"), intent(sha('a'), sha('b')));
+        entries.insert(aid("invalid"), intent(sha('a'), sha('b')));
+        entries.insert(aid("absent"), intent(sha('a'), sha('b')));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        for id in ["drift", "invalid", "absent"] {
+            let (_, _, st) = entry_facets(&entries[&aid(id)]);
+            assert!(
+                !st.is_terminal_clean(),
+                "{id} must not be terminal-clean, got {st:?}"
+            );
         }
     }
 }

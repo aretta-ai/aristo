@@ -1,7 +1,7 @@
 [__meta__]
 schema_version = 1
-generated_by = "aristo stamp 0.2.3"
-generated_at = "2026-06-08T17:17:55.909559Z"
+generated_by = "aristo stamp 0.2.9"
+generated_at = "2026-06-25T05:19:10.906048Z"
 source_root = "."
 
 [abort_requires_explicit_confirmation]
@@ -386,7 +386,7 @@ status = "unknown"
 text_hash = "sha256:83deaa81889acf09c9fb6383c823ac8363bc91277a16be89294ac106f979da5e"
 body_hash = "sha256:cc2281617efc9e3c91c3a6da65da3072d3f3b19e9110d3b3a710746ebda12ddf"
 file = "crates/aristo-cli/src/commands/show.rs"
-site = "fn did_you_mean (line 269)"
+site = "fn did_you_mean (line 284)"
 covered_region = "function"
 
 [doc_check_never_writes]
@@ -620,6 +620,17 @@ file = "crates/aristo-cli/src/commands/lint/fix.rs"
 site = "fn rewrite_source (line 85)"
 covered_region = "function"
 
+[merge_status_from_proofs_sources_status_from_proof_files]
+kind = "intent"
+text = "Status is sourced from `.aristo/proofs/`, not carried from a prior committed index. For each entry the matching `.proof` is loaded and its `produced_at_text_hash`/`produced_at_body_hash` anchors checked against the entry's current hashes: anchors valid -> the proof's verdict; drifted -> Stale; no proof -> Unknown (left as built). A second pass re-runs the full validator against a snapshot carrying the first pass's statuses, so the refuted-sibling-ground guard fires and a clean status is demoted to Stale when the proof no longer validates. This is the source of truth once the index becomes a gitignored cache; running it while every entry is still Unknown would let a proof launder grounding in a refuted sibling, so the two-phase ordering is load-bearing."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:48506304b5399d10a02e5e9925b0f15c75a9df88aa90c776641f5e863bd8fd38"
+body_hash = "sha256:2ac72f6ebd871d60a6b4b6e874f0905555932321c6b0281c6c27879cfa8e2ac8"
+file = "crates/aristo-cli/src/commands/stamp.rs"
+site = "fn merge_status_from_proofs (line 616)"
+covered_region = "function"
+
 [merge_status_preserves_when_body_unchanged]
 kind = "intent"
 text = "Status after stamp reflects the current code, not any prior version. Body-unchanged entries keep their prior status. Body-drifted entries with verified-class status (Verified, Tested, Neural) flip to Stale. Other prior statuses pass through."
@@ -628,7 +639,7 @@ status = "unknown"
 text_hash = "sha256:a0ac0dfb85cc50c166523567c4bfd7d2cc183ecc395958d41da9aa6e244a2528"
 body_hash = "sha256:0ad71651760b091640468ba31f1cea494e3dd98388b1617a7ebc7682da274e58"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn merge_status_from_prev (line 461)"
+site = "fn merge_status_from_prev (line 465)"
 covered_region = "function"
 
 [metrics_verifiable_excludes_assumes_and_doc_only_intents]
@@ -792,6 +803,17 @@ text_hash = "sha256:93444cf22dc55133ddbde9cb1782cde0b1250152bdc4d61d345f15234890
 body_hash = "sha256:3bd1d325354f3b22e32aa9d42d04f2655b6563f1a9969f7f8d6e399c3f260d06"
 file = "crates/aristo-cli/src/pipeline/queue.rs"
 site = "fn reap_stale_claims (line 253)"
+covered_region = "function"
+
+[regenerate_index_rebuilds_in_memory_without_a_committed_index]
+kind = "intent"
+text = "`regenerate_index` rebuilds the full index in memory from source + `.aristo/proofs/` + `.aristo/canon-matches.toml`, with no dependency on a committed `.aristo/index.toml`. Same walk, cycle check, and binding derivation as `aristo stamp`, but status is sourced from proofs (`merge_status_from_proofs`), not carried from a prior index file. This is what lets the index become a gitignored local cache: any reader can call `load_index` and get correct, fresh status without the file existing."
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:6d2588b4ee3aa58e008a216a4e3a505d1b5b017e1c59c6c44de8b8b295b9b84a"
+body_hash = "sha256:bef5f76a29aa2f02cbf03bdf7162a3c560a3d19f69ec06827a6982d7fb5f7003"
+file = "crates/aristo-cli/src/commands/stamp.rs"
+site = "fn regenerate_index (line 559)"
 covered_region = "function"
 
 [rejection_log_append_relies_on_posix_write_atomicity]
@@ -989,7 +1011,7 @@ status = "unknown"
 text_hash = "sha256:f273e9c3f077b6655bbcc902eec137681122b44324cdda36b0c0f55575f5c04c"
 body_hash = "sha256:fad71ce4786575225e2f1829f8fb923bba6fe736c839a4fd56ab8b76e43ed382"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn archive_orphan_proofs (line 196)"
+site = "fn archive_orphan_proofs (line 200)"
 covered_region = "function"
 
 [stamp_check_never_writes]
@@ -1000,7 +1022,7 @@ status = "unknown"
 text_hash = "sha256:46c84821843266195127e5ae086761da1c7aaefddb116c6ba041da7c7aa993e0"
 body_hash = "sha256:869c79be5b26a6855023b2957f5e994c22fddcc158fb9c45c17bc8de6b2621bd"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn run (line 42)"
+site = "fn run (line 46)"
 covered_region = "function"
 
 [stamp_derives_canon_binding_from_cache]
@@ -1011,7 +1033,7 @@ status = "unknown"
 text_hash = "sha256:7aa1a43ab12db7def381e3477b17eb84c05886c6d216d522eea3acce5026d328"
 body_hash = "sha256:7a6d39b3607d76d95ed4c71ce177babbfd84a03b1bf9fb6cc935eb9f38bfd7e3"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn derive_bindings_from_cache (line 380)"
+site = "fn derive_bindings_from_cache (line 384)"
 covered_region = "function"
 
 [stamp_disposition_uses_atomic_write]
@@ -1033,7 +1055,7 @@ status = "unknown"
 text_hash = "sha256:e96146b0be6943cf68b8afb11f8e71010b1d292ee4480d879dcfaecbd69d9664"
 body_hash = "sha256:7a7bf34976b4c0747b6e39e5dc0260cdc7bfc0aa648375b9dc76a41f3f542b81"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn gc_archived_proofs (line 253)"
+site = "fn gc_archived_proofs (line 257)"
 covered_region = "function"
 
 [stamp_runs_canon_step_after_index_write]
@@ -1044,7 +1066,7 @@ status = "unknown"
 text_hash = "sha256:b800bc5d89327791c0954b686837a79920ecad7fd633fa8171db9400a2c99f37"
 body_hash = "sha256:15d4e147afb93aa5d8e1205860cdb240fcc6b1057d7496bb457566d6408c6485"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn run_canon_step_for_stamp (line 157)"
+site = "fn run_canon_step_for_stamp (line 161)"
 covered_region = "function"
 
 [stamp_surfaces_counterexamples_loudly]
@@ -1055,7 +1077,7 @@ status = "unknown"
 text_hash = "sha256:3710bf64ee1f3452d67e3f26ad711c2054497bd4b9ecbeed14f0e2294d04431e"
 body_hash = "sha256:93f498b971f7f0c41ce8ff1baeea117b8395862cedd6a9759ac9d849f7254ffc"
 file = "crates/aristo-cli/src/commands/stamp.rs"
-site = "fn warn_on_counterexamples (line 284)"
+site = "fn warn_on_counterexamples (line 288)"
 covered_region = "function"
 
 [status_canon_health_is_offline_only]

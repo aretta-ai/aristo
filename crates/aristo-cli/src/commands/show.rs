@@ -132,6 +132,21 @@ pub(crate) fn read_index(path: &std::path::Path) -> CliResult<IndexFile> {
     })
 }
 
+/// Load the annotation index. Prefers a present `.aristo/index.toml` (the
+/// optional local cache); otherwise regenerates it in memory from source +
+/// `.aristo/proofs/`. Never errors merely because the index file is absent —
+/// the index is a derived, optional cache (index-as-local-cache / Option B).
+/// Read commands call this instead of `read_index` so they keep working when
+/// `aristo stamp` has not run.
+pub(crate) fn load_index(ws: &Workspace) -> CliResult<IndexFile> {
+    let path = ws.index_path();
+    if path.is_file() {
+        read_index(&path)
+    } else {
+        crate::commands::stamp::regenerate_index(ws)
+    }
+}
+
 // ─── Lookup paths ──────────────────────────────────────────────────────────
 
 fn show_by_id(ws: &Workspace, index: &IndexFile, raw: &str, mode: OutputMode) -> CliResult<()> {
@@ -891,6 +906,78 @@ fn format_canon_binding(ws: &Workspace, id: &AnnotationId, entry: &IndexEntry) -
     out.push_str(&rule);
     out.push('\n');
     out
+}
+
+#[cfg(test)]
+mod load_index_tests {
+    use super::*;
+    use aristo_core::index::{CoveredRegion, Meta, Sha256};
+    use std::collections::BTreeMap;
+    use tempfile::TempDir;
+
+    fn make_ws_no_index() -> (TempDir, Workspace) {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("aristo.toml"),
+            "[verify]\ndefault_method = \"neural\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(tmp.path().join(".aristo")).unwrap();
+        let ws = Workspace::find(Some(tmp.path())).unwrap();
+        (tmp, ws)
+    }
+
+    #[test]
+    fn load_index_does_not_error_when_index_absent() {
+        // The whole point of Option B: a missing index is not an error.
+        // read_index hard-errors; load_index regenerates an (empty) index.
+        let (_tmp, ws) = make_ws_no_index();
+        assert!(!ws.index_path().is_file());
+        assert!(read_index(&ws.index_path()).is_err());
+        let idx = load_index(&ws).expect("load_index must not error on a missing index");
+        assert_eq!(idx.entries.len(), 0);
+    }
+
+    #[test]
+    fn load_index_reads_committed_cache_when_present() {
+        // A committed entry that does not exist in source: if load_index
+        // regenerated, it would be empty, so a non-empty result proves the
+        // present cache was read (not regenerated).
+        let (_tmp, ws) = make_ws_no_index();
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            AnnotationId::parse("ghost").unwrap(),
+            IndexEntry::Intent(IntentEntry {
+                text: "x".into(),
+                verify: VerifyLevel::Method(VerifyMethod::Neural),
+                status: Status::Unknown,
+                text_hash: Sha256::parse(&format!("sha256:{}", "a".repeat(64))).unwrap(),
+                body_hash: Sha256::parse(&format!("sha256:{}", "b".repeat(64))).unwrap(),
+                file: "src/lib.rs".into(),
+                site: "fn foo (line 1)".into(),
+                covered_region: CoveredRegion::Function,
+                binding: BindingState::Local,
+                parent: None,
+                last_critiqued_at_text_hash: None,
+                last_critique_finding_count: None,
+            }),
+        );
+        let idx = IndexFile {
+            meta: Meta {
+                schema_version: 1,
+                generated_by: None,
+                generated_at: None,
+                source_root: None,
+            },
+            entries,
+        };
+        std::fs::write(ws.index_path(), toml::to_string(&idx).unwrap()).unwrap();
+        let loaded = load_index(&ws).unwrap();
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(loaded
+            .entries
+            .contains_key(&AnnotationId::parse("ghost").unwrap()));
+    }
 }
 
 #[cfg(test)]
