@@ -14,13 +14,14 @@
 .env.local
 
 # Aristo runtime artifacts produced by dogfooding the SDK on its own source.
-# `aristo.toml` and `.aristo/` are BOTH tracked — they carry project state
-# (config decisions, the stamped annotation index, verify specs, generated
-# docs) that needs to propagate to CI and fresh clones. The pre-commit
-# hook runs `aristo stamp` before every commit, so `.aristo/index.toml`
-# stays in sync with source at commit time. Downstream Aristo users
-# commit these artifacts too (per docs/TOOLS.md "Committed to the repo
-# by default") — this repo dogfoods that same convention.
+# `aristo.toml` and most of `.aristo/` are tracked — they carry durable project
+# state (config, verify specs, the `.proof` verdict trees, generated docs) that
+# must propagate to CI and fresh clones. The EXCEPTION is `.aristo/index.toml`:
+# under index-as-local-cache (Option B) it is a regenerable cache, derived from
+# source + `.aristo/proofs/` on demand by every read command, so it is
+# gitignored. Freshness is enforced in CI by `aristo verify --audit`, not by a
+# committed index. See docs/decisions/index-as-local-cache.md.
+/.aristo/index.toml
 #
 # `.github/workflows/aristo.yml` was historically gitignored when it was a
 # placeholder; slice 34 promotes it to the real gate sequence (stamp →

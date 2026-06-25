@@ -1,13 +1,14 @@
 //! `aristo init` — bootstrap a project for Aristo.
 //!
-//! Creates the four state files (`aristo.toml`, `.aristo/index.toml`,
-//! `.aristo/specs/`, `.aristo/doc/`) and installs the pre-commit hook
-//! (when `.git/hooks/` exists). CI workflows are opt-in: `--ci` writes the
-//! lite PR gate, `--ci-verify` also writes the nightly verify workflow.
+//! Creates the project state (`aristo.toml`, `.aristo/specs/`, `.aristo/doc/`),
+//! seeds a local `.aristo/index.toml` cache, gitignores that cache, and
+//! installs the pre-commit hook (when `.git/hooks/` exists). CI workflows are
+//! opt-in: `--ci` writes the lite PR gate, `--ci-verify` also writes the
+//! nightly verify workflow.
 //!
-//! Per `docs/diagrams/02-state-map.mmd` `w_init`, this is the only writer
-//! of the index file's initial empty state — every read command can
-//! safely assume `.aristo/index.toml` exists once `aristo init` has run.
+//! The index is a regenerable local cache (index-as-local-cache / Option B):
+//! read commands regenerate it from source + `.aristo/proofs/` on demand, so
+//! they do NOT require `aristo stamp` to have run or the file to exist.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -127,14 +128,19 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool) -> CliResult<()> {
     let aristo_dir = cwd.join(".aristo");
     fs::create_dir_all(&aristo_dir)?;
 
-    // 3. .aristo/index.toml — meta-only header, zero entries.
+    // 3. .aristo/index.toml — seed the local cache (gitignored below). Readers
+    //    regenerate it from source + proofs, so this is just a fast-path seed.
     create_or_note_file_custom_msg(
         &aristo_dir.join("index.toml"),
-        "ok: created .aristo/index.toml (empty; 0 annotations)",
+        "ok: created .aristo/index.toml (local cache; gitignored)",
         "note: .aristo/index.toml already exists — leaving as-is.",
         serialize_initial_index,
         &mut any_change,
     )?;
+
+    // 3b. Gitignore the index cache — it is a regenerable local artifact, not
+    //     project state, under index-as-local-cache (Option B).
+    ensure_gitignored(&cwd, ".aristo/index.toml", &mut any_change)?;
 
     // 4. .aristo/specs/
     create_or_note_dir(&aristo_dir.join("specs"), ".aristo/specs/", &mut any_change)?;
@@ -186,6 +192,30 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool) -> CliResult<()> {
         println!("ok: nothing to do.");
     }
 
+    Ok(())
+}
+
+/// Ensure `entry` is present in the repo's `.gitignore` (creating the file if
+/// absent). Idempotent — a no-op if the line is already there.
+fn ensure_gitignored(cwd: &Path, entry: &str, any_change: &mut bool) -> CliResult<()> {
+    let path = cwd.join(".gitignore");
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    if existing.lines().any(|l| l.trim() == entry) {
+        return Ok(());
+    }
+    let mut out = existing;
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(
+        "\n# Aristo: the annotation index is a regenerable local cache (derived\n\
+         # from source + .aristo/proofs/); do not commit it.\n",
+    );
+    out.push_str(entry);
+    out.push('\n');
+    fs::write(&path, out).map_err(crate::CliError::Io)?;
+    println!("ok: added `{entry}` to .gitignore");
+    *any_change = true;
     Ok(())
 }
 

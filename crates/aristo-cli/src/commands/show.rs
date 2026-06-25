@@ -137,6 +137,12 @@ pub(crate) fn read_index(path: &std::path::Path) -> CliResult<IndexFile> {
 /// Read commands call this instead of `read_index` so they keep working when
 /// `aristo stamp` has not run.
 pub(crate) fn load_index(ws: &Workspace) -> CliResult<IndexFile> {
+    // The index is a derived, gitignored cache. If a local `index.toml` cache is
+    // present, read it (fast path); otherwise — the normal case on a fresh
+    // clone where the gitignored cache is absent — regenerate from source +
+    // `.aristo/proofs/`. A stale local cache is no worse than the old committed
+    // index was (re-run `aristo stamp` to refresh it); a missing one is not an
+    // error. Never hard-errors merely because the file is absent.
     let path = ws.index_path();
     if path.is_file() {
         read_index(&path)
@@ -937,10 +943,11 @@ mod load_index_tests {
     }
 
     #[test]
-    fn load_index_reads_committed_cache_when_present() {
-        // A committed entry that does not exist in source: if load_index
-        // regenerated, it would be empty, so a non-empty result proves the
-        // present cache was read (not regenerated).
+    fn load_index_reads_local_cache_when_present() {
+        // When a local index.toml cache is present, load_index reads it (fast
+        // path). A "ghost" entry absent from source proves the cache was read,
+        // not regenerated. (On a fresh clone the cache is gitignored/absent, and
+        // load_index regenerates instead — see the absent-index test.)
         let (_tmp, ws) = make_ws_no_index();
         let mut entries = BTreeMap::new();
         entries.insert(
@@ -971,7 +978,7 @@ mod load_index_tests {
         };
         std::fs::write(ws.index_path(), toml::to_string(&idx).unwrap()).unwrap();
         let loaded = load_index(&ws).unwrap();
-        assert_eq!(loaded.entries.len(), 1);
+        assert_eq!(loaded.entries.len(), 1, "present local cache is read");
         assert!(loaded
             .entries
             .contains_key(&AnnotationId::parse("ghost").unwrap()));

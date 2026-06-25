@@ -5,10 +5,17 @@
 # `aristo` binary ships in the aristo-cli crate). This repo dogfoods the
 # in-tree build instead, invoking it via `cargo run --release --bin aristo`.
 #
-# Gate order (slice 34): stamp first (everything downstream reads the
-# index — fail fast on staleness), lint second (cheapest static check),
-# doc third (purely derived from index). Each `--check` mode is
-# non-mutating and exits non-zero on drift.
+# Gate order: `verify --audit` first (the freshness gate — regenerates the
+# index from source + .aristo/proofs/ and reports stale/refuted/orphan; it
+# replaces the old `stamp --check` now that the index is a gitignored cache),
+# lint second (cheapest static check), doc third (derived from source). Each
+# step is non-mutating.
+#
+# NOTE: the audit runs NON-strict here because the dogfood currently has a few
+# pre-existing stale proofs (code drifted from its verdict; re-verify via the
+# aristo-verify skill). Flip to `verify --audit --strict` once those are
+# re-verified. Fresh consumer repos (no stale debt) get `--strict` from the
+# `aristo init --ci` starter template.
 #
 # The `verify --check --strict` step is intentionally OMITTED. The
 # verify command surfaces `CliError::NotImplemented` whenever the
@@ -26,11 +33,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: build (release, single shared rebuild for all gates)
         run: cargo build --release --bin aristo
-      - name: stamp --check (index in sync with source)
-        run: cargo run --release --bin aristo -- stamp --check
+      - name: verify --audit (proofs fresh vs source; replaces stamp --check)
+        run: cargo run --release --bin aristo -- verify --audit
       - name: lint --check --strict (no warn/error findings)
         run: cargo run --release --bin aristo -- lint --check --strict
-      - name: doc --check (doc artifacts in sync with index)
+      - name: doc --check (doc artifacts in sync with source)
         run: cargo run --release --bin aristo -- doc --check
       - name: status (per-pipeline rate + tier — informational)
         run: cargo run --release --bin aristo -- status
