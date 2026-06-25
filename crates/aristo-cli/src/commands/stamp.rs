@@ -631,9 +631,7 @@ fn focal_status_from_proof(
 pub(crate) fn merge_status_from_proofs(
     entries: &mut std::collections::BTreeMap<AnnotationId, IndexEntry>,
     ws: &crate::Workspace,
-) -> CliResult<StampSummary> {
-    let mut summary = StampSummary::default();
-
+) -> CliResult<()> {
     // PHASE 1 — focal anchor check only (no cross-entry dependency).
     let mut focal: Vec<(AnnotationId, Status)> = Vec::new();
     for (id, entry) in entries.iter() {
@@ -679,17 +677,18 @@ pub(crate) fn merge_status_from_proofs(
         let Ok(pf) = ProofFile::parse(&raw) else {
             continue;
         };
-        if validate(id, &pf, &snapshot, &ws.root).is_empty() {
-            summary.unchanged_count += 1;
-        } else {
+        // A clean Phase-1 status is demoted to Stale if the proof no longer
+        // validates (drift caught here is structural — refuted-sibling ground,
+        // attempts budget, method mismatch, body shape — not the anchor drift
+        // already handled in Phase 1).
+        if !validate(id, &pf, &snapshot, &ws.root).is_empty() {
             if let Some(e) = entries.get_mut(id) {
                 set_status(e, Status::Stale);
             }
-            summary.body_changed_count += 1;
         }
     }
 
-    Ok(summary)
+    Ok(())
 }
 
 fn entry_facets(
@@ -742,8 +741,9 @@ mod proofs_join_tests {
         AnnotationKind, BindingState, CoveredRegion, IntentEntry, Sha256, VerifyLevel, VerifyMethod,
     };
     use aristo_core::proof::{
-        Gap, InconclusiveBody, Proof, PropertyKind, SuggestedAnnotation, VerdictMeta, VerdictType,
-        VerifiedBody,
+        CounterexampleBody, Gap, Ground, GroundRelation, InconclusiveBody, Proof, ProofStep,
+        PropertyKind, RelationKind, SuggestedAnnotation, VerdictMeta, VerdictType, VerifiedBody,
+        Violation,
     };
     use std::collections::BTreeMap;
     use tempfile::TempDir;
@@ -808,6 +808,84 @@ mod proofs_join_tests {
                     }],
                 },
             }),
+        }
+    }
+
+    /// A valid Verified proof whose single step grounds in `sibling`'s intent.
+    /// Passes the validator unless the cited sibling is refuted/docs-only.
+    fn verified_grounding_in(
+        sibling: &str,
+        sibling_text_hash: Sha256,
+        text_h: Sha256,
+        body_h: Sha256,
+    ) -> ProofFile {
+        ProofFile {
+            verdict: VerdictMeta {
+                r#type: VerdictType::Verified,
+                method: VerifyMethod::Neural,
+                produced_at_text_hash: text_h,
+                produced_at_body_hash: body_h,
+                produced_by: "test".into(),
+                verifier_model: None,
+                attempts: 1,
+                property_kind: PropertyKind::Invariant,
+            },
+            verified: Some(VerifiedBody {
+                proof: Proof {
+                    conclusion: "holds".into(),
+                    steps: vec![ProofStep {
+                        path: "0".into(),
+                        claim: "by the cited sibling".into(),
+                        relation_to_parent: RelationKind::Decomposes,
+                        grounds: vec![Ground::Intent {
+                            id: aid(sibling),
+                            at_text_hash: Some(sibling_text_hash),
+                            relation: GroundRelation::Instantiates,
+                            reason: None,
+                        }],
+                        subgoal_paths: vec![],
+                        proposed_promotion: false,
+                    }],
+                },
+            }),
+            counterexample: None,
+            inconclusive: None,
+        }
+    }
+
+    /// A structurally valid Counterexample proof (one trigger step with a
+    /// self-contained ground), so it survives Phase 2 and stays Counterexample.
+    fn valid_counterexample(text_h: Sha256, body_h: Sha256) -> ProofFile {
+        ProofFile {
+            verdict: VerdictMeta {
+                r#type: VerdictType::Counterexample,
+                method: VerifyMethod::Neural,
+                produced_at_text_hash: text_h,
+                produced_at_body_hash: body_h,
+                produced_by: "test".into(),
+                verifier_model: None,
+                attempts: 1,
+                property_kind: PropertyKind::Invariant,
+            },
+            verified: None,
+            counterexample: Some(CounterexampleBody {
+                violation: Violation {
+                    description: "refuted".into(),
+                    violated_step_path: "0".into(),
+                    trigger_steps: vec![ProofStep {
+                        path: "0".into(),
+                        claim: "trigger".into(),
+                        relation_to_parent: RelationKind::Decomposes,
+                        grounds: vec![Ground::Composition {
+                            reason: "trivial".into(),
+                        }],
+                        subgoal_paths: vec![],
+                        proposed_promotion: false,
+                    }],
+                    refuted_grounds: vec![],
+                },
+            }),
+            inconclusive: None,
         }
     }
 
@@ -958,10 +1036,11 @@ mod proofs_join_tests {
     }
 
     #[test]
-    fn refinement_join_is_never_clean_without_a_valid_matching_proof() {
-        // The load-bearing safety property: the only path to a terminal-clean
-        // status is a valid, anchor-matching proof. Drift, absence, and
-        // invalid proofs all yield non-clean statuses.
+    fn join_is_terminal_clean_only_via_valid_matching_proof() {
+        // The load-bearing safety invariant (absolute, not a differential
+        // refinement vs the prior-index path): the only route to a terminal-clean
+        // status is a valid, anchor-matching proof. Drift, absence, and invalid
+        // proofs all yield non-clean statuses.
         let (_tmp, ws) = make_ws();
         write_proof(
             &ws,
@@ -986,6 +1065,86 @@ mod proofs_join_tests {
                 "{id} must not be terminal-clean, got {st:?}"
             );
         }
+    }
+
+    #[test]
+    fn method_mismatch_demotes_to_stale() {
+        // Entry declares verify=neural; a proof claiming method=test fails the
+        // validator's method check -> Phase 2 demotes to Stale even though the
+        // anchors match.
+        let (_tmp, ws) = make_ws();
+        let (th, bh) = (sha('a'), sha('b'));
+        let mut pf = proof(VerdictType::Verified, th.clone(), bh.clone(), 1);
+        pf.verdict.method = VerifyMethod::Test;
+        write_proof(&ws, "foo", &pf);
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("foo"), intent(th, bh));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        let (_, _, st) = entry_facets(&entries[&aid("foo")]);
+        assert_eq!(st, Status::Stale);
+    }
+
+    #[test]
+    fn phase2_demotes_focal_grounded_in_refuted_sibling() {
+        // The raison d'être of the two-phase join: a proof that grounds in a
+        // sibling whose own proof is a Counterexample must be demoted to Stale.
+        // Phase 1 sets the sibling to Counterexample BEFORE the snapshot, so
+        // check_index_ground sees the refuted sibling during Phase 2.
+        let (_tmp, ws) = make_ws();
+        let (a_t, a_b) = (sha('a'), sha('b'));
+        let (b_t, b_b) = (sha('c'), sha('d'));
+        write_proof(
+            &ws,
+            "sibling_b",
+            &valid_counterexample(b_t.clone(), b_b.clone()),
+        );
+        write_proof(
+            &ws,
+            "focal_a",
+            &verified_grounding_in("sibling_b", b_t.clone(), a_t.clone(), a_b.clone()),
+        );
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("focal_a"), intent(a_t, a_b));
+        entries.insert(aid("sibling_b"), intent(b_t, b_b));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        let (_, _, b_status) = entry_facets(&entries[&aid("sibling_b")]);
+        let (_, _, a_status) = entry_facets(&entries[&aid("focal_a")]);
+        assert_eq!(b_status, Status::Counterexample, "sibling stays refuted");
+        assert_eq!(
+            a_status,
+            Status::Stale,
+            "focal grounded in a refuted sibling must demote"
+        );
+    }
+
+    #[test]
+    #[ignore = "known gap: a deleted .proof loses the sibling's Counterexample, so \
+                the refuted-sibling guard cannot fire and the focal proof reaches \
+                Neural. Closed by the slice-4/7 `verify --audit --strict` \
+                proof-deletion red (ADR index-as-local-cache.md §3/§4); enable then."]
+    fn deleted_counterexample_proof_must_not_let_sibling_relax() {
+        // Same as the sibling-demotion test, but sibling_b's Counterexample
+        // proof is absent (deleted). Asserts the DESIRED behavior — which fails
+        // today, hence #[ignore]. It documents the one direction in which the
+        // proofs-join is weaker than the durable committed-index status.
+        let (_tmp, ws) = make_ws();
+        let (a_t, a_b) = (sha('a'), sha('b'));
+        let (b_t, b_b) = (sha('c'), sha('d'));
+        // sibling_b has NO proof on disk (deleted).
+        write_proof(
+            &ws,
+            "focal_a",
+            &verified_grounding_in("sibling_b", b_t.clone(), a_t.clone(), a_b.clone()),
+        );
+        let mut entries = BTreeMap::new();
+        entries.insert(aid("focal_a"), intent(a_t, a_b));
+        entries.insert(aid("sibling_b"), intent(b_t, b_b));
+        merge_status_from_proofs(&mut entries, &ws).unwrap();
+        let (_, _, a_status) = entry_facets(&entries[&aid("focal_a")]);
+        assert!(
+            !a_status.is_terminal_clean(),
+            "focal grounded in a sibling with no surviving proof must not be clean, got {a_status:?}"
+        );
     }
 }
 
