@@ -1,28 +1,29 @@
-//! `aristo stamp` — index + body-drift detection (+ B5b classification in Phase 2).
+//! `aristo stamp` — refresh the local index cache from source + proofs.
 //!
 //! Builds on top of [`crate::commands::index`]: same walk, same cycle
-//! detection, same atomic write. Adds:
+//! detection, same atomic write. Under the index-as-local-cache model
+//! (Option B), `.aristo/index.toml` is a gitignored, regenerable cache and
+//! `aristo stamp` is OPTIONAL — it just refreshes that cache so readers hit a
+//! fast path. It produces exactly what `regenerate_index` produces for a
+//! reader. Adds, over `aristo index`:
 //!
-//! - **Status drift detection.** Reads the existing `.aristo/index.toml`
-//!   first. For each entry that exists in both old and new index, if the
-//!   body_hash changed and the old status was a verified state
-//!   (Verified / Tested / Neural), the new status flips to Stale —
-//!   signaling that the prior verification is no longer valid for the
-//!   current code. Status is preserved when body_hash is unchanged.
+//! - **Status from proofs.** Status is sourced from `.aristo/proofs/` via
+//!   [`merge_status_from_proofs`] (anchor check + validator), not carried from
+//!   a prior committed index. A drifted/refuted/absent proof yields
+//!   Stale/Counterexample/Unknown respectively.
 //!
-//! - **Per-annotation summary.** Lists each entry's transition (new /
-//!   stale / unchanged / removed) so the developer sees what stamp
-//!   did at a glance.
+//! - **Orphan-proof archival.** A `.proof` whose annotation was removed from
+//!   source (set-difference of proof files minus walked entries) is MOVED to
+//!   `.aristo/archive/proofs/`, never deleted; `--gc` is the only purge.
 //!
-//! - **`--check` CI mode.** Computes everything but does NOT write the
-//!   index. Exits non-zero if changes would be made — gates pre-merge CI
-//!   on the index being committed in sync with source.
+//! - **`--check` CI mode.** Computes everything but does NOT write the index.
+//!   Exits non-zero if the regenerated entries differ from the committed cache.
+//!   (The canonical freshness gate is `aristo verify --audit --strict`, which
+//!   does not need a committed index at all.)
 //!
-//! Slice 17 explicitly excludes B5b classification (server-issued
-//! certificates, Phase 2). Slice 17 also defers the offer-rename UX
-//! (interactive promotion of opaque ids to readable ones); for now,
-//! opaque ids assigned by `aristo index` stay opaque until the user runs
-//! `aristo rename` (slice 32).
+//! Slice 17 deferred the offer-rename UX (interactive promotion of opaque ids
+//! to readable ones); opaque ids assigned by `aristo index` stay opaque until
+//! the user runs `aristo rename` (slice 32).
 
 use std::fs;
 
@@ -92,13 +93,15 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool, gc: bool) 
     })?;
     derive_bindings_from_cache(&mut entries, &cache);
 
-    let summary = merge_status_from_prev(&mut entries, prev_index.as_ref());
+    // Status is sourced from `.aristo/proofs/`, so the written index matches
+    // exactly what `regenerate_index` produces for a reader — `aristo stamp`
+    // only refreshes the (now optional, gitignored) local cache.
+    merge_status_from_proofs(&mut entries, &ws)?;
     if !check {
-        // Skip in --check mode; CI shouldn't mutate the workspace. The
-        // summary still surfaces what would move.
-        archive_orphan_proofs(&ws, &summary)?;
+        // Skip in --check mode; CI must not mutate the workspace.
+        archive_orphan_proofs(&ws, &entries)?;
     }
-    print_summary(&summary);
+    print_status_summary(&entries);
 
     let index = IndexFile {
         meta: Meta {
@@ -212,44 +215,57 @@ fn run_canon_step_for_stamp(
     verify = "test",
     id = "stamp_archives_orphan_proofs_on_removed_annotations"
 )]
-fn archive_orphan_proofs(ws: &crate::Workspace, summary: &StampSummary) -> CliResult<()> {
+fn archive_orphan_proofs(
+    ws: &crate::Workspace,
+    entries: &std::collections::BTreeMap<AnnotationId, IndexEntry>,
+) -> CliResult<()> {
     let proofs_dir = ws.aristo_dir().join("proofs");
     if !proofs_dir.is_dir() {
         return Ok(());
     }
     let archive_dir = ws.aristo_dir().join("archive").join("proofs");
-    for change in &summary.notable {
-        if !matches!(change.kind, NotableKind::Removed) {
+    // Orphan = a `.proof` on disk whose decoded id is no longer in source
+    // (set-difference of proof files minus walked entries). No prior committed
+    // index is consulted — the source walk is the sole authority.
+    for entry in fs::read_dir(&proofs_dir).map_err(CliError::Io)? {
+        let from = entry.map_err(CliError::Io)?.path();
+        if from.extension().and_then(|e| e.to_str()) != Some("proof") {
             continue;
         }
-        let stem = change.id.as_str().replace(':', "__");
-        let from = proofs_dir.join(format!("{stem}.proof"));
-        if from.is_file() {
-            fs::create_dir_all(&archive_dir).map_err(|e| CliError::Other {
-                message: format!("creating proof archive {}: {e}", archive_dir.display()),
-                exit_code: 1,
-            })?;
-            // Never clobber a previously-archived verdict for the same id (an
-            // id can be orphaned more than once — e.g. removed, re-added, and
-            // removed again). Uniquify with a counter, keeping the `.proof`
-            // extension so `--gc` still collects it. This upholds the ID-D5
-            // promise that archiving never loses a verdict.
-            let mut to = archive_dir.join(format!("{stem}.proof"));
-            let mut n = 1u32;
-            while to.exists() {
-                to = archive_dir.join(format!("{stem}.{n}.proof"));
-                n += 1;
-            }
-            fs::rename(&from, &to).map_err(|e| CliError::Other {
-                message: format!("archiving orphan proof {}: {e}", from.display()),
-                exit_code: 1,
-            })?;
-            eprintln!(
-                "  • {}: archived orphan proof → {}",
-                change.id,
-                to.strip_prefix(&ws.root).unwrap_or(&to).display()
-            );
+        let Some(stem) = from.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let id_str = stem.replace("__", ":");
+        let still_in_source = AnnotationId::parse(&id_str)
+            .map(|id| entries.contains_key(&id))
+            .unwrap_or(false);
+        if still_in_source {
+            continue;
         }
+        fs::create_dir_all(&archive_dir).map_err(|e| CliError::Other {
+            message: format!("creating proof archive {}: {e}", archive_dir.display()),
+            exit_code: 1,
+        })?;
+        // Never clobber a previously-archived verdict for the same id (an id
+        // can be orphaned more than once — removed, re-added, removed again).
+        // Uniquify with a counter, keeping the `.proof` extension so `--gc`
+        // still collects it. Upholds the ID-D5 promise: archiving never loses a
+        // verdict.
+        let mut to = archive_dir.join(format!("{stem}.proof"));
+        let mut n = 1u32;
+        while to.exists() {
+            to = archive_dir.join(format!("{stem}.{n}.proof"));
+            n += 1;
+        }
+        fs::rename(&from, &to).map_err(|e| CliError::Other {
+            message: format!("archiving orphan proof {}: {e}", from.display()),
+            exit_code: 1,
+        })?;
+        eprintln!(
+            "  • {}: archived orphan proof → {}",
+            id_str,
+            to.strip_prefix(&ws.root).unwrap_or(&to).display()
+        );
     }
     Ok(())
 }
@@ -355,31 +371,11 @@ fn read_existing_index(path: &std::path::Path) -> CliResult<Option<IndexFile>> {
         })
 }
 
-/// Outcomes per-id after merging old/new statuses. Reported in stamp's
-/// human-readable summary.
-#[derive(Debug, Default)]
-pub(crate) struct StampSummary {
-    new_count: usize,
-    unchanged_count: usize,
-    body_changed_count: usize,
-    text_changed_count: usize,
-    removed_count: usize,
-    /// Per-id transitions worth surfacing line-by-line. Keeps the summary
-    /// short by only listing entries whose status actually changed.
-    notable: Vec<NotableChange>,
-}
-
-#[derive(Debug)]
-struct NotableChange {
-    id: AnnotationId,
-    kind: NotableKind,
-}
-
-#[derive(Debug)]
-enum NotableKind {
-    BodyDrifted { old_status: Status },
-    Removed,
-}
+// StampSummary / NotableChange / NotableKind were removed with
+// merge_status_from_prev: status now comes from `.aristo/proofs/` via
+// merge_status_from_proofs, and orphan archival is a set-difference, so no
+// prior-index transition record is needed. See
+// docs/decisions/index-as-local-cache.md.
 
 #[aristo::intent(
     "Canon binding state is derived from `.aristo/canon-matches.toml`, \
@@ -460,100 +456,6 @@ pub(crate) fn derive_bindings_from_cache(
 fn is_canon_prefixed(id: &AnnotationId) -> bool {
     let s = id.as_str();
     s.starts_with("aristos:") || s.starts_with("kanon:")
-}
-
-#[aristo::intent(
-    "Status after stamp reflects the current code, not any prior \
-     version. Body-unchanged entries keep their prior status. \
-     Body-drifted entries with verified-class status (Verified, Tested, \
-     Neural) flip to Stale. Other prior statuses pass through.",
-    verify = "test",
-    id = "merge_status_preserves_when_body_unchanged"
-)]
-fn merge_status_from_prev(
-    entries: &mut std::collections::BTreeMap<AnnotationId, IndexEntry>,
-    prev: Option<&IndexFile>,
-) -> StampSummary {
-    let mut summary = StampSummary::default();
-    let prev_entries = prev.map(|p| &p.entries);
-
-    for (id, new_entry) in entries.iter_mut() {
-        let Some(prev_entries) = prev_entries else {
-            summary.new_count += 1;
-            continue;
-        };
-        let Some(prev_entry) = prev_entries.get(id) else {
-            summary.new_count += 1;
-            continue;
-        };
-
-        let (new_body, new_text, new_status) = entry_facets(new_entry);
-        let (prev_body, prev_text, prev_status) = entry_facets(prev_entry);
-
-        let body_changed = new_body != prev_body;
-        let text_changed = new_text != prev_text;
-
-        if !body_changed && !text_changed {
-            // Pure unchanged — preserve prior status outright.
-            set_status(new_entry, prev_status);
-            summary.unchanged_count += 1;
-        } else {
-            // GAP-1 + GAP-8 (strict policy): any verdict-bearing prior status,
-            // body OR text drift, transitions to Stale. Includes Inconclusive —
-            // a queued-suggestions verdict against text the agent never saw is
-            // a stale verdict. Counterexample → Stale matches the Status enum
-            // docstring's promise (the prior implementation handled only the
-            // positive arms). Text-drift treated as semantic-rewrite by default
-            // (strict) rather than prose-level: the system has no way to tell
-            // "fixed a typo" from "narrowed the claim to exclude the failure
-            // case"; safer to force re-verify and let the user explicitly opt
-            // back in via --rerun on no-op text edits.
-            if body_changed {
-                summary.body_changed_count += 1;
-            } else {
-                summary.text_changed_count += 1;
-            }
-            let next = match prev_status {
-                Status::Verified
-                | Status::Tested
-                | Status::Neural
-                | Status::Counterexample
-                | Status::Inconclusive => Status::Stale,
-                other => other, // Unknown, Stale, Orphan, etc. carry through
-            };
-            set_status(new_entry, next);
-            if matches!(
-                prev_status,
-                Status::Verified
-                    | Status::Tested
-                    | Status::Neural
-                    | Status::Counterexample
-                    | Status::Inconclusive
-            ) {
-                summary.notable.push(NotableChange {
-                    id: id.clone(),
-                    kind: NotableKind::BodyDrifted {
-                        old_status: prev_status,
-                    },
-                });
-            }
-        }
-        let _ = new_status;
-    }
-
-    if let Some(prev_entries) = prev_entries {
-        for id in prev_entries.keys() {
-            if !entries.contains_key(id) {
-                summary.removed_count += 1;
-                summary.notable.push(NotableChange {
-                    id: id.clone(),
-                    kind: NotableKind::Removed,
-                });
-            }
-        }
-    }
-
-    summary
 }
 
 #[aristo::intent(
@@ -711,27 +613,29 @@ fn set_status(entry: &mut IndexEntry, status: Status) {
     }
 }
 
-fn print_summary(s: &StampSummary) {
-    println!(
-        "  new: {}, unchanged: {}, body-drifted: {}, text-changed: {}, removed: {}",
-        s.new_count, s.unchanged_count, s.body_changed_count, s.text_changed_count, s.removed_count
-    );
-    for change in &s.notable {
-        match &change.kind {
-            NotableKind::BodyDrifted { old_status } => {
-                println!(
-                    "  • {}: body changed — status was {old_status:?}, now Stale",
-                    change.id
-                );
-            }
-            NotableKind::Removed => {
-                println!(
-                    "  • {}: source annotation removed; entry dropped from index",
-                    change.id
-                );
-            }
+fn print_status_summary(entries: &std::collections::BTreeMap<AnnotationId, IndexEntry>) {
+    let mut fresh = 0usize;
+    let mut stale = 0usize;
+    let mut refuted = 0usize;
+    let mut unverified = 0usize;
+    let mut other = 0usize;
+    for entry in entries.values() {
+        match entry_status(entry) {
+            s if s.is_terminal_clean() => fresh += 1,
+            Status::Stale => stale += 1,
+            Status::Counterexample => refuted += 1,
+            Status::Unknown => unverified += 1,
+            _ => other += 1,
         }
     }
+    let tail = if other > 0 {
+        format!(", other: {other}")
+    } else {
+        String::new()
+    };
+    println!(
+        "  status (from .aristo/proofs/): fresh: {fresh}, stale: {stale}, refuted: {refuted}, unverified: {unverified}{tail}"
+    );
 }
 
 #[cfg(test)]
