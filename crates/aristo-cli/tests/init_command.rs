@@ -204,8 +204,8 @@ fn ci_flag_writes_lite_workflow_only() {
         "lite gate runs via the shared action; got:\n{content}"
     );
     assert!(
-        content.contains("checks: stamp, lint, doc"),
-        "lite gate runs stamp/lint/doc; got:\n{content}"
+        content.contains("checks: audit, lint, doc"),
+        "lite gate runs audit/lint/doc; got:\n{content}"
     );
 }
 

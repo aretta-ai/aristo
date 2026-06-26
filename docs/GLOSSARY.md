@@ -60,9 +60,10 @@ verified, the claim is no longer trustworthy. Aristo detects this by
 hashing the function body; when the hash drifts, a verified claim's
 status flips to *stale*.
 
-**The index** — `.aristo/index.toml`, committed to your repo. The
-machine-readable record of every annotation: id, hash, verify mode,
-and current verification status.
+**The index** — `.aristo/index.toml`, a regenerable local cache (gitignored,
+not committed). The machine-readable record of every annotation (id, hash,
+verify mode, current status), rebuilt on demand from your source and the
+recorded proofs by every read command.
 
 ## Trust signals
 

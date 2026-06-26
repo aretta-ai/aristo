@@ -17,9 +17,13 @@ are in the [glossary](./GLOSSARY.md).
   checks each claim against the code, then surfaces every verdict for
   you to accept or refuse. Nothing it concludes lands until you say
   so. (The `aristo-verify` and `aristo-critique` skills.)
-- **The git hook keeps the index honest.** Every commit re-hashes
-  each function body and flags any claim whose code has drifted. You
-  never run `aristo stamp` by hand.
+- **The index is derived, not hand-maintained.** `.aristo/index.toml` is a
+  regenerable local cache, not committed state: every read command rebuilds it
+  from your source and the recorded proofs. A claim whose code has drifted from
+  its proof shows up as `stale` the moment you look (`aristo status`, or
+  `aristo verify --audit` in CI). You don't run `aristo stamp` to keep it
+  honest; it's an optional refresh (it also syncs canon matches and archives
+  proofs for removed annotations).
 - **You bring judgment.** You decide which claims are worth making
   and accept them into the codebase. Aristo verifies the claims you
   keep; it doesn't decide them for you.
@@ -37,19 +41,20 @@ $ cargo add aristo           # the #[aristo::intent] / #[aristo::assume] macros
 ```console
 $ aristo init
 ok: created aristo.toml
-ok: created .aristo/index.toml (empty; 0 annotations)
+ok: created .aristo/index.toml (local cache; gitignored)
+ok: added `.aristo/index.toml` to .gitignore
 ok: created .aristo/specs/
 ok: created .aristo/doc/
 ok: installed pre-commit hook (.git/hooks/pre-commit)
-ok: wrote .github/workflows/aristo.yml (starter; edit freely)
 
 $ aristo install-skills --agent claude-code   # also: cursor, codex, opencode, antigravity
 ```
 
 That's the last time you need the terminal for the everyday loop.
-`init` set up the index, the pre-commit hook, and a starter CI
-workflow; `install-skills` taught your agent the authoring,
-verification, and critique skills.
+`init` seeded the local index cache (and gitignored it), the pre-commit
+hook, and the `.aristo/` layout; `install-skills` taught your agent the
+authoring, verification, and critique skills. Add a CI gate with
+`aristo init --ci` (writes `.github/workflows/aristo.yml`).
 
 ## The loop in practice
 
