@@ -58,7 +58,7 @@ enum Commands {
         force: bool,
 
         /// Also write a lite PR-gate workflow (`.github/workflows/aristo.yml`)
-        /// that runs stamp/lint/doc via the shared aristo-action. No token needed.
+        /// that runs audit/lint/doc via the shared aristo-action. No token needed.
         #[arg(long)]
         ci: bool,
 
@@ -67,6 +67,13 @@ enum Commands {
         /// secret (paid tier). Implies `--ci`.
         #[arg(long)]
         ci_verify: bool,
+
+        /// Install a local pre-commit hook (DEPRECATED). Off by default and no
+        /// longer auto-installed: the index is a gitignored cache, so CI
+        /// (`aristo verify --audit`) is the enforcement point. The hook only
+        /// runs `aristo doc` + `lint` locally as a convenience.
+        #[arg(long)]
+        hook: bool,
     },
 
     /// Print a syntax cheat sheet for the detected language.
@@ -911,7 +918,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             force,
             ci,
             ci_verify,
-        } => commands::init::run(force, ci, ci_verify),
+            hook,
+        } => commands::init::run(force, ci, ci_verify, hook),
         Commands::Lang { file } => commands::lang::run(file),
         Commands::InstallSkills {
             agent,

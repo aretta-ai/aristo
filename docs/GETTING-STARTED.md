@@ -1,9 +1,10 @@
 # Getting started
 
-Aristo is agent-native. You don't drive it by hand — your coding
-agent writes and verifies intent as it codes, and the git hook keeps
-the index in step. This guide sets that up and walks one full loop,
-including what happens when code drifts away from what it claims.
+Aristo is agent-native. You don't drive it by hand: your coding
+agent writes and verifies intent as it codes, and the index regenerates
+from your source and proofs, so there's nothing to keep in step. This
+guide sets that up and walks one full loop, including what happens when
+code drifts away from what it claims.
 
 For *why* before *how*, read the [manifesto](./MANIFESTO.md). Terms
 are in the [glossary](./GLOSSARY.md).
@@ -42,17 +43,16 @@ $ cargo add aristo           # the #[aristo::intent] / #[aristo::assume] macros
 $ aristo init
 ok: created aristo.toml
 ok: created .aristo/index.toml (local cache; gitignored)
-ok: added `.aristo/index.toml` to .gitignore
+ok: added `.aristo/index.toml` to .gitignore   # plus the other runtime paths (sessions, queues, …)
 ok: created .aristo/specs/
 ok: created .aristo/doc/
-ok: installed pre-commit hook (.git/hooks/pre-commit)
 
 $ aristo install-skills --agent claude-code   # also: cursor, codex, opencode, antigravity
 ```
 
 That's the last time you need the terminal for the everyday loop.
-`init` seeded the local index cache (and gitignored it), the pre-commit
-hook, and the `.aristo/` layout; `install-skills` taught your agent the
+`init` seeded the `.aristo/` layout and the local index cache (and
+gitignored the runtime artifacts); `install-skills` taught your agent the
 authoring, verification, and critique skills. Add a CI gate with
 `aristo init --ci` (writes `.github/workflows/aristo.yml`).
 
@@ -180,9 +180,10 @@ your agent.
 
 Skills install into **Claude Code**, **Cursor**, **Codex**,
 **OpenCode**, and **Antigravity** (`aristo install-skills --agent
-<name>`). Alongside them, `aristo init` installs a **git pre-commit
-hook** that re-stamps on every commit, and a **starter CI workflow**
-(`.github/workflows/aristo.yml`) you can build on.
+<name>`). Alongside them, `aristo init --ci` writes a **starter CI
+workflow** (`.github/workflows/aristo.yml`) you can build on. A local
+pre-commit hook is available via `aristo init --hook`, but it is
+deprecated: CI (`aristo verify --audit`) is the enforcement point.
 
 ## Where to next
 

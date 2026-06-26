@@ -219,6 +219,7 @@ fn installs_hook_inside_git_repo() {
 
     aristo_in(root)
         .arg("init")
+        .arg("--hook")
         .assert()
         .success()
         .stdout(contains("installed pre-commit hook"));
@@ -246,13 +247,29 @@ fn second_invocation_in_git_repo_notes_existing_hook() {
     let root = tmp.path();
     fs::create_dir_all(root.join(".git/hooks")).unwrap();
 
-    aristo_in(root).arg("init").assert().success();
+    aristo_in(root).arg("init").arg("--hook").assert().success();
 
     aristo_in(root)
         .arg("init")
+        .arg("--hook")
         .assert()
         .success()
         .stdout(contains("pre-commit hook already installed"));
+}
+
+#[test]
+fn default_init_does_not_install_hook_even_in_git_repo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git/hooks")).unwrap();
+
+    // No --hook: the hook is deprecated and must NOT be auto-installed.
+    aristo_in(root).arg("init").assert().success();
+
+    assert!(
+        !root.join(".git/hooks/pre-commit").exists(),
+        "default init must not auto-install the deprecated pre-commit hook"
+    );
 }
 
 #[test]

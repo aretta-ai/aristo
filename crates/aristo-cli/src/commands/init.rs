@@ -1,12 +1,11 @@
 //! `aristo init` — bootstrap a project for Aristo.
 //!
 //! Creates the project state (`aristo.toml`, `.aristo/specs/`, `.aristo/doc/`),
-//! seeds a local `.aristo/index.toml` cache, gitignores the runtime/per-user
+//! seeds a local `.aristo/index.toml` cache, and gitignores the runtime/per-user
 //! `.aristo/` artifacts (cache, sessions, queues, nudge state, critiques,
-//! archive), and installs the pre-commit hook (when `.git/hooks/` exists). CI
-//! workflows are
-//! opt-in: `--ci` writes the lite PR gate, `--ci-verify` also writes the
-//! nightly verify workflow.
+//! archive). The pre-commit hook is deprecated and opt-in (`--hook`), never
+//! auto-installed. CI workflows are opt-in: `--ci` writes the lite PR gate,
+//! `--ci-verify` also writes the nightly verify workflow.
 //!
 //! The index is a regenerable local cache (index-as-local-cache / Option B):
 //! read commands regenerate it from source + `.aristo/proofs/` on demand, so
@@ -21,7 +20,7 @@ use aristo_core::index::{IndexFile, Meta};
 
 use crate::{CliError, CliResult};
 
-/// The shipped pre-commit hook (slice 21).
+/// The pre-commit hook (DEPRECATED; opt-in only via `aristo init --hook`).
 ///
 /// Runs three steps in order:
 ///
@@ -44,7 +43,7 @@ use crate::{CliError, CliResult};
 /// exit from `doc` or `lint --check` as the hook's exit code.
 const PRE_COMMIT_HOOK: &str = "\
 #!/usr/bin/env bash
-# Aristo pre-commit hook (OPTIONAL convenience; installed by `aristo init`).
+# Aristo pre-commit hook (DEPRECATED; opt-in, installed only by `aristo init --hook`).
 # The index is a gitignored local cache, so this hook is NOT an enforcement
 # boundary — CI (`aristo verify --audit`) is. It refreshes the local cache and
 # the committed .aristo/doc/<id>.md artifacts, then lints annotation prose.
@@ -119,7 +118,7 @@ jobs:
     verify = "test",
     id = "init_is_idempotent"
 )]
-pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool) -> CliResult<()> {
+pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool, hook: bool) -> CliResult<()> {
     let cwd = std::env::current_dir()?;
     let mut any_change = false;
 
@@ -157,19 +156,27 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool) -> CliResult<()> {
     // 5. .aristo/doc/
     create_or_note_dir(&aristo_dir.join("doc"), ".aristo/doc/", &mut any_change)?;
 
-    // 6. .git/hooks/pre-commit — only when this is a git repo. We don't
-    //    create .git/ ourselves; users who don't use git get a clean
-    //    skip with no diagnostic noise.
-    let hook_dir = cwd.join(".git").join("hooks");
-    if hook_dir.is_dir() {
-        let hook_path = hook_dir.join("pre-commit");
-        if hook_path.exists() {
-            println!("note: pre-commit hook already installed.");
+    // 6. .git/hooks/pre-commit — DEPRECATED and OPT-IN only (`--hook`). Never
+    //    auto-installed: the index is a gitignored cache, so CI
+    //    (`aristo verify --audit`) is the enforcement point, not a local hook.
+    if hook {
+        eprintln!(
+            "note: the pre-commit hook is deprecated. CI (`aristo verify --audit`) is the \
+             enforcement point; the hook only runs `aristo doc` + lint locally."
+        );
+        let hook_dir = cwd.join(".git").join("hooks");
+        if hook_dir.is_dir() {
+            let hook_path = hook_dir.join("pre-commit");
+            if hook_path.exists() {
+                println!("note: pre-commit hook already installed.");
+            } else {
+                fs::write(&hook_path, PRE_COMMIT_HOOK)?;
+                make_executable(&hook_path)?;
+                println!("ok: installed pre-commit hook (.git/hooks/pre-commit)");
+                any_change = true;
+            }
         } else {
-            fs::write(&hook_path, PRE_COMMIT_HOOK)?;
-            make_executable(&hook_path)?;
-            println!("ok: installed pre-commit hook (.git/hooks/pre-commit)");
-            any_change = true;
+            println!("note: --hook given, but no .git/hooks/ directory here; skipping.");
         }
     }
 

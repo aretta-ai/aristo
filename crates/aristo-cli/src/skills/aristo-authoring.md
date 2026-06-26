@@ -421,9 +421,9 @@ If the candidate fails the gate, say so briefly and skip — don't write a comme
 
 5. **`aristo lang`** if you're unsure of syntax. Authoritative cheat sheet for the macros this SDK version ships. Trust it over your training data.
 
-6. **`aristo lint --check`.** Catches placeholder text, weasel words, length problems. Fast, free, no LLM. **Always run this** — the pre-commit hook runs it anyway, so failures abort the commit. Use `aristo lint --fix` to auto-resolve whitespace issues (doubled spaces, trailing whitespace); fix the rest by hand.
+6. **`aristo lint --check`.** Catches placeholder text, weasel words, length problems. Fast, free, no LLM. **Always run this**: CI's `lint --check` gate fails the build otherwise. Use `aristo lint --fix` to auto-resolve whitespace issues (doubled spaces, trailing whitespace); fix the rest by hand.
 
-7. **`aristo stamp`** (optional). Assigns any missing IDs, detects parent-graph cycles, and refreshes the local index cache. The pre-commit hook runs it, but you rarely need it by hand: every read command regenerates the index from source + `.aristo/proofs/`.
+7. **`aristo stamp`** (optional). Assigns any missing IDs, detects parent-graph cycles, and refreshes the local index cache. You rarely need it by hand: every read command regenerates the index from source + `.aristo/proofs/`.
 
 ### What to commit — `.aristo/` is tracked, with specific exceptions
 
@@ -435,7 +435,7 @@ If the candidate fails the gate, say so briefly and skip — don't write a comme
 
 `.aristo/index.toml` is **not** committed: it is a regenerable local cache (gitignored). Every read command rebuilds it from your source plus `.aristo/proofs/` on demand, so there is nothing to stage and nothing to keep in sync. CI checks freshness with `aristo verify --audit`, not with a committed index.
 
-The pre-commit hook re-runs `aristo doc` (and refreshes the local index cache), so stage the resulting `doc/` changes **with** the source edit that caused them, or the committed docs drift from source and CI's `aristo doc --check` fails.
+Run `aristo doc` after editing annotation text and stage the resulting `doc/` changes **with** the source edit that caused them, or the committed docs drift from source and CI's `aristo doc --check` fails. (The deprecated `--hook` pre-commit hook automates this locally if you opt in.)
 
 **Do NOT commit** these — per-user runtime, advisory, or ephemeral, and gitignored in this repo:
 
