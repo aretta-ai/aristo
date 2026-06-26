@@ -1,8 +1,10 @@
 //! `aristo init` — bootstrap a project for Aristo.
 //!
 //! Creates the project state (`aristo.toml`, `.aristo/specs/`, `.aristo/doc/`),
-//! seeds a local `.aristo/index.toml` cache, gitignores that cache, and
-//! installs the pre-commit hook (when `.git/hooks/` exists). CI workflows are
+//! seeds a local `.aristo/index.toml` cache, gitignores the runtime/per-user
+//! `.aristo/` artifacts (cache, sessions, queues, nudge state, critiques,
+//! archive), and installs the pre-commit hook (when `.git/hooks/` exists). CI
+//! workflows are
 //! opt-in: `--ci` writes the lite PR gate, `--ci-verify` also writes the
 //! nightly verify workflow.
 //!
@@ -143,9 +145,11 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool) -> CliResult<()> {
         &mut any_change,
     )?;
 
-    // 3b. Gitignore the index cache — it is a regenerable local artifact, not
-    //     project state, under index-as-local-cache (Option B).
-    ensure_gitignored(&cwd, ".aristo/index.toml", &mut any_change)?;
+    // 3b. Gitignore the runtime/per-user `.aristo/` artifacts (the regenerable
+    //     index cache, review sessions, in-flight queues, nudge state,
+    //     critiques, and the orphan-proof archive). Durable state (proofs, doc,
+    //     specs, feedback, expectations, canon-matches) stays tracked.
+    ensure_gitignored(&cwd, &mut any_change)?;
 
     // 4. .aristo/specs/
     create_or_note_dir(&aristo_dir.join("specs"), ".aristo/specs/", &mut any_change)?;
@@ -200,12 +204,38 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool) -> CliResult<()> {
     Ok(())
 }
 
-/// Ensure `entry` is present in the repo's `.gitignore` (creating the file if
-/// absent). Idempotent — a no-op if the line is already there.
-fn ensure_gitignored(cwd: &Path, entry: &str, any_change: &mut bool) -> CliResult<()> {
+/// Runtime, per-user, and regenerable `.aristo/` paths that must NOT be
+/// committed. Durable state (`.aristo/proofs/*.proof`, `.aristo/doc/`,
+/// `.aristo/specs/`, `.aristo/feedback/`, `.aristo/expectations.toml`,
+/// `.aristo/canon-matches.toml`, `aristo.toml`) is deliberately absent here so
+/// it stays tracked and propagates to CI and fresh clones.
+const ARISTO_GITIGNORE_ENTRIES: &[&str] = &[
+    ".aristo/index.toml",
+    ".aristo/sessions/",
+    ".aristo/nudge-state.toml",
+    ".aristo/verify-queue/",
+    ".aristo/critique-queue/",
+    ".aristo/critiques/",
+    ".aristo/proofs/*.proof.bak",
+    ".aristo/archive/",
+];
+
+/// Ensure every runtime/cache `.aristo/` path is ignored in the repo's
+/// `.gitignore`, creating the file if absent and appending to an existing one.
+/// Incremental and idempotent: only entries not already present are appended,
+/// so it is safe to re-run and safe over a hand-edited `.gitignore`. Inline `#`
+/// comments are intentionally not placed on entry lines (git does not treat a
+/// trailing `#` as a comment).
+fn ensure_gitignored(cwd: &Path, any_change: &mut bool) -> CliResult<()> {
     let path = cwd.join(".gitignore");
     let existing = fs::read_to_string(&path).unwrap_or_default();
-    if existing.lines().any(|l| l.trim() == entry) {
+    let present: std::collections::HashSet<&str> = existing.lines().map(str::trim).collect();
+    let missing: Vec<&str> = ARISTO_GITIGNORE_ENTRIES
+        .iter()
+        .copied()
+        .filter(|entry| !present.contains(entry))
+        .collect();
+    if missing.is_empty() {
         return Ok(());
     }
     let mut out = existing;
@@ -213,13 +243,19 @@ fn ensure_gitignored(cwd: &Path, entry: &str, any_change: &mut bool) -> CliResul
         out.push('\n');
     }
     out.push_str(
-        "\n# Aristo: the annotation index is a regenerable local cache (derived\n\
-         # from source + .aristo/proofs/); do not commit it.\n",
+        "\n# Aristo runtime, cache, and per-user state: never commit these.\n\
+         # Durable state (.aristo/proofs/*.proof, .aristo/doc/, .aristo/specs/,\n\
+         # .aristo/feedback/, .aristo/expectations.toml, .aristo/canon-matches.toml,\n\
+         # aristo.toml) is committed and intentionally not listed here.\n",
     );
-    out.push_str(entry);
-    out.push('\n');
+    for entry in &missing {
+        out.push_str(entry);
+        out.push('\n');
+    }
     fs::write(&path, out).map_err(crate::CliError::Io)?;
-    println!("ok: added `{entry}` to .gitignore");
+    for entry in &missing {
+        println!("ok: added `{entry}` to .gitignore");
+    }
     *any_change = true;
     Ok(())
 }

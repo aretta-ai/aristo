@@ -40,8 +40,8 @@
 # Nudge/progress engine state (Phase 18 #9): the reviewed map, edit-window
 # baseline, edit counter, and per-signal throttle. Per-user runtime — like
 # `.aristo/sessions/`, the *effects* of reviews reach git via normal commits;
-# this file is a personal audit trail. (Consumer-repo gitignore wiring is
-# deferred to #9 / audit A3; hand-maintained here for dogfooding.)
+# this file is a personal audit trail. `aristo init` wires this ignore for
+# consumer repos (see init.rs `ARISTO_GITIGNORE_ENTRIES`).
 .aristo/nudge-state.toml
 
 # Per-pipeline queue state — pending tasks, claimed-in-flight entries,
@@ -55,8 +55,7 @@
 # in the gitignored session/rejection state. Unlike `.proof` (durable
 # verification results that gate trust), they are reproducible and
 # ephemeral — gitignored so a critique pass doesn't add churn for transient
-# advisory data. (Hand-maintained for dogfooding, like the entries above;
-# `aristo init` wiring deferred to Phase 18 #9 / audit A3.)
+# advisory data. `aristo init` wires this ignore for consumer repos.
 .aristo/critiques/
 
 # SDK-internal write-protection: `aristo verify --apply-verdicts`
@@ -70,10 +69,8 @@
 # `.proof` here instead of deleting it, so a verdict is never lost to a
 # stray stamp. It is a local recovery net — recoverable on the machine that
 # stamped, purged only by the explicit `aristo stamp --gc` — so it is not
-# committed. NOTE: this ignore is currently hand-maintained here (aristo
-# dogfooding only). `aristo init` does NOT yet wire it for consumer repos —
-# shared `.aristo/` gitignore management is deferred to Phase 18 #9 (audit
-# A3); until then a consumer repo would see the archive in `git status`.
+# committed. `aristo init` wires this ignore for consumer repos; the full
+# runtime set lives in init.rs `ARISTO_GITIGNORE_ENTRIES`.
 .aristo/archive/
 
 # trycmd runs scenario commands in-place against `tests/cmd/active/*.in/`
