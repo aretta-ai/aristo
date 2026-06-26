@@ -57,7 +57,7 @@ ls .aristo/verify-queue/pending/ 2>/dev/null | wc -l
 
 If empty (or the directory doesn't exist) and no full arm is running, report "no pending neural verifications" and skip to step 3 only if a full session is in flight; otherwise stop. Do not invent work.
 
-**Read the index once.** Before spawning any worker, read `.aristo/index.toml` and keep it loaded. Workers look up cited intent / assume ids in it — they **must not** make up ids or recall them from memory. Pass the full index content into every worker prompt so it can grep without an extra file read.
+**Read the index once.** Before spawning any worker, load the index. `.aristo/index.toml` is a gitignored regenerable cache, so if it is absent run `aristo stamp` once to materialize it (outside any active session), then read it and keep it loaded. Workers look up cited intent / assume ids in it — they **must not** make up ids or recall them from memory. Pass the full index content into every worker prompt so it can grep without an extra file read.
 
 **Continuous dispatch with one-shot workers (max N=5 in flight).** Each worker claims EXACTLY ONE task, processes it, submits, and exits — it does not loop. Verification is context-heavy (deep code reads, proof-tree construction, ground citations); reusing a worker would let one verification's context pollute the next, silently degrading proof quality. Dispatch is continuous, not wave-based: keep up to **N=5** background workers in flight; as soon as ANY finishes, spawn its replacement (if the queue still has work). Use Claude Code's `Agent(run_in_background=true)` so completions notify the orchestrator — no polling, no waiting on the slowest sibling.
 
@@ -121,9 +121,10 @@ will never receive the same task.
 
 ## Step 2 — read the index ONCE (for grounding lookups)
 
-The full content of `.aristo/index.toml` is at that path. Read it
-exactly once. Any intent or assume `id` you cite as a ground MUST
-appear verbatim in that file.
+The index lives at `.aristo/index.toml`. It is a regenerable cache,
+so if it is absent run `aristo stamp` once to materialize it, then
+read it exactly once. Any intent or assume `id` you cite as a ground
+MUST appear verbatim in that file.
 
 ## Step 3 — do the work
 
@@ -367,10 +368,10 @@ Options:
 - Next / defer  — `aristo session decide --item <id>#verdict --bucket pending` (parks it; stays loud until resolved)
 ```
 
-- **Fix in code:** read the violating path, propose a specific edit (show the diff in the question `preview`), **confirmed via a second `AskUserQuestion`** before applying. After applying, record `aristo session decide --item <id>#verdict --bucket accepted --note "fixed in source"`. `aristo stamp` + re-verify run AFTER the session closes (the guard blocks them during the session).
+- **Fix in code:** read the violating path, propose a specific edit (show the diff in the question `preview`), **confirmed via a second `AskUserQuestion`** before applying. After applying, record `aristo session decide --item <id>#verdict --bucket accepted --note "fixed in source"`. A re-verify runs AFTER the session closes (the guard blocks it during the session) to refresh the proof; the index itself regenerates on read.
 - **Waive:** ask for the reason (mandatory), then `aristo verify --accept <id> --because "<reason>"` (optionally `--tracking <issue-url>`). This is write-only; it records the gap in `.aristo/expectations.toml` (commit it). The strict ratchet flips it back to red if the property ever starts passing, so waivers can't rot. Then `aristo session decide --item <id>#verdict --bucket accepted --note "waived: <reason>"`.
 - **Re-run:** `aristo verify --filter id=<id> --rerun` after the session closes.
-- **Next / defer:** records `pending`; the refutation stays loud on every `aristo stamp`.
+- **Next / defer:** records `pending`; the refutation stays loud on every read (`aristo status`, the cards) until resolved.
 
 #### Success card (verified)
 
@@ -405,7 +406,7 @@ Options:
 - Skip — defer all                    — `aristo session decide --item <id>#verdict --bucket pending`
 ```
 
-Use `preview` on each option to show the full suggested text (multi-line, with file/site context). On **Add suggestion N**: edit the source at the suggested `at_site` to insert the `#[aristo::intent(...)]` / `#[aristo::assume(...)]`, show the proposed edit, and apply only after a **second `AskUserQuestion`** confirms. Then `aristo session decide --item <id>#<N> --bucket accepted --note "added"`, and record the OTHER suggestions on that proof as rejected (with notes) so the substrate fingerprint captures the per-suggestion judgment. If a proof has more than 3 suggestions, present the first 3 + a 4th "Show all" option that re-prompts with the next batch. `aristo stamp` after the session closes.
+Use `preview` on each option to show the full suggested text (multi-line, with file/site context). On **Add suggestion N**: edit the source at the suggested `at_site` to insert the `#[aristo::intent(...)]` / `#[aristo::assume(...)]`, show the proposed edit, and apply only after a **second `AskUserQuestion`** confirms. Then `aristo session decide --item <id>#<N> --bucket accepted --note "added"`, and record the OTHER suggestions on that proof as rejected (with notes) so the substrate fingerprint captures the per-suggestion judgment. If a proof has more than 3 suggestions, present the first 3 + a 4th "Show all" option that re-prompts with the next batch. The added annotation re-pends on the next `/aristo-verify` cycle (the index regenerates on read; no stamp needed).
 
 ### 3.3 Closing the session
 
@@ -414,7 +415,7 @@ When all items are decided OR the user stops early:
 - **All decided** → `aristo session exit` (strict close).
 - **Stopped early** → `aristo session exit --defer-undecided` (un-decided items go to the backlog; never silently dropped).
 
-Print the closing summary (the SDK emits one). If any source edits were made, remind the user the affected entries are now Stale and will re-pend on the next `aristo verify` / `/aristo-verify` cycle. Run `aristo stamp` AFTER closing the session (the guard blocks it during the session).
+Print the closing summary (the SDK emits one). If any source edits were made, remind the user the affected entries are now Stale (the index reflects this automatically on the next read) and will re-pend on the next `aristo verify` / `/aristo-verify` cycle.
 
 ## What this skill does NOT do
 
