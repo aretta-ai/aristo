@@ -17,7 +17,7 @@ use aristo_core::critique::{CritiqueFile, Disposition, Finding, Severity};
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
 
 use crate::commands::index::{atomic_write, workspace_or_error};
-use crate::commands::show::read_index;
+use crate::commands::show::load_index;
 use crate::pipeline::queue::{self, QueueDir};
 use crate::{CliError, CliResult, Workspace};
 
@@ -37,7 +37,7 @@ pub(crate) fn run_apply_findings(_ws: &Workspace, include_closed: bool) -> CliRe
     // Re-resolve workspace + index here so we don't depend on caller
     // having loaded them already.
     let ws = workspace_or_error()?;
-    let index = read_index(&ws.index_path())?;
+    let index = load_index(&ws)?;
 
     let critiques_dir = ws.aristo_dir().join("critiques");
     if !critiques_dir.is_dir() {

@@ -135,9 +135,9 @@ Aristo is small, focused, and moving fast — help is welcome.
 - **Bugs, feature requests** → [Issues](https://github.com/aretta-ai/aristo/issues).
 - **Working agreement** → [`CLAUDE.md`](./CLAUDE.md): conventional commits, small-batch ship discipline, "specifications are the truth," a CHANGELOG bullet per commit, and the pre-commit hook.
 
-CI gates every PR: the `aristo` annotation pipeline (`stamp` / `lint` /
-`verify` / `doc` checks) and standard Rust gates (`fmt`, `clippy`,
-`test`, release build, `cargo doc`, MSRV 1.88).
+CI gates every PR: the `aristo` annotation pipeline (`verify --audit`
+for proof freshness, `lint --check`, `doc --check`) and standard Rust
+gates (`fmt`, `clippy`, `test`, release build, `cargo doc`, MSRV 1.88).
 
 ## License
 

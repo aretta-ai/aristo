@@ -54,7 +54,7 @@ use aristo_core::canon::{
     cache::{AcceptedMatch, CacheEntry, CanonMatchesFile, Disposition, PendingMatch},
     rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError},
 };
-use aristo_core::index::{AnnotationId, ArtaId, BindingState, IndexEntry, IndexFile};
+use aristo_core::index::{AnnotationId, ArtaId, BindingState, IndexEntry};
 use aristo_core::walk::extract_from_source;
 
 use crate::commands::index::workspace_or_error;
@@ -91,7 +91,7 @@ pub(crate) fn apply_acceptance(
 
     // 3. Read the index + validate the source entry.
     let index_path = ws.index_path();
-    let mut index = read_index(&index_path)?;
+    let mut index = crate::commands::show::load_index(ws)?;
     let entry = index.entries.get(&ann_id).ok_or_else(|| CliError::Other {
         message: format!(
             "annotation id `{}` not found in .aristo/index.toml.\n\
@@ -456,24 +456,6 @@ fn atomic_write_bytes(target: &Path, content: &[u8]) -> CliResult<()> {
     fs::write(&tmp, content).map_err(CliError::Io)?;
     fs::rename(&tmp, target).map_err(CliError::Io)?;
     Ok(())
-}
-
-fn read_index(path: &Path) -> CliResult<IndexFile> {
-    if !path.is_file() {
-        return Err(CliError::Other {
-            message: format!(
-                "no .aristo/index.toml at {}\n\
-                 hint: run `aristo stamp` to build one",
-                path.display()
-            ),
-            exit_code: 2,
-        });
-    }
-    let text = fs::read_to_string(path).map_err(CliError::Io)?;
-    toml::from_str(&text).map_err(|e| CliError::Other {
-        message: format!("parsing {}: {e}", path.display()),
-        exit_code: 1,
-    })
 }
 
 fn now_rfc3339() -> String {

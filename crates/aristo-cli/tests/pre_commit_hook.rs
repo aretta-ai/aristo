@@ -1,6 +1,7 @@
-//! Imperative integration test: `aristo init` installs a pre-commit hook that
-//! runs `aristo stamp` (always) + `aristo lint --check` (per `[lint] pre_commit`
-//! default — J6) against the staged content of a fresh `git init` repo.
+//! Imperative integration test: `aristo init --hook` installs the (deprecated,
+//! opt-in) pre-commit hook that runs `aristo stamp` + `aristo lint --check`
+//! (per `[lint] pre_commit` default — J6) against the staged content of a
+//! fresh `git init` repo. Default `init` no longer installs the hook.
 //!
 //! Source: `../aretta-sdk/docs/diagrams/01-lifecycle.mmd` § "2 · Daily authoring
 //! loop", `L → l2` ("git commit triggers pre-commit hook → aristo stamp + lint").
@@ -72,16 +73,18 @@ edition = "2021"
     std::fs::create_dir(repo.join("src")).unwrap();
     std::fs::write(repo.join("src/lib.rs"), "").unwrap();
 
-    // 3. aristo init — installs hook, writes aristo.toml + .aristo/
+    // 3. aristo init --hook — opt into the (deprecated) pre-commit hook and
+    //    write aristo.toml + .aristo/. Default init no longer installs it.
     Command::cargo_bin("aristo")
         .unwrap()
         .arg("init")
+        .arg("--hook")
         .current_dir(repo)
         .assert()
         .success();
     assert!(
         repo.join(".git/hooks/pre-commit").exists(),
-        "expected aristo init to install .git/hooks/pre-commit"
+        "expected aristo init --hook to install .git/hooks/pre-commit"
     );
 
     // 4. add a well-formed annotation and commit — hook runs stamp; commit succeeds

@@ -8,6 +8,18 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- `.aristo/index.toml` is now a gitignored, regenerable local cache instead of committed state. Every read command rebuilds it from your source and `.aristo/proofs/` on demand, so `aristo stamp` is optional and there are no more index merge conflicts or "you forgot to stamp" CI failures (index-as-local-cache).
+- CI freshness is now gated by `aristo verify --audit [--strict]`, which regenerates the index and reds on stale/refuted/orphan proofs. It replaces `aristo stamp --check`, which is no longer the gate.
+- `aristo init` now gitignores the full set of runtime `.aristo/` artifacts (the index cache, sessions, verify/critique queues, nudge state, critiques, proof backups, and the orphan-proof archive), appending to an existing `.gitignore` idempotently. Durable state (proofs, docs, specs, feedback, expectations, canon-matches) stays tracked.
+
+### Added
+- `aristo verify --audit [--strict]`: a no-network, no-token proof-freshness gate for CI.
+- `aristo init --hook`: opt-in installer for the (now deprecated) local pre-commit hook.
+
+### Deprecated
+- The pre-commit hook is deprecated and no longer auto-installed by `aristo init`. CI (`aristo verify --audit`) is the enforcement point; opt in with `aristo init --hook` if you still want the local convenience.
+
 ## [0.2.9] — 2026-06-17
 
 Patch: canon accept now opts the annotation into verification automatically. Accepting a match sets the `verify` level to the canon tier (`aristos:` → `"full"`, `kanon:` → `"neural"`), so canon-bound intents no longer get stranded at the local `"test"` default.

@@ -1,14 +1,14 @@
 [__meta__]
 schema_version = 1
-generated_by = "aristo stamp 0.0.8"
-generated_at = "2026-05-19T15:30:53.146959Z"
+generated_by = "aristo stamp 0.2.9"
+generated_at = "2026-06-25T06:40:27.478183Z"
 source_root = "."
 
 [ci_gate_fixture_neural_unknown]
 kind = "intent"
 text = "A second intent in `Status::Unknown` so the rate denominators don't all equal their numerators."
 verify = "neural"
-status = "neural"
+status = "unknown"
 text_hash = "sha256:211a65c99f85c19c9c85f9b36a1c842b213ddab4725cbf2f12974a0ec0ae714c"
 body_hash = "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
 file = "src/lib.rs"
@@ -19,7 +19,7 @@ covered_region = "function"
 kind = "intent"
 text = "The CI gates scenario fixture: one neural-verified intent so the per-pipeline rate line has a non-zero numerator."
 verify = "neural"
-status = "neural"
+status = "unknown"
 text_hash = "sha256:cf0db8c8938bbd33d903596f60c1b9abac07846669d41c47d7067b93f32d02cc"
 body_hash = "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
 file = "src/lib.rs"

@@ -30,14 +30,12 @@ use aristo_core::index::{AnnotationId, IdNamespace, IndexEntry, IndexFile, Paren
 use aristo_core::walk::{scan_id_occurrences, IdOccurrence, IdOccurrenceKind};
 
 use crate::commands::index::workspace_or_error;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::{CliError, CliResult, Workspace};
 
 /// Entry point invoked from `lib::dispatch`.
 pub(crate) fn run(old_id: &str, new_id: &str, dry_run: bool) -> CliResult<()> {
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
-    let index = read_index(&ws.index_path())?;
+    let index = crate::commands::show::load_index(&ws)?;
 
     let parsed = parse_and_validate(old_id, new_id, &index)?;
     let plan = compute_plan(&ws, &index, &parsed)?;
@@ -754,26 +752,6 @@ fn site_for_collision(index: &IndexFile, id: &AnnotationId) -> String {
         Some(IndexEntry::Assume(e)) => format!("{}:{}", e.file, e.site),
         None => "<unknown>".to_string(),
     }
-}
-
-// ─── workspace IO ─────────────────────────────────────────────────────────
-
-fn read_index(path: &Path) -> CliResult<IndexFile> {
-    if !path.is_file() {
-        return Err(CliError::Other {
-            message: format!(
-                "no .aristo/index.toml at {}\n\
-                 hint: run `aristo stamp` (or `aristo index`) to build one",
-                path.display()
-            ),
-            exit_code: 2,
-        });
-    }
-    let text = fs::read_to_string(path).map_err(CliError::Io)?;
-    toml::from_str(&text).map_err(|e| CliError::Other {
-        message: format!("parsing {}: {e}", path.display()),
-        exit_code: 1,
-    })
 }
 
 #[cfg(test)]

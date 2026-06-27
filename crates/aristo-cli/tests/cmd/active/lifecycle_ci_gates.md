@@ -36,7 +36,7 @@ $ aristo stamp --check
 → Walking source from [..] …
 → Found 2 annotations
 → Checking for parent-link cycles
-  new: 0, unchanged: 2, body-drifted: 0, text-changed: 0, removed: 0
+  status (from .aristo/proofs/): fresh: 0, stale: 0, refuted: 0, unverified: 2
 
 ok: index is up to date (no rewrite needed).
 
@@ -79,10 +79,10 @@ Annotations:
   Total:             2
   By kind:           intent=2   assume=0
   By verify level:   neural=2   test=0   full=0   true=0   false=0
-  By status:         neural=2
+  By status:         unknown=2
 
 Verification rate (verified / total per pipeline):
-  neural:            2 / 2 (100.0%)
+  neural:            0 / 2 (0.0%)
   test:              0 / 0 (n/a)
   full:              0 / 0 (n/a)
 

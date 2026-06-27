@@ -189,7 +189,7 @@ mod tests {
         // §6B modes: backlog + status must both be taught.
         assert!(
             body.contains("backlog"),
-            "skill body must teach the `backlog` mode (--skip-canon, no new match)"
+            "skill body must teach the `backlog` mode (skip the match, no canon refresh)"
         );
         assert!(
             body.contains("status"),
@@ -212,8 +212,8 @@ mod tests {
         );
         // D4/D6: write path + parent-reject cascade discipline.
         assert!(
-            body.contains("aristo stamp") && body.contains("aristo canon accept"),
-            "skill body must funnel adoption through stamp → canon accept (no new source mutator)"
+            body.contains("aristo canon refresh") && body.contains("aristo canon accept"),
+            "skill body must funnel adoption through canon refresh → canon accept (no new source mutator)"
         );
         assert!(
             body.contains("parent-first") || body.contains("once per cluster"),

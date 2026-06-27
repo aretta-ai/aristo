@@ -40,6 +40,77 @@ fn creates_all_state_files_in_empty_dir() {
 }
 
 #[test]
+fn gitignores_all_runtime_aristo_artifacts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    aristo_in(root).arg("init").assert().success();
+
+    let gi = fs::read_to_string(root.join(".gitignore")).unwrap();
+    // Every runtime / per-user / cache path the CLI writes must be ignored,
+    // or it leaks into a consumer's `git status`.
+    for entry in [
+        ".aristo/index.toml",
+        ".aristo/sessions/",
+        ".aristo/nudge-state.toml",
+        ".aristo/verify-queue/",
+        ".aristo/critique-queue/",
+        ".aristo/critiques/",
+        ".aristo/proofs/*.proof.bak",
+        ".aristo/archive/",
+    ] {
+        assert!(
+            gi.lines().any(|l| l.trim() == entry),
+            "`.gitignore` is missing runtime entry `{entry}`; got:\n{gi}"
+        );
+    }
+    // Durable state must NOT be ignored — it is committed and propagates to CI.
+    for durable in [
+        ".aristo/proofs/",
+        ".aristo/doc/",
+        ".aristo/specs/",
+        ".aristo/feedback/",
+        "aristo.toml",
+    ] {
+        assert!(
+            !gi.lines().any(|l| l.trim() == durable),
+            "`.gitignore` must not ignore durable path `{durable}`; got:\n{gi}"
+        );
+    }
+}
+
+#[test]
+fn gitignore_appends_to_existing_file_and_is_idempotent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // A pre-existing .gitignore with the user's own content.
+    fs::write(root.join(".gitignore"), "/target\n*.log\n").unwrap();
+
+    aristo_in(root).arg("init").assert().success();
+
+    let after = fs::read_to_string(root.join(".gitignore")).unwrap();
+    assert!(after.contains("/target"), "existing content lost:\n{after}");
+    assert!(after.contains("*.log"), "existing content lost:\n{after}");
+    assert!(
+        after.lines().any(|l| l.trim() == ".aristo/sessions/"),
+        "aristo entries not appended to the existing .gitignore:\n{after}"
+    );
+
+    // Re-running must not duplicate any aristo entry.
+    aristo_in(root).arg("init").assert().success();
+    let twice = fs::read_to_string(root.join(".gitignore")).unwrap();
+    let dupes = twice
+        .lines()
+        .filter(|l| l.trim() == ".aristo/index.toml")
+        .count();
+    assert_eq!(
+        dupes, 1,
+        "re-running init duplicated a .gitignore entry:\n{twice}"
+    );
+}
+
+#[test]
 fn writes_index_with_meta_only_zero_entries() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
@@ -148,6 +219,7 @@ fn installs_hook_inside_git_repo() {
 
     aristo_in(root)
         .arg("init")
+        .arg("--hook")
         .assert()
         .success()
         .stdout(contains("installed pre-commit hook"));
@@ -175,13 +247,29 @@ fn second_invocation_in_git_repo_notes_existing_hook() {
     let root = tmp.path();
     fs::create_dir_all(root.join(".git/hooks")).unwrap();
 
-    aristo_in(root).arg("init").assert().success();
+    aristo_in(root).arg("init").arg("--hook").assert().success();
 
     aristo_in(root)
         .arg("init")
+        .arg("--hook")
         .assert()
         .success()
         .stdout(contains("pre-commit hook already installed"));
+}
+
+#[test]
+fn default_init_does_not_install_hook_even_in_git_repo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git/hooks")).unwrap();
+
+    // No --hook: the hook is deprecated and must NOT be auto-installed.
+    aristo_in(root).arg("init").assert().success();
+
+    assert!(
+        !root.join(".git/hooks/pre-commit").exists(),
+        "default init must not auto-install the deprecated pre-commit hook"
+    );
 }
 
 #[test]
@@ -204,8 +292,8 @@ fn ci_flag_writes_lite_workflow_only() {
         "lite gate runs via the shared action; got:\n{content}"
     );
     assert!(
-        content.contains("checks: stamp, lint, doc"),
-        "lite gate runs stamp/lint/doc; got:\n{content}"
+        content.contains("checks: audit, lint, doc"),
+        "lite gate runs audit/lint/doc; got:\n{content}"
     );
 }
 

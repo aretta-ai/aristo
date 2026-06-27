@@ -271,7 +271,7 @@ On **Reject**: records the decision and emits a per-kind fingerprint to `.aristo
 
 On **Defer**: records the decision; the finding moves to the per-kind backlog (`.aristo/sessions/backlog/critique-review.toml`). Future sessions surface backlog items in the opening menu.
 
-On **Apply rewrite**: read the current annotation text from the source file (via Edit tool), construct the diff, confirm via a second `AskUserQuestion` showing the proposed change, then apply. Then call `aristo session decide --item <ref> --bucket accepted --note "applied"`. Run `aristo stamp` AFTER closing the session — the text change flips status to Stale and the entry re-pends for fresh verify, but stamp is a mutation and the session guard blocks it.
+On **Apply rewrite**: read the current annotation text from the source file (via Edit tool), construct the diff, confirm via a second `AskUserQuestion` showing the proposed change, then apply. Then call `aristo session decide --item <ref> --bucket accepted --note "applied"`. The text change makes the entry Stale automatically (the index regenerates on read) and it re-pends for fresh verify on the next cycle; no `aristo stamp` is required.
 
 ### 5.3 Closing the session
 
@@ -280,12 +280,12 @@ When all findings are decided OR the user picks "Stop review (defer remaining)":
 - **All decided** → `aristo session exit` (strict close; succeeds because every item has a bucket).
 - **Stopped early** → `aristo session exit --defer-undecided` (open items move to backlog; never silently drops).
 
-Print the closing summary line (the SDK emits one already) and stop. Subsequent steps (running `aristo stamp` for an applied rewrite, etc.) can happen now that the session is closed.
+Print the closing summary line (the SDK emits one already) and stop. Subsequent steps (re-verifying an applied rewrite, etc.) can happen now that the session is closed.
 
 ## What this skill does NOT do
 
 - It does NOT write `.aristo/critiques/<id>.critique` files directly. The SDK is the sole writer via `aristo critique --submit-findings`.
-- It does NOT modify `.aristo/index.toml`. (In v0, even `--apply-findings` doesn't modify the index. v1 will add caching fields.)
+- It does NOT modify `.aristo/index.toml`: that is a regenerable cache the SDK derives from source + proofs.
 - It does NOT auto-apply suggested rewrites. Every source edit requires explicit user confirmation via a second `AskUserQuestion`.
 - It does NOT have a default "all annotations" sweep. `aristo critique` requires `--filter` per `docs/decisions/critique-and-pipeline-architecture.md` §D6.
 

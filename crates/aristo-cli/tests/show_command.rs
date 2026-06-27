@@ -39,18 +39,25 @@ fn errors_outside_a_workspace() {
 }
 
 #[test]
-fn errors_when_index_missing() {
+fn regenerates_when_index_missing() {
+    // The index is an optional cache now (index-as-local-cache / Option B):
+    // `show` regenerates from source when `.aristo/index.toml` is absent,
+    // instead of hard-erroring with a "run aristo stamp" hint.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("src/lib.rs"),
+        r#"#[aristo::intent("returns the answer", verify = "test", id = "returns_forty_two")] fn answer() -> i32 { 42 }"#,
+    )
+    .unwrap();
     fs::remove_file(tmp.path().join(".aristo/index.toml")).unwrap();
 
     aristo_in(tmp.path())
-        .args(["show", "x"])
+        .args(["show", "returns_forty_two"])
         .assert()
-        .failure()
-        .code(2)
-        .stderr(contains("no .aristo/index.toml"))
-        .stderr(contains("aristo stamp"));
+        .success()
+        .stdout(contains("returns the answer"));
 }
 
 #[test]

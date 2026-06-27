@@ -5,22 +5,21 @@
 //!
 //! This is the USER-facing ambient surface (the agent-facing nudges ride the
 //! PostToolUse / UserPromptSubmit hooks). It is read-only and stays cheap: it
-//! reads the index (counts), the git-untracked nudge-state (reviewed map +
-//! the cached baseline tier), the active-session pointer, a `stat` of the
-//! annotated source files (staleness), the config, and a local sign-in check.
+//! reads the index (counts + proof-sourced status), the git-untracked
+//! nudge-state (reviewed map + the cached baseline tier), the active-session
+//! pointer, the config, and a local sign-in check.
 //! It does NOT walk/parse source — the status bar re-renders constantly, so a
 //! per-render source walk would be too expensive; the tier is therefore the
 //! cached session-baseline label. Subject-only: every token is about the
 //! user's own annotations / verification, never the internal model.
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::path::PathBuf;
 
 use aristo_core::index::{Status, VerifyLevel};
 
 use crate::commands::show::read_index;
-use crate::nudge::intents::{authored_intents, AuthoredIntent};
+use crate::nudge::intents::authored_intents;
 use crate::nudge::state::{NudgeState, STATE_FILENAME};
 use crate::{CliResult, Workspace};
 
@@ -59,8 +58,8 @@ struct BarView {
      0. The status bar re-renders on every turn, so a statusline that errored \
      or wrote files would corrupt the bar or thrash the workspace on every \
      keystroke. Silence is the correct degraded state. It also stays CHEAP: \
-     index + nudge-state + the session pointer + a stat of the annotated \
-     files + a local sign-in check, never a source-tree walk.",
+     index + nudge-state + the session pointer + a local sign-in check, \
+     never a source-tree walk or a per-file stat.",
     verify = "test",
     id = "statusline_is_read_only_and_tolerant"
 )]
@@ -93,7 +92,6 @@ pub(crate) fn run() -> CliResult<()> {
                     .iter()
                     .map(|i| (i.id.as_str(), i.text_hash.as_str(), i.body_hash.as_str())),
             );
-            let index_mtime = file_mtime(&ws.index_path());
             for i in &intents {
                 if matches!(i.verify, VerifyLevel::Bool(false)) {
                     continue; // documentation-only: never verifiable
@@ -102,7 +100,7 @@ pub(crate) fn run() -> CliResult<()> {
                 if i.status.is_terminal_clean() {
                     view.verified_clean += 1;
                 }
-                if is_stale(i, &ws, index_mtime) {
+                if intent_is_stale(i.status) {
                     view.stale += 1;
                 }
             }
@@ -222,41 +220,18 @@ fn active_session_view(ws: &Workspace) -> Option<SessionView> {
     })
 }
 
-/// Whether an intent's proof should be flagged stale in the bar.
-fn is_stale(i: &AuthoredIntent, ws: &Workspace, index_mtime: Option<SystemTime>) -> bool {
-    let src_mtime = file_mtime(&ws.root.join(&i.file));
-    intent_is_stale(i.status, src_mtime, index_mtime)
-}
-
 #[aristo::intent(
-    "The bar's staleness count is cheap and conservative: an intent is stale \
-     if it is recorded broken (Status::Stale or Counterexample) OR it is \
-     currently terminal-clean but its source file's mtime is newer than the \
-     index's (edited since the last stamp, so its proof may be clobbered). The \
-     mtime test is a FILE-level heuristic — it over-counts versus a per-\
-     function body-hash recompute, which is the right bias for a 're-verify' \
-     warning and avoids the per-render source parse the bar forbids. When \
-     either mtime is unreadable it does NOT warn (tolerant: omission over a \
-     false alarm). Unknown/Inconclusive are not stale, only unverified.",
-    verify = "test",
-    id = "statusline_staleness_is_cheap_and_conservative"
+    "The bar's staleness count comes from the proofs-join status, not a \
+     file-mtime heuristic: an intent is stale iff it is recorded broken — \
+     Status::Stale (code drifted from its proof) or Counterexample (refuted). \
+     Unknown/Inconclusive are unverified, not stale. This needs no per-render \
+     source parse and no index mtime, so the bar stays cheap, and it can't \
+     disagree with `aristo status` on what 'stale' means.",
+    verify = "neural",
+    id = "statusline_staleness_is_from_proof_status"
 )]
-fn intent_is_stale(
-    status: Status,
-    src_mtime: Option<SystemTime>,
-    index_mtime: Option<SystemTime>,
-) -> bool {
-    match status {
-        Status::Stale | Status::Counterexample => true,
-        s if s.is_terminal_clean() => {
-            matches!((src_mtime, index_mtime), (Some(src), Some(idx)) if src > idx)
-        }
-        _ => false,
-    }
-}
-
-fn file_mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+fn intent_is_stale(status: Status) -> bool {
+    matches!(status, Status::Stale | Status::Counterexample)
 }
 
 /// Extract the session cwd from the statusLine stdin payload, if present.
@@ -277,7 +252,6 @@ fn cwd_from_stdin() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn view() -> BarView {
         BarView::default()
@@ -399,20 +373,16 @@ mod tests {
     }
 
     #[test]
-    fn stale_logic_recorded_and_drift() {
-        let t0 = SystemTime::UNIX_EPOCH;
-        let t1 = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
-        // Recorded broken → stale regardless of mtimes.
-        assert!(intent_is_stale(Status::Stale, None, None));
-        assert!(intent_is_stale(Status::Counterexample, Some(t0), Some(t1)));
-        // Terminal-clean but source edited since the index → drift-suspected.
-        assert!(intent_is_stale(Status::Verified, Some(t1), Some(t0)));
-        assert!(intent_is_stale(Status::Tested, Some(t1), Some(t0)));
-        // Terminal-clean and fresh (source older than index) → not stale.
-        assert!(!intent_is_stale(Status::Neural, Some(t0), Some(t1)));
-        // Unreadable mtime → tolerant, no false alarm.
-        assert!(!intent_is_stale(Status::Verified, None, Some(t1)));
-        // Unknown is unverified, not stale.
-        assert!(!intent_is_stale(Status::Unknown, Some(t1), Some(t0)));
+    fn stale_logic_is_recorded_broken_only() {
+        // Stale comes from the proofs-join status: recorded broken only.
+        assert!(intent_is_stale(Status::Stale));
+        assert!(intent_is_stale(Status::Counterexample));
+        // Terminal-clean is fresh; the mtime drift heuristic is retired.
+        assert!(!intent_is_stale(Status::Verified));
+        assert!(!intent_is_stale(Status::Tested));
+        assert!(!intent_is_stale(Status::Neural));
+        // Unverified states are not stale.
+        assert!(!intent_is_stale(Status::Unknown));
+        assert!(!intent_is_stale(Status::Inconclusive));
     }
 }

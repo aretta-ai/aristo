@@ -18,8 +18,7 @@ use aristo_core::config::ConfigFile;
 use aristo_core::index::{AnnotationId, IndexEntry};
 
 use crate::commands::index::workspace_or_error;
-use crate::commands::show::read_index;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
+use crate::commands::show::load_index;
 use crate::{CliError, CliResult};
 
 mod fix;
@@ -44,8 +43,7 @@ pub(crate) fn run(check: bool, fix: bool, strict: bool) -> CliResult<()> {
         // J6's pre_commit dispatch may grow other defaults later.
     }
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
-    let index = read_index(&ws.index_path())?;
+    let index = load_index(&ws)?;
     let overrides = load_rule_overrides(&ws);
 
     let mut findings: Vec<Finding> = Vec::new();

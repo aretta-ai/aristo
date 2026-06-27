@@ -31,10 +31,8 @@
 //! the pin via `CacheEntry::is_rejected(canon_id, text_hash)` (cache
 //! module, PR #4) when merging a fresh response — already wired.
 
-use std::fs;
-
 use aristo_core::canon::cache::{CanonMatchesFile, PendingMatch, RejectedMatch};
-use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
+use aristo_core::index::{AnnotationId, IndexEntry};
 
 use crate::commands::index::workspace_or_error;
 use crate::{CliError, CliResult, Workspace};
@@ -72,7 +70,7 @@ pub(crate) fn apply_rejection(
     // the index's value (not CacheEntry::last_match_text_hash) because
     // the index is the canonical source of truth for the annotation's
     // current text.
-    let index = read_index(&ws.index_path())?;
+    let index = crate::commands::show::load_index(ws)?;
     let intent = match index.entries.get(&ann_id) {
         Some(IndexEntry::Intent(e)) => e,
         Some(IndexEntry::Assume(_)) => {
@@ -150,24 +148,6 @@ fn locate_pending(
             ),
             exit_code: 1,
         })
-}
-
-fn read_index(path: &std::path::Path) -> CliResult<IndexFile> {
-    if !path.is_file() {
-        return Err(CliError::Other {
-            message: format!(
-                "no .aristo/index.toml at {}\n\
-                 hint: run `aristo stamp` to build one",
-                path.display()
-            ),
-            exit_code: 2,
-        });
-    }
-    let text = fs::read_to_string(path).map_err(CliError::Io)?;
-    toml::from_str(&text).map_err(|e| CliError::Other {
-        message: format!("parsing {}: {e}", path.display()),
-        exit_code: 1,
-    })
 }
 
 fn now_rfc3339() -> String {

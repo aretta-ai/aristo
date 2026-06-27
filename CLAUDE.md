@@ -39,7 +39,7 @@ Optional scope in parens: `feat(macros): ...`, `fix(cli): ...`, `build(workspace
 - The CHANGELOG bullet ships **in the same commit** as the code change. Never a separate "update changelog" commit.
 - Format: `- <area>: <what changed and why a user cares>`. Examples:
   - `- macros: \`#[aristo::intent]\` now accepts multi-line text without escaping.`
-  - `- cli: \`aristo stamp --check\` exits non-zero on staleness for CI gating.`
+  - `- cli: \`aristo verify --audit\` exits non-zero on stale/refuted proofs for CI gating.`
 - At release: promote `## [Unreleased]` to `## [vX.Y.Z] — YYYY-MM-DD`. The `[Unreleased]` block must read coherently as a release-note draft when scanned end-to-end.
 
 ## §4. Test-first — no test, no claim of correctness

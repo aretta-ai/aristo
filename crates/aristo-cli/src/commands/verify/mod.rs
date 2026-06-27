@@ -20,10 +20,9 @@ use aristo_core::index::{AnnotationId, IndexEntry, IndexFile, Status, VerifyLeve
 use aristo_core::proof::ProofFile;
 
 use crate::commands::index::workspace_or_error;
-use crate::commands::show::read_index;
+use crate::commands::show::load_index;
 use crate::filter::Filter;
 use crate::pipeline;
-use crate::preflight::{emit_advisory_if_stale, freshness_check};
 use crate::workspace::Workspace;
 use crate::{CliError, CliResult};
 
@@ -45,6 +44,7 @@ pub(crate) fn run(
     rerun: bool,
     check: bool,
     strict: bool,
+    audit: bool,
     apply_verdicts: bool,
     rewrite_hashes: bool,
     submit_verdict: bool,
@@ -59,7 +59,7 @@ pub(crate) fn run(
     because: Option<String>,
     tracking: Option<String>,
 ) -> CliResult<()> {
-    let _ = (check, strict); // wired for forward-compat; no behavior yet (see module doc)
+    let _ = check; // wired for forward-compat; no behavior yet (see module doc)
 
     // E3: `--view <session_id>` attaches to an existing session.
     // Read-only — no session guard, no workspace mutation. Runs
@@ -78,8 +78,15 @@ pub(crate) fn run(
     }
 
     let ws = workspace_or_error()?;
-    emit_advisory_if_stale(&freshness_check(&ws));
-    let index = read_index(&ws.index_path())?;
+
+    // `--audit` is the CI freshness gate: regenerate from source + proofs and
+    // report fresh / stale / refuted / orphan, exiting non-zero under --strict.
+    // Read-only, no dispatch, no network. Replaces `aristo stamp --check`.
+    if audit {
+        return run_audit(&ws, strict);
+    }
+
+    let index = load_index(&ws)?;
 
     // Phase 16 (c): `--accept <canon-id> --because <reason>` records a
     // user-side known-failure waiver in `.aristo/expectations.toml` and
@@ -235,6 +242,110 @@ pub(crate) fn run(
     verify = "neural",
     id = "verify_pop_next_prints_task_or_empty_exit_zero"
 )]
+#[aristo::intent(
+    "`verify --audit` is the freshness gate that replaces `aristo stamp \
+     --check` once the index is a gitignored cache. It regenerates the index \
+     from source + `.aristo/proofs/` (never trusting a possibly-stale committed \
+     cache) and, under `--strict`, exits non-zero on any STALE (code drifted \
+     since verification), COUNTEREXAMPLE (refuted), or ORPHAN proof (a `.proof` \
+     whose annotation no longer exists). It deliberately does NOT fail on \
+     `unknown` (never-verified is a legitimate starting state, not a \
+     regression). A deleted `.proof` surfaces as the now-`unknown` entry plus a \
+     tracked-file deletion in the diff, not as an audit failure.",
+    verify = "neural",
+    id = "verify_audit_reds_on_stale_refuted_or_orphan_not_unknown"
+)]
+fn run_audit(ws: &Workspace, strict: bool) -> CliResult<()> {
+    let index = crate::commands::stamp::regenerate_index(ws)?;
+
+    let mut fresh = 0usize;
+    let mut unknown = 0usize;
+    let mut stale: Vec<String> = Vec::new();
+    let mut refuted: Vec<String> = Vec::new();
+    for (id, entry) in &index.entries {
+        let IndexEntry::Intent(e) = entry else {
+            continue; // assumes are documentation-only; not a verification target
+        };
+        if !matches!(e.verify, VerifyLevel::Method(_)) {
+            continue; // verify=true/false carry no proof obligation
+        }
+        match e.status {
+            Status::Stale => stale.push(id.as_str().to_string()),
+            Status::Counterexample => refuted.push(id.as_str().to_string()),
+            s if s.is_terminal_clean() => fresh += 1,
+            _ => unknown += 1,
+        }
+    }
+    let orphans = orphan_proof_ids(ws, &index);
+
+    println!(
+        "→ Audited {} annotation(s) from source + .aristo/proofs/",
+        index.entries.len()
+    );
+    println!(
+        "  fresh: {fresh}, unknown (unverified): {unknown}, stale: {}, refuted: {}, orphan proofs: {}",
+        stale.len(),
+        refuted.len(),
+        orphans.len()
+    );
+    for id in &stale {
+        eprintln!("  • stale: {id} — code drifted since verification; re-verify");
+    }
+    for id in &refuted {
+        eprintln!("  • refuted: {id} — counterexample on record; fix code or intent");
+    }
+    for id in &orphans {
+        eprintln!("  • orphan proof: {id} — .proof on disk has no source annotation");
+    }
+
+    let problems = stale.len() + refuted.len() + orphans.len();
+    if strict && problems > 0 {
+        return Err(CliError::Other {
+            message: format!(
+                "{problems} freshness problem(s): {} stale, {} refuted, {} orphan proof(s). \
+                 Re-verify the drifted entries or remove the orphaned proofs.",
+                stale.len(),
+                refuted.len(),
+                orphans.len()
+            ),
+            exit_code: 1,
+        });
+    }
+    if problems == 0 {
+        println!();
+        println!("ok: all verification-bearing annotations are fresh.");
+    }
+    Ok(())
+}
+
+/// `.proof` files on disk whose decoded id has no entry in the regenerated
+/// index — verification artifacts left behind by a removed or renamed
+/// annotation. Mirrors the `:`→`__` filename convention.
+fn orphan_proof_ids(ws: &Workspace, index: &IndexFile) -> Vec<String> {
+    let dir = ws.aristo_dir().join("proofs");
+    let mut orphans = Vec::new();
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return orphans;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("proof") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let id_str = stem.replace("__", ":");
+        if let Ok(id) = AnnotationId::parse(&id_str) {
+            if !index.entries.contains_key(&id) {
+                orphans.push(id_str);
+            }
+        }
+    }
+    orphans.sort();
+    orphans
+}
+
 fn run_pop_next(ws: &Workspace) -> CliResult<()> {
     let qdir = pipeline::queue::QueueDir::for_pipeline(ws, pending::PIPELINE_NAME);
     match pipeline::queue::pop_next(&qdir)? {

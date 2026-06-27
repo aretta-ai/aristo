@@ -31,7 +31,7 @@ use aristo_core::metrics::Metrics;
 use aristo_core::walk::{count_fns_per_module_with, WalkOptions};
 
 use crate::commands::index::workspace_or_error;
-use crate::commands::show::read_index;
+use crate::commands::show::load_index;
 use crate::nudge::state::{Baseline, NudgeState, STATE_FILENAME};
 use crate::nudge::{score, throttle, Audience, Decision, EngineInputs};
 use crate::{CliError, CliResult, Workspace};
@@ -175,7 +175,7 @@ fn emit_for_event(
             // backlog into new-this-session vs carried-over. Best-effort: if
             // the index can't be read, leave the window uncaptured (the split
             // is then suppressed, not guessed).
-            state.window_intent_ids = read_index(&ws.index_path()).ok().map(|idx| {
+            state.window_intent_ids = load_index(ws).ok().map(|idx| {
                 crate::nudge::intents::authored_intents(&idx)
                     .into_iter()
                     .map(|i| i.id)
@@ -226,7 +226,7 @@ pub(crate) fn build_inputs(
     config: &ConfigFile,
     state: &NudgeState,
 ) -> CliResult<EngineInputs> {
-    let index = read_index(&ws.index_path())?;
+    let index = load_index(ws)?;
 
     // Coverage denominator for the tier formula (read-only walk, as in badge).
     let fn_counts =

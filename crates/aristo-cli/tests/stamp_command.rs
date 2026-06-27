@@ -1,5 +1,5 @@
-//! `aristo stamp` — imperative integration tests for drift detection,
-//! `--check` CI mode, and the prior-status preservation contract.
+//! `aristo stamp` — imperative integration tests for the proofs-sourced status
+//! model, orphan-proof archival, deterministic-id stability, and `--check`.
 
 use assert_cmd::Command;
 use predicates::str::contains;
@@ -32,18 +32,99 @@ fn lookup<'a>(
         .unwrap_or_else(|| panic!("no entry `{id}`"))
 }
 
-fn force_status(root: &Path, id: &str, status: aristo_core::index::Status) {
-    // Read, mutate, write — emulates what `aristo verify` will do later
-    // when verification flips an entry's status.
-    let mut idx = read_index(root);
-    let parsed = aristo_core::index::AnnotationId::parse(id).unwrap();
-    let entry = idx.entries.get_mut(&parsed).unwrap();
-    match entry {
-        aristo_core::index::IndexEntry::Intent(e) => e.status = status,
-        aristo_core::index::IndexEntry::Assume(e) => e.status = status,
-    }
-    let text = toml::to_string_pretty(&idx).unwrap();
-    fs::write(root.join(".aristo/index.toml"), text).unwrap();
+/// Write a VALID `.proof` for `id` whose anchors match the entry's current
+/// hashes, so the proofs-join derives the verdict's status. Status is sourced
+/// from `.aristo/proofs/` now (Option B), not poked into the index directly.
+fn write_valid_proof(root: &Path, id: &str, kind: aristo_core::proof::VerdictType) {
+    use aristo_core::index::{AnnotationKind, IndexEntry, VerifyLevel};
+    use aristo_core::proof::{
+        CounterexampleBody, Gap, Ground, InconclusiveBody, Proof, ProofFile, ProofStep,
+        PropertyKind, RelationKind, SuggestedAnnotation, VerdictMeta, VerdictType, VerifiedBody,
+        Violation,
+    };
+    let idx = read_index(root);
+    let (text_h, body_h, method) = match lookup(&idx, id) {
+        IndexEntry::Intent(e) => {
+            let m = match e.verify {
+                VerifyLevel::Method(m) => m,
+                _ => panic!("entry `{id}` must declare a verify method"),
+            };
+            (e.text_hash.clone(), e.body_hash.clone(), m)
+        }
+        _ => panic!("expected Intent for `{id}`"),
+    };
+    let step = || ProofStep {
+        path: "0".into(),
+        claim: "by construction".into(),
+        relation_to_parent: RelationKind::Decomposes,
+        grounds: vec![Ground::Composition {
+            reason: "trivial".into(),
+        }],
+        subgoal_paths: vec![],
+        proposed_promotion: false,
+    };
+    let (verified, counterexample, inconclusive) = match kind {
+        VerdictType::Verified => (
+            Some(VerifiedBody {
+                proof: Proof {
+                    conclusion: "holds".into(),
+                    steps: vec![step()],
+                },
+            }),
+            None,
+            None,
+        ),
+        VerdictType::Counterexample => (
+            None,
+            Some(CounterexampleBody {
+                violation: Violation {
+                    description: "refuted".into(),
+                    violated_step_path: "0".into(),
+                    trigger_steps: vec![step()],
+                    refuted_grounds: vec![],
+                },
+            }),
+            None,
+        ),
+        VerdictType::Inconclusive => (
+            None,
+            None,
+            Some(InconclusiveBody {
+                partial_proof: None,
+                gap: Gap {
+                    description: "a subgoal could not be discharged".into(),
+                    unfilled_path: "0".into(),
+                    suggested_annotations: vec![SuggestedAnnotation {
+                        kind: AnnotationKind::Assume,
+                        suggested_text: "a fresh unrelated invariant to close the gap".into(),
+                        at_site: "fn x (line 1)".into(),
+                        rationale: "needed".into(),
+                        would_close_path: None,
+                    }],
+                },
+            }),
+        ),
+    };
+    let pf = ProofFile {
+        verdict: VerdictMeta {
+            r#type: kind,
+            method,
+            produced_at_text_hash: text_h,
+            produced_at_body_hash: body_h,
+            produced_by: "test".into(),
+            verifier_model: None,
+            attempts: 1,
+            property_kind: PropertyKind::Invariant,
+        },
+        verified,
+        counterexample,
+        inconclusive,
+    };
+    let p = root
+        .join(".aristo/proofs")
+        .join(format!("{}.proof", id.replace(':', "__")));
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(p, pf.to_toml().unwrap()).unwrap();
 }
 
 #[test]
@@ -60,14 +141,16 @@ fn stamp_on_fresh_workspace_writes_initial_index() {
         .assert()
         .success()
         .stdout(contains("ok: stamped 1 annotation"))
-        .stdout(contains("new: 1"));
+        .stdout(contains("unverified: 1"));
 
     let idx = read_index(tmp.path());
     assert_eq!(idx.entries.len(), 1);
 }
 
 #[test]
-fn stamp_preserves_status_when_body_unchanged() {
+fn stamp_sources_status_from_a_matching_proof() {
+    // Status comes from .aristo/proofs/ now: a valid proof with matching
+    // anchors yields its verdict, and a no-op re-stamp keeps it.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     write_lib(
@@ -75,24 +158,25 @@ fn stamp_preserves_status_when_body_unchanged() {
         r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 42 }"#,
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
+    write_valid_proof(
+        tmp.path(),
+        "a",
+        aristo_core::proof::VerdictType::Inconclusive,
+    );
 
-    // Simulate a prior `aristo verify` having set status to Tested.
-    force_status(tmp.path(), "a", aristo_core::index::Status::Tested);
-
-    // Re-stamp without source changes — Tested must be preserved.
     aristo_in(tmp.path()).arg("stamp").assert().success();
-    let idx = read_index(tmp.path());
-    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx, "a") {
-        assert_eq!(
-            e.status,
-            aristo_core::index::Status::Tested,
-            "body unchanged → status preserved"
-        );
+    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&read_index(tmp.path()), "a") {
+        assert_eq!(e.status, aristo_core::index::Status::Inconclusive);
+    }
+    // No-op re-stamp keeps the derived status.
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&read_index(tmp.path()), "a") {
+        assert_eq!(e.status, aristo_core::index::Status::Inconclusive);
     }
 }
 
 #[test]
-fn stamp_flips_verified_to_stale_on_body_change() {
+fn stamp_marks_stale_when_body_drifts_from_proof() {
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     write_lib(
@@ -100,63 +184,28 @@ fn stamp_flips_verified_to_stale_on_body_change() {
         r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 1 }"#,
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
-    force_status(tmp.path(), "a", aristo_core::index::Status::Tested);
-
-    // Edit body — same text, different body.
-    write_lib(
+    write_valid_proof(
         tmp.path(),
-        r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 99 }"#,
-    );
-    aristo_in(tmp.path())
-        .arg("stamp")
-        .assert()
-        .success()
-        .stdout(contains("body-drifted: 1"))
-        .stdout(contains("now Stale"));
-
-    let idx = read_index(tmp.path());
-    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx, "a") {
-        assert_eq!(e.status, aristo_core::index::Status::Stale);
-    }
-}
-
-#[test]
-fn stamp_flips_counterexample_to_stale_on_body_change() {
-    // GAP-1 fix: the Status enum docstring promises body-drift → Stale for
-    // Counterexample too, but the prior stamp.rs match arm only handled
-    // Verified/Tested/Neural. Counterexample sat unchanged.
-    let tmp = tempfile::tempdir().unwrap();
-    aristo_in(tmp.path()).arg("init").assert().success();
-    write_lib(
-        tmp.path(),
-        r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 1 }"#,
+        "a",
+        aristo_core::proof::VerdictType::Inconclusive,
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
-    force_status(tmp.path(), "a", aristo_core::index::Status::Counterexample);
 
+    // Edit body — the proof's body_hash anchor no longer matches → Stale.
     write_lib(
         tmp.path(),
         r#"#[aristo::intent("a", verify = "test", id = "a")] fn x() -> i32 { 99 }"#,
     );
-    aristo_in(tmp.path())
-        .arg("stamp")
-        .assert()
-        .success()
-        .stdout(contains("body-drifted: 1"))
-        .stdout(contains("now Stale"));
-
-    let idx = read_index(tmp.path());
-    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx, "a") {
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&read_index(tmp.path()), "a") {
         assert_eq!(e.status, aristo_core::index::Status::Stale);
     }
 }
 
 #[test]
-fn stamp_warns_loudly_on_counterexample_entries() {
-    // Per the design: counterexamples are loud, never silenceable. There is
-    // no `aristo accept-counterexample` command — every stamp run must
-    // re-surface them. The warning goes to stderr (CI-visible, distinct
-    // from the regular per-id summary).
+fn stamp_warns_loudly_on_counterexample_proof() {
+    // Counterexamples are loud, never silenceable. A counterexample .proof
+    // makes the entry Counterexample, and every stamp re-surfaces it on stderr.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     write_lib(
@@ -164,13 +213,12 @@ fn stamp_warns_loudly_on_counterexample_entries() {
         r#"#[aristo::intent("a refuted claim", verify = "neural", id = "refuted_one")] fn x() {}"#,
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
-    force_status(
+    write_valid_proof(
         tmp.path(),
         "refuted_one",
-        aristo_core::index::Status::Counterexample,
+        aristo_core::proof::VerdictType::Counterexample,
     );
 
-    // Re-run stamp: source unchanged, status is sticky Counterexample.
     aristo_in(tmp.path())
         .arg("stamp")
         .assert()
@@ -190,11 +238,13 @@ fn stamp_check_mode_also_surfaces_counterexamples() {
         r#"#[aristo::intent("a refuted claim", verify = "neural", id = "refuted_two")] fn x() {}"#,
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
-    force_status(
+    write_valid_proof(
         tmp.path(),
         "refuted_two",
-        aristo_core::index::Status::Counterexample,
+        aristo_core::proof::VerdictType::Counterexample,
     );
+    // Sync the committed cache to the proof first, so --check sees no drift.
+    aristo_in(tmp.path()).arg("stamp").assert().success();
 
     aristo_in(tmp.path())
         .args(["stamp", "--check"])
@@ -356,12 +406,10 @@ fn stamp_reword_archives_old_proof_keeping_it_recoverable() {
 }
 
 #[test]
-fn stamp_flips_text_drift_to_stale() {
+fn stamp_marks_stale_when_text_drifts_from_proof() {
     // GAP-8 strict: text drift on a verdict-bearing entry transitions to
-    // Stale, same as body drift. The system can't tell "fixed a typo"
-    // from "narrowed the claim to exclude the failure case"; safer to
-    // force re-verify and let the user explicitly opt back in via
-    // --rerun on no-op text edits.
+    // Stale, same as body drift — the proof's text_hash anchor no longer
+    // matches. The system can't tell "fixed a typo" from "narrowed the claim".
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     write_lib(
@@ -369,26 +417,24 @@ fn stamp_flips_text_drift_to_stale() {
         r#"#[aristo::intent("v1", verify = "test", id = "a")] fn x() -> i32 { 42 }"#,
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
-    force_status(tmp.path(), "a", aristo_core::index::Status::Tested);
+    write_valid_proof(
+        tmp.path(),
+        "a",
+        aristo_core::proof::VerdictType::Inconclusive,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
 
-    // Edit ONLY text (re-word the intent prose); body unchanged.
+    // Edit ONLY the intent text (re-word the prose); body unchanged.
     write_lib(
         tmp.path(),
         r#"#[aristo::intent("v2", verify = "test", id = "a")] fn x() -> i32 { 42 }"#,
     );
-    aristo_in(tmp.path())
-        .arg("stamp")
-        .assert()
-        .success()
-        .stdout(contains("text-changed: 1"))
-        .stdout(contains("now Stale"));
-
-    let idx = read_index(tmp.path());
-    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx, "a") {
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    if let aristo_core::index::IndexEntry::Intent(e) = lookup(&read_index(tmp.path()), "a") {
         assert_eq!(
             e.status,
             aristo_core::index::Status::Stale,
-            "text drift on a verified entry transitions to Stale (GAP-8 strict)"
+            "text drift transitions to Stale (GAP-8 strict)"
         );
         assert_eq!(e.text, "v2");
     }
@@ -412,11 +458,7 @@ fn stamp_drops_removed_annotations_from_index() {
         tmp.path(),
         r#"#[aristo::intent("keep", verify = "test", id = "kept")] fn k() {}"#,
     );
-    aristo_in(tmp.path())
-        .arg("stamp")
-        .assert()
-        .success()
-        .stdout(contains("removed: 1"));
+    aristo_in(tmp.path()).arg("stamp").assert().success();
 
     let idx = read_index(tmp.path());
     assert_eq!(idx.entries.len(), 1);
@@ -534,21 +576,20 @@ fn stamp_idless_annotation_id_and_status_survive_restamp() {
     let id1 = only_id(&read_index(tmp.path()));
     assert!(id1.starts_with("aret_"), "idless → opaque id, got {id1}");
 
-    // Simulate a prior `aristo verify`: set Neural status + plant the proof.
-    force_status(tmp.path(), &id1, aristo_core::index::Status::Neural);
-    let proofs_dir = tmp.path().join(".aristo/proofs");
-    fs::create_dir_all(&proofs_dir).unwrap();
-    let proof_path = proofs_dir.join(format!("{id1}.proof"));
-    fs::write(&proof_path, "[verdict]\nfake = true\n").unwrap();
+    // A valid proof for the deterministic id derives Inconclusive.
+    write_valid_proof(
+        tmp.path(),
+        &id1,
+        aristo_core::proof::VerdictType::Inconclusive,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let proof_path = tmp
+        .path()
+        .join(".aristo/proofs")
+        .join(format!("{id1}.proof"));
 
-    // Re-stamp with NO source change.
-    aristo_in(tmp.path())
-        .arg("stamp")
-        .assert()
-        .success()
-        .stdout(contains("unchanged: 1"))
-        .stdout(contains("removed: 0"));
-
+    // Re-stamp with NO source change: id stable, proof-derived status + proof survive.
+    aristo_in(tmp.path()).arg("stamp").assert().success();
     let idx2 = read_index(tmp.path());
     assert_eq!(
         only_id(&idx2),
@@ -558,8 +599,8 @@ fn stamp_idless_annotation_id_and_status_survive_restamp() {
     if let aristo_core::index::IndexEntry::Intent(e) = lookup(&idx2, &id1) {
         assert_eq!(
             e.status,
-            aristo_core::index::Status::Neural,
-            "status must survive a no-op re-stamp (the bug reset it to Unknown)"
+            aristo_core::index::Status::Inconclusive,
+            "proof-derived status must survive a no-op re-stamp"
         );
     } else {
         panic!("expected Intent");
@@ -583,25 +624,25 @@ fn stamp_idless_body_edit_keeps_id_and_marks_stale() {
     );
     aristo_in(tmp.path()).arg("stamp").assert().success();
     let id1 = only_id(&read_index(tmp.path()));
-    force_status(tmp.path(), &id1, aristo_core::index::Status::Neural);
-    // Plant the proof too: a body edit must KEEP the proof (id is stable, so
-    // the entry is never Removed → never archived). Only re-verification (a
-    // later `aristo verify` against the new body) supersedes it.
-    let proofs_dir = tmp.path().join(".aristo/proofs");
-    fs::create_dir_all(&proofs_dir).unwrap();
-    let proof_path = proofs_dir.join(format!("{id1}.proof"));
-    fs::write(&proof_path, "[verdict]\nok = true\n").unwrap();
+    // A valid proof for the id; a body edit must KEEP the proof (id is stable,
+    // so the entry is never orphaned → never archived) but flip status to Stale.
+    write_valid_proof(
+        tmp.path(),
+        &id1,
+        aristo_core::proof::VerdictType::Inconclusive,
+    );
+    aristo_in(tmp.path()).arg("stamp").assert().success();
+    let proof_path = tmp
+        .path()
+        .join(".aristo/proofs")
+        .join(format!("{id1}.proof"));
 
     // Edit ONLY the body — same intent text, same fn name (site).
     write_lib(
         tmp.path(),
         r#"#[aristo::intent("returns a constant", verify = "neural")] fn k() -> i32 { 2 }"#,
     );
-    aristo_in(tmp.path())
-        .arg("stamp")
-        .assert()
-        .success()
-        .stdout(contains("body-drifted: 1"));
+    aristo_in(tmp.path()).arg("stamp").assert().success();
 
     let idx2 = read_index(tmp.path());
     assert_eq!(only_id(&idx2), id1, "body edit must not change the id");

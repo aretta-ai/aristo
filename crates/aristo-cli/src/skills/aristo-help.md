@@ -29,7 +29,7 @@ When the user invokes this skill (typically `/aristo-help`, or "what aristo skil
 ## Example scenario flows
 
 **New project → first verified claim.**
-`aristo init` → write code + `/aristo-authoring` (annotate the why) → `/aristo-verify` (changed·neural) → `/aristo-authored-review` (look over what you wrote) → commit (the git hook keeps the index honest) → `/aristo-status` to see the tier tick up.
+`aristo init` → write code + `/aristo-authoring` (annotate the why) → `/aristo-verify` (changed·neural) → `/aristo-authored-review` (look over what you wrote) → commit (proofs travel with the code; the index regenerates) → `/aristo-status` to see the tier tick up.
 *Yields:* the intent behind the code is captured, checked, and reviewed before it ships.
 
 **PR review (CI).** On a pull request, an automated pass critiques the annotations added/modified and authors any missing intents on the changed code, then comments back — comment-only by default, no silent source mutation.

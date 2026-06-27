@@ -14,7 +14,6 @@ mod filter;
 /// is its in-crate consumer.
 pub mod nudge;
 mod pipeline;
-mod preflight;
 mod session;
 mod skills;
 mod update_notify;
@@ -59,7 +58,7 @@ enum Commands {
         force: bool,
 
         /// Also write a lite PR-gate workflow (`.github/workflows/aristo.yml`)
-        /// that runs stamp/lint/doc via the shared aristo-action. No token needed.
+        /// that runs audit/lint/doc via the shared aristo-action. No token needed.
         #[arg(long)]
         ci: bool,
 
@@ -68,6 +67,13 @@ enum Commands {
         /// secret (paid tier). Implies `--ci`.
         #[arg(long)]
         ci_verify: bool,
+
+        /// Install a local pre-commit hook (DEPRECATED). Off by default and no
+        /// longer auto-installed: the index is a gitignored cache, so CI
+        /// (`aristo verify --audit`) is the enforcement point. The hook only
+        /// runs `aristo doc` + `lint` locally as a convenience.
+        #[arg(long)]
+        hook: bool,
     },
 
     /// Print a syntax cheat sheet for the detected language.
@@ -255,6 +261,14 @@ enum Commands {
         /// Treat warn-severity verification outcomes as failure too.
         #[arg(long)]
         strict: bool,
+        /// Audit mode: regenerate the index in memory and validate every
+        /// `.aristo/proofs/<id>.proof` against current source. Reports
+        /// fresh / stale / refuted / orphan counts; with `--strict`, exits
+        /// non-zero on any stale, counterexample, or orphan proof. The CI
+        /// freshness gate (replaces `aristo stamp --check`) — no dispatch,
+        /// no network, no token.
+        #[arg(long = "audit")]
+        audit: bool,
         /// Apply pending verdict files in `.aristo/proofs/` to the
         /// index. Reads every `<id>.proof`, runs the mechanical
         /// validator, and (if it passes) flips the entry's status.
@@ -904,7 +918,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             force,
             ci,
             ci_verify,
-        } => commands::init::run(force, ci, ci_verify),
+            hook,
+        } => commands::init::run(force, ci, ci_verify, hook),
         Commands::Lang { file } => commands::lang::run(file),
         Commands::InstallSkills {
             agent,
@@ -943,6 +958,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             rerun,
             check,
             strict,
+            audit,
             apply_verdicts,
             rewrite_hashes,
             submit_verdict,
@@ -961,6 +977,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             rerun,
             check,
             strict,
+            audit,
             apply_verdicts,
             rewrite_hashes,
             submit_verdict,

@@ -280,7 +280,7 @@ fn id_from_filename(path: &Path) -> Option<AnnotationId> {
     AnnotationId::parse(&id_str).ok()
 }
 
-fn derived_status(pf: &ProofFile) -> Status {
+pub(crate) fn derived_status(pf: &ProofFile) -> Status {
     match pf.verdict.r#type {
         VerdictType::Verified => Status::Neural, // slice 23 only flips to Neural
         VerdictType::Counterexample => Status::Counterexample,

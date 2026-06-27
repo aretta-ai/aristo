@@ -86,9 +86,10 @@ For each intent, put its `text` + `site` in the option preview so the user reads
 claim. Per intent, offer:
 
 - **Looks good → mark reviewed** → `aristo review --mark <id>`
-- **Edit the wording** → edit the `#[aristo::intent("…")]` text in source, then
-  `aristo stamp` (the re-stamp's hash drift re-opens it; mark it reviewed again once happy).
-- **Delete it** → remove the annotation from source, then `aristo stamp`.
+- **Edit the wording** → edit the `#[aristo::intent("…")]` text in source. The hash
+  drift re-opens it for review automatically; mark it reviewed again once happy.
+- **Delete it** → remove the annotation from source. It drops from the index
+  automatically; run `aristo stamp` if you want to archive its now-orphaned proof.
 - **Skip** → leave it unreviewed (it stays in the backlog).
 
 You can mark several at once: `aristo review --mark id1,id2,id3`. The whole batch is
@@ -99,4 +100,4 @@ id and retry.
 
 After the pass, run `aristo review` once more to show the remaining backlog (or "all
 reviewed ✅"). Never edit `.aristo/` state files directly — `aristo review --mark` is the
-only write path for the reviewed axis; source edits go through `aristo stamp`.
+only write path for the reviewed axis; source edits are reflected automatically when the index regenerates on read.
