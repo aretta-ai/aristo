@@ -1,6 +1,6 @@
 ---
 name: aristo-intent-suggestions
-description: Orchestrates the §17 proof-tree review loop. A choice-based explorer that (1) initiates the canon match, (2) reviews pending PRIMARY matches (your own annotations), and (3) reviews dragged-in SUGGESTIONS (the sibling invariants of the same proof objective). Drives the user through `AskUserQuestion` menus, finds placement sites, confirms each write, and adopts via the existing `stamp → canon accept` pipeline. All state lands in an `intent-review` session; the SDK is the sole writer.
+description: Orchestrates the §17 proof-tree review loop. A choice-based explorer that (1) initiates the canon match, (2) reviews pending PRIMARY matches (your own annotations), and (3) reviews dragged-in SUGGESTIONS (the sibling invariants of the same proof objective). Drives the user through `AskUserQuestion` menus, finds placement sites, confirms each write, and adopts via the existing `canon refresh → canon accept` pipeline. All state lands in an `intent-review` session; the SDK is the sole writer.
 sdk_version: {{SDK_VERSION}}
 ---
 
@@ -13,11 +13,11 @@ in the suggestions backlog?"), follow this orchestration exactly.
 This skill is a **choice-based explorer**: you drive the user through `AskUserQuestion` menus
 rather than free-form prose. The structure below was playtested and approved (§6A). You never
 write `.aristo/` state files directly — every decision goes through `aristo session decide` and
-every adoption goes through `agent writes #[aristo::intent] → aristo stamp → aristo canon accept`.
+every adoption goes through `agent writes #[aristo::intent] → aristo canon refresh → aristo canon accept`.
 The CLI is the single write path; the agent writes source, the SDK manages state.
 
 The skill is the **orchestrator for the whole loop**, not just a suggestions consumer (D9):
-1. **initiate** the canon match (run the stamp/critique match step),
+1. **initiate** the canon match (run `aristo canon refresh`; `stamp`/`critique` run the same match step as a side-effect),
 2. review **pending PRIMARY matches** — your own annotations the match flagged (new + carried-over),
 3. review **SUGGESTIONS** — the proof-objective cluster dragged in alongside each primary.
 
@@ -61,7 +61,7 @@ just a **recipe of existing CLI flags** — no new machinery, no new grammar.
 | Mode | When the user says… | Recipe (existing primitives) |
 |---|---|---|
 | *(default)* full | (nothing special) | initiate match → Stage A → Stage B |
-| **backlog** | "just the backlog", "carried-over only", "don't re-match" | `aristo stamp --skip-canon` (no match) → seed session from cached/backlog items only |
+| **backlog** | "just the backlog", "carried-over only", "don't re-match" | skip the match (do NOT run `canon refresh`) → seed session from cached/backlog items only |
 | **status** | "what's pending?", "just the counts" | `aristo canon suggestions --counts` → print the table, **no session, no writes**, done |
 | **matches** | "only the matches", "review my own annotations" | run **Stage A only** (skip Stage B) |
 | **suggestions** | "only the suggestions" | run **Stage B only** (skip Stage A) |
@@ -69,13 +69,13 @@ just a **recipe of existing CLI flags** — no new machinery, no new grammar.
 | **cluster `<objective>`** | "only the WAL cluster" | add `--filter parent=<kanon:objective>` across both stages (free — leaves carry `parent=`) |
 
 Modes are **orthogonal and compose** (e.g. "backlog suggestions for src/storage/wal.rs"
-= `--skip-canon` + Stage B only + `--filter file=core/storage/wal.rs`). Reuse the **existing
+= skip the match + Stage B only + `--filter file=core/storage/wal.rs`). Reuse the **existing
 `--filter` grammar verbatim** (`id=`, `file=[:LO-HI]`, `parent=`, `status=`) — it already exists
 for `critique`/`canon`; wire it through, don't reinvent.
 
 - **status** short-circuits before any session: print the counts table from
   `aristo canon suggestions --counts`, then stop.
-- **backlog** sets `--skip-canon` so Step 2 is skipped; the session seeds purely from
+- **backlog** skips Step 2's match entirely (no `canon refresh`); the session seeds purely from
   carried-over items, and the entry Q&A then only offers the "carried-over" bucket.
 - **matches** / **suggestions** drop the other stage from the run.
 
@@ -84,18 +84,21 @@ asks for one, say it's not yet available and offer the closest v1 mode.)*
 
 ## Step 2 — initiate the match (skipped in backlog/status modes)
 
-Unless the user chose **status** (short-circuit) or **backlog** (`--skip-canon`), run the match
+Unless the user chose **status** (short-circuit) or **backlog**, run the match
 step so the cache + suggestions queue are fresh:
 
 ```bash
-aristo stamp            # default; matches new/changed annotations, fills the cache + queue
-aristo stamp --skip-canon   # backlog mode: NO match — review only what's already queued
+aristo canon refresh    # default; matches new/changed annotations, fills the cache + queue
+# backlog mode: skip this entirely — review only what's already queued
 ```
 
-`aristo stamp` (or `aristo critique`) runs `POST /canon/match`; primaries land in
-`canon-matches.toml`, dragged-in clusters land in the `.aristo/canon-suggestions-queue/`
-(after the client-side dedup: drop members already bound / pending / rejected, and collapse
-clusters sharing one objective into one task).
+`aristo canon refresh` is the purpose-built match trigger: it loads the (regenerated) index and
+runs `POST /canon/match` without a stamp pipeline, so it needs no committed index and no prior
+stamp. Primaries land in `canon-matches.toml`, dragged-in clusters land in the
+`.aristo/canon-suggestions-queue/` (after the client-side dedup: drop members already bound /
+pending / rejected, and collapse clusters sharing one objective into one task). `aristo stamp`
+and `aristo critique` run the same match step as a bundled side-effect, but `canon refresh` is
+the standalone primary.
 
 ## Step 3 — open the session and show the ROOT menu
 
@@ -295,11 +298,11 @@ Used for the parent objective AND each confirmed sibling. **Confirm → write �
 2. **AskUserQuestion: confirm this site?** — *no* → re-find another site and re-ask; *yes* →
 3. `agent writes #[aristo::intent(text=<canonical_text>, parent="<kanon:objective>")]` at the site
    (the canonical text verbatim — do NOT reword it).
-4. `aristo stamp` — re-matches; the new annotation becomes a pending primary.
+4. `aristo canon refresh` — re-matches; the new annotation becomes a pending primary.
 5. `aristo canon accept` — binds it.
 6. Record `aristo session decide --item sibling:<key>#<canon-id> --bucket accepted --note "adopted"`.
 
-Adoption funnels back through the **existing `stamp → /canon/match → canon accept` pipeline** —
+Adoption funnels back through the **existing `canon refresh → /canon/match → canon accept` pipeline** —
 there is no new source-mutation command; the agent writes code, the CLI manages state (the same
 seam as the `aristo-authoring` skill).
 
@@ -312,15 +315,15 @@ When every item is decided, or the user picks "Exit / Stop":
   **backlog**; the next session surfaces them — never silently dropped).
 - **Abort entirely** → `aristo session abort --yes` (destructive; discards every decision).
 
-Run `aristo stamp` for any adopted/applied edits **after** the session closes — stamp is a
-mutation and the session guard blocks it while a session is open.
+Run `aristo canon refresh` to re-match any adopted/applied edits **after** the session closes
+(the session guard blocks the match while a session is open).
 
 ## What this skill does NOT do
 
 - It does NOT write `.aristo/` state files directly. Decisions go through `aristo session decide`;
   the suggestions queue and rejection log are SDK-owned.
 - It does NOT mutate source on its own for an adoption — the agent writes the annotation, then
-  the CLI's `stamp` + `canon accept` bind it.
+  the CLI's `canon refresh` + `canon accept` bind it.
 - It does NOT reword canonical text. Adopt uses the canon's phrasing verbatim; "edit" edits the
   *site*, never the wording.
 - It does NOT re-decide a cluster's parent in a loop. The parent is decided **once per cluster**.
@@ -343,7 +346,7 @@ mutation and the session guard blocks it while a session is open.
   explicit per-site confirmation before it lands.
 - ❌ Rejecting a cluster and silently dropping a sibling the user already asserted. Reject-parent
   discards **dragged-in only** (D6); the SDK keeps any independently-matched member — trust it.
-- ❌ Re-running the match in **backlog** mode. Backlog means `--skip-canon`: review only what's
+- ❌ Re-running the match in **backlog** mode. Backlog means skip `canon refresh`: review only what's
   already queued.
 - ❌ Opening a session for **status** mode. Status is `aristo canon suggestions --counts` only —
   no session, no writes.

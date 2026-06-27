@@ -14,7 +14,7 @@ Today `.aristo/index.toml` is committed to git and a pre-commit hook runs `arist
 The key realization: **the committed index is already a pure cache.** Every `IntentEntry` field is either a pure function of source (`text`, `text_hash`, `body_hash`, `file`, `site`, `covered_region`, `parent`, `verify`) or carried verification state that has a durable home **outside** the index:
 
 - `status` is a denormalized cache of the verdict. The durable record is `.aristo/proofs/<id>.proof`, and `verify/mod.rs` already declares "the validator is the source of truth; the status flag is a cache."
-- `binding` is re-derived from `.aristo/canon-matches.toml` on every `stamp` (`derive_bindings_from_cache`); the index column was never authoritative.
+- `binding` is re-derived from `.aristo/canon-matches.toml` on every regenerate (`derive_bindings_from_cache`, which runs inside `regenerate_index`, not just `stamp`); the index column was never authoritative.
 - The `Certified` cert triple (`verified_outcome` + `last_verified_at_commit`) is **never constructed by live code** today (test fixtures only). The verify=full server dispatch runs but persists nothing locally.
 - The critique-cache markers (`last_critiqued_at_text_hash`, `last_critique_finding_count`) are a skip-optimization whose backing `.critique` files are gitignored, so they are already clone-moot.
 
