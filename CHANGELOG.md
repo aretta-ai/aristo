@@ -8,6 +8,11 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-28
+
+### Added
+- `aristo metrics --json` now reports `by_verify_level` (intents per pipeline: neural / test / full / default-true / off-false) and `status_distribution` (annotation counts by verification status, kebab-case keys) — the full breakdown `aristo status` shows as text, now machine-readable from one payload for tooling and dashboards (metrics schema v2).
+
 ### Changed
 - ci: the release workflow now publishes crates idempotently (any crate already at the target version is skipped) and supports a manual re-run, so a partial publish caused by a transient crates.io/network error can be re-run to completion instead of erroring on "already uploaded".
 - skills: the `aristo-instrumenting` skill now covers projector visibility across modules — a `with =` projector over a module-private value type should be `pub(super)`, not `pub(crate)` (which trips rustc's `private_interfaces` lint).
@@ -27,7 +32,6 @@ Minor release with two breaking changes. **Workflow:** `.aristo/index.toml` is n
 - docs: `docs/instrument-recipes.md` and `docs/instrument-conventions.md` are refreshed for the clone / projection forms — a named-projector recipe (with filter / fan-out) for foreign or concurrent collections, plus bare-`#[inspect]` clone, inline-closure, and atomic / lock-guarded recipes — replacing the removed `#[inspect(T)]` / `snapshot =` examples.
 
 ### Added
-- `aristo metrics --json` now reports `by_verify_level` (intents per pipeline: neural / test / full / default-true / off-false) and `status_distribution` (annotation counts by verification status, kebab-case keys) — the full breakdown `aristo status` shows as text, now machine-readable from one payload for tooling and dashboards (metrics schema v2).
 - `aristo verify --audit [--strict]`: a no-network, no-token proof-freshness gate for CI.
 - `aristo init --hook`: opt-in installer for the (now deprecated) local pre-commit hook.
 
