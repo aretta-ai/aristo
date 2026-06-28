@@ -68,10 +68,5 @@ syn = { version = "2.0", features = ["full"] }
 # downstream consumers pull in aristo without dev-deps, so the feature
 # stays off by default in production builds.
 aristo = { path = "../aristo", features = ["aristo_instrument"] }
-# crossbeam-skiplist supplies the `SkipMap<K, V>` type the `Inspect`
-# derive (slice 37+) tags as the supported collection. Dev-only because
-# only trybuild fixtures + integration tests need it; downstream
-# consumers bring their own copy of crossbeam-skiplist.
-crossbeam-skiplist = "0.1"
 tempfile = "3.10"
 trybuild = "1.0"
