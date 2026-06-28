@@ -1,0 +1,5 @@
+error: unsupported `inspect` argument. Use bare `#[inspect]` to clone the field, or `#[inspect(ret = T, with = <projector>)]` to project it. The positional projection type `#[inspect(T)]` and `snapshot = T` were removed in 0.3.0.
+  --> tests/ui/fail/inspect_positional_removed.rs:13:15
+   |
+13 |     #[inspect(FileView)]
+   |               ^^^^^^^^

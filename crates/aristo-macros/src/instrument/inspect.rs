@@ -1,45 +1,60 @@
-//! `#[derive(Inspect)]` — emits snapshot accessors over `SkipMap<K, V>`
-//! fields.
+//! `#[derive(Inspect)]` — emits snapshot accessors over tagged fields.
 //!
-//! Each tagged field becomes a `pub fn inspect_<name>(&self) -> Vec<(K, T)>`
-//! method on the struct. Two modes, picked at the attribute level:
+//! Each `#[inspect]`-tagged field becomes a `pub fn inspect_<name>(&self)`
+//! method returning an owned, point-in-time snapshot of that one field. The
+//! derive is **type-agnostic**: it never inspects the field's type. Two
+//! modes, chosen purely at the attribute level.
 //!
-//! - **Clone mode**: `#[inspect]` (or `#[inspect(name = "...")]`). The
-//!   macro iterates the `SkipMap` and clones each `V` into the
-//!   snapshot. T = V. Requires `K: Copy`, `V: Clone`.
-//! - **Project mode**: `#[inspect(SnapshotType)]` (or
-//!   `#[inspect(SnapshotType, name = "...")]`). The macro iterates and
-//!   applies the user-supplied `impl From<&V> for SnapshotType` per
-//!   entry. T = SnapshotType. Requires `K: Copy` and that the user
-//!   provide the `From` impl.
+//! - **Clone mode** — bare `#[inspect]` (optionally `#[inspect(name = "…")]`):
 //!
-//! In both modes the returned `Vec` is owned and point-in-time — the
-//! harness can't write back to the SUT through it.
+//!   ```ignore
+//!   pub fn inspect_<name>(&self) -> <FieldType> { self.<field>.clone() }
+//!   ```
 //!
-//! Untagged fields are silently ignored (no codegen). `name = "..."`
-//! overrides the default `inspect_<field>` method-name suffix; the
-//! `inspect_` prefix itself is always automatic.
+//!   The return type is the field's own declared type, echoed verbatim; the
+//!   `Clone` bound is deferred to rustc. Works for any `Clone` field —
+//!   scalars, `Option<T>`, `BTreeMap`, a foreign `SkipMap`, … — with no
+//!   per-type codegen.
 //!
-//! v1 supports `SkipMap<K, V>` fields only. Other collection types
-//! (`BTreeMap`, `HashMap`, `Vec`) and scalar fields are deferred —
-//! attempting to tag them produces a clear error pointing at the
-//! field. `K: Copy` is required because the generated body dereferences
-//! the SkipMap entry's borrowed key (`*e.key()`); a non-Copy K surfaces
-//! at the rustc level as a "cannot move out of `*e.key()`" error.
+//! - **Projection mode** — `#[inspect(ret = SnapTy, with = expr)]`
+//!   (optionally `+ name = "…"`):
+//!
+//!   ```ignore
+//!   pub fn inspect_<name>(&self) -> SnapTy {
+//!       let __project: &dyn Fn(&<FieldType>) -> SnapTy = &(expr);
+//!       __project(&self.<field>)
+//!   }
+//!   ```
+//!
+//!   `expr` is any `Fn(&FieldType) -> SnapTy` — a path to a named projector
+//!   or an inline closure. `ret` is required and echoed as the return type
+//!   verbatim: a syntactic proc-macro cannot infer a closure's return type,
+//!   so this ascription is genuine and unremovable.
+//!
+//!   This form is **orphan-safe for any foreign field**. The macro emits an
+//!   inherent method on the consumer struct and names the projection as an
+//!   arbitrary expression, so the foreign type is never the `Self` of a
+//!   foreign trait — no `impl` on the field type is ever required. Because
+//!   the projector sees the whole field, it can FILTER and FAN-OUT (one map
+//!   entry → N snapshot rows), which the prior per-entry form could not.
+//!
+//! Untagged fields are silently ignored. The `inspect_` prefix is always
+//! automatic; `name = "…"` overrides only the suffix.
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Fields, GenericArgument, PathArguments, Type, TypePath};
+use syn::{Data, DeriveInput, Expr, Fields, Type};
 
 pub(crate) fn derive(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
     let struct_name = &input.ident;
-    // Thread the struct's generic params, ty-params, and where-clause
-    // through the emitted impl header so `impl Store<Clock>` (not bare
-    // `impl Store`) lands. The standard `syn` idiom; required for
-    // structs with generic / lifetime / `where` parameters. See the
-    // `inspect_generic_struct` regression case (v0.2.6).
+    // Thread the struct's generics / where-clause through the emitted impl
+    // header so `impl Store<Clock>` (not bare `impl Store`) lands. The
+    // projection-mode `let __project: &dyn Fn(&FieldType) -> Ret` ascription
+    // may mention these generics — which is exactly why a `let` binding is
+    // used rather than an inner helper `fn` (a helper could not name the
+    // struct's generics). See the `inspect_projection_generic_struct` case.
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let named_fields = match &input.data {
@@ -73,41 +88,34 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
         };
 
         let field_name = field.ident.as_ref().expect("named field has an ident");
-        let (key_ty, value_ty) = match extract_skipmap_kv(&field.ty) {
-            Some(kv) => kv,
-            None => {
-                return syn::Error::new_spanned(
-                    field_name,
-                    "`#[inspect(...)]` only supports `SkipMap<K, V>` fields in v1 \
-                     (other collection types and scalars are deferred to a future release)",
-                )
-                .to_compile_error()
-                .into();
-            }
-        };
-
+        let field_ty = &field.ty;
         let method_suffix = args.name.unwrap_or_else(|| field_name.to_string());
         let method_ident = format_ident!("inspect_{}", method_suffix);
 
-        let (return_elem_ty, projection_expr) = match &args.snapshot_ty {
-            Some(t) => (
-                quote!(#t),
-                quote!(<#t as ::core::convert::From<&#value_ty>>::from(e.value())),
-            ),
-            None => (
-                quote!(#value_ty),
-                quote!(::core::clone::Clone::clone(e.value())),
-            ),
-        };
-
-        accessors.push(quote! {
-            pub fn #method_ident(&self) -> ::std::vec::Vec<(#key_ty, #return_elem_ty)> {
-                self.#field_name
-                    .iter()
-                    .map(|e| (*e.key(), #projection_expr))
-                    .collect()
+        let accessor = match args.mode {
+            InspectMode::Clone => quote! {
+                pub fn #method_ident(&self) -> #field_ty {
+                    ::core::clone::Clone::clone(&self.#field_name)
+                }
+            },
+            InspectMode::Project(p) => {
+                let Projection { ret, with } = &*p;
+                quote! {
+                    pub fn #method_ident(&self) -> #ret {
+                        // Pin the projector's input/output types via the `let`
+                        // ascription so an un-annotated inline closure can infer
+                        // its parameter — the naive `(expr)(&self.x)` fails
+                        // E0282 because closure-param inference does not flow
+                        // back from an immediately-applied argument. The
+                        // annotation may name the struct's generics; an inner
+                        // helper `fn` could not, so a `&dyn Fn` binding is used.
+                        let __project: &dyn ::core::ops::Fn(&#field_ty) -> #ret = &(#with);
+                        __project(&self.#field_name)
+                    }
+                }
             }
-        });
+        };
+        accessors.push(accessor);
     }
 
     let expanded = quote! {
@@ -118,15 +126,31 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// Parsed `#[inspect]`, `#[inspect(T)]`, `#[inspect(name = "x")]`, or
-/// `#[inspect(T, name = "x")]`. The absence of `T` selects clone mode;
-/// its presence selects project mode.
+/// A parsed `#[inspect]` tag. The mode is selected at the attribute level:
+/// bare (or `name`-only) → clone the whole field; `ret = T, with = expr` →
+/// project the field through `expr: Fn(&FieldType) -> T`.
 struct InspectArgs {
-    /// `Some(T)` → project via `impl From<&V> for T`. `None` → clone V.
-    snapshot_ty: Option<Type>,
-    /// Override for the method-name suffix (the `inspect_` prefix is
-    /// always automatic). `None` → use the field's identifier.
+    /// Override for the method-name suffix (the `inspect_` prefix is always
+    /// automatic). `None` → use the field's identifier.
     name: Option<String>,
+    mode: InspectMode,
+}
+
+enum InspectMode {
+    /// Bare `#[inspect]`: `inspect_<name>(&self) -> FieldType`, cloning the field.
+    Clone,
+    /// `#[inspect(ret = T, with = expr)]`: project the field through `expr`.
+    /// Boxed so the enum's variants stay size-balanced (`Type` + `Expr` are
+    /// large `syn` nodes; `Clone` is a unit).
+    Project(Box<Projection>),
+}
+
+/// The `ret =` / `with =` payload of projection mode.
+struct Projection {
+    /// Verbatim return type of the generated accessor.
+    ret: Type,
+    /// A `Fn(&FieldType) -> ret` projector — a named path or inline closure.
+    with: Expr,
 }
 
 fn parse_inspect_attr(field: &syn::Field) -> syn::Result<Option<InspectArgs>> {
@@ -144,66 +168,62 @@ fn parse_inspect_attr(field: &syn::Field) -> syn::Result<Option<InspectArgs>> {
     }
     let Some(attr) = found else { return Ok(None) };
 
-    let mut snapshot_ty: Option<Type> = None;
-    let mut name: Option<String> = None;
-
-    // Bare `#[inspect]` (no parentheses) is the simplest clone form.
-    // syn::Meta::Path matches `#[inspect]` exactly.
+    // Bare `#[inspect]` (no parentheses) is clone mode. `syn::Meta::Path`
+    // matches `#[inspect]` exactly.
     if matches!(attr.meta, syn::Meta::Path(_)) {
-        return Ok(Some(InspectArgs { snapshot_ty, name }));
+        return Ok(Some(InspectArgs {
+            name: None,
+            mode: InspectMode::Clone,
+        }));
     }
 
+    let mut ret: Option<Type> = None;
+    let mut with: Option<Expr> = None;
+    let mut name: Option<String> = None;
+
     attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("name") {
-            let value = meta.value()?;
-            let lit: syn::LitStr = value.parse()?;
+        if meta.path.is_ident("ret") {
+            ret = Some(meta.value()?.parse()?);
+            Ok(())
+        } else if meta.path.is_ident("with") {
+            with = Some(meta.value()?.parse()?);
+            Ok(())
+        } else if meta.path.is_ident("name") {
+            let lit: syn::LitStr = meta.value()?.parse()?;
             name = Some(lit.value());
             Ok(())
-        } else if meta.input.peek(syn::Token![=]) {
-            // `<ident> = ...` for some unknown <ident> — error.
+        } else if meta.path.is_ident("snapshot") {
             Err(meta.error(
-                "unknown `inspect` argument; expected positional `T` (projection type) or `name = \"...\"`",
+                "`snapshot = T` was removed in 0.3.0; use \
+                 `#[inspect(ret = T, with = <projector>)]` where \
+                 `<projector>: Fn(&FieldType) -> T`",
             ))
-        } else if snapshot_ty.is_none() {
-            // First non-keyword item is the positional snapshot type.
-            // `parse_nested_meta` gives us `meta.path` already; reuse it
-            // as a Type (we only support type paths in this position).
-            let path = meta.path.clone();
-            snapshot_ty = Some(syn::parse_quote!(#path));
-            Ok(())
         } else {
             Err(meta.error(
-                "`#[inspect(...)]` accepts at most one positional projection type",
+                "unsupported `inspect` argument. Use bare `#[inspect]` to clone \
+                 the field, or `#[inspect(ret = T, with = <projector>)]` to \
+                 project it. The positional projection type `#[inspect(T)]` and \
+                 `snapshot = T` were removed in 0.3.0.",
             ))
         }
     })?;
 
-    Ok(Some(InspectArgs { snapshot_ty, name }))
-}
+    let mode = match (ret, with) {
+        (None, None) => InspectMode::Clone,
+        (Some(ret), Some(with)) => InspectMode::Project(Box::new(Projection { ret, with })),
+        (Some(_), None) => {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "projection mode requires `with = <projector>` alongside `ret = T`",
+            ));
+        }
+        (None, Some(_)) => {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "projection mode requires `ret = T` alongside `with = <projector>`",
+            ));
+        }
+    };
 
-/// Detect a `SkipMap<K, V>` type by trailing-path-segment match and
-/// return `(K, V)`. Path prefix (`crossbeam_skiplist::SkipMap`,
-/// `crossbeam_skiplist::map::SkipMap`, bare `SkipMap`) is ignored —
-/// users can have it in scope under any name.
-fn extract_skipmap_kv(ty: &Type) -> Option<(Type, Type)> {
-    let Type::Path(TypePath { path, .. }) = ty else {
-        return None;
-    };
-    let last = path.segments.last()?;
-    if last.ident != "SkipMap" {
-        return None;
-    }
-    let PathArguments::AngleBracketed(args) = &last.arguments else {
-        return None;
-    };
-    let mut iter = args.args.iter();
-    let k = match iter.next()? {
-        GenericArgument::Type(t) => t.clone(),
-        _ => return None,
-    };
-    let v = match iter.next()? {
-        GenericArgument::Type(t) => t.clone(),
-        _ => return None,
-    };
-    Some((k, v))
+    Ok(Some(InspectArgs { name, mode }))
 }

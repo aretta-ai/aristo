@@ -1,0 +1,5 @@
+error: projection mode requires `with = <projector>` alongside `ret = T`
+  --> tests/ui/fail/inspect_ret_without_with.rs:10:5
+   |
+10 |     #[inspect(ret = usize)]
+   |     ^^^^^^^^^^^^^^^^^^^^^^^

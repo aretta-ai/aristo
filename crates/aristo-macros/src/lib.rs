@@ -208,10 +208,12 @@ pub fn assume_stmt(input: TokenStream) -> TokenStream {
 
 /// `#[derive(aristo::instrument::Inspect)]`
 ///
-/// Derive macro for emitting snapshot accessors over `SkipMap<K, V>`
-/// fields tagged with `#[inspect(snapshot = T, name = "...")]`. Slice 36
-/// ships a parse-and-discard stub; the `inspect_<field>()` codegen lands
-/// in slice 37 (see `docs/ROADMAP.md` Phase 2).
+/// Derive macro emitting an `inspect_<field>()` snapshot accessor per
+/// `#[inspect]`-tagged field. Type-agnostic — it never inspects the field
+/// type. Bare `#[inspect]` clones the field (any `Clone` type); `#[inspect(ret
+/// = T, with = <projector>)]` projects it through any `Fn(&FieldType) -> T`
+/// (a named path or inline closure). `name = "..."` overrides the suffix.
+/// See `instrument::inspect` for the full contract.
 #[cfg(feature = "aristo_instrument")]
 #[proc_macro_derive(Inspect, attributes(inspect))]
 pub fn instrument_inspect(input: TokenStream) -> TokenStream {

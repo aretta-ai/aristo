@@ -1,29 +1,19 @@
-//! Clone mode — bare `#[inspect]` on a `SkipMap<K, V>` field emits
-//! `inspect_<field>(&self) -> Vec<(K, V)>` by cloning each entry's V.
-//! No projection type, no `From` impl, no boilerplate.
+//! Clone mode: bare `#[inspect]` clones the whole field and returns the
+//! field's own declared type. Type-agnostic — no per-collection codegen.
 
 use aristo::instrument::Inspect;
-use crossbeam_skiplist::SkipMap;
-
-#[derive(Clone)]
-pub struct File {
-    pub size: u64,
-}
+use std::collections::BTreeMap;
 
 #[derive(Inspect)]
-pub struct Cabinet {
+struct Store {
     #[inspect]
-    files: SkipMap<u64, File>,
+    entries: BTreeMap<u64, String>,
 }
 
 fn main() {
-    let c = Cabinet {
-        files: SkipMap::new(),
-    };
-    c.files.insert(7, File { size: 42 });
-
-    let snap: Vec<(u64, File)> = c.inspect_files();
-    assert_eq!(snap.len(), 1);
-    assert_eq!(snap[0].0, 7);
-    assert_eq!(snap[0].1.size, 42);
+    let mut entries = BTreeMap::new();
+    entries.insert(1u64, "a".to_string());
+    let s = Store { entries };
+    let snap: BTreeMap<u64, String> = s.inspect_entries();
+    assert_eq!(snap.get(&1).map(String::as_str), Some("a"));
 }

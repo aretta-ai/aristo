@@ -12,6 +12,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - `.aristo/index.toml` is now a gitignored, regenerable local cache instead of committed state. Every read command rebuilds it from your source and `.aristo/proofs/` on demand, so `aristo stamp` is optional and there are no more index merge conflicts or "you forgot to stamp" CI failures (index-as-local-cache).
 - CI freshness is now gated by `aristo verify --audit [--strict]`, which regenerates the index and reds on stale/refuted/orphan proofs. It replaces `aristo stamp --check`, which is no longer the gate.
 - `aristo init` now gitignores the full set of runtime `.aristo/` artifacts (the index cache, sessions, verify/critique queues, nudge state, critiques, proof backups, and the orphan-proof archive), appending to an existing `.gitignore` idempotently. Durable state (proofs, docs, specs, feedback, expectations, canon-matches) stays tracked.
+- macros: **BREAKING** `#[derive(Inspect)]` is now type-agnostic. Bare `#[inspect]` snapshots any `Clone` field (scalars, `Option<T>`, `BTreeMap`, a foreign `SkipMap`, …); `#[inspect(ret = T, with = <projector>)]` projects a field through any `Fn(&FieldType) -> T` — a named function or an inline closure — so atomics, lock-guarded state, and filtered/fanned-out projections are all expressible without per-type SDK support. The SkipMap-only positional `#[inspect(T)]` and `snapshot = T` forms are removed; migrate them to `ret = …, with = …`.
 
 ### Added
 - `aristo verify --audit [--strict]`: a no-network, no-token proof-freshness gate for CI.
