@@ -28,6 +28,10 @@ on:
   push:
     tags:
       - "v*.*.*"
+  # Manual trigger to re-run a partial/failed publish. The publish step is
+  # idempotent (already-published crates are skipped), so re-running after a
+  # transient failure safely finishes the release.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -49,18 +53,29 @@ jobs:
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
-      # Publish in dependency order (macros → meta → core → cli).
-      # cargo blocks until each crate is live in the index before
-      # returning, so the next step resolves the freshly-published dep.
-      - run: cargo publish -p aristo-macros
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - run: cargo publish -p aristo
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - run: cargo publish -p aristo-core
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - run: cargo publish -p aristo-cli
+      # Publish in dependency order (macros → meta → core → cli). cargo
+      # blocks until each crate is live in the index before returning, so
+      # the next crate resolves the freshly-published dep.
+      #
+      # Idempotent: a crate already at this version on crates.io is skipped
+      # (treated as success), so a re-run after a transient/partial failure
+      # finishes the release instead of erroring on "already uploaded". Any
+      # OTHER publish error still fails the job.
+      - name: Publish crates (dependency order, idempotent)
+        run: |
+          set -u
+          for c in aristo-macros aristo aristo-core aristo-cli; do
+            echo "::group::cargo publish -p $c"
+            if cargo publish -p "$c" 2>publish.err; then
+              echo "published $c"
+            elif grep -qiE "already (uploaded|exists)" publish.err; then
+              echo "$c is already on crates.io at this version — skipping"
+            else
+              cat publish.err >&2
+              echo "::error::cargo publish -p $c failed"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

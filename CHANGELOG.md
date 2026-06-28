@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- ci: the release workflow now publishes crates idempotently (any crate already at the target version is skipped) and supports a manual re-run, so a partial publish caused by a transient crates.io/network error can be re-run to completion instead of erroring on "already uploaded".
+
 ## [0.3.0] — 2026-06-28
 
 Minor release with two breaking changes. **Workflow:** `.aristo/index.toml` is now a regenerable local cache and CI freshness is gated by `aristo verify --audit`; the local pre-commit hook is deprecated and `aristo init` no longer auto-installs it (opt in with `aristo init --hook`). **Instrumentation:** `#[derive(Inspect)]` is now type-agnostic — bare `#[inspect]` snapshots any `Clone` field and `#[inspect(ret = T, with = <projector>)]` projects a field through any closure or function — and the `SkipMap`-only positional `#[inspect(T)]` / `snapshot = T` forms are removed.
