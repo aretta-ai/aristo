@@ -16,6 +16,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - macros: removed the `crossbeam-skiplist` dev-dependency from `aristo-macros`; the `Inspect` derive references no SUT-specific type, so the instrumentation surface is fully target-agnostic.
 - skills: the `aristo-instrumenting` skill now teaches the type-agnostic `Inspect` contract — bare `#[inspect]` clone for any `Clone` field and `#[inspect(ret = T, with = <projector>)]` projection (named fn or inline closure) for everything else, with the orphan-safety and filter/fan-out properties and atomic / lock / `Option` examples — replacing the old `SkipMap`-only framing and dropping the hand-write-an-accessor escape hatch.
 - docs(adr, roadmap): the `Inspect` `SkipMap`-narrowing implementation debt is now recorded as **resolved in v0.3.0** — closed by making the derive type-agnostic (whole-field clone / `with`-projection) rather than the per-shape codegen originally planned — and the removal of the positional `#[inspect(T)]` / `snapshot = T` forms is logged as the breaking design change that replaced them with `ret = …, with = …`.
+- docs: `docs/instrument-recipes.md` and `docs/instrument-conventions.md` are refreshed for the clone / projection forms — a named-projector recipe (with filter / fan-out) for foreign or concurrent collections, plus bare-`#[inspect]` clone, inline-closure, and atomic / lock-guarded recipes — replacing the removed `#[inspect(T)]` / `snapshot =` examples.
 
 ### Added
 - `aristo verify --audit [--strict]`: a no-network, no-token proof-freshness gate for CI.

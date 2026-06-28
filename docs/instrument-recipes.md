@@ -2,39 +2,9 @@
 
 Per-pattern cookbook. Each recipe shows the SUT-side code + the harness-side usage. For the underlying rules, see [`instrument-conventions.md`](./instrument-conventions.md).
 
-## Recipe 1 — Snapshot a `SkipMap`'s entries (clone)
+## Recipe 1 — Snapshot a foreign / concurrent collection (named projector)
 
-SUT side:
-```rust
-use aristo::instrument::Inspect;
-use crossbeam_skiplist::SkipMap;
-
-#[derive(Clone)]
-pub struct Transaction {
-    pub seq: u64,
-    pub status: TxStatus,
-}
-
-#[derive(Inspect)]
-pub struct MvStore {
-    #[cfg_attr(feature = "differential-accessors", inspect)]
-    txs: SkipMap<u64, Transaction>,
-}
-```
-
-Harness side:
-```rust
-let snap: Vec<(u64, Transaction)> = store.inspect_txs();
-// Lean comparison canonicalizes by sorting if needed:
-let mut canonical = snap;
-canonical.sort_by_key(|(k, _)| *k);
-```
-
-The `Vec<(K, V)>` is owned + point-in-time. Mutating the SUT after the call doesn't change `snap`.
-
-## Recipe 2 — Snapshot with a projection type (non-Clone V or canonicalization)
-
-When V contains `Arc<Mutex<_>>`, raw file handles, or other non-Clone internals, OR when the harness needs a subset view for Lean comparison:
+The canonical way to snapshot a concurrent or foreign-typed field (crossbeam's `SkipMap`, a third-party map, etc.) is projection mode with a **named** free-function projector. The projector takes `&Field` and returns the owned snapshot; the macro emits an *inherent* method on your struct, so the foreign type is never the `Self` of a foreign trait — no orphan-rule trouble, no `impl` on the field type, no `From<&V>`.
 
 SUT side:
 ```rust
@@ -53,27 +23,140 @@ pub struct TxnSnapshot {
     // locks intentionally omitted — harness doesn't need them.
 }
 
-impl From<&Transaction> for TxnSnapshot {
-    fn from(t: &Transaction) -> Self {
-        TxnSnapshot { seq: t.seq, status: t.status }
-    }
-}
-
 #[derive(Inspect)]
 pub struct MvStore {
-    #[cfg_attr(feature = "differential-accessors", inspect(TxnSnapshot))]
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(u64, TxnSnapshot)>, with = project_txs)
+    )]
     txs: SkipMap<u64, Transaction>,
+}
+
+fn project_txs(txs: &SkipMap<u64, Transaction>) -> Vec<(u64, TxnSnapshot)> {
+    txs.iter()
+        .map(|e| (*e.key(), TxnSnapshot { seq: e.value().seq, status: e.value().status }))
+        .collect()
 }
 ```
 
 Harness side:
 ```rust
 let snap: Vec<(u64, TxnSnapshot)> = store.inspect_txs();
-// TxnSnapshot is owned + projected; the Arc<Mutex<_>> internals stay
-// behind the safety boundary.
+// Owned + point-in-time; the Arc<Mutex<_>> internals stay behind the
+// safety boundary. Sort by key before a Lean comparison if needed.
 ```
 
-## Recipe 3 — Expose an internal constructor for the harness
+`ret` is required (a proc-macro cannot infer the return type) and is echoed verbatim. Because the projector sees the WHOLE field it can also FILTER (drop entries) and FAN-OUT (emit N rows from one entry) — strictly more than a per-entry mapping could express:
+
+```rust
+fn project_recovered(rows: &SkipMap<i64, Vec<u32>>) -> Vec<(i64, u32)> {
+    rows.iter()
+        .filter(|e| *e.key() < 0)                                  // keep a subset
+        .flat_map(|e| e.value().clone().into_iter().map(move |v| (*e.key(), v)))  // one entry → N rows
+        .collect()
+}
+```
+
+## Recipe 2 — Snapshot a `Clone` field directly (bare `#[inspect]`)
+
+When the field is already `Clone` and the harness wants the full data, bare `#[inspect]` clones it and returns the field's own declared type — no projector, no snapshot type.
+
+SUT side:
+```rust
+use aristo::instrument::Inspect;
+use std::collections::BTreeMap;
+
+#[derive(Clone)]
+pub struct Transaction {
+    pub seq: u64,
+    pub status: TxStatus,
+}
+
+#[derive(Inspect)]
+pub struct MvStore {
+    #[cfg_attr(feature = "differential-accessors", inspect)]
+    txs: BTreeMap<u64, Transaction>,
+}
+```
+
+Generates `pub fn inspect_txs(&self) -> BTreeMap<u64, Transaction> { self.txs.clone() }`. The `Clone` bound is deferred to rustc, so this works for any `Clone` field — scalars, `Option<T>`, `Vec<T>`, `HashMap`, `BTreeMap`, … Add `#[inspect(name = "x")]` to override the method suffix.
+
+Harness side:
+```rust
+let snap: BTreeMap<u64, Transaction> = store.inspect_txs();
+// Owned + point-in-time. Mutating the SUT after the call doesn't change snap.
+```
+
+## Recipe 3 — Snapshot a derived view (inline closure)
+
+For a one-line projection, skip the named function and inline a closure in `with`. The macro pins the closure's parameter type, so it needs NO `: &Type` annotation; `ret` still spells the return type.
+
+SUT side:
+```rust
+use aristo::instrument::Inspect;
+use std::collections::BTreeMap;
+
+#[derive(Inspect)]
+pub struct Index {
+    // Snapshot just the keys, in order — not the whole map.
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<u64>, with = |m| m.keys().copied().collect())
+    )]
+    entries: BTreeMap<u64, Record>,
+}
+```
+
+Harness side:
+```rust
+let ids: Vec<u64> = index.inspect_entries();
+```
+
+Reach for the named-function form (Recipe 1) when the body is non-trivial or shared across fields; the inline closure is for genuinely one-line views.
+
+## Recipe 4 — Snapshot a non-`Clone` field (atomic, lock-guarded)
+
+Projection mode is the tool for fields that aren't `Clone`: the projector reads out an owned value. No `From` impl, no trait on the field type.
+
+Atomic — load into an owned scalar:
+```rust
+use aristo::instrument::Inspect;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Inspect)]
+pub struct Clock {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = u64, with = |a| a.load(Ordering::Acquire))
+    )]
+    ticks: AtomicU64,
+}
+```
+
+Lock-guarded state — acquire, read, and project the guarded data into an owned snapshot (never hand a guard across the boundary):
+```rust
+use aristo::instrument::Inspect;
+use std::sync::RwLock;
+
+#[derive(Inspect)]
+pub struct Catalog {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<String>, with = |l| l.read().unwrap().clone())
+    )]
+    names: RwLock<Vec<String>>,
+}
+```
+
+Harness side:
+```rust
+let now: u64 = clock.inspect_ticks();
+let names: Vec<String> = catalog.inspect_names();
+```
+
+The snapshot is owned and point-in-time; the atomic / lock stays inside the SUT.
+
+## Recipe 5 — Expose an internal constructor for the harness
 
 SUT side:
 ```rust
@@ -98,7 +181,7 @@ let b = buf::Buf::new_for_test(64);
 
 The `_for_test` suffix (Rule 2) makes the boundary visible at every call site.
 
-## Recipe 4 — Expose an internal enum for harness construction
+## Recipe 6 — Expose an internal enum for harness construction
 
 SUT side:
 ```rust
@@ -125,7 +208,7 @@ match &op {
 
 No `as = "..."` is allowed on types (Rule 3); the macro raises visibility in place.
 
-## Recipe 5 — Expose every method in an impl block
+## Recipe 7 — Expose every method in an impl block
 
 SUT side:
 ```rust
@@ -151,7 +234,7 @@ assert_eq!(c.read(), 1);
 
 Useful when the SUT has many `pub(crate)` methods in one impl block that the harness needs en masse.
 
-## Recipe 6 — Insert a fault-injection point
+## Recipe 8 — Insert a fault-injection point
 
 SUT side:
 ```rust

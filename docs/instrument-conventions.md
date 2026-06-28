@@ -4,16 +4,16 @@ Five rules for using the instrument surface well. Each rule is one sentence, the
 
 > Companion docs: [`instrument-recipes.md`](./instrument-recipes.md) (per-pattern cookbook), [`decisions/instrument-surface.md`](./decisions/instrument-surface.md) (architecture ADR).
 
-## Rule 1. Pick clone or project per V's `Clone`-ability and projection needs
+## Rule 1. Pick clone or projection per the field
 
-`#[derive(Inspect)]` supports two modes per tagged `SkipMap<K, V>` field:
+`#[derive(Inspect)]` is type-agnostic — it never inspects the field's type. Each `#[inspect]`-tagged field becomes a `pub fn inspect_<field>(&self)` returning an owned snapshot. Two modes, chosen at the attribute:
 
-- `#[inspect]` — clone mode. Each V is cloned as-is. Use when V is `Clone` and the harness wants the full data shape.
-- `#[inspect(SnapshotType)]` — project mode. Each V is passed through `From<&V>::from`. Use when V isn't `Clone` (raw handles, `Arc<Mutex<_>>`, etc.) OR the harness needs a canonicalized / subset view for cross-implementation comparison.
+- `#[inspect]` — clone mode. Clones the whole field and returns its declared type verbatim. Use when the field is `Clone` and the harness wants the full data. `#[inspect(name = "x")]` overrides the method suffix.
+- `#[inspect(ret = T, with = <projector>)]` — projection mode. Hands the whole field to a `Fn(&FieldType) -> T` projector — a named function (reuse / complex bodies) or an inline closure (one-liners; no parameter annotation needed). Use for non-`Clone` fields (atomics, lock guards, raw handles), foreign types, or any canonicalized / filtered / fanned-out view. `ret` is required and echoed verbatim — a proc-macro cannot infer a closure's return type.
 
-**Why:** clone is cheaper for the user (zero boilerplate) but inflexible. Project covers the harder cases but requires a per-snapshot type + `From` impl. Picking the wrong mode produces either redundant types (project where clone suffices) or compile errors (clone where V isn't `Clone`).
+**Why:** clone is zero-boilerplate but only fits `Clone` fields and applies no transformation. Projection covers everything else and, because the projector sees the whole field, can filter and fan-out — strictly more than a per-entry mapping. It is also orphan-safe: the emitted method is inherent on your struct, so a foreign field type is never the `Self` of a foreign trait.
 
-**How to apply:** default to `#[inspect]`. Upgrade to `#[inspect(T)]` when `Clone` fails or the harness's equivalence check needs canonicalization at the projection point.
+**How to apply:** default to `#[inspect]` for a `Clone` field; switch to `#[inspect(ret = T, with = <projector>)]` when the field isn't `Clone` or the harness needs a transformed / canonical view. The positional `#[inspect(T)]` and `snapshot = T` forms were removed in v0.3.0 — migrate them to `ret = …, with = …`.
 
 ## Rule 2. Name `expose_pub` function wrappers with a `_for_test` suffix
 
