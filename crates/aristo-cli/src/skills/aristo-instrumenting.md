@@ -16,7 +16,7 @@ Aristo instrumentation is **codegen** that makes private SUT state observable to
 
 Three macros, one surface (`aristo::instrument`):
 
-- **`#[derive(Inspect)]`** — emits snapshot accessors over `SkipMap<K, V>` fields. The harness reads the snapshot to compare SUT state against a model implementation.
+- **`#[derive(Inspect)]`** — emits a snapshot accessor for any single tagged field. Type-agnostic: bare `#[inspect]` clones a `Clone` field; `#[inspect(ret = T, with = <projector>)]` projects anything else. The harness reads the snapshot to compare SUT state against a model implementation.
 - **`#[expose_pub]`** — raises visibility of `pub(crate)` items so the harness can construct them or reference them in signatures. Two flavors: function form (`as = "name_for_test"`) and type/impl form (no rename, just visibility lift).
 - **`yield_point!("label")`** — emits a runtime call into a thread-local hook that the harness uses for fault injection (pause / fail / re-order at controlled call sites).
 
@@ -36,23 +36,22 @@ Why this matters:
 
 Apply this when considering a candidate instrumentation site. The gate filters out instrumentation that adds code-cost without harness value.
 
-1. **Does a verification or differential-testing harness actually need this?** If no harness exists or is planned, don't pre-instrument speculatively. The macros aren't free — `#[derive(Inspect)]` emits per-field accessors; `yield_point!` produces a runtime call site.
-2. **Is the alternative materially worse?** A hand-written accessor is sometimes clearer than `#[derive(Inspect)]` when the projection logic is complex. Use the macro when it reduces boilerplate, not just for symmetry.
-3. **Does the SUT shape support it?** `Inspect` is type-agnostic by design, but the v0.2.5 / v0.2.6 implementation ships with `SkipMap<K, V>` field support only — other collections (`BTreeMap`, `HashMap`, `Vec`), scalars, and atomics error at the macro level with `"only supports SkipMap<K, V> fields in v1"`. This is implementation debt, not a deferred-by-design constraint (see `docs/decisions/instrument-surface.md` § "Implementation debt"). For those shapes today, hand-write the accessor; flag the gap when the user hits it so they know to track the widening.
+1. **Does a verification or differential-testing harness actually need this?** If no harness exists or is planned, don't pre-instrument speculatively. The macros aren't free — every `#[inspect]` field emits an accessor; every `yield_point!` produces a runtime call site.
+2. **Is `Inspect` the right shape for it?** `Inspect` is for `&self -> Snapshot` over ONE field with NO parameters. If you need a parameterized accessor, a predicate computed from several fields, or a `_for_test` constructor, that's `expose_pub`, not `Inspect`; a fault hook is `yield_point!`.
 
-If the answers are no / no / no, skip the macro and either hand-write the accessor or defer.
+Field shape is **never** a blocker. `Inspect` is type-agnostic: bare `#[inspect]` clones any `Clone` field, and `#[inspect(ret = T, with = <projector>)]` projects anything else (non-`Clone`, foreign, or transformed). There is no field shape the macro cannot reach, so **never hand-write an `inspect_*` accessor** — the SDK macros are the only sanctioned instrumentation. If you hit a shape you think the macro can't express, that's a gap to widen aristo for, not to route around.
 
 ## The three macros — when each fits
 
-### `#[derive(Inspect)]` for concurrent map snapshots
+### `#[derive(Inspect)]` for single-field snapshots
 
-Use when the SUT has one or more `SkipMap<K, V>` fields whose contents the harness wants to read mid-execution. Pick the mode by the V's shape:
+Use when the harness needs an owned, point-in-time snapshot of ONE private field. `#[derive(Inspect)]` is **type-agnostic** — it never inspects the field's type. Each `#[inspect]`-tagged field becomes a `pub fn inspect_<field>(&self)` returning an owned snapshot. Pick the mode at the attribute.
 
-**Clone mode** (bare `#[inspect]`) — when V is `Clone` and the harness wants the full data:
+**Clone mode** (bare `#[inspect]`) — snapshots any `Clone` field, returning the field's own declared type verbatim:
 
 ```rust
 use aristo::instrument::Inspect;
-use crossbeam_skiplist::SkipMap;
+use std::collections::BTreeMap;
 
 #[derive(Clone)]
 pub struct Transaction { pub seq: u64, pub status: TxStatus }
@@ -60,29 +59,56 @@ pub struct Transaction { pub seq: u64, pub status: TxStatus }
 #[derive(Inspect)]
 pub struct MvStore {
     #[cfg_attr(feature = "differential-accessors", inspect)]
-    txs: SkipMap<u64, Transaction>,
+    txs: BTreeMap<u64, Transaction>,
 }
 ```
 
-Generates `pub fn inspect_txs(&self) -> Vec<(u64, Transaction)>`.
+Generates `pub fn inspect_txs(&self) -> BTreeMap<u64, Transaction> { self.txs.clone() }`. The `Clone` bound is deferred to rustc, so this works for **any** `Clone` field — scalars, `Option<T>`, `Vec<T>`, `BTreeMap`, `HashMap`, a foreign `SkipMap`, … Add `#[inspect(name = "x")]` to override the method suffix (`inspect_x` instead of `inspect_txs`).
 
-**Project mode** (`#[inspect(T)]`) — when V isn't `Clone`, or when the harness needs a canonical / subset view:
+**Projection mode** (`#[inspect(ret = SnapTy, with = <projector>)]`) — snapshots everything else: non-`Clone` fields, or when the harness wants a canonical / filtered / fanned-out view. `with` is any expression callable as `Fn(&FieldType) -> SnapTy`:
 
 ```rust
-pub struct Transaction { pub seq: u64, pub locks: Arc<Mutex<Vec<LockHandle>>> }
-pub struct TxnSnapshot { pub seq: u64 }
-impl From<&Transaction> for TxnSnapshot { fn from(t: &Transaction) -> Self { TxnSnapshot { seq: t.seq } } }
+use aristo::instrument::Inspect;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Inspect)]
-pub struct MvStore {
-    #[cfg_attr(feature = "differential-accessors", inspect(TxnSnapshot))]
-    txs: SkipMap<u64, Transaction>,
+pub struct Clock {
+    // non-Clone field: load the atomic into an owned snapshot.
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = u64, with = |a| a.load(Ordering::Acquire))
+    )]
+    ticks: AtomicU64,
 }
 ```
 
-Generates `pub fn inspect_txs(&self) -> Vec<(u64, TxnSnapshot)>`. The Arc/Mutex internals stay behind the safety boundary.
+`with` is a path to a named free function (best for reuse / complex bodies) OR an inline closure (best for one-liners). The closure needs **no** parameter annotation — the macro pins the type for you. `ret` is **required** and echoed verbatim as the return type: a syntactic proc-macro cannot infer a closure's return type, so the ascription is mandatory. `name = "x"` may be added in any order.
 
-Either form accepts `name = "<suffix>"` to override the default method name. Untagged fields are ignored (no codegen).
+Use the named-function form when the projection is non-trivial or shared:
+
+```rust
+#[derive(Inspect)]
+pub struct MvStore {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(u64, TxnSnapshot)>, with = project_txs)
+    )]
+    txs: SkipMap<u64, Transaction>, // foreign type — no trait impl required
+}
+
+fn project_txs(txs: &SkipMap<u64, Transaction>) -> Vec<(u64, TxnSnapshot)> {
+    txs.iter().map(|e| (*e.key(), TxnSnapshot::from(e.value()))).collect()
+}
+```
+
+Two properties make projection mode the tool of choice for foreign / concurrent fields:
+
+- **Orphan-safe for any foreign field type.** The macro emits an *inherent* method on your struct and names the projector as an arbitrary expression, so a foreign field type (crossbeam's `SkipMap`, etc.) is never the `Self` of a foreign trait. You **never** need `impl SomeTrait for SkipMap` or `impl From<&SkipMap> for …` — the projector is just a function/closure taking `&Field`.
+- **Strictly more expressive than a per-entry mapping.** Because the projector sees the WHOLE field, it can FILTER (keep only some entries) and FAN-OUT (turn one map entry into N snapshot rows) — things a per-entry `From<&V>` could not do.
+
+Reach for projection mode for any non-`Clone` or transformed field: atomics (`|a| a.load(Ordering::Acquire)`), lock-guarded state (`|l| l.read().map(|g| g.clone())`), `Option<Foreign>` → `Option<Primitive>`, a filtered subset of a map, and so on.
+
+Untagged fields are ignored (no codegen). And remember the taxonomy: `Inspect` is for `&self -> Snapshot` over ONE field with NO parameters — anything parameterized or computed from multiple fields is `expose_pub` (below), not `Inspect`.
 
 ### `#[expose_pub]` for visibility raising
 
@@ -143,7 +169,7 @@ Labels follow the `<fn>.<before|after>_<action>` scheme. One label per call site
 
 Full discussion in `docs/instrument-conventions.md`. Summary:
 
-1. **Pick clone or project per V's `Clone`-ability and projection needs.** Default to clone; upgrade to project for non-Clone V or canonicalization.
+1. **Pick clone or projection per the field.** Bare `#[inspect]` clones any `Clone` field; `#[inspect(ret = T, with = <projector>)]` projects everything else (non-`Clone`, foreign, or transformed).
 2. **Name `expose_pub` function wrappers with a `_for_test` suffix.** `grep _for_test` finds every harness leak.
 3. **Don't rename types** — `expose_pub` on enum/struct/type/impl raises visibility in place; `as = "..."` is forbidden and rejected with an error.
 4. **Label `yield_point!` calls with `<fn>.before_<action>` / `<fn>.after_<action>`.** Consistent labels keep harness selectors stable across SUT changes.
@@ -165,9 +191,9 @@ pub struct MvStore { ... }
 
 Without the gate, every consumer compiles with the instrument surface active, defeating the opt-in design.
 
-### Using clone mode on a non-Clone V
+### Using clone mode on a non-`Clone` field
 
-If V holds an `Arc<Mutex<_>>`, raw `File`, or other non-Clone types, `#[inspect]` (clone mode) fails to compile at the macro-expansion site. Switch to `#[inspect(T)]` (project mode) and define a `From<&V> for T` impl that extracts just the Clone-safe fields.
+If a field holds an `AtomicU64`, `Arc<Mutex<_>>`, a raw `File`, or any other non-`Clone` type, bare `#[inspect]` (clone mode) fails to compile (rustc rejects the deferred `Clone` bound). Switch to projection mode — `#[inspect(ret = T, with = <projector>)]` — with a projector that reads out just the owned data you need (`|a| a.load(Ordering::Acquire)`, `|l| l.lock().unwrap().clone()`, …). No `From` impl and no trait on the field type are required.
 
 ### Renaming a type with `as = "..."`
 
@@ -205,7 +231,7 @@ When you write SUT code that the harness needs to observe, apply the relevant ma
 1. **Add the SUT field / method / fault-relevant operation.** Write the production code first.
 2. **Ask the content-gate questions.** Does the harness need to see this? Is the macro the right shape?
 3. **If yes**: apply the macro, with `cfg_attr` gating the consumer's preferred feature flag.
-4. **If no**: skip the macro. The harness can hand-write an accessor for one-off cases.
+4. **If no**: skip the macro. Don't instrument state no harness reads — but if a harness does read it, instrument it with the macro; never hand-write an `inspect_*` accessor as a one-off.
 
 End-of-diff sweeps systematically miss fault-injection points (because they're not visible in the production code shape) and produce inconsistent label / wrapper naming. Instrument inline, with the same rigor you apply to writing intents.
 
