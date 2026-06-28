@@ -14,7 +14,12 @@ pub enum AnnotationKind {
 
 /// Current verification state. The wire form uses kebab-case to keep
 /// `pending-deepen` readable on disk.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+///
+/// `Ord` follows declaration order (most-trusted first), which gives the
+/// `aristo metrics --json` `status_distribution` map a stable key order.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Status {
     /// Verified at the strongest method available; signature is current.

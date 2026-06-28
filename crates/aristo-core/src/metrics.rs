@@ -21,11 +21,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::badge::{compute_tier, Tier};
-use crate::index::{IndexEntry, IndexFile, VerifyLevel, VerifyMethod};
+use crate::index::{IndexEntry, IndexFile, Status, VerifyLevel, VerifyMethod};
 
 /// Schema version for the `aristo metrics --json` payload. Bump on any
-/// breaking change to [`Metrics`]'s shape so consumers can gate.
-pub const METRICS_SCHEMA_VERSION: u32 = 1;
+/// breaking change to [`Metrics`]'s shape so consumers can gate. v2 added the
+/// `by_verify_level` and `status_distribution` breakdowns (additive).
+pub const METRICS_SCHEMA_VERSION: u32 = 2;
 
 /// Index-derived project metrics — counts, the unverified backlog, and the
 /// tier/score. Serializes to the `aristo metrics --json` payload.
@@ -57,6 +58,30 @@ pub struct Metrics {
     pub tier: Tier,
     /// The `[0, 1]` visible score backing the tier.
     pub visible_score: f64,
+    /// Intents bucketed by their declared `verify` level — the pipeline each
+    /// targets (`assume`s have no verify level and are excluded).
+    pub by_verify_level: VerifyLevelCounts,
+    /// All annotations (intents + assumes) bucketed by current [`Status`].
+    /// Keyed by the kebab-case wire form (`verified`, `stale`, `unknown`, …),
+    /// in declaration order; absent states are omitted (treat as 0).
+    pub status_distribution: BTreeMap<Status, usize>,
+}
+
+/// Intent counts by declared `verify` level (the breakdown `aristo status`
+/// renders as text; surfaced here so one `Metrics` payload feeds every
+/// consumer).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VerifyLevelCounts {
+    /// `verify = "neural"` intents.
+    pub neural: usize,
+    /// `verify = "test"` intents.
+    pub test: usize,
+    /// `verify = "full"` intents.
+    pub full: usize,
+    /// `verify = true` intents (resolve to the project default at run time).
+    pub default_true: usize,
+    /// `verify = false` intents (documentation-only; never verifiable).
+    pub off_false: usize,
 }
 
 #[aristo::intent(
@@ -84,11 +109,21 @@ impl Metrics {
         let mut assumes = 0usize;
         let mut verifiable = 0usize;
         let mut verified_clean = 0usize;
+        let mut by_verify_level = VerifyLevelCounts::default();
+        let mut status_distribution: BTreeMap<Status, usize> = BTreeMap::new();
 
         for entry in index.entries.values() {
             match entry {
                 IndexEntry::Intent(e) => {
                     intents += 1;
+                    match e.verify {
+                        VerifyLevel::Method(VerifyMethod::Neural) => by_verify_level.neural += 1,
+                        VerifyLevel::Method(VerifyMethod::Test) => by_verify_level.test += 1,
+                        VerifyLevel::Method(VerifyMethod::Full) => by_verify_level.full += 1,
+                        VerifyLevel::Bool(true) => by_verify_level.default_true += 1,
+                        VerifyLevel::Bool(false) => by_verify_level.off_false += 1,
+                    }
+                    *status_distribution.entry(e.status).or_insert(0) += 1;
                     // verify=false intents are documentation-only: never
                     // verifiable, so excluded from the backlog and rate.
                     if !matches!(e.verify, VerifyLevel::Bool(false)) {
@@ -98,7 +133,10 @@ impl Metrics {
                         }
                     }
                 }
-                IndexEntry::Assume(_) => assumes += 1,
+                IndexEntry::Assume(e) => {
+                    assumes += 1;
+                    *status_distribution.entry(e.status).or_insert(0) += 1;
+                }
             }
         }
 
@@ -121,6 +159,8 @@ impl Metrics {
             verification_rate,
             tier: computation.tier,
             visible_score: computation.visible_score,
+            by_verify_level,
+            status_distribution,
         }
     }
 }
@@ -248,6 +288,51 @@ mod tests {
             intent(VerifyLevel::Bool(true), Status::Unknown),
         ]);
         assert_eq!(m.verified_clean + m.unverified, m.verifiable);
+    }
+
+    #[test]
+    fn by_verify_level_buckets_intents_by_pipeline() {
+        let m = metrics_of(vec![
+            intent(VerifyLevel::Method(VerifyMethod::Neural), Status::Neural),
+            intent(VerifyLevel::Method(VerifyMethod::Test), Status::Tested),
+            intent(VerifyLevel::Method(VerifyMethod::Full), Status::Verified),
+            intent(VerifyLevel::Method(VerifyMethod::Full), Status::Stale),
+            intent(VerifyLevel::Bool(true), Status::Unknown),
+            intent(VerifyLevel::Bool(false), Status::Unknown),
+            assume(), // assumes carry no verify level
+        ]);
+        assert_eq!(m.by_verify_level.neural, 1);
+        assert_eq!(m.by_verify_level.test, 1);
+        assert_eq!(m.by_verify_level.full, 2);
+        assert_eq!(m.by_verify_level.default_true, 1);
+        assert_eq!(m.by_verify_level.off_false, 1);
+    }
+
+    #[test]
+    fn status_distribution_counts_intents_and_assumes_omitting_absent_states() {
+        let m = metrics_of(vec![
+            intent(VerifyLevel::Method(VerifyMethod::Full), Status::Verified),
+            intent(VerifyLevel::Method(VerifyMethod::Neural), Status::Unknown),
+            assume(), // Status::Unknown
+        ]);
+        assert_eq!(m.status_distribution.get(&Status::Verified), Some(&1));
+        assert_eq!(
+            m.status_distribution.get(&Status::Unknown),
+            Some(&2),
+            "1 intent + 1 assume in Unknown"
+        );
+        assert_eq!(m.status_distribution.get(&Status::Stale), None);
+    }
+
+    #[test]
+    fn status_distribution_serializes_with_kebab_keys() {
+        let m = metrics_of(vec![intent(
+            VerifyLevel::Method(VerifyMethod::Full),
+            Status::PendingDeepen,
+        )]);
+        let v = serde_json::to_value(&m).unwrap();
+        assert_eq!(v["status_distribution"]["pending-deepen"], 1);
+        assert_eq!(v["schema_version"], 2);
     }
 
     #[test]

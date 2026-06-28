@@ -14,6 +14,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - `aristo init` now gitignores the full set of runtime `.aristo/` artifacts (the index cache, sessions, verify/critique queues, nudge state, critiques, proof backups, and the orphan-proof archive), appending to an existing `.gitignore` idempotently. Durable state (proofs, docs, specs, feedback, expectations, canon-matches) stays tracked.
 
 ### Added
+- `aristo metrics --json` now reports `by_verify_level` (intents per pipeline: neural / test / full / default-true / off-false) and `status_distribution` (annotation counts by verification status, kebab-case keys) — the full breakdown `aristo status` shows as text, now machine-readable from one payload for tooling and dashboards (metrics schema v2).
 - `aristo verify --audit [--strict]`: a no-network, no-token proof-freshness gate for CI.
 - `aristo init --hook`: opt-in installer for the (now deprecated) local pre-commit hook.
 
