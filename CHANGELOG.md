@@ -26,6 +26,7 @@ Minor release with two breaking changes. **Workflow:** `.aristo/index.toml` is n
 - docs: `docs/instrument-recipes.md` and `docs/instrument-conventions.md` are refreshed for the clone / projection forms — a named-projector recipe (with filter / fan-out) for foreign or concurrent collections, plus bare-`#[inspect]` clone, inline-closure, and atomic / lock-guarded recipes — replacing the removed `#[inspect(T)]` / `snapshot =` examples.
 
 ### Added
+- `aristo metrics --json` now reports `by_verify_level` (intents per pipeline: neural / test / full / default-true / off-false) and `status_distribution` (annotation counts by verification status, kebab-case keys) — the full breakdown `aristo status` shows as text, now machine-readable from one payload for tooling and dashboards (metrics schema v2).
 - `aristo verify --audit [--strict]`: a no-network, no-token proof-freshness gate for CI.
 - `aristo init --hook`: opt-in installer for the (now deprecated) local pre-commit hook.
 

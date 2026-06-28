@@ -318,7 +318,7 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "Status": {
-      "description": "Current verification state. The wire form uses kebab-case to keep `pending-deepen` readable on disk.",
+      "description": "Current verification state. The wire form uses kebab-case to keep `pending-deepen` readable on disk.\n\n`Ord` follows declaration order (most-trusted first), which gives the `aristo metrics --json` `status_distribution` map a stable key order.",
       "oneOf": [
         {
           "description": "Verified at the strongest method available; signature is current.",

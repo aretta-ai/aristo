@@ -315,6 +315,8 @@ mod tests {
             },
             tier,
             visible_score: score,
+            by_verify_level: Default::default(),
+            status_distribution: Default::default(),
         }
     }
 
