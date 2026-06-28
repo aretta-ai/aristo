@@ -52,7 +52,7 @@ Total: **13–18 commits, ~3–4 weeks of focused work** under aristo's CLAUDE.m
 
 ### Implementation debt landed in v0.2.5 / v0.2.6 (not deferred design)
 
-- **`Inspect` field-shape widening.** The slice-37 locked API was type-agnostic — bare `#[inspect]` cloning into the appropriate snapshot shape for any field type, `#[inspect(T)]` projecting via `From<&V>` similarly, with collection-vs-scalar coverage in the trybuild matrix. The v0.2.5 / v0.2.6 implementation narrowed to `SkipMap<K, V>` fields only as a shipping shortcut; the macro errors with `"only supports SkipMap<K, V> fields in v1"` for anything else. This is **implementation debt to close**, not deferred design — widening is additive and breaks no v0.2.6 consumer. See `docs/decisions/instrument-surface.md` § "Implementation debt".
+- **`Inspect` field-shape widening — RESOLVED in v0.3.0 (2026-06-28).** The slice-37 locked API was type-agnostic. The v0.2.5 / v0.2.6 implementation narrowed to `SkipMap<K, V>` fields only as a shipping shortcut (the macro errored with `"only supports SkipMap<K, V> fields in v1"` for anything else). v0.3.0 closes the debt — but by making the derive genuinely type-agnostic (whole-field clone / `with`-projection) rather than the per-shape codegen originally planned, and **breaking** the old `SkipMap`-only `#[inspect(T)]` / `snapshot = T` forms in the process (replaced by `#[inspect(ret = T, with = <projector>)]`). See `docs/decisions/instrument-surface.md` § "Implementation debt".
 
 ### Verification target
 

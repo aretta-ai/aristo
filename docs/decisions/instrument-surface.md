@@ -17,7 +17,7 @@ Three macro shapes recurred:
 
 Ship three proc-macros under `aristo::instrument`, gated by an opt-in `aristo_instrument` cargo feature:
 
-- `#[derive(Inspect)]` — generates snapshot accessors over tagged `SkipMap<K, V>` fields.
+- `#[derive(Inspect)]` — generates a snapshot accessor over each tagged field, type-agnostically (bare `#[inspect]` clones; `#[inspect(ret = T, with = <projector>)]` projects).
 - `#[expose_pub]` — raises visibility on functions, types, or impl blocks.
 - `yield_point!("label")` — emits a runtime call into a thread-local hook for fault-injection harnesses.
 
@@ -63,6 +63,8 @@ Both forms accept `name = "..."` to override the default `inspect_<field>` metho
 
 Rationale: the clone form covers cases where the V is already Clone (and a separate Snapshot type would be redundant); the positional T form is shorter at the call site. Consumers who need the projection (for non-Clone V, or for canonicalization before Lean comparison) still use it. **Locked in slice 37 design discussion.**
 
+**Update — v0.3.0 (2026-06-28):** the positional `#[inspect(T)]` and the original `#[inspect(snapshot = T)]` forms were **removed** (breaking design change). Both were per-entry projections hard-wired to `SkipMap<K, V>` via `From<&V>`. They are replaced by `#[inspect(ret = T, with = <projector>)]`, where `<projector>` is any `Fn(&FieldType) -> T` (a named function or an inline closure) over the *whole* field. `ret` is a mandatory, verbatim return-type ascription — a syntactic proc-macro cannot infer a closure's return type. Clone mode (bare `#[inspect]`, optionally `name = "…"`) is unchanged in spelling but now returns the field's own declared type rather than a `SkipMap`-flattened `Vec<(K, V)>`. See the resolved "Implementation debt" section below for why the whole-field projector — not per-shape codegen — is what made the derive type-agnostic.
+
 ### `expose_pub` on impl blocks — included in v1
 
 The handoff's §8 Q4 recommends deferring impl-block support to a later phase ("zero consumer demand so far"). Slice 39 includes it: the macro raises visibility on every `fn` inside the block (associated consts / types untouched). Removes a category of hand-written wrappers that consumers would otherwise need for SUT impl blocks with many `pub(crate)` methods. **Locked in slice 39 design discussion.**
@@ -82,21 +84,25 @@ The handoff places `_pending/instrument/<NN>_<name>.md` scenarios for the trybui
 ### Negative
 
 - Adds one feature flag + one runtime symbol to the meta-crate's public surface. Not free, but bounded.
-- **`Inspect` ships narrower than the locked design** (see "Implementation debt" below). Consumers with non-`SkipMap` field types hand-write the accessor until the debt closes.
+- Projection mode requires an explicit `ret = T` ascription: a syntactic proc-macro cannot infer a closure's return type, so the return type must be spelled out at the attribute. Unremovable, but local and explicit. (Historical: `Inspect` shipped `SkipMap`-only in v0.2.5 / v0.2.6 — see "Implementation debt" below — now **full and type-agnostic** as of v0.3.0.)
 
-## Implementation debt — `Inspect` narrowed to `SkipMap`
+## Implementation debt — `Inspect` narrowed to `SkipMap` (RESOLVED v0.3.0)
+
+> **Status: RESOLVED in v0.3.0 (2026-06-28).** The narrowing described below is closed; see the resolution note at the end of this section. The historical narrative is kept so future readers understand what the gap was and how it was eventually closed (not by the per-shape codegen this section originally anticipated).
 
 The locked slice-37 design was **type-agnostic**: bare `#[inspect]` cloning V into the appropriate snapshot shape for the field type (`Vec<(K, V)>` for `SkipMap` / `BTreeMap` / `HashMap`, `Vec<V>` for `Vec<V>`, owned `V` for scalars and atomics), and `#[inspect(T)]` projecting via `From<&V>` similarly. The locked-API table in the slice-37 discussion explicitly enumerated per-shape return types and called out "collection + scalar" trybuild coverage.
 
 What v0.2.5 / v0.2.6 actually shipped is **`SkipMap` fields only** — any other field type errors at the macro level with `"only supports SkipMap<K, V> fields in v1 (other collection types and scalars are deferred to a future release)"`. The error text and the original "Out of scope (Phase 3 candidates)" list both made the gap look like a deferred-by-design choice; it wasn't. It was an implementation shortcut taken during slice-37 codegen — the `extract_skipmap_kv` dispatch was reused from the handoff doc's narrower v1 scope and the design amendment we'd actually locked got dropped on the floor.
 
-This section exists to record the gap honestly so future readers don't reverse-engineer the narrowing as a locked design choice. The narrow surface is what's stable in v0.2.5 / v0.2.6; widening to the full locked-design shape is **purely additive** (no consumer of v0.2.6's surface breaks) and is genuine outstanding work — implementation debt to close, not deferred design. Tracked in the "Outstanding implementation work" list below.
+This section exists to record the gap honestly so future readers don't reverse-engineer the narrowing as a locked design choice. The narrow surface is what was stable in v0.2.5 / v0.2.6.
+
+**Resolution — v0.3.0 (2026-06-28).** The widening shipped, but **not** by the per-shape codegen this section originally anticipated. Instead the derive was made genuinely **type-agnostic**: the macro never inspects the field's type at all. Bare `#[inspect]` clones the whole field and echoes its declared type as the return type (the `Clone` bound deferred to rustc); `#[inspect(ret = T, with = <projector>)]` hands the whole field to a `Fn(&FieldType) -> T` projector. This subsumes every shape the per-shape table enumerated — `BTreeMap`, `HashMap`, `Vec`, scalars, `Option<T>`, atomics — and goes further: a whole-field projector can FILTER and FAN-OUT (the prior per-entry `From<&V>` could not), and it is orphan-safe for any foreign field type (the macro emits an inherent method and names the projector as an arbitrary expression, so the foreign type is never the `Self` of a foreign trait). The one breaking cost was dropping the old `SkipMap`-only positional `#[inspect(T)]` / `snapshot = T` forms (recorded above). The debt is closed; the surface is now full and target-agnostic.
 
 ## Outstanding implementation work
 
 Closing these doesn't change the surface for existing consumers; each is additive.
 
-- **`Inspect` field-shape widening.** Per-shape codegen for `BTreeMap<K, V>`, `HashMap<K, V>`, `Vec<V>`, scalars, atomics, and the scalar projection of `Option<T>` form. Matches the slice-37 locked-API table. Trybuild matrix widens to cover each shape × each mode.
+- ~~**`Inspect` field-shape widening.**~~ **Resolved in v0.3.0** — see the "Implementation debt" section above. Closed by making the derive type-agnostic (whole-field clone / `with`-projection) rather than per-shape codegen. The trybuild matrix now covers clone (scalar, `Option`, `BTreeMap`) and projection (named fn, inline closure, atomic, filter/fan-out, generic struct).
 - **`yield_point!` in `const fn` detection.** Macro-level diagnostic when the call site is `const fn`, replacing the cryptic rustc downstream error. v1 lets rustc speak; worth a custom diagnostic if it proves confusing in real use.
 
 ## Out of scope (genuine Phase 3 candidates)
