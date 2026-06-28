@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/aretta-ai/aristo"
@@ -26,13 +26,13 @@ keywords = ["annotation", "verification", "intent", "proof", "sdk"]
 # Each crate's manifest sets `readme = "../../README.md"` directly.
 
 [workspace.dependencies]
-aristo = { path = "crates/aristo", version = "0.2.9" }
-aristo-core = { path = "crates/aristo-core", version = "0.2.9" }
+aristo = { path = "crates/aristo", version = "0.3.0" }
+aristo-core = { path = "crates/aristo-core", version = "0.3.0" }
 # default-features = false at the workspace level so the `aristo` meta-crate
 # can route the user's `aristo_check` feature through (member crates that
 # want defaults on can override per-dep, and the macro crate itself has
 # its own default-on for direct `cargo test` runs).
-aristo-macros = { path = "crates/aristo-macros", version = "0.2.9", default-features = false }
+aristo-macros = { path = "crates/aristo-macros", version = "0.3.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-28
+
+Minor release with two breaking changes. **Workflow:** `.aristo/index.toml` is now a regenerable local cache and CI freshness is gated by `aristo verify --audit`; the local pre-commit hook is deprecated and `aristo init` no longer auto-installs it (opt in with `aristo init --hook`). **Instrumentation:** `#[derive(Inspect)]` is now type-agnostic — bare `#[inspect]` snapshots any `Clone` field and `#[inspect(ret = T, with = <projector>)]` projects a field through any closure or function — and the `SkipMap`-only positional `#[inspect(T)]` / `snapshot = T` forms are removed.
+
 ### Changed
 - `.aristo/index.toml` is now a gitignored, regenerable local cache instead of committed state. Every read command rebuilds it from your source and `.aristo/proofs/` on demand, so `aristo stamp` is optional and there are no more index merge conflicts or "you forgot to stamp" CI failures (index-as-local-cache).
 - CI freshness is now gated by `aristo verify --audit [--strict]`, which regenerates the index and reds on stale/refuted/orphan proofs. It replaces `aristo stamp --check`, which is no longer the gate.
