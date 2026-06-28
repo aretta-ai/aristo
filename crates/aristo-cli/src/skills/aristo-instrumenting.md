@@ -195,6 +195,22 @@ Without the gate, every consumer compiles with the instrument surface active, de
 
 If a field holds an `AtomicU64`, `Arc<Mutex<_>>`, a raw `File`, or any other non-`Clone` type, bare `#[inspect]` (clone mode) fails to compile (rustc rejects the deferred `Clone` bound). Switch to projection mode — `#[inspect(ret = T, with = <projector>)]` — with a projector that reads out just the owned data you need (`|a| a.load(Ordering::Acquire)`, `|l| l.lock().unwrap().clone()`, …). No `From` impl and no trait on the field type are required.
 
+### Projector visibility across modules
+
+A `with =` projector is named from the **tagged struct's module** — that's where the derive emits the `inspect_*` method. If the projector lives in a *different* module (e.g. a child `differential` submodule), it must be reachable from the struct's module, and if its signature names a **module-private value type**, prefer `pub(super)` over `pub(crate)`:
+
+```rust
+// In a child `differential` module, projecting a field whose value type
+// (`TransactionState`) is private to the parent module:
+pub(super) fn project_finalized(
+    m: &SkipMap<TxID, TransactionState>,
+) -> Vec<(TxID, FinalStateSnapshot)> {
+    m.iter().map(|e| (*e.key(), FinalStateSnapshot::from(e.value()))).collect()
+}
+```
+
+`pub(crate)` would compile but trips rustc's `private_interfaces` lint — it exposes the private value type more widely than the projector needs. `pub(super)` is exactly enough to be named from the parent module's derive. (For a projector in the *same* module as the struct, a bare `fn` is fine.)
+
 ### Renaming a type with `as = "..."`
 
 ```rust

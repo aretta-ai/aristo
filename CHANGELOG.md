@@ -10,6 +10,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ### Changed
 - ci: the release workflow now publishes crates idempotently (any crate already at the target version is skipped) and supports a manual re-run, so a partial publish caused by a transient crates.io/network error can be re-run to completion instead of erroring on "already uploaded".
+- skills: the `aristo-instrumenting` skill now covers projector visibility across modules — a `with =` projector over a module-private value type should be `pub(super)`, not `pub(crate)` (which trips rustc's `private_interfaces` lint).
 
 ## [0.3.0] — 2026-06-28
 
