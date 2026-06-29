@@ -153,6 +153,20 @@ fn clear_ground_hashes(pf: &mut ProofFile) {
 /// Walk every step in the proof (verified / counterexample trigger /
 /// inconclusive partial) and fill in computed hashes for any Ground
 /// whose hash is currently None. Returns the count of fields stamped.
+#[aristo::intent(
+    "After a verdict passes validation, every ground whose freshness \
+     anchor is empty is refilled with a hash recomputed from the current \
+     state it references — the annotation's text or the cited source \
+     lines — so the persisted proof always carries an anchor for later \
+     staleness checks. An empty anchor is never left in place, whether \
+     the proof was authored without one or the migration path cleared it \
+     beforehand. Narrowing this refill to a subset of ground kinds, or \
+     running it only when something was explicitly cleared, would \
+     silently leave proofs unanchored and disable their staleness \
+     detection.",
+    verify = "test",
+    id = "stamp_refills_empty_ground_anchors"
+)]
 pub(crate) fn stamp_ground_hashes(
     pf: &mut ProofFile,
     index: &IndexFile,
