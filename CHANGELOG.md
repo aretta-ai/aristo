@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-29
+
+Minor release: a new fault-injection primitive plus the full aretta-bench instrument response. **`fault_point!`** is the fault-injection counterpart to `yield_point!` — it returns a `Decision` the SUT branches on, backed by a capturing `set_fault_hook`, for injecting *interior* faults (additive; `yield_point!` / `set_hook` are unchanged). The instrument cookbook gains Recipes 9–14 and the `aristo-instrumenting` skill is expanded, closing the gap reports from the aretta-bench suite and the Turso fork. Two `#[derive(Inspect)]` codegen fixes (lint-clean generated accessors, field-spanned clone errors) round it out. No breaking changes.
+
 ### Added
 - macros: `fault_point!("label")` — a fault-injection counterpart to `yield_point!`. It returns a `Decision` (`Continue` / `Inject(u64)`) the SUT branches on to inject a fault, backed by a capturing, stateful `set_fault_hook` so a harness can express "fail the Nth call" without a process-global static. aristo carries *when* to inject plus an opaque code; the SUT owns *what* the fault is (return its own error, drop bytes). Additive and `aristo_instrument`-gated — `yield_point!` / `set_hook` are unchanged. Reach for it only for *interior* faults (a point inside one operation with no I/O-seam call); seam-boundary faults live in the harness's own fault-I/O impl.
 
