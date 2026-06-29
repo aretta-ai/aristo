@@ -26,7 +26,7 @@ pub struct TxnSnapshot {
 #[derive(Inspect)]
 pub struct MvStore {
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = Vec<(u64, TxnSnapshot)>, with = project_txs)
     )]
     txs: SkipMap<u64, Transaction>,
@@ -74,7 +74,7 @@ pub struct Transaction {
 
 #[derive(Inspect)]
 pub struct MvStore {
-    #[cfg_attr(feature = "differential-accessors", inspect)]
+    #[cfg_attr(feature = "aristo-instr", inspect)]
     txs: BTreeMap<u64, Transaction>,
 }
 ```
@@ -100,7 +100,7 @@ use std::collections::BTreeMap;
 pub struct Index {
     // Snapshot just the keys, in order — not the whole map.
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = Vec<u64>, with = |m| m.keys().copied().collect())
     )]
     entries: BTreeMap<u64, Record>,
@@ -126,7 +126,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Inspect)]
 pub struct Clock {
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = u64, with = |a| a.load(Ordering::Acquire))
     )]
     ticks: AtomicU64,
@@ -141,7 +141,7 @@ use std::sync::RwLock;
 #[derive(Inspect)]
 pub struct Catalog {
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = Vec<String>, with = |l| l.read().unwrap().clone())
     )]
     names: RwLock<Vec<String>>,
@@ -166,7 +166,7 @@ mod buf {
     pub struct Buf { /* ... */ }
 
     impl Buf {
-        #[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub(as = "new_for_test"))]
+        #[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub(as = "new_for_test"))]
         pub(crate) fn new(capacity: usize) -> Self { /* ... */ }
     }
 }
@@ -187,7 +187,7 @@ SUT side:
 ```rust
 use aristo::instrument::expose_pub;
 
-#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub)]
+#[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub)]
 pub(crate) enum ParsedOp {
     Get(u64),
     Put(u64, Vec<u8>),
@@ -216,7 +216,7 @@ use aristo::instrument::expose_pub;
 
 pub struct Counter { pub n: u64 }
 
-#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub)]
+#[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub)]
 impl Counter {
     pub(crate) fn bump(&mut self) { self.n += 1; }
     pub(crate) fn read(&self) -> u64 { self.n }
@@ -240,7 +240,7 @@ SUT side:
 ```rust
 fn write_header(&mut self) -> std::io::Result<()> {
     self.header.version = self.new_version;
-    #[cfg(feature = "differential-accessors")]
+    #[cfg(feature = "aristo-instr")]
     aristo::instrument::yield_point!("write_header.before_fsync");
     self.pwrite(&header_bytes, 0)?;
     self.file.sync_all()?;
@@ -282,10 +282,10 @@ When an outer projector ranges over a collection of an inner struct — `Vec<Inn
 SUT side:
 ```rust
 // in `mod sstable` — BlockMeta and SsTable.metas are private here
-#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+#[cfg_attr(feature = "aristo-instr", derive(aristo::instrument::Inspect))]
 pub struct SsTable {
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = Vec<(Vec<u8>, Vec<u8>, u32)>,
                 with = |ms| ms.iter().map(|m| (m.first_key.clone(), m.last_key.clone(), m.len)).collect())
     )]
@@ -293,10 +293,10 @@ pub struct SsTable {
 }
 
 // in `mod db` — composes the inner accessor across the collection
-#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+#[cfg_attr(feature = "aristo-instr", derive(aristo::instrument::Inspect))]
 pub struct Db {
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = Vec<(usize, Vec<u8>, Vec<u8>, u32)>,
                 with = |ssts| ssts.iter().enumerate()
                     .flat_map(|(i, s)| s.inspect_metas().into_iter().map(move |(f, l, n)| (i, f, l, n)))
@@ -323,10 +323,10 @@ SUT side:
 // `mod container` — Container is private and non-`Clone`
 pub enum Container { Array(Vec<u16>), Bitset(Box<[u64; 1024]>) }
 
-#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+#[cfg_attr(feature = "aristo-instr", derive(aristo::instrument::Inspect))]
 pub struct Bitmap {
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = Vec<(u16, &'static str, u32)>,
                 with = |cs| cs.iter().map(|(&hi, c)| {
                     let kind = match c { Container::Array(_) => "array", Container::Bitset(_) => "bitset" };
@@ -353,7 +353,7 @@ Use projection-to-tag to **observe** representation; reach for `expose_pub` (Rec
 
 ```rust
 // lib.rs, at the crate root
-#[cfg(feature = "differential-accessors")]
+#[cfg(feature = "aristo-instr")]
 #[doc(hidden)]
 pub use crate::record::parse_record;
 ```
@@ -364,11 +364,11 @@ If the target is `pub(crate)` rather than `pub`, a re-export alone fails (`error
 
 ```rust
 // in `mod record`
-#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub)]
+#[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub)]
 pub(crate) struct Frame { /* … */ }   // -> pub + #[doc(hidden)] when the feature is on
 
 // at the crate root
-#[cfg(feature = "differential-accessors")]
+#[cfg(feature = "aristo-instr")]
 #[doc(hidden)]
 pub use crate::record::Frame;
 ```
@@ -377,7 +377,7 @@ pub use crate::record::Frame;
 
 ```rust
 // in `mod io` — only public (and only lint-checked) under the feature
-#[cfg_attr(feature = "differential-accessors", allow(clippy::len_without_is_empty))]
+#[cfg_attr(feature = "aristo-instr", allow(clippy::len_without_is_empty))]
 pub trait BlockIo {
     fn len(&self) -> u64;
     // append, sync, …
@@ -403,7 +403,7 @@ pub struct Db { io: Box<dyn BlockIo>, /* … */ }
 impl Db {
     pub fn open(dir: &Path) -> std::io::Result<Self> { Self::with_io(dir, Box::new(StdIo::open(dir)?)) }
 
-    #[cfg(any(test, feature = "fault-injection"))]
+    #[cfg(any(test, feature = "aristo-instr"))]
     pub fn open_with_io(dir: &Path, io: Box<dyn BlockIo>) -> std::io::Result<Self> { Self::with_io(dir, io) }
 }
 ```
@@ -430,7 +430,7 @@ fn rebuild_index(&mut self) -> Result<(), Corrupt> {
     for entry in self.scan() {
         // Pure in-memory work — nothing calls the I/O seam here, so there is
         // no seam method for the harness to fail. Expose an explicit handle:
-        #[cfg(feature = "fault-injection")]
+        #[cfg(feature = "aristo-instr")]
         if let Decision::Inject(_) = fault_point!("index.rebuild.per_entry") {
             return Err(Corrupt);   // the SUT decides what "fail" means
         }
@@ -466,11 +466,11 @@ The opaque `u64` in `Inject(u64)` is a harness→SUT channel for *parameterized*
 
 SUT side — just the field snapshots (clone or projection, as usual):
 ```rust
-#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+#[cfg_attr(feature = "aristo-instr", derive(aristo::instrument::Inspect))]
 pub struct MvStore {
-    #[cfg_attr(feature = "differential-accessors", inspect(ret = Vec<(TxID, TxnState)>, with = project_txs))]
+    #[cfg_attr(feature = "aristo-instr", inspect(ret = Vec<(TxID, TxnState)>, with = project_txs))]
     txs: SkipMap<TxID, Transaction>,
-    #[cfg_attr(feature = "differential-accessors", inspect(ret = Vec<(TxID, TxnState)>, with = project_finalized))]
+    #[cfg_attr(feature = "aristo-instr", inspect(ret = Vec<(TxID, TxnState)>, with = project_finalized))]
     finalized: SkipMap<TxID, TransactionState>,
 }
 ```

@@ -59,7 +59,7 @@ pub struct Transaction { pub seq: u64, pub status: TxStatus }
 
 #[derive(Inspect)]
 pub struct MvStore {
-    #[cfg_attr(feature = "differential-accessors", inspect)]
+    #[cfg_attr(feature = "aristo-instr", inspect)]
     txs: BTreeMap<u64, Transaction>,
 }
 ```
@@ -76,7 +76,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct Clock {
     // non-Clone field: load the atomic into an owned snapshot.
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = u64, with = |a| a.load(Ordering::Acquire))
     )]
     ticks: AtomicU64,
@@ -91,7 +91,7 @@ Use the named-function form when the projection is non-trivial or shared:
 #[derive(Inspect)]
 pub struct MvStore {
     #[cfg_attr(
-        feature = "differential-accessors",
+        feature = "aristo-instr",
         inspect(ret = Vec<(u64, TxnSnapshot)>, with = project_txs)
     )]
     txs: SkipMap<u64, Transaction>, // foreign type — no trait impl required
@@ -119,7 +119,7 @@ Use when the harness needs to call a `pub(crate)` function, construct a `pub(cra
 
 ```rust
 impl Buf {
-    #[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub(as = "new_for_test"))]
+    #[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub(as = "new_for_test"))]
     pub(crate) fn new(capacity: usize) -> Self { /* ... */ }
 }
 ```
@@ -129,7 +129,7 @@ Generates a `pub fn new_for_test(capacity: usize) -> Self { Self::new(capacity) 
 **Type form** — no `as = "..."`; the macro raises the existing visibility in place:
 
 ```rust
-#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub)]
+#[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub)]
 pub(crate) enum ParsedOp { Get(u64), Put(u64, Vec<u8>) }
 ```
 
@@ -138,7 +138,7 @@ Same name, lifted visibility, `#[doc(hidden)]` added so the public-rustdoc surfa
 **Impl-block form** — raises visibility on every method inside, in place. Associated consts / types are left unchanged:
 
 ```rust
-#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub)]
+#[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub)]
 impl Counter {
     pub(crate) fn bump(&mut self) { /* ... */ }
     pub(crate) fn read(&self) -> u64 { /* ... */ }
@@ -154,7 +154,7 @@ Use at SUT code locations a harness wants to *observe* — confirm a code point 
 ```rust
 fn write_header(&mut self) -> std::io::Result<()> {
     self.header.version = self.new_version;
-    #[cfg(feature = "differential-accessors")]
+    #[cfg(feature = "aristo-instr")]
     aristo::instrument::yield_point!("write_header.before_fsync");
     self.pwrite(&header_bytes, 0)?;
     self.file.sync_all()?;
@@ -175,7 +175,7 @@ use aristo::instrument::{fault_point, Decision};
 
 fn rebuild_index(&mut self) -> Result<(), Corrupt> {
     for entry in self.scan() {
-        #[cfg(feature = "fault-injection")]
+        #[cfg(feature = "aristo-instr")]
         if let Decision::Inject(_) = fault_point!("index.rebuild.per_entry") {
             return Err(Corrupt);   // the SUT decides what "fail" means
         }
@@ -208,7 +208,7 @@ Full discussion in `docs/instrument-conventions.md`. Summary:
 pub struct MvStore { ... }
 
 // RIGHT — the macro only applies when the consumer's feature is on:
-#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+#[cfg_attr(feature = "aristo-instr", derive(aristo::instrument::Inspect))]
 pub struct MvStore { ... }
 ```
 

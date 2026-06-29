@@ -51,7 +51,7 @@ The `aristo_instrument` feature isn't on by default. When off, the macros aren't
 
 **How to apply:**
 ```rust
-#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub(as = "new_for_test"))]
+#[cfg_attr(feature = "aristo-instr", aristo::instrument::expose_pub(as = "new_for_test"))]
 pub(crate) fn new(buf_size: usize) -> Self { ... }
 ```
-`yield_point!` calls follow the same pattern via `cfg!` or a `#[cfg(feature = "...")]` block around the call site. Consumers alias the feature name they prefer onto `aristo_instrument` in their own `Cargo.toml` (see handoff §2.4).
+`yield_point!` / `fault_point!` calls follow the same pattern via `cfg!` or a `#[cfg(feature = "...")]` block around the call site. Consumers alias a feature name onto `aristo_instrument` in their own `Cargo.toml` — `aristo-instr = ["aristo/aristo_instrument"]`. The SDK accepts any alias, but the **aretta consumers standardize on `aristo-instr`** (used throughout these recipes); match it unless you have a reason not to.
