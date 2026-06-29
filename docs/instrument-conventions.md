@@ -41,6 +41,8 @@ Five rules for using the instrument surface well. Each rule is one sentence, the
 
 **How to apply:** the label scheme is `<fn-name>.<before|after>_<action-being-instrumented>`. Examples: `"write_header.before_fsync"`, `"commit.after_log_sync"`, `"flush.before_unlock"`. One label per call site, no duplicates within a function.
 
+**Caveat — `yield_point!` is for I/O / fault boundaries, not passive probes.** A pure in-memory data structure has nothing to pause or fail, so a yield point there can only announce that an event happened — and its `&'static str` label can't carry *which* item or *how big*. To observe such state (a representation switch, a size threshold), use an `Inspect` projection instead: it returns typed, owned data the harness asserts on directly (Recipe 10), with no global `static` to route observations through. Reach for `yield_point!` only where there is a real I/O or fault boundary to inject at.
+
 ## Rule 5. Gate macro invocations with `cfg_attr` for production-build cost zero
 
 The `aristo_instrument` feature isn't on by default. When off, the macros aren't exported, so call sites must be feature-gated by the consumer.

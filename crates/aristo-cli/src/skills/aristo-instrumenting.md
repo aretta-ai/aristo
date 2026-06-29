@@ -244,6 +244,22 @@ inspect(ret = Vec<(usize, Vec<u8>, u32)>, with = |ssts| ssts.iter().enumerate()
 
 See `docs/instrument-recipes.md` Recipe 9. The one genuine wall: a *foreign / sealed* inner type you can't annotate exposes only its public API — rare, and not something to route around with `unsafe`.
 
+### An item trapped in a private module
+
+`expose_pub` raises an item's visibility but can't open the module around it. A `pub` item inside a private `mod` (`mod record; pub fn parse_record …`) still isn't reachable — `error[E0603]: module `record` is private`. Don't change `mod record` to `pub mod record` (that edits the SUT's structure). Re-export the item at the crate root instead, feature-gated and doc-hidden:
+
+```rust
+#[cfg(feature = "...")]   // #[cfg], not #[cfg_attr] — a bare private `use` would warn when off
+#[doc(hidden)]
+pub use crate::record::parse_record;
+```
+
+A `pub(crate)` target needs the two-step: `expose_pub` it to `pub` first, then re-export. See `docs/instrument-recipes.md` Recipe 11.
+
+### `yield_point!` on a pure (non-I/O) data structure
+
+`yield_point!` is for *pausing / failing* at an I/O or fault boundary. A pure in-memory structure has nothing to fail, so a yield point there only announces an event — and the `&'static str` label can't carry *which* item or *how big*. To observe pure state (a representation switch, a cardinality threshold), use an `Inspect` projection: `inspect_*()` returns typed, owned data the harness asserts on directly (e.g. `(high, "array"/"bitset", cardinality)`), with no global `static` to route observations through. Reserve `yield_point!` for genuine I/O / fault seams.
+
 ### Renaming a type with `as = "..."`
 
 ```rust

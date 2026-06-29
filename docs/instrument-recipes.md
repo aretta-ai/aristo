@@ -346,3 +346,61 @@ assert_eq!(repr, vec![(0u16, "bitset", 4097)]);
 ```
 
 Use projection-to-tag to **observe** representation; reach for `expose_pub` (Recipe 6) only when the harness must **construct** the enum.
+
+## Recipe 11 — Re-export an item trapped in a private module
+
+`expose_pub` raises an item's *visibility*, but it can't open the *module* around it. A common SUT shape is a private module that re-exports a few names (`mod record; … pub use record::Lsn;`). An item that's already `pub` *inside* such a module still isn't reachable from the harness — `error[E0603]: module `record` is private`. Add a feature-gated, doc-hidden re-export at the crate root, exactly like the crate's own public API but `instr`-gated:
+
+```rust
+// lib.rs, at the crate root
+#[cfg(feature = "differential-accessors")]
+#[doc(hidden)]
+pub use crate::record::parse_record;
+```
+
+The harness now names `yourcrate::parse_record`; the module stays private, and `#[doc(hidden)]` keeps it out of public rustdoc. Use `#[cfg(...)]`, **not** `#[cfg_attr(..., expose_pub)]`: a re-export this simple needs no macro, and a bare private `use` left behind when the feature is off would trip `unused_imports` under `-D warnings`.
+
+If the target is `pub(crate)` rather than `pub`, a re-export alone fails (`error[E0364]: … cannot be re-exported`). Raise the item with `expose_pub` first, then re-export — both gated on the same feature:
+
+```rust
+// in `mod record`
+#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub)]
+pub(crate) struct Frame { /* … */ }   // -> pub + #[doc(hidden)] when the feature is on
+
+// at the crate root
+#[cfg(feature = "differential-accessors")]
+#[doc(hidden)]
+pub use crate::record::Frame;
+```
+
+## Recipe 12 — Simulate a crash (SUT-side I/O seam)
+
+Crash-durability — *acknowledged data survives a crash; never-fsync'd data may not* — is the one property aristo's macros can't reach. Testing it means **dropping the bytes that were never fsync'd**, which requires substituting the engine's I/O underneath it. A fake disk has to implement *your* I/O contract, so the seam is SUT-specific and lives in the SUT, not in an aristo macro. This is the single spec class where the harness contact surface legitimately exceeds annotations — and it's clean dependency injection, not a hack.
+
+1. Route I/O through a trait the SUT owns, stored as a trait object:
+```rust
+pub trait BlockIo {
+    fn append(&mut self, bytes: &[u8]) -> std::io::Result<u64>;
+    fn sync(&mut self) -> std::io::Result<()>;
+    // read_at, len, …
+}
+
+pub struct Db { io: Box<dyn BlockIo>, /* … */ }
+```
+2. Keep the production constructor hard-coding real I/O; add a **test-only injecting** constructor (feature- or `cfg(test)`-gated):
+```rust
+impl Db {
+    pub fn open(dir: &Path) -> std::io::Result<Self> { Self::with_io(dir, Box::new(StdIo::open(dir)?)) }
+
+    #[cfg(any(test, feature = "fault-injection"))]
+    pub fn open_with_io(dir: &Path, io: Box<dyn BlockIo>) -> std::io::Result<Self> { Self::with_io(dir, io) }
+}
+```
+3. Write a fault-injecting `BlockIo` that models a crash — never-synced appends live in a buffer a modeled crash discards; only `sync()` makes them durable, and you can fail the *N*th `sync`:
+```rust
+struct FaultyIo { durable: Vec<u8>, pending: Vec<u8>, fail_sync_after: Option<usize> }
+// crash() drops `pending`; sync() moves `pending` into `durable` (or errors on the Nth call).
+```
+4. Drive it from the harness: build the `Db` with `FaultyIo`, run the workload, trigger the crash, reopen against the durable bytes, and assert acknowledged data survived while un-synced data is gone.
+
+`yield_point!` (Recipe 8) still marks *where* a crash is injected mid-operation, but dropping the bytes is the fault I/O's job. Aristo's macros cover everything *around* the seam — `Inspect` to snapshot recovered state, `expose_pub` for a `_for_test` constructor — but the I/O trait itself is yours to design.
