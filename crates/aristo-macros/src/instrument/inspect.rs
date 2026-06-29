@@ -42,7 +42,8 @@
 //! automatic; `name = "…"` overrides only the suffix.
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Expr, Fields, Type};
 
 pub(crate) fn derive(input: TokenStream) -> TokenStream {
@@ -98,7 +99,12 @@ fn derive_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         let method_ident = format_ident!("inspect_{}", method_suffix);
 
         let accessor = match args.mode {
-            InspectMode::Clone => quote! {
+            InspectMode::Clone => quote_spanned! { field_ty.span() =>
+                // Span the accessor at the field's type so a deferred
+                // `FieldTy: Clone is not satisfied` error points at the
+                // offending field rather than the whole `#[derive(Inspect)]`.
+                // The remedy is projection mode (`ret = …, with = …`); see the
+                // `inspect_clone_non_clone_field` UI fixture. (aretta-bench C4.)
                 pub fn #method_ident(&self) -> #field_ty {
                     ::core::clone::Clone::clone(&self.#field_name)
                 }

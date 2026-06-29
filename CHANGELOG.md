@@ -14,6 +14,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - docs: new instrument Recipe 10 shows projection-to-tag for *observing* a crate-private enum's representation (match its variants to a `&'static str` inside the SUT), distinct from `expose_pub` (Recipe 6) which is for *constructing* the enum — observing never needs to leak the type.
 
 ### Fixed
+- macros: a bare `#[inspect]` (clone mode) on a non-`Clone` field now reports the `Clone`-bound error on the offending field instead of the whole `#[derive(Inspect)]`, so you can see which field to switch to projection mode; the authoring skill spells out the projection escape (including that rustc's "derive Clone on the element" hint should be ignored for a private element you can't edit).
 - macros: `#[derive(Inspect)]` now emits `#[allow(clippy::type_complexity)]` on its generated accessor impl, so a projection to a naturally-nested type (e.g. a per-SST `Vec<Vec<(…)>>` view) no longer trips clippy on code the consumer can't annotate — you keep the natural snapshot shape instead of flattening it just to satisfy the lint.
 
 ## [0.3.1] — 2026-06-28

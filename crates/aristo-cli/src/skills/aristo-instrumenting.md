@@ -193,7 +193,9 @@ Without the gate, every consumer compiles with the instrument surface active, de
 
 ### Using clone mode on a non-`Clone` field
 
-If a field holds an `AtomicU64`, `Arc<Mutex<_>>`, a raw `File`, or any other non-`Clone` type, bare `#[inspect]` (clone mode) fails to compile (rustc rejects the deferred `Clone` bound). Switch to projection mode — `#[inspect(ret = T, with = <projector>)]` — with a projector that reads out just the owned data you need (`|a| a.load(Ordering::Acquire)`, `|l| l.lock().unwrap().clone()`, …). No `From` impl and no trait on the field type are required.
+If a field holds an `AtomicU64`, `Arc<Mutex<_>>`, a raw `File`, or any other non-`Clone` type, bare `#[inspect]` (clone mode) fails to compile (rustc rejects the deferred `Clone` bound). The error points at the **offending field** (`the trait bound `Foo: Clone` is not satisfied`), so you can see exactly which one to fix. Switch that field to projection mode — `#[inspect(ret = T, with = <projector>)]` — with a projector that reads out just the owned data you need (`|a| a.load(Ordering::Acquire)`, `|l| l.lock().unwrap().clone()`, …). No `From` impl and no trait on the field type are required.
+
+One trap with the rustc message: for a **`Clone` container of a non-`Clone` element** (e.g. `BTreeMap<u16, PrivateEnum>`), rustc blames the inner type and suggests `consider annotating `PrivateEnum` with #[derive(Clone)]`. **Ignore that suggestion** — the element is SUT code the test boundary forbids you to edit. Project the *field* instead (`with = |m| m.iter().map(|(k, v)| (k.clone(), tag(v))).collect()`), reading the element down to a harness-nameable shape inside the closure.
 
 ### Cloning a field whose type is crate-private
 
