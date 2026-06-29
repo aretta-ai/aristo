@@ -8,6 +8,11 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- docs: new instrument Recipe 9 (layered derive) shows how to snapshot an inner type's module-private fields across a `Vec<Inner>` / `Map<K, Inner>` — put a second `#[derive(Inspect)]` on the inner type and compose its generated `inspect_*` in the outer projector — with the foreign/sealed-inner limit called out and a matching authoring-skill pitfall.
+- docs: instrument Rule 1 and a skill pitfall now warn that bare `#[inspect]` (clone mode) returns the field's type verbatim, so a crate-private field type — or a private enum inside it — yields a snapshot the harness can't name or `match`; project to a harness-nameable type instead.
+- docs: new instrument Recipe 10 shows projection-to-tag for *observing* a crate-private enum's representation (match its variants to a `&'static str` inside the SUT), distinct from `expose_pub` (Recipe 6) which is for *constructing* the enum — observing never needs to leak the type.
+
 ### Fixed
 - macros: `#[derive(Inspect)]` now emits `#[allow(clippy::type_complexity)]` on its generated accessor impl, so a projection to a naturally-nested type (e.g. a per-SST `Vec<Vec<(…)>>` view) no longer trips clippy on code the consumer can't annotate — you keep the natural snapshot shape instead of flattening it just to satisfy the lint.
 

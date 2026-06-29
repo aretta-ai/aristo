@@ -106,7 +106,7 @@ Two properties make projection mode the tool of choice for foreign / concurrent 
 - **Orphan-safe for any foreign field type.** The macro emits an *inherent* method on your struct and names the projector as an arbitrary expression, so a foreign field type (crossbeam's `SkipMap`, etc.) is never the `Self` of a foreign trait. You **never** need `impl SomeTrait for SkipMap` or `impl From<&SkipMap> for …` — the projector is just a function/closure taking `&Field`.
 - **Strictly more expressive than a per-entry mapping.** Because the projector sees the WHOLE field, it can FILTER (keep only some entries) and FAN-OUT (turn one map entry into N snapshot rows) — things a per-entry `From<&V>` could not do.
 
-Reach for projection mode for any non-`Clone` or transformed field: atomics (`|a| a.load(Ordering::Acquire)`), lock-guarded state (`|l| l.read().map(|g| g.clone())`), `Option<Foreign>` → `Option<Primitive>`, a filtered subset of a map, and so on.
+Reach for projection mode for any non-`Clone` or transformed field: atomics (`|a| a.load(Ordering::Acquire)`), lock-guarded state (`|l| l.read().map(|g| g.clone())`), `Option<Foreign>` → `Option<Primitive>`, a filtered subset of a map, a crate-private enum's variant tag (`|c| match c { A(_) => "a", B(_) => "b" }` — observe representation without leaking the type; see Recipe 10), and so on.
 
 Untagged fields are ignored (no codegen). And remember the taxonomy: `Inspect` is for `&self -> Snapshot` over ONE field with NO parameters — anything parameterized or computed from multiple fields is `expose_pub` (below), not `Inspect`.
 
@@ -195,6 +195,19 @@ Without the gate, every consumer compiles with the instrument surface active, de
 
 If a field holds an `AtomicU64`, `Arc<Mutex<_>>`, a raw `File`, or any other non-`Clone` type, bare `#[inspect]` (clone mode) fails to compile (rustc rejects the deferred `Clone` bound). Switch to projection mode — `#[inspect(ret = T, with = <projector>)]` — with a projector that reads out just the owned data you need (`|a| a.load(Ordering::Acquire)`, `|l| l.lock().unwrap().clone()`, …). No `From` impl and no trait on the field type are required.
 
+### Cloning a field whose type is crate-private
+
+Clone mode returns the field's declared type verbatim, so a `pub` accessor can leak a crate-private type. The snapshot compiles, but the harness crate can't fully use it: it reads `pub` primitive fields yet cannot name the type for an annotation or `match` a private enum variant (`error[E0603]`). Project to a harness-nameable type — the `with` closure runs inside the SUT where the private type is in scope, and only the public `ret` crosses the boundary:
+
+```rust
+// Entry / Tag are crate-private; project to primitives instead of cloning:
+#[cfg_attr(feature = "...", inspect(
+    ret = Vec<(Vec<u8>, u64, u32, bool)>,
+    with = |kd| kd.iter().map(|(k, e)| (k.clone(), e.offset, e.len, matches!(e.tag, Tag::Tombstone))).collect()
+))]
+keydir: BTreeMap<Vec<u8>, Entry>,
+```
+
 ### Projector visibility across modules
 
 A `with =` projector is named from the **tagged struct's module** — that's where the derive emits the `inspect_*` method. If the projector lives in a *different* module (e.g. a child `differential` submodule), it must be reachable from the struct's module, and if its signature names a **module-private value type**, prefer `pub(super)` over `pub(crate)`:
@@ -210,6 +223,24 @@ pub(super) fn project_finalized(
 ```
 
 `pub(crate)` would compile but trips rustc's `private_interfaces` lint — it exposes the private value type more widely than the projector needs. `pub(super)` is exactly enough to be named from the parent module's derive. (For a projector in the *same* module as the struct, a bare `fn` is fine.)
+
+### Reaching an inner type's private fields (layered derive)
+
+A `with =` projector over `Vec<Inner>` / `BTreeMap<K, Inner>` can only see `Inner`'s **public** API — it's type-checked in the outer struct's module, so it can't read fields private to `Inner`'s own module (`error: field … is private`). Don't reach for `expose_pub` or hand-write an accessor. Put a second `#[derive(Inspect)]` on `Inner` that projects the private field **inside `Inner`'s module**; the generated `inspect_*` is `pub`, so the outer projector composes it:
+
+```rust
+// inner: projects its own private fields, in its own module
+#[cfg_attr(feature = "...", derive(aristo::instrument::Inspect))]
+pub struct SsTable {
+    #[cfg_attr(feature = "...", inspect(ret = Vec<(Vec<u8>, u32)>, with = |ms| ms.iter().map(|m| (m.first_key.clone(), m.len)).collect()))]
+    metas: Vec<BlockMeta>,   // private here
+}
+// outer: composes inner.inspect_metas() across the collection
+inspect(ret = Vec<(usize, Vec<u8>, u32)>, with = |ssts| ssts.iter().enumerate()
+    .flat_map(|(i, s)| s.inspect_metas().into_iter().map(move |(k, n)| (i, k, n))).collect())
+```
+
+See `docs/instrument-recipes.md` Recipe 9. The one genuine wall: a *foreign / sealed* inner type you can't annotate exposes only its public API — rare, and not something to route around with `unsafe`.
 
 ### Renaming a type with `as = "..."`
 

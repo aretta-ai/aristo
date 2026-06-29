@@ -274,3 +274,75 @@ fn header_write_survives_pre_fsync_crash() {
 ```
 
 Labels follow the `<fn>.<before|after>_<action>` scheme (Rule 4). One label per call site keeps the harness selector unambiguous.
+
+## Recipe 9 — Reach an inner type's private fields (layered derive)
+
+When an outer projector ranges over a collection of an inner struct — `Vec<Inner>`, `BTreeMap<K, Inner>` — and needs fields that are **private to the inner type's own module**, the outer projector can't read them: a `with` projector is type-checked with the visibility of the module where its `#[derive(Inspect)]` is invoked, so a projector in `db` cannot name `SsTable`'s private fields. Put a *second* `#[derive(Inspect)]` on the inner type, projecting its private fields **inside the inner module** (where they're visible); the generated `inspect_*` is `pub`, so the outer projector composes it across the collection.
+
+SUT side:
+```rust
+// in `mod sstable` — BlockMeta and SsTable.metas are private here
+#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+pub struct SsTable {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(Vec<u8>, Vec<u8>, u32)>,
+                with = |ms| ms.iter().map(|m| (m.first_key.clone(), m.last_key.clone(), m.len)).collect())
+    )]
+    metas: Vec<BlockMeta>,  // private to this module
+}
+
+// in `mod db` — composes the inner accessor across the collection
+#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+pub struct Db {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(usize, Vec<u8>, Vec<u8>, u32)>,
+                with = |ssts| ssts.iter().enumerate()
+                    .flat_map(|(i, s)| s.inspect_metas().into_iter().map(move |(f, l, n)| (i, f, l, n)))
+                    .collect())
+    )]
+    ssts: Vec<SsTable>,
+}
+```
+
+Harness side:
+```rust
+let rows: Vec<(usize, Vec<u8>, Vec<u8>, u32)> = db.inspect_ssts();
+// (sst_index, first_key, last_key, block_len), flattened across every SST.
+```
+
+The inner derive's `inspect_metas()` does the private read inside `sstable`; the outer projector only ever touches the inner type's **public** `inspect_*` surface. **Limit:** this works because you can annotate the inner type. If the inner type is foreign or sealed — you can't add `#[derive(Inspect)]` to it — only its public API is reachable. That is a genuine Rust visibility wall, not an aristo gap; it is rare, and the answer is not `unsafe` or a hand-written accessor.
+
+## Recipe 10 — Observe a private enum's representation (projection-to-tag)
+
+To *observe* which variant a crate-private enum is in — a representation invariant, a state-machine phase — project it to a stable tag (a `&'static str`, or a small plain enum) inside the SUT. The `with` closure runs in the enum's own module, so it can `match` private variants; only the tag crosses the boundary, and the enum stays fully private. Contrast Recipe 6, which raises the *whole* enum to `pub` + `#[doc(hidden)]` for harness **construction** — observation never needs that.
+
+SUT side:
+```rust
+// `mod container` — Container is private and non-`Clone`
+pub enum Container { Array(Vec<u16>), Bitset(Box<[u64; 1024]>) }
+
+#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+pub struct Bitmap {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(u16, &'static str, u32)>,
+                with = |cs| cs.iter().map(|(&hi, c)| {
+                    let kind = match c { Container::Array(_) => "array", Container::Bitset(_) => "bitset" };
+                    (hi, kind, c.len() as u32)
+                }).collect())
+    )]
+    containers: BTreeMap<u16, Container>,
+}
+```
+
+Harness side:
+```rust
+// Assert the array→bitset switch happened at the right cardinality —
+// without ever naming Container outside its crate.
+let repr: Vec<(u16, &'static str, u32)> = bitmap.inspect_containers();
+assert_eq!(repr, vec![(0u16, "bitset", 4097)]);
+```
+
+Use projection-to-tag to **observe** representation; reach for `expose_pub` (Recipe 6) only when the harness must **construct** the enum.

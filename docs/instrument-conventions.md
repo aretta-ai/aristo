@@ -15,6 +15,8 @@ Five rules for using the instrument surface well. Each rule is one sentence, the
 
 **How to apply:** default to `#[inspect]` for a `Clone` field; switch to `#[inspect(ret = T, with = <projector>)]` when the field isn't `Clone` or the harness needs a transformed / canonical view. The positional `#[inspect(T)]` and `snapshot = T` forms were removed in v0.3.0 — migrate them to `ret = …, with = …`.
 
+**Caveat — clone returns the field's type verbatim.** If that type, or a type reachable inside it (a private enum in a field), is crate-private, the harness receives the value but cannot name it for an annotation nor `match` its private variants from outside the crate (`error[E0603]`). Project such fields instead: the `with` closure runs inside the SUT where the private type is in scope, so only a harness-nameable `ret` (primitives, or a `pub` snapshot struct) crosses the boundary.
+
 ## Rule 2. Name `expose_pub` function wrappers with a `_for_test` suffix
 
 `#[expose_pub(as = "<name>")]` on a `pub(crate)` function requires a wrapper name. Convention: the wrapper name carries a `_for_test` (or `_for_harness`) suffix.
