@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- macros: `#[derive(Inspect)]` now emits `#[allow(clippy::type_complexity)]` on its generated accessor impl, so a projection to a naturally-nested type (e.g. a per-SST `Vec<Vec<(…)>>` view) no longer trips clippy on code the consumer can't annotate — you keep the natural snapshot shape instead of flattening it just to satisfy the lint.
+
 ## [0.3.1] — 2026-06-28
 
 ### Added
