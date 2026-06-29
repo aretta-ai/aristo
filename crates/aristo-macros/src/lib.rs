@@ -243,3 +243,15 @@ pub fn expose_pub(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn yield_point(input: TokenStream) -> TokenStream {
     instrument::yield_point::function_like(input)
 }
+
+/// `aristo::instrument::fault_point!("label")`
+///
+/// Function-like macro that emits a call into the fault-decision hook
+/// `aristo::instrument::__fault_point`, returning the harness's `Decision`
+/// for the SUT to branch on. Observe-only callers want `yield_point!`; this
+/// is for injecting interior faults. Gated on `aristo_instrument`.
+#[cfg(feature = "aristo_instrument")]
+#[proc_macro]
+pub fn fault_point(input: TokenStream) -> TokenStream {
+    instrument::fault_point::function_like(input)
+}

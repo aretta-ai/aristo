@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- macros: `fault_point!("label")` — a fault-injection counterpart to `yield_point!`. It returns a `Decision` (`Continue` / `Inject(u64)`) the SUT branches on to inject a fault, backed by a capturing, stateful `set_fault_hook` so a harness can express "fail the Nth call" without a process-global static. aristo carries *when* to inject plus an opaque code; the SUT owns *what* the fault is (return its own error, drop bytes). Additive and `aristo_instrument`-gated — `yield_point!` / `set_hook` are unchanged. Reach for it only for *interior* faults (a point inside one operation with no I/O-seam call); seam-boundary faults live in the harness's own fault-I/O impl.
+
 ### Changed
 - docs: new instrument Recipe 9 (layered derive) shows how to snapshot an inner type's module-private fields across a `Vec<Inner>` / `Map<K, Inner>` — put a second `#[derive(Inspect)]` on the inner type and compose its generated `inspect_*` in the outer projector — with the foreign/sealed-inner limit called out and a matching authoring-skill pitfall.
 - docs: instrument Rule 1 and a skill pitfall now warn that bare `#[inspect]` (clone mode) returns the field's type verbatim, so a crate-private field type — or a private enum inside it — yields a snapshot the harness can't name or `match`; project to a harness-nameable type instead.
@@ -15,6 +18,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - docs: new instrument Recipe 11 + a skill pitfall show how to reach a `pub` item stuck in a private module — a feature-gated, doc-hidden crate-root `pub use` (not `expose_pub`, which raises item visibility but can't open the module) — with the `pub(crate)` two-step and the `#[cfg]`-not-`#[cfg_attr]` gating note.
 - docs: new instrument Recipe 12 documents the SUT-side I/O-seam pattern for crash-durability testing (an injectable I/O trait + a fault-injecting impl that drops un-synced bytes) — the one spec class where the harness contact surface legitimately exceeds aristo annotations; the macros cover everything around the seam.
 - docs: instrument Rule 4 and a skill pitfall now clarify that `yield_point!` is for I/O / fault boundaries — to observe a pure in-memory structure's state (a representation switch, a size threshold) use a typed `Inspect` projection instead of a passive, label-only yield point.
+- docs: new instrument Recipe 13 documents `fault_point!` for interior faults (a point inside one operation with no seam call); Recipe 12 is refined to make clear no macro fires for the headline crash / Nth-sync faults (they live in your own fault-I/O impl); and the authoring skill gains `fault_point!` plus a clarified observe-vs-inject split — `yield_point!` is observe-only (returns `()`), `fault_point!` injects.
+- docs: instrument Recipe 11 now warns that a feature-gated re-export can wake public-API clippy lints that were dormant while the item was module-private (e.g. `len_without_is_empty` on a `len`-bearing trait) — silence them with a `#[cfg_attr(feature = "...", allow(...))]` gated to the same feature so production stays clean.
 
 ### Fixed
 - macros: a bare `#[inspect]` (clone mode) on a non-`Clone` field now reports the `Clone`-bound error on the offending field instead of the whole `#[derive(Inspect)]`, so you can see which field to switch to projection mode; the authoring skill spells out the projection escape (including that rustc's "derive Clone on the element" hint should be ignored for a private element you can't edit).

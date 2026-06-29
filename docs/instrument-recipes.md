@@ -373,6 +373,17 @@ pub(crate) struct Frame { /* … */ }   // -> pub + #[doc(hidden)] when the feat
 pub use crate::record::Frame;
 ```
 
+**Heads-up — a re-export can wake dormant public-API lints.** While the item was module-private, clippy lints that only apply to *public* API stayed quiet. Re-exporting makes it public API (under the feature), so those lints fire — e.g. a trait with a `len` method but no `is_empty` trips `clippy::len_without_is_empty`. Silence it with a **feature-gated** allow on the item, gated to the *same* feature as the re-export, so production (feature off) is untouched and the lint is only suppressed while it's awake:
+
+```rust
+// in `mod io` — only public (and only lint-checked) under the feature
+#[cfg_attr(feature = "differential-accessors", allow(clippy::len_without_is_empty))]
+pub trait BlockIo {
+    fn len(&self) -> u64;
+    // append, sync, …
+}
+```
+
 ## Recipe 12 — Simulate a crash (SUT-side I/O seam)
 
 Crash-durability — *acknowledged data survives a crash; never-fsync'd data may not* — is the one property aristo's macros can't reach. Testing it means **dropping the bytes that were never fsync'd**, which requires substituting the engine's I/O underneath it. A fake disk has to implement *your* I/O contract, so the seam is SUT-specific and lives in the SUT, not in an aristo macro. This is the single spec class where the harness contact surface legitimately exceeds annotations — and it's clean dependency injection, not a hack.
@@ -403,4 +414,48 @@ struct FaultyIo { durable: Vec<u8>, pending: Vec<u8>, fail_sync_after: Option<us
 ```
 4. Drive it from the harness: build the `Db` with `FaultyIo`, run the workload, trigger the crash, reopen against the durable bytes, and assert acknowledged data survived while un-synced data is gone.
 
-`yield_point!` (Recipe 8) still marks *where* a crash is injected mid-operation, but dropping the bytes is the fault I/O's job. Aristo's macros cover everything *around* the seam — `Inspect` to snapshot recovered state, `expose_pub` for a `_for_test` constructor — but the I/O trait itself is yours to design.
+Notice what is **not** here: no aristo macro fires for the headline faults. The crash (`crash()` discards `pending`) and "fail the Nth sync" (a counter in `FaultyIo::sync` returning `Err`) both live in your own fault I/O — the harness owns the failing function, because each fault coincides with a seam call it already controls. Aristo's macros cover everything *around* the seam (`Inspect` to snapshot recovered state, `expose_pub` for a `_for_test` constructor); the only fault that needs a macro is an *interior* one — a point inside one operation with no seam call to attach to (Recipe 13). The I/O trait itself is yours to design.
+
+## Recipe 13 — Inject an interior fault (`fault_point!`)
+
+Recipe 12's faults all land on a seam call — `sync`, `append`, `crash` — so the harness expresses them inside its own `FaultyIo`, no aristo macro needed. `fault_point!` is for the residual case: a fault at a point *inside* one operation with **no seam call to grab** — a non-I/O failure (an allocation, a checksum verify, an in-memory rebuild) or a crash mid-construction of a single write, before the bytes ever reach the seam.
+
+`fault_point!("label")` returns a `Decision` the SUT branches on; the harness installs a capturing policy via `set_fault_hook` (the counter lives in the closure — no global static).
+
+SUT side — an interior fault with no I/O call at the point:
+```rust
+use aristo::instrument::{fault_point, Decision};
+
+fn rebuild_index(&mut self) -> Result<(), Corrupt> {
+    for entry in self.scan() {
+        // Pure in-memory work — nothing calls the I/O seam here, so there is
+        // no seam method for the harness to fail. Expose an explicit handle:
+        #[cfg(feature = "fault-injection")]
+        if let Decision::Inject(_) = fault_point!("index.rebuild.per_entry") {
+            return Err(Corrupt);   // the SUT decides what "fail" means
+        }
+        self.insert(entry);
+    }
+    Ok(())
+}
+```
+
+Harness side — fail the 3rd entry, counter captured in the closure:
+```rust
+use aristo::instrument::{set_fault_hook, Decision};
+
+let mut n = 0;
+set_fault_hook(Some(Box::new(move |label| {
+    if label == "index.rebuild.per_entry" {
+        n += 1;
+        if n == 3 { return Decision::Inject(0); }
+    }
+    Decision::Continue
+})));
+// drive the rebuild; assert it fails cleanly on the 3rd entry and recovers.
+set_fault_hook(None);
+```
+
+The opaque `u64` in `Inject(u64)` is a harness→SUT channel for *parameterized* faults — a short-write prefix length, an errno, a timeout — that aristo never interprets; use a plain `Inject(_)` when the site has a single effect.
+
+**When NOT to use it:** if the fault coincides with a seam call (a failing `sync`/`append`, a crash that drops buffered bytes), put it in your `FaultyIo` (Recipe 12) — `fault_point!` would just be a less-direct way to reach the same seam. As you decompose the seam finer, more "interior" faults become seam-boundary; `fault_point!`'s domain is the faults that stay strictly inside one un-decomposed operation.

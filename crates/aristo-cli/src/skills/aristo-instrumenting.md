@@ -14,13 +14,14 @@ This skill is the **mechanical-layer** counterpart to `aristo-authoring` (which 
 
 Aristo instrumentation is **codegen** that makes private SUT state observable to a verification harness. Unlike annotations (intent/assume), which are pure compile-time signal, instrumentation produces real runtime accessors / wrappers / hook points that the harness's code references.
 
-Three macros, one surface (`aristo::instrument`):
+Four macros, one surface (`aristo::instrument`):
 
 - **`#[derive(Inspect)]`** — emits a snapshot accessor for any single tagged field. Type-agnostic: bare `#[inspect]` clones a `Clone` field; `#[inspect(ret = T, with = <projector>)]` projects anything else. The harness reads the snapshot to compare SUT state against a model implementation.
 - **`#[expose_pub]`** — raises visibility of `pub(crate)` items so the harness can construct them or reference them in signatures. Two flavors: function form (`as = "name_for_test"`) and type/impl form (no rename, just visibility lift).
-- **`yield_point!("label")`** — emits a runtime call into a thread-local hook that the harness uses for fault injection (pause / fail / re-order at controlled call sites).
+- **`yield_point!("label")`** — emits a runtime call into a thread-local hook the harness can *observe* (it returns `()`). A passive marker — watch that a code point was reached; it cannot change behaviour.
+- **`fault_point!("label")`** — returns a `Decision` (`Continue` / `Inject(u64)`) the SUT branches on to *inject* a fault; the harness installs a capturing policy via `set_fault_hook`. For **interior** faults only — a point inside one operation with no I/O-seam call. Seam-boundary faults (a failing `sync`, a crash that drops bytes) live in the harness's own fault-I/O impl, no macro needed.
 
-All three are feature-gated under `aristo_instrument` and typically wrapped in `#[cfg_attr(feature = "<consumer-alias>", ...)]` so production builds are unaffected.
+All four are feature-gated under `aristo_instrument` and typically wrapped in `#[cfg_attr(feature = "<consumer-alias>", ...)]` so production builds are unaffected.
 
 ## When: instrument as the SUT grows, not after
 
@@ -146,9 +147,9 @@ impl Counter {
 
 Useful when an entire impl block needs harness access; avoids per-method `#[expose_pub]` boilerplate.
 
-### `yield_point!` for fault-injection points
+### `yield_point!` for observation markers
 
-Use at SUT code locations where a fault-injection harness might want to pause, fail, re-order, or branch:
+Use at SUT code locations a harness wants to *observe* — confirm a code point was reached, count visits. It returns `()`, so it cannot change behaviour; to make a fault actually happen at a point, use `fault_point!` (below), not `yield_point!`:
 
 ```rust
 fn write_header(&mut self) -> std::io::Result<()> {
@@ -164,6 +165,28 @@ fn write_header(&mut self) -> std::io::Result<()> {
 The harness installs a callback via `aristo::instrument::set_hook(Some(my_callback))`; when `write_header` reaches the labelled point, the callback fires with the label string.
 
 Labels follow the `<fn>.<before|after>_<action>` scheme. One label per call site within a function; the harness selects which point to inject by string match.
+
+### `fault_point!` for injecting interior faults
+
+Use when the harness must *inject* a fault at a point **inside one operation that has no I/O-seam call** — a non-I/O failure (allocation, checksum, in-memory rebuild) or a crash mid-construction of a single write. `fault_point!("label")` returns a `Decision`; the SUT branches on it; the harness installs a capturing policy:
+
+```rust
+use aristo::instrument::{fault_point, Decision};
+
+fn rebuild_index(&mut self) -> Result<(), Corrupt> {
+    for entry in self.scan() {
+        #[cfg(feature = "fault-injection")]
+        if let Decision::Inject(_) = fault_point!("index.rebuild.per_entry") {
+            return Err(Corrupt);   // the SUT decides what "fail" means
+        }
+        self.insert(entry);
+    }
+    Ok(())
+}
+// harness: set_fault_hook(Some(Box::new(move |l| { /* count, return Inject on the Nth */ })))
+```
+
+aristo carries only *when* (the label, plus an opaque `u64` for parameterized faults — an errno, a short-write length); the SUT owns *what*. **Decide observe vs inject vs seam-fault before reaching for it:** if you only need to watch a point, that's `yield_point!`; if the fault lands on a seam call (a failing `sync`/`append`, a crash that drops bytes), it lives in the harness's own fault-I/O impl (no macro) — `fault_point!` is strictly for interior faults. See `docs/instrument-recipes.md` Recipe 13 (and Recipe 12 for the seam).
 
 ## Convention rules (quick reference)
 
@@ -254,7 +277,7 @@ See `docs/instrument-recipes.md` Recipe 9. The one genuine wall: a *foreign / se
 pub use crate::record::parse_record;
 ```
 
-A `pub(crate)` target needs the two-step: `expose_pub` it to `pub` first, then re-export. See `docs/instrument-recipes.md` Recipe 11.
+A `pub(crate)` target needs the two-step: `expose_pub` it to `pub` first, then re-export. See `docs/instrument-recipes.md` Recipe 11. One gotcha: re-exporting can wake public-API clippy lints that were dormant while the item was private (e.g. `len_without_is_empty` on a `len`-bearing trait) — silence them with a `#[cfg_attr(feature = "...", allow(...))]` gated to the same feature, so production stays clean.
 
 ### `yield_point!` on a pure (non-I/O) data structure
 
