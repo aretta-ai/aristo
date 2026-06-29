@@ -1,0 +1,14 @@
+error[E0277]: the trait bound `NoClone: Clone` is not satisfied
+  --> tests/ui/fail/inspect_clone_non_clone_field.rs:12:5
+   |
+12 |     field: NoClone,
+   |     ^^^^^^^-------
+   |     |      |
+   |     |      required by a bound introduced by this call
+   |     the trait `Clone` is not implemented for `NoClone`
+   |
+help: consider annotating `NoClone` with `#[derive(Clone)]`
+   |
+ 7 + #[derive(Clone)]
+ 8 | struct NoClone;
+   |

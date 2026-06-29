@@ -8,6 +8,18 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- docs: new instrument Recipe 9 (layered derive) shows how to snapshot an inner type's module-private fields across a `Vec<Inner>` / `Map<K, Inner>` — put a second `#[derive(Inspect)]` on the inner type and compose its generated `inspect_*` in the outer projector — with the foreign/sealed-inner limit called out and a matching authoring-skill pitfall.
+- docs: instrument Rule 1 and a skill pitfall now warn that bare `#[inspect]` (clone mode) returns the field's type verbatim, so a crate-private field type — or a private enum inside it — yields a snapshot the harness can't name or `match`; project to a harness-nameable type instead.
+- docs: new instrument Recipe 10 shows projection-to-tag for *observing* a crate-private enum's representation (match its variants to a `&'static str` inside the SUT), distinct from `expose_pub` (Recipe 6) which is for *constructing* the enum — observing never needs to leak the type.
+- docs: new instrument Recipe 11 + a skill pitfall show how to reach a `pub` item stuck in a private module — a feature-gated, doc-hidden crate-root `pub use` (not `expose_pub`, which raises item visibility but can't open the module) — with the `pub(crate)` two-step and the `#[cfg]`-not-`#[cfg_attr]` gating note.
+- docs: new instrument Recipe 12 documents the SUT-side I/O-seam pattern for crash-durability testing (an injectable I/O trait + a fault-injecting impl that drops un-synced bytes) — the one spec class where the harness contact surface legitimately exceeds aristo annotations; the macros cover everything around the seam.
+- docs: instrument Rule 4 and a skill pitfall now clarify that `yield_point!` is for I/O / fault boundaries — to observe a pure in-memory structure's state (a representation switch, a size threshold) use a typed `Inspect` projection instead of a passive, label-only yield point.
+
+### Fixed
+- macros: a bare `#[inspect]` (clone mode) on a non-`Clone` field now reports the `Clone`-bound error on the offending field instead of the whole `#[derive(Inspect)]`, so you can see which field to switch to projection mode; the authoring skill spells out the projection escape (including that rustc's "derive Clone on the element" hint should be ignored for a private element you can't edit).
+- macros: `#[derive(Inspect)]` now emits `#[allow(clippy::type_complexity)]` on its generated accessor impl, so a projection to a naturally-nested type (e.g. a per-SST `Vec<Vec<(…)>>` view) no longer trips clippy on code the consumer can't annotate — you keep the natural snapshot shape instead of flattening it just to satisfy the lint.
+
 ## [0.3.1] — 2026-06-28
 
 ### Added

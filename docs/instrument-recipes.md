@@ -274,3 +274,133 @@ fn header_write_survives_pre_fsync_crash() {
 ```
 
 Labels follow the `<fn>.<before|after>_<action>` scheme (Rule 4). One label per call site keeps the harness selector unambiguous.
+
+## Recipe 9 — Reach an inner type's private fields (layered derive)
+
+When an outer projector ranges over a collection of an inner struct — `Vec<Inner>`, `BTreeMap<K, Inner>` — and needs fields that are **private to the inner type's own module**, the outer projector can't read them: a `with` projector is type-checked with the visibility of the module where its `#[derive(Inspect)]` is invoked, so a projector in `db` cannot name `SsTable`'s private fields. Put a *second* `#[derive(Inspect)]` on the inner type, projecting its private fields **inside the inner module** (where they're visible); the generated `inspect_*` is `pub`, so the outer projector composes it across the collection.
+
+SUT side:
+```rust
+// in `mod sstable` — BlockMeta and SsTable.metas are private here
+#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+pub struct SsTable {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(Vec<u8>, Vec<u8>, u32)>,
+                with = |ms| ms.iter().map(|m| (m.first_key.clone(), m.last_key.clone(), m.len)).collect())
+    )]
+    metas: Vec<BlockMeta>,  // private to this module
+}
+
+// in `mod db` — composes the inner accessor across the collection
+#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+pub struct Db {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(usize, Vec<u8>, Vec<u8>, u32)>,
+                with = |ssts| ssts.iter().enumerate()
+                    .flat_map(|(i, s)| s.inspect_metas().into_iter().map(move |(f, l, n)| (i, f, l, n)))
+                    .collect())
+    )]
+    ssts: Vec<SsTable>,
+}
+```
+
+Harness side:
+```rust
+let rows: Vec<(usize, Vec<u8>, Vec<u8>, u32)> = db.inspect_ssts();
+// (sst_index, first_key, last_key, block_len), flattened across every SST.
+```
+
+The inner derive's `inspect_metas()` does the private read inside `sstable`; the outer projector only ever touches the inner type's **public** `inspect_*` surface. **Limit:** this works because you can annotate the inner type. If the inner type is foreign or sealed — you can't add `#[derive(Inspect)]` to it — only its public API is reachable. That is a genuine Rust visibility wall, not an aristo gap; it is rare, and the answer is not `unsafe` or a hand-written accessor.
+
+## Recipe 10 — Observe a private enum's representation (projection-to-tag)
+
+To *observe* which variant a crate-private enum is in — a representation invariant, a state-machine phase — project it to a stable tag (a `&'static str`, or a small plain enum) inside the SUT. The `with` closure runs in the enum's own module, so it can `match` private variants; only the tag crosses the boundary, and the enum stays fully private. Contrast Recipe 6, which raises the *whole* enum to `pub` + `#[doc(hidden)]` for harness **construction** — observation never needs that.
+
+SUT side:
+```rust
+// `mod container` — Container is private and non-`Clone`
+pub enum Container { Array(Vec<u16>), Bitset(Box<[u64; 1024]>) }
+
+#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+pub struct Bitmap {
+    #[cfg_attr(
+        feature = "differential-accessors",
+        inspect(ret = Vec<(u16, &'static str, u32)>,
+                with = |cs| cs.iter().map(|(&hi, c)| {
+                    let kind = match c { Container::Array(_) => "array", Container::Bitset(_) => "bitset" };
+                    (hi, kind, c.len() as u32)
+                }).collect())
+    )]
+    containers: BTreeMap<u16, Container>,
+}
+```
+
+Harness side:
+```rust
+// Assert the array→bitset switch happened at the right cardinality —
+// without ever naming Container outside its crate.
+let repr: Vec<(u16, &'static str, u32)> = bitmap.inspect_containers();
+assert_eq!(repr, vec![(0u16, "bitset", 4097)]);
+```
+
+Use projection-to-tag to **observe** representation; reach for `expose_pub` (Recipe 6) only when the harness must **construct** the enum.
+
+## Recipe 11 — Re-export an item trapped in a private module
+
+`expose_pub` raises an item's *visibility*, but it can't open the *module* around it. A common SUT shape is a private module that re-exports a few names (`mod record; … pub use record::Lsn;`). An item that's already `pub` *inside* such a module still isn't reachable from the harness — `error[E0603]: module `record` is private`. Add a feature-gated, doc-hidden re-export at the crate root, exactly like the crate's own public API but `instr`-gated:
+
+```rust
+// lib.rs, at the crate root
+#[cfg(feature = "differential-accessors")]
+#[doc(hidden)]
+pub use crate::record::parse_record;
+```
+
+The harness now names `yourcrate::parse_record`; the module stays private, and `#[doc(hidden)]` keeps it out of public rustdoc. Use `#[cfg(...)]`, **not** `#[cfg_attr(..., expose_pub)]`: a re-export this simple needs no macro, and a bare private `use` left behind when the feature is off would trip `unused_imports` under `-D warnings`.
+
+If the target is `pub(crate)` rather than `pub`, a re-export alone fails (`error[E0364]: … cannot be re-exported`). Raise the item with `expose_pub` first, then re-export — both gated on the same feature:
+
+```rust
+// in `mod record`
+#[cfg_attr(feature = "differential-accessors", aristo::instrument::expose_pub)]
+pub(crate) struct Frame { /* … */ }   // -> pub + #[doc(hidden)] when the feature is on
+
+// at the crate root
+#[cfg(feature = "differential-accessors")]
+#[doc(hidden)]
+pub use crate::record::Frame;
+```
+
+## Recipe 12 — Simulate a crash (SUT-side I/O seam)
+
+Crash-durability — *acknowledged data survives a crash; never-fsync'd data may not* — is the one property aristo's macros can't reach. Testing it means **dropping the bytes that were never fsync'd**, which requires substituting the engine's I/O underneath it. A fake disk has to implement *your* I/O contract, so the seam is SUT-specific and lives in the SUT, not in an aristo macro. This is the single spec class where the harness contact surface legitimately exceeds annotations — and it's clean dependency injection, not a hack.
+
+1. Route I/O through a trait the SUT owns, stored as a trait object:
+```rust
+pub trait BlockIo {
+    fn append(&mut self, bytes: &[u8]) -> std::io::Result<u64>;
+    fn sync(&mut self) -> std::io::Result<()>;
+    // read_at, len, …
+}
+
+pub struct Db { io: Box<dyn BlockIo>, /* … */ }
+```
+2. Keep the production constructor hard-coding real I/O; add a **test-only injecting** constructor (feature- or `cfg(test)`-gated):
+```rust
+impl Db {
+    pub fn open(dir: &Path) -> std::io::Result<Self> { Self::with_io(dir, Box::new(StdIo::open(dir)?)) }
+
+    #[cfg(any(test, feature = "fault-injection"))]
+    pub fn open_with_io(dir: &Path, io: Box<dyn BlockIo>) -> std::io::Result<Self> { Self::with_io(dir, io) }
+}
+```
+3. Write a fault-injecting `BlockIo` that models a crash — never-synced appends live in a buffer a modeled crash discards; only `sync()` makes them durable, and you can fail the *N*th `sync`:
+```rust
+struct FaultyIo { durable: Vec<u8>, pending: Vec<u8>, fail_sync_after: Option<usize> }
+// crash() drops `pending`; sync() moves `pending` into `durable` (or errors on the Nth call).
+```
+4. Drive it from the harness: build the `Db` with `FaultyIo`, run the workload, trigger the crash, reopen against the durable bytes, and assert acknowledged data survived while un-synced data is gone.
+
+`yield_point!` (Recipe 8) still marks *where* a crash is injected mid-operation, but dropping the bytes is the fault I/O's job. Aristo's macros cover everything *around* the seam — `Inspect` to snapshot recovered state, `expose_pub` for a `_for_test` constructor — but the I/O trait itself is yours to design.

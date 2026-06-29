@@ -15,6 +15,8 @@ Five rules for using the instrument surface well. Each rule is one sentence, the
 
 **How to apply:** default to `#[inspect]` for a `Clone` field; switch to `#[inspect(ret = T, with = <projector>)]` when the field isn't `Clone` or the harness needs a transformed / canonical view. The positional `#[inspect(T)]` and `snapshot = T` forms were removed in v0.3.0 — migrate them to `ret = …, with = …`.
 
+**Caveat — clone returns the field's type verbatim.** If that type, or a type reachable inside it (a private enum in a field), is crate-private, the harness receives the value but cannot name it for an annotation nor `match` its private variants from outside the crate (`error[E0603]`). Project such fields instead: the `with` closure runs inside the SUT where the private type is in scope, so only a harness-nameable `ret` (primitives, or a `pub` snapshot struct) crosses the boundary.
+
 ## Rule 2. Name `expose_pub` function wrappers with a `_for_test` suffix
 
 `#[expose_pub(as = "<name>")]` on a `pub(crate)` function requires a wrapper name. Convention: the wrapper name carries a `_for_test` (or `_for_harness`) suffix.
@@ -38,6 +40,8 @@ Five rules for using the instrument surface well. Each rule is one sentence, the
 **Why:** labels are the only identifier the harness sees. Inconsistent or vague labels (`yield_point!("done")`, `yield_point!("checkpoint")`) make harness code ambiguous and fragile to source rearrangement.
 
 **How to apply:** the label scheme is `<fn-name>.<before|after>_<action-being-instrumented>`. Examples: `"write_header.before_fsync"`, `"commit.after_log_sync"`, `"flush.before_unlock"`. One label per call site, no duplicates within a function.
+
+**Caveat — `yield_point!` is for I/O / fault boundaries, not passive probes.** A pure in-memory data structure has nothing to pause or fail, so a yield point there can only announce that an event happened — and its `&'static str` label can't carry *which* item or *how big*. To observe such state (a representation switch, a size threshold), use an `Inspect` projection instead: it returns typed, owned data the harness asserts on directly (Recipe 10), with no global `static` to route observations through. Reach for `yield_point!` only where there is a real I/O or fault boundary to inject at.
 
 ## Rule 5. Gate macro invocations with `cfg_attr` for production-build cost zero
 

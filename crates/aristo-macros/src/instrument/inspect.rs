@@ -42,11 +42,19 @@
 //! automatic; `name = "…"` overrides only the suffix.
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
+use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Expr, Fields, Type};
 
 pub(crate) fn derive(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as DeriveInput);
+    derive_impl(input.into()).into()
+}
+
+fn derive_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    let input = match syn::parse2::<DeriveInput>(input) {
+        Ok(parsed) => parsed,
+        Err(err) => return err.to_compile_error(),
+    };
 
     let struct_name = &input.ident;
     // Thread the struct's generics / where-clause through the emitted impl
@@ -65,8 +73,7 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
                     struct_name,
                     "`#[derive(Inspect)]` requires a struct with named fields",
                 )
-                .to_compile_error()
-                .into();
+                .to_compile_error();
             }
         },
         _ => {
@@ -74,8 +81,7 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
                 struct_name,
                 "`#[derive(Inspect)]` only supports structs",
             )
-            .to_compile_error()
-            .into();
+            .to_compile_error();
         }
     };
 
@@ -84,7 +90,7 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
         let args = match parse_inspect_attr(field) {
             Ok(Some(a)) => a,
             Ok(None) => continue,
-            Err(err) => return err.to_compile_error().into(),
+            Err(err) => return err.to_compile_error(),
         };
 
         let field_name = field.ident.as_ref().expect("named field has an ident");
@@ -93,7 +99,12 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
         let method_ident = format_ident!("inspect_{}", method_suffix);
 
         let accessor = match args.mode {
-            InspectMode::Clone => quote! {
+            InspectMode::Clone => quote_spanned! { field_ty.span() =>
+                // Span the accessor at the field's type so a deferred
+                // `FieldTy: Clone is not satisfied` error points at the
+                // offending field rather than the whole `#[derive(Inspect)]`.
+                // The remedy is projection mode (`ret = …, with = …`); see the
+                // `inspect_clone_non_clone_field` UI fixture. (aretta-bench C4.)
                 pub fn #method_ident(&self) -> #field_ty {
                     ::core::clone::Clone::clone(&self.#field_name)
                 }
@@ -119,11 +130,19 @@ pub(crate) fn derive(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
+        // A projection `ret` (or a clone-mode field type) can be arbitrarily
+        // nested, e.g. `Vec<Vec<(Vec<u8>, Vec<u8>, u32)>>`. That trips
+        // `clippy::type_complexity` on the generated accessor — which the
+        // consumer cannot silence from the annotation site (a derive-helper
+        // `#[allow]` does not propagate into generated code). A macro is
+        // responsible for its own codegen being lint-clean, so the allow
+        // rides on the generated impl. (aretta-bench finding C5.)
+        #[allow(clippy::type_complexity)]
         impl #impl_generics #struct_name #ty_generics #where_clause {
             #(#accessors)*
         }
     };
-    expanded.into()
+    expanded
 }
 
 /// A parsed `#[inspect]` tag. The mode is selected at the attribute level:
@@ -226,4 +245,33 @@ fn parse_inspect_attr(field: &syn::Field) -> syn::Result<Option<InspectArgs>> {
     };
 
     Ok(Some(InspectArgs { name, mode }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_impl;
+    use quote::quote;
+
+    /// A projection whose `ret` is a complex nested type trips
+    /// `clippy::type_complexity` on the *generated* accessor — a spot the
+    /// consumer cannot reach with an `#[allow(...)]`. A macro owns its
+    /// codegen's lint-cleanliness, so the derive must emit the allow itself.
+    /// Regression guard for aretta-bench finding C5.
+    #[test]
+    fn generated_impl_carries_type_complexity_allow() {
+        let input = quote! {
+            struct Db {
+                #[inspect(
+                    ret = Vec<Vec<(Vec<u8>, Vec<u8>, u32)>>,
+                    with = |s| s.clone()
+                )]
+                ssts: Vec<Vec<(Vec<u8>, Vec<u8>, u32)>>,
+            }
+        };
+        let out = derive_impl(input).to_string();
+        assert!(
+            out.contains("allow") && out.contains("type_complexity"),
+            "generated impl must carry #[allow(clippy::type_complexity)]; got:\n{out}"
+        );
+    }
 }
