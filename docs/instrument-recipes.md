@@ -459,3 +459,28 @@ set_fault_hook(None);
 The opaque `u64` in `Inject(u64)` is a harness→SUT channel for *parameterized* faults — a short-write prefix length, an errno, a timeout — that aristo never interprets; use a plain `Inject(_)` when the site has a single effect.
 
 **When NOT to use it:** if the fault coincides with a seam call (a failing `sync`/`append`, a crash that drops buffered bytes), put it in your `FaultyIo` (Recipe 12) — `fault_point!` would just be a less-direct way to reach the same seam. As you decompose the seam finer, more "interior" faults become seam-boundary; `fault_point!`'s domain is the faults that stay strictly inside one un-decomposed operation.
+
+## Recipe 14 — Keyed / parameterized lookups (do them in the harness)
+
+`Inspect` is `&self -> Snapshot` over **one** field with **no parameters**, so a *keyed* accessor — `fn inspect_commit_ts(&self, tx_id) -> Option<u64>`, looking up one row by a runtime key, perhaps across two fields — is deliberately out of shape. It is also **not** an `expose_pub` target unless an existing `pub(crate)` method already computes it. Don't hand-write a parameterized `inspect_*`: snapshot the whole field(s) with the derive and do the lookup + match in test code, where parameters and cross-field logic belong.
+
+SUT side — just the field snapshots (clone or projection, as usual):
+```rust
+#[cfg_attr(feature = "differential-accessors", derive(aristo::instrument::Inspect))]
+pub struct MvStore {
+    #[cfg_attr(feature = "differential-accessors", inspect(ret = Vec<(TxID, TxnState)>, with = project_txs))]
+    txs: SkipMap<TxID, Transaction>,
+    #[cfg_attr(feature = "differential-accessors", inspect(ret = Vec<(TxID, TxnState)>, with = project_finalized))]
+    finalized: SkipMap<TxID, TransactionState>,
+}
+```
+
+Harness side — the keyed lookup lives here:
+```rust
+fn commit_ts(store: &MvStore, tx_id: TxID) -> Option<u64> {
+    store.inspect_finalized().into_iter().find(|(id, _)| *id == tx_id).and_then(committed_ts)
+        .or_else(|| store.inspect_txs().into_iter().find(|(id, _)| *id == tx_id).and_then(committed_ts))
+}
+```
+
+Read these at a quiescent observation point (drive ops, then snapshot), like any `inspect_*` — the per-key lookup carries no atomicity the whole-field snapshot doesn't. A parameterized-accessor macro would put a *query* API on a *snapshot* surface; keep the query in the harness.
