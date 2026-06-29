@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- macros: `fault_point!("label")` — a fault-injection counterpart to `yield_point!`. It returns a `Decision` (`Continue` / `Inject(u64)`) the SUT branches on to inject a fault, backed by a capturing, stateful `set_fault_hook` so a harness can express "fail the Nth call" without a process-global static. aristo carries *when* to inject plus an opaque code; the SUT owns *what* the fault is (return its own error, drop bytes). Additive and `aristo_instrument`-gated — `yield_point!` / `set_hook` are unchanged. Reach for it only for *interior* faults (a point inside one operation with no I/O-seam call); seam-boundary faults live in the harness's own fault-I/O impl.
+
 ### Changed
 - docs: new instrument Recipe 9 (layered derive) shows how to snapshot an inner type's module-private fields across a `Vec<Inner>` / `Map<K, Inner>` — put a second `#[derive(Inspect)]` on the inner type and compose its generated `inspect_*` in the outer projector — with the foreign/sealed-inner limit called out and a matching authoring-skill pitfall.
 - docs: instrument Rule 1 and a skill pitfall now warn that bare `#[inspect]` (clone mode) returns the field's type verbatim, so a crate-private field type — or a private enum inside it — yields a snapshot the harness can't name or `match`; project to a harness-nameable type instead.
