@@ -373,6 +373,17 @@ pub(crate) struct Frame { /* … */ }   // -> pub + #[doc(hidden)] when the feat
 pub use crate::record::Frame;
 ```
 
+**Heads-up — a re-export can wake dormant public-API lints.** While the item was module-private, clippy lints that only apply to *public* API stayed quiet. Re-exporting makes it public API (under the feature), so those lints fire — e.g. a trait with a `len` method but no `is_empty` trips `clippy::len_without_is_empty`. Silence it with a **feature-gated** allow on the item, gated to the *same* feature as the re-export, so production (feature off) is untouched and the lint is only suppressed while it's awake:
+
+```rust
+// in `mod io` — only public (and only lint-checked) under the feature
+#[cfg_attr(feature = "differential-accessors", allow(clippy::len_without_is_empty))]
+pub trait BlockIo {
+    fn len(&self) -> u64;
+    // append, sync, …
+}
+```
+
 ## Recipe 12 — Simulate a crash (SUT-side I/O seam)
 
 Crash-durability — *acknowledged data survives a crash; never-fsync'd data may not* — is the one property aristo's macros can't reach. Testing it means **dropping the bytes that were never fsync'd**, which requires substituting the engine's I/O underneath it. A fake disk has to implement *your* I/O contract, so the seam is SUT-specific and lives in the SUT, not in an aristo macro. This is the single spec class where the harness contact surface legitimately exceeds annotations — and it's clean dependency injection, not a hack.

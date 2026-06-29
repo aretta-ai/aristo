@@ -277,7 +277,7 @@ See `docs/instrument-recipes.md` Recipe 9. The one genuine wall: a *foreign / se
 pub use crate::record::parse_record;
 ```
 
-A `pub(crate)` target needs the two-step: `expose_pub` it to `pub` first, then re-export. See `docs/instrument-recipes.md` Recipe 11.
+A `pub(crate)` target needs the two-step: `expose_pub` it to `pub` first, then re-export. See `docs/instrument-recipes.md` Recipe 11. One gotcha: re-exporting can wake public-API clippy lints that were dormant while the item was private (e.g. `len_without_is_empty` on a `len`-bearing trait) — silence them with a `#[cfg_attr(feature = "...", allow(...))]` gated to the same feature, so production stays clean.
 
 ### `yield_point!` on a pure (non-I/O) data structure
 
