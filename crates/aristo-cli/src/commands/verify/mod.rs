@@ -243,15 +243,11 @@ pub(crate) fn run(
     id = "verify_pop_next_prints_task_or_empty_exit_zero"
 )]
 #[aristo::intent(
-    "`verify --audit` is the freshness gate that replaces `aristo stamp \
-     --check` once the index is a gitignored cache. It regenerates the index \
-     from source + `.aristo/proofs/` (never trusting a possibly-stale committed \
-     cache) and, under `--strict`, exits non-zero on any STALE (code drifted \
-     since verification), COUNTEREXAMPLE (refuted), or ORPHAN proof (a `.proof` \
-     whose annotation no longer exists). It deliberately does NOT fail on \
-     `unknown` (never-verified is a legitimate starting state, not a \
-     regression). A deleted `.proof` surfaces as the now-`unknown` entry plus a \
-     tracked-file deletion in the diff, not as an audit failure.",
+    "`aristo verify --audit` regenerates the index from source and \
+     `.aristo/proofs/` rather than trusting the committed cache. Under \
+     `--strict` it exits non-zero on any STALE, COUNTEREXAMPLE, or ORPHAN \
+     proof, but never on an `unknown` entry — never-verified is a legitimate \
+     starting state, not a regression.",
     verify = "neural",
     id = "verify_audit_reds_on_stale_refuted_or_orphan_not_unknown"
 )]
@@ -360,13 +356,9 @@ fn run_pop_next(ws: &Workspace) -> CliResult<()> {
 }
 
 #[aristo::intent(
-    "`aristo verify --queue-status` is the orchestrator's peek mechanism: \
-     prints `pending: N` + `claimed: M` to stdout, exit 0. Non-destructive — \
-     unlike `--pop-next` it does not claim. The verify skill orchestrator \
-     uses it to decide whether to dispatch another one-shot worker after \
-     a prior worker retires (verify workers do not loop — reusing a \
-     worker across verifications risks context pollution between \
-     unrelated proofs).",
+    "`aristo verify --queue-status` is a non-destructive peek: it prints \
+     `pending: N` and `claimed: M` to stdout and exits 0. Unlike \
+     `--pop-next`, it does not claim any entry.",
     verify = "neural",
     id = "verify_queue_status_is_non_destructive_peek"
 )]

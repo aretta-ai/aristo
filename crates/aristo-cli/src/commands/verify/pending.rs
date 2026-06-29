@@ -47,15 +47,12 @@ fn is_zero_u32(n: &u32) -> bool {
 }
 
 #[aristo::intent(
-    "Each pending verify task is a REQUEST from the SDK to the in-agent \
-     skill, enqueued at `.aristo/verify-queue/pending/<id>.toml`. Workers \
-     pop one at a time via `aristo verify --pop-next`. The SDK never reads \
-     these task files back as verdicts — verdicts arrive via \
-     `aristo verify --submit-verdict` and land at `.aristo/proofs/<id>.proof` \
-     after the mechanical validator gates them. A refactor that has the \
-     SDK auto-process its own queue (e.g., to call an LLM directly) would \
-     conflate the CLI with the agent and break the design split: the CLI \
-     never makes LLM calls; the agent never bypasses the SDK validator.",
+    "Each pending verify task is a request from the SDK to the in-agent \
+     skill, not a result the SDK reads back. The SDK writes it to the \
+     verify queue and consumes verdicts only through the submit path, \
+     after the validator gates them. A refactor that has the SDK process \
+     its own queue directly would erase the CLI/agent split the queue \
+     exists to enforce.",
     verify = "neural",
     id = "pending_neural_file_is_sdk_to_agent_request_not_a_result"
 )]
@@ -199,10 +196,9 @@ pub(crate) fn proof_bak_path_for(ws: &Workspace, id: &AnnotationId) -> std::path
 
 #[aristo::intent(
     "When `aristo verify` re-enqueues an entry that already has a .proof \
-     on disk, move the existing proof to <id>.proof.bak before the next \
-     attempt overwrites it. Single-deep backup — overwrites any prior \
-     .bak. Lets the user diff a rejected re-attempt against the prior \
-     verdict. The .bak is auto-deleted on successful --apply-verdicts.",
+     on disk, the existing proof is moved to <id>.proof.bak before the \
+     next attempt overwrites it. The backup is single-deep and overwrites \
+     any prior .bak.",
     verify = "test",
     id = "pending_backs_up_existing_proof_on_rerun"
 )]

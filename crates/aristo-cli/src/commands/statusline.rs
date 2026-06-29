@@ -57,9 +57,7 @@ struct BarView {
      an unreadable index, or nudges globally off — it prints nothing and exits \
      0. The status bar re-renders on every turn, so a statusline that errored \
      or wrote files would corrupt the bar or thrash the workspace on every \
-     keystroke. Silence is the correct degraded state. It also stays CHEAP: \
-     index + nudge-state + the session pointer + a local sign-in check, \
-     never a source-tree walk or a per-file stat.",
+     keystroke. Silence is the correct degraded state.",
     verify = "test",
     id = "statusline_is_read_only_and_tolerant"
 )]

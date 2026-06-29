@@ -251,8 +251,7 @@ pub fn uninstall_nudge_surface(root: &Path) -> CliResult<()> {
     "Installing the statusLine NEVER clobbers an existing one: settings.json's \
      `statusLine` is a single value (not an append-safe array), so a user who \
      already configured a status line keeps it — aristo only sets it when the \
-     field is absent. Uninstall removes it only when it is aristo's own \
-     (its command mentions the aristo statusline marker).",
+     field is absent.",
     verify = "test",
     id = "statusline_install_never_clobbers_user_config"
 )]

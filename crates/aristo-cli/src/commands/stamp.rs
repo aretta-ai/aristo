@@ -378,19 +378,18 @@ fn read_existing_index(path: &std::path::Path) -> CliResult<Option<IndexFile>> {
 // docs/decisions/index-as-local-cache.md.
 
 #[aristo::intent(
-    "Canon binding state is derived from `.aristo/canon-matches.toml`, \
-     not preserved across stamp runs. For every index entry whose id \
-     carries a canon prefix (`aristos:` / `kanon:`) and has a matching \
-     row in the cache's `accepted_matches`, set the binding to \
-     `BindingState::Bound { linked }` (or `AssumeEntry::linked = \
-     Some(...)`). If the cache row's `linked` field is absent — older \
-     caches written before the field was added, or Phase 1 carve-outs \
-     where the server omits it — synthesize a deterministic placeholder \
-     from `(canon_id, version)`, identical to what `canon accept` \
-     would have written. Source has a canon prefix but no cache row → \
-     leave Local and emit a diagnostic; the binding was orphaned \
-     (cache deleted or never fetched) and the user must re-run with \
-     `--refresh-canon` or re-accept.",
+    "Canon binding state is derived fresh from the canon-matches cache \
+     on every stamp run, never carried over from a prior run — the cache \
+     is the single source of truth. An entry whose id carries a canon \
+     prefix and has an accepted match in the cache is marked bound to \
+     that match. When the cached match omits the linked detail (an older \
+     cache predating the field, or a server carve-out), a deterministic \
+     placeholder is synthesized from the canon id and version, identical \
+     to what an interactive accept would have written, so the binding \
+     never depends on cache vintage. A canon-prefixed id with no cache \
+     row is left unbound and reported as a diagnostic — an orphaned \
+     binding is surfaced for the user to refresh or re-accept, never \
+     silently treated as bound.",
     verify = "test",
     id = "stamp_derives_canon_binding_from_cache"
 )]
@@ -516,17 +515,16 @@ fn focal_status_from_proof(
 }
 
 #[aristo::intent(
-    "Status is sourced from `.aristo/proofs/`, not carried from a prior \
-     committed index. For each entry the matching `.proof` is loaded and its \
-     `produced_at_text_hash`/`produced_at_body_hash` anchors checked against \
-     the entry's current hashes: anchors valid -> the proof's verdict; \
-     drifted -> Stale; no proof -> Unknown (left as built). A second pass \
-     re-runs the full validator against a snapshot carrying the first pass's \
-     statuses, so the refuted-sibling-ground guard fires and a clean status \
-     is demoted to Stale when the proof no longer validates. This is the \
-     source of truth once the index becomes a gitignored cache; running it \
-     while every entry is still Unknown would let a proof launder grounding \
-     in a refuted sibling, so the two-phase ordering is load-bearing.",
+    "Status is sourced from the stored proofs, never carried over from a \
+     previously committed index. An entry keeps its proof's verdict only \
+     while the proof's text and body anchors still match the entry's \
+     current hashes; a drifted anchor demotes it to Stale, and an entry \
+     with no proof stays Unknown. A second validation pass runs against a \
+     snapshot that already carries the first pass's statuses, so the \
+     refuted-sibling-ground guard can fire and demote a clean entry to \
+     Stale. This ordering is load-bearing: running the guard while every \
+     entry is still Unknown would let a proof launder its grounding \
+     through a refuted sibling.",
     verify = "neural",
     id = "merge_status_from_proofs_sources_status_from_proof_files"
 )]

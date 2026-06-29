@@ -468,13 +468,14 @@ pub enum Aggressiveness {
 
 impl Aggressiveness {
     #[aristo::intent(
-        "Off MUST map to factor 0.0 — it is the global opt-out, and the \
-         scorer's fire test is `pressure * factor >= 1`, so only an exact \
-         0.0 guarantees NOTHING ever fires regardless of how overdue a \
-         signal is. A non-zero `low` would let extreme pressure leak \
-         through a user who explicitly silenced nudges. The non-zero rungs \
-         are tunable defaults (D8); this table is the single place to \
-         retune global nudge sensitivity.",
+        "Off MUST map to factor zero — it is the global opt-out. The scorer \
+         fires only when a signal's pressure scaled by its factor reaches the \
+         firing threshold, so an exact zero is the only value that guarantees \
+         nothing ever fires no matter how overdue a signal is. Assigning Off \
+         any small but non-zero factor would let extreme pressure leak through \
+         to a user who deliberately silenced nudges. The non-zero levels are \
+         tunable defaults (D8); this table is the single place to retune \
+         global nudge sensitivity.",
         verify = "neural",
         id = "aggressiveness_off_is_hard_silence"
     )]
