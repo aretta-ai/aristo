@@ -120,14 +120,12 @@ fn parent_annotation(focal: &IndexEntry, index: &IndexFile) -> Option<EmbeddedAn
 }
 
 #[aristo::intent(
-    "Sibling embedding for critique tasks scopes to entries sharing the \
-     focal's parent id, capped at MAX_SIBLINGS=5 (deterministic order \
-     via BTreeMap iteration). Larger sets raise per-worker token cost \
-     for diminishing vocabulary-alignment value; smaller sets miss the \
-     cross-sibling consistency findings (the whole point of the \
-     parent-shape and vocabulary categories). Five was chosen as a \
-     starting point during the design review; revisit after first \
-     month of dogfood if the alignment-finding rate is too low.",
+    "Sibling context for a critique task is limited to annotations \
+     sharing the focal annotation's parent, capped at five and taken \
+     in deterministic order. A larger cap raises per-worker token cost \
+     for diminishing vocabulary-alignment value; a smaller one misses \
+     the cross-sibling consistency findings that the parent-shape and \
+     vocabulary categories exist to surface.",
     verify = "neural",
     id = "critique_sibling_embedding_capped_at_five_per_parent"
 )]

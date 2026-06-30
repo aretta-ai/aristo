@@ -251,8 +251,7 @@ pub fn uninstall_nudge_surface(root: &Path) -> CliResult<()> {
     "Installing the statusLine NEVER clobbers an existing one: settings.json's \
      `statusLine` is a single value (not an append-safe array), so a user who \
      already configured a status line keeps it — aristo only sets it when the \
-     field is absent. Uninstall removes it only when it is aristo's own \
-     (its command mentions the aristo statusline marker).",
+     field is absent.",
     verify = "test",
     id = "statusline_install_never_clobbers_user_config"
 )]
@@ -271,6 +270,15 @@ fn install_statusline(root: &Path) -> CliResult<bool> {
     Ok(true)
 }
 
+#[aristo::intent(
+    "Uninstall deletes the status line only when its command carries aristo's \
+     status-line marker; a status line the user configured themselves is left \
+     in place. Unconditionally clearing the status line on uninstall would \
+     silently destroy one aristo never owned, since the status line is a \
+     single slot with no marker-filtered array to preserve a foreign entry.",
+    verify = "test",
+    id = "uninstall_statusline_only_removes_aristo_owned"
+)]
 fn uninstall_statusline(root: &Path) -> CliResult<bool> {
     let path = settings_path(root);
     if !path.exists() {

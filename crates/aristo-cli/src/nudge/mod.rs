@@ -226,14 +226,10 @@ impl Decision {
 }
 
 #[aristo::intent(
-    "Two invariants the scorer must preserve. First, `aggressiveness = off` \
-     is an absolute silence: its factor is 0.0 and the fire test is \
-     `pressure * factor >= 1`, so no signal fires at any pressure — even an \
-     infinite one. Second, the surfaced order is the static \
-     SIGNALS priority order, NOT the pressures: a count-pressure and a \
-     fraction-pressure are incommensurable, so sorting by pressure would let \
-     a noisy low-priority signal jump the queue ahead of a review the user \
-     actually needs to see first.",
+    "The surfaced order follows the static SIGNALS priority order, never the \
+     pressures. A count-pressure and a fraction-pressure are incommensurable, \
+     so sorting by pressure would let a noisy low-priority signal jump ahead \
+     of a review the user needs to see first.",
     verify = "test",
     id = "nudge_scorer_off_silences_and_order_is_static_priority"
 )]
@@ -261,12 +257,11 @@ pub fn score(inputs: &EngineInputs, aggressiveness: Aggressiveness) -> Decision 
 }
 
 #[aristo::intent(
-    "Scoring the authoring-debt (agent) signal needs ONLY the edit counter — \
-     never the index-derived Metrics. The PostToolUse hook that drives it \
-     fires on every edit, so it must not walk the source tree per edit; this \
-     scores the one signal straight from the counter, reusing the registry's \
-     base and the identical `pressure * factor >= 1` fire rule so it can't \
-     drift from `score`.",
+    "Scoring the authoring-debt signal reads only the edit counter, never \
+     the index-derived metrics. The hook that drives it fires on every edit, \
+     so it must not walk the source tree each time. It scores that single \
+     signal straight from the counter and applies the same fire threshold as \
+     the general scorer, so the two cannot drift apart.",
     verify = "test",
     id = "score_authoring_debt_needs_no_index_walk"
 )]

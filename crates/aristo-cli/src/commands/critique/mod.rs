@@ -281,15 +281,12 @@ fn parent_ids(entry: &IndexEntry) -> Option<&aristo_core::index::ParentLink> {
 }
 
 #[aristo::intent(
-    "`aristo critique --all` requires explicit confirmation via `--yes` \
-     (or interactive Y/N — interactive is parked for v2; v1 requires \
-     `--yes` on the command line). The cost-gate fires AFTER the matched \
-     set is computed so the count and dollar estimate match what the \
-     user is actually about to pay for. A refactor that proceeds without \
-     `--yes` would let an agent (or a script) accidentally enqueue \
-     hundreds of LLM calls in one bash invocation — the gate exists \
-     because critique is the most expensive aristo operation per token \
-     spent.",
+    "`aristo critique --all` proceeds only with an explicit `--yes` \
+     confirmation. The cost gate fires after the matched set is computed, \
+     so the count and dollar estimate reflect exactly what the user is \
+     about to pay for. Proceeding without `--yes` would let an agent or \
+     script enqueue hundreds of LLM calls in a single invocation, and \
+     critique is the most expensive aristo operation per token spent.",
     verify = "neural",
     id = "critique_all_flag_requires_confirmation_or_yes"
 )]
@@ -364,17 +361,14 @@ fn staged_files_or_error(ws: &Workspace) -> CliResult<std::collections::BTreeSet
 }
 
 #[aristo::intent(
-    "`aristo critique` consults `last_critiqued_at_text_hash` on each \
-     IntentEntry before re-enqueueing it. If the cached value equals the \
-     entry's current `text_hash`, the existing .critique file is up to \
-     date and re-running the LLM would burn tokens for the same answer — \
-     skip the enqueue. This is the whole point of the cache: a refactor \
-     that always re-enqueues regardless of cache state re-introduces the \
-     daily-loop LLM cost the cache exists to amortize. AssumeEntries and \
-     entries with no cache (the field is `None`) are NEVER skipped — for \
-     assumes the cache is irrelevant; for first-time entries the absent \
-     cache means \"no critique on record\" so the dispatcher must produce \
-     one. `--rerun` bypasses the cache entirely.",
+    "`aristo critique` skips re-enqueueing an intent whose last-critiqued \
+     text hash still equals its current text hash: the existing .critique \
+     file is current, and re-running the LLM would spend tokens for the \
+     same answer. A refactor that always re-enqueues regardless of cache \
+     state re-introduces the daily-loop LLM cost the cache exists to \
+     amortize. Two cases are never skipped: assumes (the cache does not \
+     apply) and intents with no cached hash (no critique on record yet, \
+     so one must be produced). `--rerun` bypasses the cache entirely.",
     verify = "neural",
     id = "critique_skip_consults_cached_text_hash_for_drift"
 )]

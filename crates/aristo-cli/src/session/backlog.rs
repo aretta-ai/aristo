@@ -124,14 +124,13 @@ pub fn count(ws: &Workspace, kind: &str) -> CliResult<usize> {
 }
 
 #[aristo::intent(
-    "Draining the backlog atomically removes the file after returning \
-     its contents — once the caller has the items, the file is gone. \
-     The pattern matches `aristo verify --apply-verdicts`: read all, \
-     mutate, the artifact is consumed. A refactor that read without \
-     deleting would surface the same backlog items every session start, \
-     creating zombie-deferral. A refactor that deleted before returning \
-     would lose data if the caller crashed mid-handle — read-then-delete \
-     keeps the items in memory while the file is gone.",
+    "Draining the backlog reads every item into memory, then deletes \
+     the file before returning — so the caller always holds the items \
+     while the file is already gone. Reading without deleting would \
+     resurface the same backlog items at every session start \
+     (zombie-deferral); deleting before reading would lose the items if \
+     the caller crashed mid-handle. Read-then-delete is the ordering \
+     that avoids both.",
     verify = "neural",
     id = "drain_returns_items_then_deletes_file"
 )]

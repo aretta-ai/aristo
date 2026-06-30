@@ -50,15 +50,13 @@ pub(crate) struct CritiqueFailure {
 }
 
 #[aristo::intent(
-    "The critique validator gates writes on schema integrity: enum \
-     values for category and severity (serde rejects unknown variants \
-     at parse time, so by the time we run the checks here those are \
-     already known to be in the locked set), the focal id resolves in \
-     the current index, and the rationale field is non-empty (a finding \
-     without a rationale is noise — silently dropping the requirement \
-     would let agents emit categorized-but-uninformative critiques). \
-     Unlike the verify validator there is no proof-tree integrity check \
-     because findings carry no derivations.",
+    "The critique validator gates every write on schema integrity: \
+     category and severity must be known enum variants, the focal id \
+     must resolve in the current index, and every finding must carry a \
+     non-empty rationale. The rationale gate is load-bearing — dropping \
+     it would let agents emit categorized but uninformative critiques, \
+     which are just noise. There is no proof-tree integrity check as in \
+     the verify validator, because findings carry no derivations.",
     verify = "neural",
     id = "critique_validator_checks_schema_and_focal_id_in_index"
 )]
@@ -128,11 +126,13 @@ pub(crate) fn validate(
 }
 
 #[aristo::intent(
-    "On accept, the SDK derives `finding_count` from `findings.len()` \
-     and `highest_severity` from `findings.iter().map(|f| f.severity).max()`. \
-     Agents may submit these fields explicitly (the schema accepts them) \
-     but the SDK overwrites — single source of truth, no agent/SDK \
-     disagreement on derived state. None when findings is empty.",
+    "On accept, the SDK derives the finding count and the highest \
+     severity from the submitted findings: the count is the number of \
+     findings, and the highest severity is the maximum across them. \
+     Agents may submit these fields explicitly (the schema accepts \
+     them), but the SDK overwrites them — a single source of truth, \
+     with no agent/SDK disagreement on derived state. With no \
+     findings, the count is zero and the highest severity is absent.",
     verify = "neural",
     id = "critique_derived_fields_stamped_by_sdk_not_agent"
 )]

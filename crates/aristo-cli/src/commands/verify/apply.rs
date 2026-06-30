@@ -127,13 +127,12 @@ pub(crate) fn run_apply_verdicts(
 }
 
 #[aristo::intent(
-    "Migration-only `--rewrite-hashes` clears every stored ground hash \
-     before validation so the staleness check is skipped, then the \
-     post-accept stamping pass repopulates them from current source. \
-     Without this flag, stamped hashes act as freshness anchors and \
-     mismatches are rejected as staleness — the strict default. The \
-     flag is documented as migration-only to discourage routine use; \
-     routine `--apply-verdicts` relies on the staleness check.",
+    "Under migration-only `--rewrite-hashes`, this nulls every stored \
+     ground hash before validation, so the staleness check has no \
+     anchor to compare against and is skipped. Dropping the freshness \
+     anchors is the deliberate migration mechanism, not a bug: it is \
+     the only path that clears them, and it runs only when the operator \
+     opts in via the flag.",
     verify = "test",
     id = "rewrite_hashes_flag_is_migration_only_strict_default"
 )]
@@ -154,6 +153,20 @@ fn clear_ground_hashes(pf: &mut ProofFile) {
 /// Walk every step in the proof (verified / counterexample trigger /
 /// inconclusive partial) and fill in computed hashes for any Ground
 /// whose hash is currently None. Returns the count of fields stamped.
+#[aristo::intent(
+    "After a verdict passes validation, every ground whose freshness \
+     anchor is empty is refilled with a hash recomputed from the current \
+     state it references — the annotation's text or the cited source \
+     lines — so the persisted proof always carries an anchor for later \
+     staleness checks. An empty anchor is never left in place, whether \
+     the proof was authored without one or the migration path cleared it \
+     beforehand. Narrowing this refill to a subset of ground kinds, or \
+     running it only when something was explicitly cleared, would \
+     silently leave proofs unanchored and disable their staleness \
+     detection.",
+    verify = "test",
+    id = "stamp_refills_empty_ground_anchors"
+)]
 pub(crate) fn stamp_ground_hashes(
     pf: &mut ProofFile,
     index: &IndexFile,

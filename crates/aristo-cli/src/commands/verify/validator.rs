@@ -550,6 +550,19 @@ fn check_index_ground(
     }
 }
 
+#[aristo::intent(
+    "A stored code hash on a ground is a binding freshness anchor: the \
+     validator recomputes the current hash of the cited lines and \
+     rejects any mismatch as staleness — the cited source drifted since \
+     the proof was last accepted. The strict default that applies \
+     verdicts relies on this rejection to refuse a stale proof; \
+     downgrading the mismatch to an advisory warning would let a stale \
+     proof apply. The only sanctioned bypass is the operator-opted-in \
+     migration that clears the anchor before validation; a present \
+     anchor is enforced, never advisory.",
+    verify = "neural",
+    id = "stored_ground_hash_is_binding_freshness_anchor"
+)]
 fn check_code_ground(
     r: &mut ValidatorReport,
     location: &str,

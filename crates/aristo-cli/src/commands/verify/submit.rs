@@ -59,14 +59,13 @@ use crate::{CliError, CliResult, Workspace};
     id = "submit_validation_matches_apply_validation"
 )]
 #[aristo::intent(
-    "On accept, the SDK prints `accepted: sha256:<hex>` to stdout where \
-     <hex> is the sha256 of the on-disk TOML body. The orchestrator \
-     can compare this against body_hash(text_returned_by_subagent) for \
-     a cheap integrity check: SDK is the sole writer, so a mismatch \
-     means the subagent's reported text diverged from what hit disk \
-     (corrupted cache, fabricated response). The hash anchors the \
-     write-acknowledgement so the orchestrator does not have to re-read \
-     the file to validate the subagent's word.",
+    "On accept, the SDK prints `accepted: sha256:<hex>` to stdout, \
+     where <hex> is the sha256 of the TOML body that landed on disk. \
+     Because the SDK is the sole writer, the orchestrator can hash the \
+     text its subagent reported and compare it: a mismatch means the \
+     subagent's text diverged from what was written. This anchors the \
+     write-acknowledgement, so the orchestrator never has to re-read \
+     the file to trust the subagent's report.",
     verify = "neural",
     id = "submit_returns_sha256_of_written_file"
 )]

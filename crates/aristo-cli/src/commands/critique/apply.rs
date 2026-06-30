@@ -306,16 +306,15 @@ fn partition_for_render(findings: &[Finding], include_closed: bool) -> (Vec<&Fin
 }
 
 #[aristo::intent(
-    "`aristo critique --apply-findings` stamps `last_critiqued_at_text_hash` \
-     and `last_critique_finding_count` onto each accepted critique's \
-     IntentEntry in the same operation that validates the .critique file. \
-     The cache and the on-disk .critique MUST be updated together: stamping \
-     before validation, or skipping the stamp, leaves readers with \
-     stale-cache + fresh-file divergence (the cache claims a critique is \
-     current when the file says otherwise, or vice versa). Idempotent: \
-     re-running on an unchanged .critique rewrites the same values. \
-     AssumeEntry is skipped — the cache fields are IntentEntry-only by \
-     design.",
+    "`aristo critique --apply-findings` stamps the last-critiqued text hash \
+     and finding count onto each accepted critique's intent entry in the \
+     same operation that validates the .critique file. The cache and the \
+     on-disk .critique MUST be updated together: stamping before validation, \
+     or skipping the stamp, leaves a stale cache beside a fresh file — the \
+     cache claims a critique is current when the file says otherwise, or the \
+     reverse. Re-running on an unchanged .critique is idempotent and \
+     rewrites the same values. Assume entries are skipped: these cache \
+     fields exist only on intent entries.",
     verify = "neural",
     id = "critique_apply_stamps_cache_on_success"
 )]
