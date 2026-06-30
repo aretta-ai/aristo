@@ -22,9 +22,9 @@ The **content gate** runs before any style consideration: would a sharp reader o
 
 Write English sentences with precise domain nouns. State the invariant directly. No motivation prose ("so that…", "the way this works…"), no examples in the body, no narration. Avoid weasels ("usually", "typically", "by design"). Reserve normative keywords (MUST / MAY) for actual caller contracts.
 
-Avoid the other extreme: formulas, regex, ∀-quantifiers, function-call syntax, code identifiers where domain nouns work. Those alienate the everyday reader and make intents brittle when names change.
+Avoid the other extreme: formulas, regex, ∀-quantifiers, function-call syntax, code identifiers where domain nouns work. Those alienate the everyday reader and make intents brittle when names change. Likewise, don't anchor prose to **transient facts that falsify over time** — version-roadmap asides ("parked for v2"), dev-milestone references ("defers to commit 4"), or hardcoded counts ("the other five categories"). State the timeless invariant; the transient fact belongs in commit history or a tracking issue.
 
-Cases: [text-hash-whitespace](./cases/2026-05-15-text-hash-whitespace.md), [body-hash-verbatim](./cases/2026-05-15-body-hash-verbatim.md), [sha256-from-bytes-canonical](./cases/2026-05-15-sha256-from-bytes-canonical.md).
+Cases: [text-hash-whitespace](./cases/2026-05-15-text-hash-whitespace.md), [body-hash-verbatim](./cases/2026-05-15-body-hash-verbatim.md), [sha256-from-bytes-canonical](./cases/2026-05-15-sha256-from-bytes-canonical.md), [critique-sweep-125](./cases/2026-06-29-critique-sweep-125-intents.md) (round audit; code-in-prose + transient-facts clusters).
 
 ---
 
@@ -50,7 +50,7 @@ Cases: [atomic-write-tempfile](./cases/2026-05-15-atomic-write-tempfile.md) (com
 
 An invariant goes on the function that *enforces* it, not on every caller that *benefits from* it. Duplicating the same property across sites in a call chain creates noise and confuses the reader about which annotation is authoritative.
 
-Cases: [snake-case-from-text-delete](./cases/2026-05-15-snake-case-from-text-delete.md) (system invariant moved to enforcement site), [index-atomic-duplicate](./cases/2026-05-15-index-atomic-duplicate.md) (atomicity belongs on `atomic_write`, not on the caller; DELETE).
+Cases: [snake-case-from-text-delete](./cases/2026-05-15-snake-case-from-text-delete.md) (system invariant moved to enforcement site), [index-atomic-duplicate](./cases/2026-05-15-index-atomic-duplicate.md) (atomicity belongs on `atomic_write`, not on the caller; DELETE), [critique-sweep-125](./cases/2026-06-29-critique-sweep-125-intents.md) (the 8 silent-staleness scope findings — claims stapled to a site they can't drift).
 
 ---
 
