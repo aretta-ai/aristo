@@ -7,6 +7,7 @@
 //! for the binary's own glue).
 
 mod commands;
+mod data_plane;
 mod error;
 mod filter;
 /// The nudge/progress engine (Phase 18 #9). Public so the as-yet-unwired

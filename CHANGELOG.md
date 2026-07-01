@@ -9,9 +9,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Added
-- config: `aristo.toml` gains an `[instance]` section with a `url` key that pins this project's data-plane requests to a specific Aretta deployment (e.g. a per-repo conductor at `https://<slug>.aretta.ai`). Resolution precedence is `ARETTA_API_URL` (env) > `[instance] url` > the signed-in account server; the value is normalized like `--server` (bare host → `https://`, trailing `/` stripped). Auth/login is unchanged — the token is still minted against the account server; this only redirects where verified-data requests go. (Wired into `verify` + canon match in the next change.)
+- config: `aristo.toml` gains an `[instance]` section with a `url` key that pins this project's data-plane requests to a specific Aretta deployment (e.g. a per-repo conductor at `https://<slug>.aretta.ai`). Resolution precedence is `ARETTA_API_URL` (env) > `[instance] url` > the signed-in account server; the value is normalized like `--server` (bare host → `https://`, trailing `/` stripped). Auth/login is unchanged — the token is still minted against the account server; this only redirects where verified-data requests go.
 
 ### Changed
+- cli: `aristo verify` and canon match (`stamp` / `canon refresh` / `canon migrate`) now resolve their data-plane base URL through the project's `[instance] url`, so a repo pinned to a per-repo conductor routes there automatically — locally and in CI — without `aristo auth login --server`. `ARETTA_API_URL` still overrides, and behavior is unchanged when `[instance]` is absent.
 - cli: `aristo canon show` and `aristo canon request-verify` now report "coming soon" (exit 64) instead of calling the canon API — the two per-entry canon read/write endpoints are being reworked to route against the per-instance data plane. `stamp` / `canon refresh` / `canon list` / `canon accept` / `canon unbind` are unaffected.
 
 ## [0.4.0] — 2026-06-29
