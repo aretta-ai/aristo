@@ -57,6 +57,16 @@ For every candidate annotation, ask:
 
 If both answers to (1) and (2) are no, **don't write the intent.** A perfectly-worded intent that fails the gate still adds noise.
 
+## Reuse before novel: consult the canon catalogue
+
+Once a candidate passes the gate, check whether the shared **canon corpus** already captures the invariant before writing novel prose — binding to an existing entry gives reusable, often verification-backed proof instead of a one-off claim.
+
+```bash
+aristo canon catalogue   # downloads the corpus to .aristo/catalogue.json (gitignored)
+```
+
+Search the snapshot's `canonical_text` / `category` for your invariant. On a hit, either phrase the intent to align with the entry's `canonical_text` (so `aristo stamp` matches + binds it) or bind directly via `id = "kanon:<canon_id>"`; prefer `aristos`-tier entries (verification-backed). No match → write your own. (The snapshot is a proprietary, gitignored local cache — see `/aristo-catalogue`; never commit it.)
+
 ## The shape of a good intent
 
 Write intents as English sentences with the precision of a spec. Closer to POSIX man pages, W3C normative language, Postgres documentation, or TigerBeetle's design docs than to formal logic.

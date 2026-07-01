@@ -34,6 +34,8 @@ The skill is the **orchestrator for the whole loop**, not just a suggestions con
 Both are reviewed inside a single **`intent-review`** session, gated by the single-active-session
 guard.
 
+> **Browsing vs matching:** this skill reviews canon *matches/suggestions for intents you already wrote*. To browse the **full corpus** — every available canon entry, matched or not — run `/aristo-catalogue` (`aristo canon catalogue`), which downloads the catalogue to a gitignored snapshot for search/discovery.
+
 ## Step 0 — check for an active review session (FIRST, BEFORE ANY WORK)
 
 Run `aristo session active`. Three cases:

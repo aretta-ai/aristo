@@ -152,6 +152,27 @@ mod tests {
     }
 
     #[test]
+    fn authoring_and_suggestions_route_to_the_catalogue() {
+        // The catalogue is woven into the authoring + intent-suggestions
+        // flows as a reuse/discovery step, not just a standalone skill.
+        let authoring = find("aristo-authoring")
+            .expect("aristo-authoring bundled")
+            .resolved_content();
+        assert!(
+            authoring.contains("aristo canon catalogue"),
+            "aristo-authoring must route to the canon catalogue for canon reuse"
+        );
+        let suggestions = find("aristo-intent-suggestions")
+            .expect("aristo-intent-suggestions bundled")
+            .resolved_content();
+        assert!(
+            suggestions.contains("aristo canon catalogue")
+                || suggestions.contains("aristo-catalogue"),
+            "aristo-intent-suggestions must reference the catalogue for full-corpus browsing"
+        );
+    }
+
+    #[test]
     fn future_skill_names_not_yet_bundled() {
         // Sentinels: these skills land in their consuming slices.
         assert!(find("aristo-mine-assertions").is_none()); // slice 24 (deferred)

@@ -13,6 +13,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - cli: `aristo canon catalogue` downloads the full canon catalogue from the data plane to a gitignored local snapshot at `.aristo/catalogue.json` (logged-in only; targets the per-repo conductor via `[instance] url`) and prints a summary (counts by category + backed/unbacked). `aristo init` now gitignores `.aristo/catalogue.json`.
 - cli: new `aristo-catalogue` skill (shipped by `aristo install-skills`) — teaches an agent to run `aristo canon catalogue` and browse/search the downloaded `.aristo/catalogue.json` snapshot to discover bindable canon entries, and makes explicit that the snapshot is a gitignored local cache (never commit it; re-run to refresh).
 - core/cli: the downloaded catalogue snapshot now carries a server-stamped proprietary/confidential `notice` at the top of `.aristo/catalogue.json` (and `aristo canon catalogue` echoes it) — marking the corpus as licensed-partner-internal, not for external/OSS commit. `CanonCatalogue` gains a `notice` field (serde-default, backward-compatible with conductors that don't send it).
+- cli: the `aristo-authoring` and `aristo-intent-suggestions` skills now route to `aristo canon catalogue` — authoring consults the catalogue for a reusable canon entry before writing novel prose (canon reuse over one-off claims); suggestions points to it for browsing the full corpus vs the per-intent matches it reviews.
 
 ## [0.4.1] — 2026-07-01
 
