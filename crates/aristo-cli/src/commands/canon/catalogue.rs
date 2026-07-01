@@ -65,6 +65,14 @@ pub(crate) fn run() -> CliResult<()> {
 }
 
 fn print_summary(catalogue: &CanonCatalogue) {
+    // Echo the server-stamped confidential notice up front (it is also
+    // the first field of the written snapshot).
+    if !catalogue.notice.is_empty() {
+        for line in &catalogue.notice {
+            println!("{line}");
+        }
+        println!();
+    }
     let total = catalogue.entries.len();
     println!(
         "ok: downloaded {total} canon entr{} to {CATALOGUE_REL} (gitignored local snapshot)",

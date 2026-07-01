@@ -339,6 +339,7 @@ current_backing = "specialized neural checker"
             "specialized neural checker".to_string(),
         );
         let cat = CanonCatalogue {
+            notice: vec![],
             entries: vec![
                 CanonCatalogueEntry {
                     canon_id: "foo".into(),
