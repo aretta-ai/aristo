@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- cli: `aristo canon show` and `aristo canon request-verify` now report "coming soon" (exit 64) instead of calling the canon API — the two per-entry canon read/write endpoints are being reworked to route against the per-instance data plane. `stamp` / `canon refresh` / `canon list` / `canon accept` / `canon unbind` are unaffected.
+
 ## [0.4.0] — 2026-06-29
 
 Minor release: a new fault-injection primitive plus the full aretta-bench instrument response. **`fault_point!`** is the fault-injection counterpart to `yield_point!` — it returns a `Decision` the SUT branches on, backed by a capturing `set_fault_hook`, for injecting *interior* faults (additive; `yield_point!` / `set_hook` are unchanged). The instrument cookbook gains Recipes 9–14 and the `aristo-instrumenting` skill is expanded, closing the gap reports from the aretta-bench suite and the Turso fork. Two `#[derive(Inspect)]` codegen fixes (lint-clean generated accessors, field-spanned clone errors) round it out. No breaking changes.

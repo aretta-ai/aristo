@@ -57,17 +57,6 @@ results = [
     std::fs::write(fixture_dir.join("match.toml"), body).unwrap();
 }
 
-fn write_request_verify_fixture(fixture_dir: &Path, status: &str) {
-    std::fs::create_dir_all(fixture_dir).unwrap();
-    let body = format!(
-        r#"
-status = "{status}"
-canon_id = "cell_written_exactly_once_per_page_edit"
-"#
-    );
-    std::fs::write(fixture_dir.join("request-verify.toml"), body).unwrap();
-}
-
 const SOURCE: &str = r#"
 #[aristo::intent(
     "each cell should be written exactly once per page edit",
@@ -176,84 +165,27 @@ fn unbind_non_canon_bound_id_errors() {
     );
 }
 
-// ─── canon request-verify ────────────────────────────────────────────────
+// ─── canon request-verify (coming soon) ──────────────────────────────────
 
 #[test]
-fn request_verify_submitted_status_renders_first_submission_message() {
-    let ws = setup_workspace(SOURCE);
-    let fixture = ws.path().join("fixtures/canon");
-    write_request_verify_fixture(&fixture, "submitted");
-
-    let out = aristo_in(ws.path())
-        .env("ARISTO_CANON_FIXTURE", &fixture)
-        .args([
-            "canon",
-            "request-verify",
-            "cell_written_exactly_once_per_page_edit",
-            "--notes",
-            "critical for our audit pipeline",
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "request-verify failed: stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("demand signal recorded"),
-        "expected submitted message; got: {stdout}"
-    );
-    assert!(
-        stdout.contains("cell_written_exactly_once_per_page_edit"),
-        "got: {stdout}"
-    );
-}
-
-#[test]
-fn request_verify_updated_status_renders_updated_message() {
-    let ws = setup_workspace(SOURCE);
-    let fixture = ws.path().join("fixtures/canon");
-    std::fs::create_dir_all(&fixture).unwrap();
-    std::fs::write(
-        fixture.join("request-verify.toml"),
-        r#"
-status = "updated"
-canon_id = "foo_bar"
-previously_submitted_at = "2026-04-01T12:00:00Z"
-"#,
-    )
-    .unwrap();
-
-    let out = aristo_in(ws.path())
-        .env("ARISTO_CANON_FIXTURE", &fixture)
-        .args(["canon", "request-verify", "foo_bar"])
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("updated"),
-        "expected updated message; got: {stdout}"
-    );
-    assert!(
-        stdout.contains("2026-04-01"),
-        "expected prior timestamp; got: {stdout}"
-    );
-}
-
-#[test]
-fn request_verify_without_auth_and_no_fixture_refuses() {
+fn request_verify_reports_coming_soon() {
+    // `canon request-verify` is deferred (coming soon) pending the
+    // per-instance data-plane rework: it makes no canon-API call and no
+    // longer depends on auth or a fixture — any invocation reports the
+    // NotImplemented deferral (exit 64).
     let ws = setup_workspace(SOURCE);
     let out = aristo_in(ws.path())
         .args(["canon", "request-verify", "anything"])
         .output()
         .unwrap();
-    assert!(!out.status.success());
+    assert!(
+        !out.status.success(),
+        "coming-soon command must exit non-zero"
+    );
+    assert_eq!(out.status.code(), Some(64), "NotImplemented exit code");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("authentication") || stderr.contains("login"),
-        "got: {stderr}"
+        stderr.contains("canon request-verify") && stderr.contains("not implemented yet"),
+        "expected coming-soon diagnostic; got: {stderr}"
     );
 }
