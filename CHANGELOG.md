@@ -10,6 +10,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ### Added
 - core: `CanonClient::catalogue()` + the `CanonCatalogue` wire type — a `GET /catalogue` client method that fetches the full active canon corpus catalogue from the data plane (one entry per canon id, closed-IP fields stripped server-side). Backs the new `aristo canon catalogue` command.
+- cli: `aristo canon catalogue` downloads the full canon catalogue from the data plane to a gitignored local snapshot at `.aristo/catalogue.json` (logged-in only; targets the per-repo conductor via `[instance] url`) and prints a summary (counts by category + backed/unbacked). `aristo init` now gitignores `.aristo/catalogue.json`.
 
 ## [0.4.1] — 2026-07-01
 
