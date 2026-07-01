@@ -75,6 +75,56 @@ impl std::fmt::Display for ServerUrl {
     }
 }
 
+/// Resolve the base URL for **data-plane** requests — verify-session
+/// dispatch and canon match. Precedence, highest first:
+///
+/// 1. `env_override` — the `ARETTA_API_URL` env var (CI / test /
+///    staging redirect). Returned verbatim, preserving the prior
+///    `env::var(...).unwrap_or_else(...)` behavior at the call sites.
+/// 2. `instance` — the project's `[instance] url` from `aristo.toml`,
+///    normalized through [`ServerUrl::parse`] (a bare host gets
+///    `https://`, a trailing `/` is stripped). Blank/whitespace is
+///    ignored.
+/// 3. `server` — the signed-in account's server; its default already
+///    resolves to `https://code.aretta.ai`, so it is also the final
+///    fallback.
+///
+/// This is the **data plane**, distinct from the auth/control plane:
+/// the `arta_*` token is minted against `server`, but verified-data
+/// requests are addressed here. Env and config take precedence so a
+/// repo can pin its data plane to a per-repo conductor
+/// (`https://<slug>.aretta.ai`) without re-authenticating.
+///
+/// Kept pure — env is passed in, not read here — so it is
+/// unit-testable under the workspace's `unsafe_code` ban on
+/// `std::env::set_var`.
+#[aristo::intent(
+    "Data-plane base-URL precedence is exactly ARETTA_API_URL (env) > \
+     aristo.toml [instance] url > the account server, in that order and \
+     no other. The env override is returned verbatim (preserving the \
+     prior override behavior and CI/test redirects); the [instance] url \
+     is normalized via ServerUrl::parse; server.as_str() is the final \
+     fallback (its default is code.aretta.ai). Reordering these tiers, \
+     or normalizing or dropping the verbatim env override, would \
+     silently misroute verify and canon-match requests to the wrong \
+     Aretta deployment.",
+    verify = "neural",
+    id = "data_plane_base_precedence"
+)]
+pub fn data_plane_base(
+    env_override: Option<&str>,
+    instance: Option<&str>,
+    server: &ServerUrl,
+) -> String {
+    if let Some(v) = env_override {
+        return v.to_string();
+    }
+    if let Some(inst) = instance.map(str::trim).filter(|s| !s.is_empty()) {
+        return ServerUrl::parse(inst).as_str().to_string();
+    }
+    server.as_str().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +208,38 @@ mod tests {
             format!("{}", ServerUrl::Custom("https://x.example.com".into())),
             "https://x.example.com"
         );
+    }
+
+    #[test]
+    fn data_plane_base_env_override_wins_verbatim() {
+        // ARETTA_API_URL (passed in) beats both instance and server, and
+        // is returned verbatim — no normalization — so CI/test redirects
+        // behave exactly as before.
+        let s = data_plane_base(
+            Some("https://ci.example.com"),
+            Some("https://turso.aretta.ai"),
+            &ServerUrl::Prod,
+        );
+        assert_eq!(s, "https://ci.example.com");
+    }
+
+    #[test]
+    fn data_plane_base_instance_beats_server_and_is_normalized() {
+        // No env override: the [instance] url wins over the account
+        // server, and a bare host + trailing slash is normalized.
+        let s = data_plane_base(None, Some("turso.aretta.ai/"), &ServerUrl::Prod);
+        assert_eq!(s, "https://turso.aretta.ai");
+    }
+
+    #[test]
+    fn data_plane_base_blank_instance_is_ignored() {
+        let s = data_plane_base(None, Some("   "), &ServerUrl::Dev);
+        assert_eq!(s, "https://dev.aretta.ai");
+    }
+
+    #[test]
+    fn data_plane_base_falls_back_to_server() {
+        let s = data_plane_base(None, None, &ServerUrl::Prod);
+        assert_eq!(s, "https://code.aretta.ai");
     }
 }

@@ -64,6 +64,31 @@ pub struct ConfigFile {
     pub canon: CanonConfig,
     #[serde(default)]
     pub nudges: NudgesConfig,
+    #[serde(default)]
+    pub instance: InstanceConfig,
+}
+
+// ─── [instance] ────────────────────────────────────────────────────────────
+
+/// `[instance]` — pins this project's **data-plane** requests (verify
+/// session dispatch + canon match) to a specific Aretta deployment,
+/// e.g. a per-repo conductor at `https://<slug>.aretta.ai`. Absent →
+/// data-plane requests fall back to the signed-in account server
+/// (default `https://code.aretta.ai`). `ARETTA_API_URL` (env)
+/// overrides this for CI / tests.
+///
+/// Distinct from the auth/control-plane server the `arta_*` token is
+/// minted against (persisted in the credentials file): the token
+/// authenticates the request; `url` decides where verified-data
+/// requests are sent.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InstanceConfig {
+    /// Base URL of the per-repo Aretta instance (e.g.
+    /// `https://turso.aretta.ai`). Normalized like the `--server`
+    /// flag: a bare host gets `https://`, a trailing `/` is stripped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 // ─── [verify] ──────────────────────────────────────────────────────────────
@@ -531,6 +556,7 @@ mod tests {
         assert!((config.canon.threshold_stamp - 0.85).abs() < f64::EPSILON);
         assert!((config.canon.threshold_critique - 0.65).abs() < f64::EPSILON);
         assert_eq!(config.nudges.aggressiveness, Aggressiveness::Medium);
+        assert!(config.instance.url.is_none());
     }
 
     #[test]
@@ -694,6 +720,21 @@ threshold = 200
     }
 
     #[test]
+    fn instance_section_round_trips() {
+        let config: ConfigFile =
+            toml::from_str("[instance]\nurl = \"https://turso.aretta.ai\"\n").unwrap();
+        assert_eq!(
+            config.instance.url.as_deref(),
+            Some("https://turso.aretta.ai")
+        );
+        // Absent [instance] → None.
+        let empty: ConfigFile = toml::from_str("").unwrap();
+        assert!(empty.instance.url.is_none());
+        // Unknown key under [instance] is rejected (deny_unknown_fields).
+        assert!(toml::from_str::<ConfigFile>("[instance]\nhost = \"x\"\n").is_err());
+    }
+
+    #[test]
     fn full_config_round_trips() {
         let mut config = ConfigFile::default();
         config.verify.default_method = Some(VerifyMethod::Full);
@@ -714,6 +755,7 @@ threshold = 200
         config.corpus.contribute = true;
         config.doc.commit_artifacts = false;
         config.doc.position = DocPosition::After;
+        config.instance.url = Some("https://turso.aretta.ai".into());
 
         let toml_text = toml::to_string(&config).unwrap();
         let back: ConfigFile = toml::from_str(&toml_text).unwrap();

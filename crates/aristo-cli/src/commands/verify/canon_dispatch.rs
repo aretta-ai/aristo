@@ -298,9 +298,9 @@ pub(crate) fn run_canon_dispatch(
         });
     }
 
-    // 5. Build the HTTP client. ARETTA_API_URL overrides for tests.
-    let base_url =
-        std::env::var("ARETTA_API_URL").unwrap_or_else(|_| creds.server.as_str().to_string());
+    // 5. Build the HTTP client. Data-plane base: ARETTA_API_URL >
+    //    aristo.toml [instance] url > the signed-in server.
+    let base_url = crate::data_plane::resolve_base(&creds.server);
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {
@@ -361,8 +361,7 @@ fn exit_error_for(verdict: &waiver::WaiverVerdict) -> CliError {
 /// Skips POST + push-first precheck entirely.
 pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     let creds = aristo_core::auth::resolve_full().map_err(no_auth_to_cli_error)?;
-    let base_url =
-        std::env::var("ARETTA_API_URL").unwrap_or_else(|_| creds.server.as_str().to_string());
+    let base_url = crate::data_plane::resolve_base(&creds.server);
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {

@@ -45,6 +45,14 @@
         }
       ]
     },
+    "instance": {
+      "default": {},
+      "allOf": [
+        {
+          "$ref": "#/definitions/InstanceConfig"
+        }
+      ]
+    },
     "lint": {
       "default": {
         "pre_commit": "check",
@@ -244,6 +252,20 @@
           "items": {
             "type": "string"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "InstanceConfig": {
+      "description": "`[instance]` — pins this project's **data-plane** requests (verify session dispatch + canon match) to a specific Aretta deployment, e.g. a per-repo conductor at `https://<slug>.aretta.ai`. Absent → data-plane requests fall back to the signed-in account server (default `https://code.aretta.ai`). `ARETTA_API_URL` (env) overrides this for CI / tests.\n\nDistinct from the auth/control-plane server the `arta_*` token is minted against (persisted in the credentials file): the token authenticates the request; `url` decides where verified-data requests are sent.",
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "Base URL of the per-repo Aretta instance (e.g. `https://turso.aretta.ai`). Normalized like the `--server` flag: a bare host gets `https://`, a trailing `/` is stripped.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

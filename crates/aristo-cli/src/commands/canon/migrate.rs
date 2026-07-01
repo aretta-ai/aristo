@@ -107,8 +107,7 @@ pub(crate) fn run() -> CliResult<()> {
     } else {
         match aristo_core::auth::resolve_full() {
             Ok(creds) => {
-                let base_url = std::env::var("ARETTA_API_URL")
-                    .unwrap_or_else(|_| creds.server.as_str().to_string());
+                let base_url = crate::data_plane::resolve_base(&creds.server);
                 Box::new(HttpCanonClient::new(base_url, &creds.token))
             }
             Err(_) => {
