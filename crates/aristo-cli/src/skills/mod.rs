@@ -121,6 +121,11 @@ const INSTRUMENTING: Skill = Skill {
     content: include_str!("aristo-instrumenting.md"),
 };
 
+const CATALOGUE: Skill = Skill {
+    name: "aristo-catalogue",
+    content: include_str!("aristo-catalogue.md"),
+};
+
 const BUNDLED: &[Skill] = &[
     AUTHORING,
     VERIFY,
@@ -130,6 +135,7 @@ const BUNDLED: &[Skill] = &[
     STATUS,
     HELP,
     INSTRUMENTING,
+    CATALOGUE,
 ];
 
 #[cfg(test)]
