@@ -19,7 +19,8 @@
 
 use super::client::{CanonClient, CanonError};
 use super::types::{
-    CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody, RequestVerifyResponse,
+    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
+    RequestVerifyResponse,
 };
 
 /// No-op canon client. Every method returns [`CanonError::NotEnabled`].
@@ -44,6 +45,10 @@ impl CanonClient for NoopCanonClient {
         &self,
         _body: &RequestVerifyBody,
     ) -> Result<RequestVerifyResponse, CanonError> {
+        Err(CanonError::NotEnabled)
+    }
+
+    fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
         Err(CanonError::NotEnabled)
     }
 }
@@ -84,6 +89,13 @@ mod tests {
                 notes: None,
             })
             .unwrap_err();
+        assert!(matches!(err, CanonError::NotEnabled));
+    }
+
+    #[test]
+    fn catalogue_returns_not_enabled() {
+        let client = NoopCanonClient;
+        let err = client.catalogue().unwrap_err();
         assert!(matches!(err, CanonError::NotEnabled));
     }
 

@@ -41,7 +41,8 @@ use std::path::{Path, PathBuf};
 
 use super::client::{CanonClient, CanonError};
 use super::types::{
-    CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody, RequestVerifyResponse,
+    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
+    RequestVerifyResponse,
 };
 
 /// Fixture-backed canon client.
@@ -107,6 +108,10 @@ impl CanonClient for MockCanonClient {
         _body: &RequestVerifyBody,
     ) -> Result<RequestVerifyResponse, CanonError> {
         self.load(Path::new("request-verify.toml"))
+    }
+
+    fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
+        self.load(Path::new("catalogue.toml"))
     }
 }
 
@@ -323,6 +328,51 @@ current_backing = "specialized neural checker"
             resp.current_backing.as_deref(),
             Some("specialized neural checker")
         );
+    }
+
+    #[test]
+    fn catalogue_loads_fixture() {
+        use crate::canon::{CanonCatalogue, CanonCatalogueEntry};
+        let mut backed = std::collections::BTreeMap::new();
+        backed.insert(
+            ":vanilla".to_string(),
+            "specialized neural checker".to_string(),
+        );
+        let cat = CanonCatalogue {
+            entries: vec![
+                CanonCatalogueEntry {
+                    canon_id: "foo".into(),
+                    version: "v0.2.1".into(),
+                    canonical_text: "foo text".into(),
+                    category: "invariants".into(),
+                    applies_to: vec!["fn".into()],
+                    backed_by: backed,
+                    coverage_level: "tight".into(),
+                    spec_refs: vec!["S-001".into()],
+                },
+                CanonCatalogueEntry {
+                    canon_id: "bar".into(),
+                    version: "v0.1.0".into(),
+                    canonical_text: "bar text".into(),
+                    category: "invariants".into(),
+                    applies_to: vec!["fn".into()],
+                    backed_by: std::collections::BTreeMap::new(),
+                    coverage_level: "none".into(),
+                    spec_refs: vec![],
+                },
+            ],
+        };
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("catalogue.toml"),
+            toml::to_string(&cat).unwrap(),
+        )
+        .unwrap();
+        let client = MockCanonClient::new(tmp.path().to_path_buf());
+        let loaded = client.catalogue().unwrap();
+        assert_eq!(loaded, cat);
+        assert_eq!(loaded.entries[0].tier_label(), "aristos");
+        assert_eq!(loaded.entries[1].tier_label(), "kanon");
     }
 
     #[test]

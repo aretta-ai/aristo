@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- core: `CanonClient::catalogue()` + the `CanonCatalogue` wire type — a `GET /catalogue` client method that fetches the full active canon corpus catalogue from the data plane (one entry per canon id, closed-IP fields stripped server-side). Backs the new `aristo canon catalogue` command.
+
 ## [0.4.1] — 2026-07-01
 
 ### Added

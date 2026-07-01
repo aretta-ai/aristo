@@ -58,7 +58,8 @@ pub use mock_client::MockCanonClient;
 pub use noop_client::NoopCanonClient;
 pub use rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError};
 pub use types::{
-    synthesize_phase1_linked, AnnotationMatchInput, CanonEntry, CanonMatch, CanonMatchRequest,
-    CanonMatchResponse, ClusterSuggestion, PrefixTier, References, Relationship, RequestVerifyBody,
-    RequestVerifyResponse, SuggestedEntry, VerificationMetadata,
+    synthesize_phase1_linked, AnnotationMatchInput, CanonCatalogue, CanonCatalogueEntry,
+    CanonEntry, CanonMatch, CanonMatchRequest, CanonMatchResponse, ClusterSuggestion, PrefixTier,
+    References, Relationship, RequestVerifyBody, RequestVerifyResponse, SuggestedEntry,
+    VerificationMetadata,
 };

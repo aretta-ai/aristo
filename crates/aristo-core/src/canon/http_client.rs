@@ -26,7 +26,8 @@ use ureq::http::Response as HttpResponse;
 
 use super::client::{AuthError, CanonClient, CanonError};
 use super::types::{
-    CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody, RequestVerifyResponse,
+    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
+    RequestVerifyResponse,
 };
 use super::Token;
 
@@ -153,6 +154,11 @@ impl CanonClient for HttpCanonClient {
         body: &RequestVerifyBody,
     ) -> Result<RequestVerifyResponse, CanonError> {
         self.post_json("/canon/request-verify", body)
+    }
+
+    fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
+        // Top-level conductor route (NOT under `/canon/`).
+        self.get_json("/catalogue")
     }
 }
 
