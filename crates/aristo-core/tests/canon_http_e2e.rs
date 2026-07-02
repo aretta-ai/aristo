@@ -136,6 +136,7 @@ fn match_annotations_happy_path_round_trips() {
             verification: VerificationMetadata {
                 coverage_level: "tight".into(),
                 test_binaries: vec!["monotonicity_property".into()],
+                instrumentation: None,
             },
         }]],
         effective_scopes: vec![":vanilla".into()],

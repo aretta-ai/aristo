@@ -314,6 +314,198 @@ pub struct VerificationMetadata {
     /// Names of test binaries the server would run for this match
     /// in Phase 2. Phase 1 ignores this list.
     pub test_binaries: Vec<String>,
+    /// P-008 instrumentation bundle for the routed gated tests, when
+    /// the server delivered one (Slice 2 additive wire evolution —
+    /// see [`InstrumentationBundle`]). `None` when the server is
+    /// pre-P-008, delivers no bundle for this match, or degraded
+    /// gracefully (missing/malformed lock). Old payloads without the
+    /// key decode to `None`; when `None`, the key is omitted so the
+    /// pre-P-008 wire shape stays byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrumentation: Option<InstrumentationBundle>,
+}
+
+// ─── P-008 instrumentation bundle ──────────────────────────────────────────
+//
+// Provenance: P-008 Slice 2 (SLICE23-SPEC, aretta-books
+// `.planning/instrument-handoff/slice23/`). The conductor does NOT
+// depend on aristo crates, so the wire contract is MIRRORED serde
+// types on both sides, pinned by (1) the spec's JSON shape and
+// (2) the golden fixture `fixtures/golden-bundle.json` — a
+// byte-identical copy of the cross-repo fixture that both repos
+// round-trip in tests. Cross-repo drift here breaks the contract.
+//
+// Null-preservation rule: the `Option` fields inside the bundle
+// deliberately do NOT use `skip_serializing_if` — the golden fixture
+// carries explicit `null`s (e.g. `landing.annotation`, `oracle`) and
+// the contract test asserts decode → encode `serde_json::Value`
+// equality with the fixture. Absent keys and explicit `null` decode
+// identically (both → `None`); JSON encode always emits the key.
+// TOML persistence note (`.aristo/canon-matches.toml`): toml 0.8
+// silently omits `None` struct fields when serializing to a table
+// (verified empirically), so the missing skip attrs do NOT break TOML
+// encode, and absent-key decode restores `None` losslessly. The one
+// real TOML hazard is a `null` INSIDE the verbatim `landing.target`
+// Value ("unsupported unit type") — a persister must strip Value
+// nulls or embed the bundle as a JSON string.
+
+/// P-008 instrumentation bundle: everything the SDK needs to land,
+/// presence-check (S2 probe), and escalate the SUT instrumentation
+/// accessors required by a match's routed gated conformance tests.
+///
+/// Rendered server-side from the flavor's `accessors.lock.json` +
+/// `coverage.yaml`; attached additively at
+/// [`VerificationMetadata::instrumentation`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InstrumentationBundle {
+    /// `"<flavor>:<payload_ref[..7]>:<sha256(sorted accessor_ids)[..12]>"`
+    /// — e.g. `"turso:7b6cbae:ae85f8792372"`. Stable content key for
+    /// dedup/union across suggestions.
+    pub bundle_id: String,
+    /// Which SUT revisions authored the accessor payload.
+    pub provenance: BundleProvenance,
+    /// How to compile the presence probe against the SUT.
+    pub compile_check: BundleCompileCheck,
+    /// Companion items (wrapper types, projector fns, imports,
+    /// derives) the accessors need, as a flat role-tagged list
+    /// deduped bundle-wide by `(symbol, file)`. Referenced from
+    /// [`RecordLanding::companions_ref`] by symbol.
+    pub companions: Vec<BundleCompanion>,
+    /// One record per accessor in the union of the routed gated
+    /// tests' `requires_instr` rows.
+    pub records: Vec<InstrumentationRecord>,
+}
+
+/// SUT-revision provenance for an [`InstrumentationBundle`], from the
+/// lock file's vendor block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BundleProvenance {
+    /// Upstream SUT revision the payload was authored against.
+    pub base_ref: String,
+    /// The instrumentation-payload revision (the accessors' home).
+    pub payload_ref: String,
+    /// Verbatim from the lock vendor block, e.g.
+    /// `"aristo-macros 0.3.0 (two-mode Inspect grammar)"`.
+    pub macro_grammar_rev: String,
+    /// SUT crate → repo subpath, e.g. `turso_core` → `core`.
+    pub sut_binding: BTreeMap<String, String>,
+    /// The "supposed to be at commit" citation — equals
+    /// [`payload_ref`](Self::payload_ref).
+    pub authored_at: String,
+}
+
+/// How to compile the S2 presence probe against the SUT.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BundleCompileCheck {
+    /// The SUT package the accessors live in, e.g. `"turso_core"`.
+    pub package: String,
+    /// The cargo feature spec that turns the accessors on, e.g.
+    /// `"aristo-instr,turso_core/aristo-instr"`.
+    pub features: String,
+}
+
+/// One companion item an accessor needs (wrapper type, projector fn,
+/// import, derive), role-tagged per the lock.json data model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BundleCompanion {
+    /// The item's symbol, e.g. `"WalInstalledSnapshot"` or
+    /// `"Wal::installed_snapshot"`. Join key (with
+    /// [`file`](Self::file)) for bundle-wide dedup and for
+    /// [`RecordLanding::companions_ref`].
+    pub symbol: String,
+    /// Lock-side role tag, e.g. `"return_type"`,
+    /// `"trait_method_decl"`.
+    pub role: String,
+    /// SUT-relative file the item lives in.
+    pub file: String,
+    /// Human-readable visibility note, e.g.
+    /// `"pub (cfg aristo-instr)"`.
+    pub visibility: String,
+    /// Vendor blob revision the companion body was captured at.
+    /// Absent from older locks.
+    #[serde(default)]
+    pub payload_ref: Option<String>,
+}
+
+/// One accessor the routed gated tests require: what it is
+/// (`intent`), what breaks without it (`catch`), where it lands in
+/// the SUT (`landing`), and how the S2 probe checks it exists
+/// (`presence`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InstrumentationRecord {
+    /// Lock row id, e.g. `"inspect_header_version"`. Dedup key for
+    /// the bundle union across accepted suggestions.
+    pub accessor_id: String,
+    /// Lock row kind, e.g. `"inspect_projection"`,
+    /// `"hand_written_fn"`.
+    pub kind: String,
+    /// Accessor class letter from the lock row (e.g. `"A"`).
+    pub class: String,
+    /// `"required"` | `"none"` — whether the differential oracle
+    /// semantically depends on this accessor's value (vs. presence
+    /// only).
+    pub semantic_tier: String,
+    /// Why the accessor exists, verbatim from the lock row.
+    pub intent: String,
+    /// What the gated tests catch — rendered server-side as the
+    /// join of the routed gated coverage rows' unique `property`
+    /// strings (`" | "` separator, sorted, dedup).
+    pub catch: String,
+    /// Where and how the accessor lands in the SUT source.
+    pub landing: RecordLanding,
+    /// What the S2 presence probe compiles against.
+    pub presence: RecordPresence,
+    /// Oracle assertion data, only when `semantic_tier ==
+    /// "required"` AND source data exists. Currently always `None` —
+    /// the lock carries no oracle field yet (books-side gap); do NOT
+    /// fabricate oracle asserts client-side.
+    #[serde(default)]
+    pub oracle: Option<serde_json::Value>,
+    /// Lock row upstream status, e.g. `"local-only"`.
+    pub upstream_status: String,
+}
+
+/// Where an accessor lands in the SUT source and what must accompany
+/// it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RecordLanding {
+    /// The lock row's `target` object VERBATIM — shape varies by
+    /// [`kind`](InstrumentationRecord::kind) (field rows carry
+    /// `field`/`field_type`, fn rows carry `method`/`signature`),
+    /// so it stays an opaque [`serde_json::Value`] on the wire.
+    pub target: serde_json::Value,
+    /// The rendered annotation line (lock `payload.rendered`), e.g.
+    /// a `#[cfg_attr(feature = "aristo-instr", inspect(..))]`
+    /// attribute. `None` for `hand_written`/`field_read`/`raw`/
+    /// `fork` kinds where nothing is macro-rendered.
+    #[serde(default)]
+    pub annotation: Option<String>,
+    /// The gated `derive(Inspect)` line required on the container
+    /// when the kind is `inspect_*`; `None` otherwise.
+    #[serde(default)]
+    pub ensure_derive: Option<String>,
+    /// `use` lines the accessor's landing site needs.
+    pub required_use: Vec<String>,
+    /// Symbols into [`InstrumentationBundle::companions`] this
+    /// record depends on.
+    pub companions_ref: Vec<String>,
+}
+
+/// What the S2 presence probe checks for one accessor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RecordPresence {
+    /// `"<target.container>::<emitted>"` per the emitted-symbol
+    /// rule: `emitted = row.emits` if present, else
+    /// `"inspect_" + payload.name` if present, else `row.id`.
+    pub expected_symbol: String,
+    /// fn kinds: the target signature verbatim; field kinds:
+    /// `"fn <emitted>(&self) -> <payload.ret|field_type>"`.
+    pub expected_signature: String,
+    /// The first harness source line that calls the accessor,
+    /// extracted VERBATIM server-side; `None` when the harness
+    /// doesn't exercise it (probe falls back to the signature).
+    #[serde(default)]
+    pub harness_probe: Option<String>,
 }
 
 // ─── GET /canon/entry/<id>?version=<v> ─────────────────────────────────────
@@ -576,6 +768,7 @@ mod tests {
                 verification: VerificationMetadata {
                     coverage_level: "tight".into(),
                     test_binaries: vec!["monotonicity_property".into()],
+                    instrumentation: None,
                 },
             }]],
             effective_scopes: vec![":vanilla".into()],
@@ -604,6 +797,7 @@ mod tests {
             verification: VerificationMetadata {
                 coverage_level: "none".into(),
                 test_binaries: vec![],
+                instrumentation: None,
             },
         };
         let json = serde_json::to_string(&m).unwrap();
@@ -704,6 +898,7 @@ mod tests {
             verification: VerificationMetadata {
                 coverage_level: "none".into(),
                 test_binaries: vec![],
+                instrumentation: None,
             },
         };
         let json = serde_json::to_string(&m).unwrap();
@@ -957,5 +1152,253 @@ mod tests {
         let empty: CanonCatalogue = serde_json::from_str(r#"{"entries":[]}"#).unwrap();
         assert!(empty.entries.is_empty());
         assert!(empty.notice.is_empty());
+    }
+
+    // ─── P-008 instrumentation bundle ──────────────────────────────────────
+
+    /// Byte-identical copy of the cross-repo golden fixture
+    /// (`aretta-books .planning/instrument-handoff/slice23/golden-bundle.json`,
+    /// copied via `cp` on 2026-07-02, sha256 4bfc582e…). Both repos
+    /// round-trip this exact file — it IS the wire contract test.
+    const GOLDEN_BUNDLE: &str = include_str!("fixtures/golden-bundle.json");
+
+    fn sample_bundle() -> InstrumentationBundle {
+        let mut sut_binding = BTreeMap::new();
+        sut_binding.insert("turso_core".to_string(), "core".to_string());
+        InstrumentationBundle {
+            bundle_id: "turso:7b6cbae:ae85f8792372".into(),
+            provenance: BundleProvenance {
+                base_ref: "ad351877c5cf38c1fafc7f08703bfe521b8f4437".into(),
+                payload_ref: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+                macro_grammar_rev: "aristo-macros 0.3.0 (two-mode Inspect grammar)".into(),
+                sut_binding,
+                authored_at: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+            },
+            compile_check: BundleCompileCheck {
+                package: "turso_core".into(),
+                features: "aristo-instr,turso_core/aristo-instr".into(),
+            },
+            companions: vec![BundleCompanion {
+                symbol: "WalInstalledSnapshot".into(),
+                role: "return_type".into(),
+                file: "core/types.rs".into(),
+                visibility: "pub (cfg aristo-instr)".into(),
+                payload_ref: Some("7b6cbaec".into()),
+            }],
+            records: vec![InstrumentationRecord {
+                accessor_id: "inspect_header_version".into(),
+                kind: "inspect_projection".into(),
+                class: "A".into(),
+                semantic_tier: "none".into(),
+                intent: "Expose the in-memory logical-log header version.".into(),
+                catch: "Logical-log DOI catch (bug tag C-1).".into(),
+                landing: RecordLanding {
+                    target: serde_json::json!({
+                        "crate": "turso_core",
+                        "container": "LogicalLog",
+                        "field": "header"
+                    }),
+                    annotation: Some(
+                        "#[cfg_attr(feature = \"aristo-instr\", inspect(name = \"header_version\"))]"
+                            .into(),
+                    ),
+                    ensure_derive: Some(
+                        "#[cfg_attr(feature = \"aristo-instr\", derive(Inspect))]".into(),
+                    ),
+                    required_use: vec![],
+                    companions_ref: vec!["WalInstalledSnapshot".into()],
+                },
+                presence: RecordPresence {
+                    expected_symbol: "LogicalLog::inspect_header_version".into(),
+                    expected_signature: "fn inspect_header_version(&self) -> Option<u8>".into(),
+                    harness_probe: Some(
+                        "let _r: Option<u8> = log.inspect_header_version();".into(),
+                    ),
+                },
+                oracle: None,
+                upstream_status: "local-only".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn old_payload_decodes_with_instrumentation_none() {
+        // Back-compat (SLICE23-SPEC hard constraint: additive wire
+        // evolution only): a pre-P-008 server's verification block
+        // carries no `instrumentation` key. `#[serde(default)]` must
+        // decode it as `None`.
+        let raw = r#"{
+            "canon_id": "wal_install_coherence",
+            "version": "v0.1.0",
+            "canonical_text": "max_frame and transaction_count are installed from one coherent shared sample",
+            "confidence": 0.91,
+            "scope": "turso",
+            "prefix_tier": "aristos:",
+            "backed_by": "golden model + differential testing",
+            "verification": {
+                "coverage_level": "tight",
+                "test_binaries": ["wal_install_coherence"]
+            }
+        }"#;
+        let m: CanonMatch = serde_json::from_str(raw).expect("old payload must keep decoding");
+        assert!(
+            m.verification.instrumentation.is_none(),
+            "missing instrumentation key must decode to None, got: {:?}",
+            m.verification.instrumentation
+        );
+        // An explicit `null` (a degraded P-008 server) decodes the
+        // same way.
+        let vm: VerificationMetadata = serde_json::from_str(
+            r#"{"coverage_level": "none", "test_binaries": [], "instrumentation": null}"#,
+        )
+        .unwrap();
+        assert!(vm.instrumentation.is_none());
+    }
+
+    #[test]
+    fn verification_metadata_omits_instrumentation_when_none() {
+        // Serialization side: no bundle ⇒ no key, so the pre-P-008
+        // wire shape stays byte-identical (same pattern as `linked`
+        // and `suggestions`).
+        let vm = VerificationMetadata {
+            coverage_level: "none".into(),
+            test_binaries: vec![],
+            instrumentation: None,
+        };
+        let json = serde_json::to_string(&vm).unwrap();
+        assert!(
+            !json.contains("instrumentation"),
+            "expected instrumentation to be omitted when None, got: {json}"
+        );
+    }
+
+    #[test]
+    fn new_payload_with_instrumentation_round_trips() {
+        let m = CanonMatch {
+            canon_id: "wal_install_coherence".into(),
+            version: "v0.1.0".into(),
+            canonical_text:
+                "max_frame and transaction_count are installed from one coherent shared sample"
+                    .into(),
+            confidence: 0.91,
+            scope: "turso".into(),
+            prefix_tier: PrefixTier::Aristos,
+            backed_by: Some("golden model + differential testing".into()),
+            linked: Some("arta_c3d4e5f6".into()),
+            verification: VerificationMetadata {
+                coverage_level: "tight".into(),
+                test_binaries: vec!["wal_install_coherence".into()],
+                instrumentation: Some(sample_bundle()),
+            },
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        let back: CanonMatch = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn golden_bundle_fixture_round_trips_value_equal() {
+        // The cross-repo contract test (SLICE23-SPEC): decode the
+        // golden fixture into the mirrored types, re-encode, and
+        // require serde_json::Value equality with the original. This
+        // is strict — the fixture's EXPLICIT nulls (record 2's
+        // landing.annotation / ensure_derive, both records' oracle)
+        // must survive as nulls, which is why the bundle's inner
+        // Options carry no skip_serializing_if.
+        let bundle: InstrumentationBundle =
+            serde_json::from_str(GOLDEN_BUNDLE).expect("golden bundle fixture must decode");
+        let original: serde_json::Value = serde_json::from_str(GOLDEN_BUNDLE).unwrap();
+        let reencoded = serde_json::to_value(&bundle).unwrap();
+        assert_eq!(
+            reencoded, original,
+            "decode → encode must reproduce the golden fixture exactly (incl. explicit nulls)"
+        );
+    }
+
+    #[test]
+    fn golden_bundle_fixture_decodes_expected_fields() {
+        // Semantic pins on top of the Value-equality test, so a
+        // field-name typo that happens to round-trip via `target`'s
+        // opaque Value can't slip through unnoticed.
+        let bundle: InstrumentationBundle = serde_json::from_str(GOLDEN_BUNDLE).unwrap();
+        assert_eq!(bundle.bundle_id, "turso:7b6cbae:ae85f8792372");
+        assert_eq!(
+            bundle.provenance.authored_at, bundle.provenance.payload_ref,
+            "authored_at is the payload_ref citation"
+        );
+        assert_eq!(
+            bundle.provenance.sut_binding.get("turso_core"),
+            Some(&"core".to_string())
+        );
+        assert_eq!(
+            bundle.compile_check.features,
+            "aristo-instr,turso_core/aristo-instr"
+        );
+        assert_eq!(bundle.companions.len(), 2);
+        assert_eq!(
+            bundle.companions[0].payload_ref.as_deref(),
+            Some("7b6cbaec")
+        );
+        assert_eq!(bundle.records.len(), 2);
+
+        let inspect = &bundle.records[0];
+        assert_eq!(inspect.accessor_id, "inspect_header_version");
+        assert_eq!(
+            inspect.landing.target["container"],
+            serde_json::json!("LogicalLog"),
+            "target must carry the lock row's object verbatim"
+        );
+        assert!(inspect.landing.annotation.is_some());
+        assert_eq!(
+            inspect.presence.expected_symbol,
+            "LogicalLog::inspect_header_version"
+        );
+
+        let hand_written = &bundle.records[1];
+        assert_eq!(hand_written.kind, "hand_written_fn");
+        assert!(
+            hand_written.landing.annotation.is_none(),
+            "explicit null must decode to None"
+        );
+        assert!(hand_written.landing.ensure_derive.is_none());
+        assert_eq!(
+            hand_written.landing.companions_ref,
+            vec!["WalInstalledSnapshot", "Wal::installed_snapshot"]
+        );
+        assert!(
+            bundle.records.iter().all(|r| r.oracle.is_none()),
+            "lock carries no oracle data yet — nothing may fabricate it"
+        );
+    }
+
+    #[test]
+    fn record_optional_fields_accept_absent_and_null() {
+        // Absent keys and explicit nulls must decode identically —
+        // that equivalence is what makes the null-preserving encode
+        // semantically safe on the wire.
+        let raw = r#"{
+            "accessor_id": "installed_snapshot",
+            "kind": "hand_written_fn",
+            "class": "A",
+            "semantic_tier": "required",
+            "intent": "Owned snapshot of the installed read-snapshot fields.",
+            "catch": "WAL install coherence (WR-03).",
+            "landing": {
+                "target": { "container": "Wal (trait) / impl Wal for WalFile" },
+                "required_use": [],
+                "companions_ref": []
+            },
+            "presence": {
+                "expected_symbol": "Wal::installed_snapshot",
+                "expected_signature": "fn installed_snapshot(&self) -> WalInstalledSnapshot"
+            },
+            "upstream_status": "local-only"
+        }"#;
+        let rec: InstrumentationRecord =
+            serde_json::from_str(raw).expect("absent optional keys must decode");
+        assert!(rec.landing.annotation.is_none());
+        assert!(rec.landing.ensure_derive.is_none());
+        assert!(rec.presence.harness_probe.is_none());
+        assert!(rec.oracle.is_none());
     }
 }
