@@ -614,7 +614,7 @@ fn write_instrumented_fixture(fixture_dir: &Path) {
                 class: "A".into(),
                 semantic_tier: "none".into(),
                 intent: "Expose the in-memory logical-log header version.".into(),
-                catch: "Logical-log DOI catch (bug tag C-1).".into(),
+                catch: "Logical-log durability catch (durability).".into(),
                 landing: RecordLanding {
                     target: serde_json::json!({
                         "crate": "turso_core",
@@ -651,7 +651,7 @@ fn write_instrumented_fixture(fixture_dir: &Path) {
                 class: "A".into(),
                 semantic_tier: "required".into(),
                 intent: "Owned snapshot of the installed read-snapshot fields.".into(),
-                catch: "WAL install coherence (WR-03).".into(),
+                catch: "WAL install coherence.".into(),
                 landing: RecordLanding {
                     target: serde_json::json!({
                         "crate": "turso_core",

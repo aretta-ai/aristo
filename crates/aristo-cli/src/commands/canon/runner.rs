@@ -821,7 +821,7 @@ mod tests {
                 class: "A".into(),
                 semantic_tier: "none".into(),
                 intent: "Expose the in-memory logical-log header version.".into(),
-                catch: "Logical-log DOI catch (bug tag C-1).".into(),
+                catch: "Logical-log durability catch (durability).".into(),
                 landing: RecordLanding {
                     target: serde_json::json!({
                         "crate": "turso_core",

@@ -1191,7 +1191,7 @@ mod tests {
                 class: "A".into(),
                 semantic_tier: "none".into(),
                 intent: "Expose the in-memory logical-log header version.".into(),
-                catch: "Logical-log DOI catch (bug tag C-1).".into(),
+                catch: "Logical-log durability catch (durability).".into(),
                 landing: RecordLanding {
                     target: serde_json::json!({
                         "crate": "turso_core",
@@ -1382,7 +1382,7 @@ mod tests {
             "class": "A",
             "semantic_tier": "required",
             "intent": "Owned snapshot of the installed read-snapshot fields.",
-            "catch": "WAL install coherence (WR-03).",
+            "catch": "WAL install coherence.",
             "landing": {
                 "target": { "container": "Wal (trait) / impl Wal for WalFile" },
                 "required_use": [],

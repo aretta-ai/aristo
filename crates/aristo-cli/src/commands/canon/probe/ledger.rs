@@ -104,7 +104,7 @@ mod tests {
             bundle_id: "turso:7b6cbae:ae85f8792372".into(),
             base_ref: "ad351877c5cf38c1fafc7f08703bfe521b8f4437".into(),
             payload_ref: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
-            catch: "WAL install coherence (WR-03).".into(),
+            catch: "WAL install coherence.".into(),
             evidence: "error[E0599]: no method named `installed_snapshot` found".into(),
             flagged_at: flagged_at.into(),
         }

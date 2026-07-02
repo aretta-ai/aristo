@@ -603,7 +603,7 @@ mod tests {
                     class: "A".into(),
                     semantic_tier: "required".into(),
                     intent: "Owned snapshot of the installed read-snapshot fields.".into(),
-                    catch: "WAL install coherence (WR-03).".into(),
+                    catch: "WAL install coherence.".into(),
                     landing: RecordLanding {
                         target: serde_json::json!({
                             "crate": "turso_core",

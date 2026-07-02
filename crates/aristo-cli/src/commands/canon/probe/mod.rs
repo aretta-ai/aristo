@@ -514,7 +514,7 @@ mod tests {
             bundle_id: "turso:7b6cbae:ae85f8792372".into(),
             base_ref: "ad351877".into(),
             payload_ref: "7b6cbaec".into(),
-            catch: "WAL install coherence (WR-03).".into(),
+            catch: "WAL install coherence.".into(),
             evidence: "error[E0599]".into(),
             flagged_at: flagged_at.into(),
         }

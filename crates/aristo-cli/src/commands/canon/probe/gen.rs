@@ -675,14 +675,14 @@ use turso_core::storage::wal::Wal;
 
 /// accessor `inspect_header_version` — expects `LogicalLog::inspect_header_version`
 /// signature: `fn inspect_header_version(&self) -> Option<u8>`
-/// catch: Logical-log DOI catch: under a LogicalLogWriteHeader fault the log must end durable-or-intact (never a torn intermediate). Bug tag C-1.
+/// catch: Logical-log durability: under a failed header write the log must end durable-or-intact, never a torn intermediate state.
 pub fn probe_inspect_header_version(log: &LogicalLog) {
     let _r: Option<u8> = log.inspect_header_version();
 }
 
 /// accessor `installed_snapshot` — expects `Wal::installed_snapshot`
 /// signature: `fn installed_snapshot(&self) -> WalInstalledSnapshot`
-/// catch: WAL install coherence: max_frame and transaction_count must be installed from one coherent shared sample (WR-03).
+/// catch: WAL install coherence: max_frame and transaction_count must be installed from one coherent shared sample.
 pub fn probe_installed_snapshot(wal: &dyn Wal) {
     let snap = wal.installed_snapshot();
 }

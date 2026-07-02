@@ -35,8 +35,8 @@
       "kind": "inspect_projection",
       "class": "A",
       "semantic_tier": "none",
-      "intent": "Expose the in-memory logical-log header version so the DOI oracle can observe header.version advancing (None -> Some(2)) on a failed pwrite.",
-      "catch": "Logical-log DOI catch: under a LogicalLogWriteHeader fault the log must end durable-or-intact (never a torn intermediate). Bug tag C-1.",
+      "intent": "Expose the in-memory logical-log header version so an external verifier can observe header.version advancing (None -> Some(2)) across a failed header write.",
+      "catch": "Logical-log durability: under a failed header write the log must end durable-or-intact, never a torn intermediate state.",
       "landing": {
         "target": {
           "crate": "turso_core",
@@ -63,8 +63,8 @@
       "kind": "hand_written_fn",
       "class": "A",
       "semantic_tier": "required",
-      "intent": "Owned snapshot of the connection-local installed read-snapshot fields (max_frame/min_frame/transaction_count/checkpoint_seq) persisted on the WAL handle by install_connection_state; witnesses whether max_frame and transaction_count were installed from one coherent shared sample (WR-03).",
-      "catch": "WAL install coherence: max_frame and transaction_count must be installed from one coherent shared sample (WR-03).",
+      "intent": "Owned snapshot of the connection-local installed read-snapshot fields (max_frame/min_frame/transaction_count/checkpoint_seq) persisted on the WAL handle by install_connection_state; lets a verifier check that max_frame and transaction_count were installed from one coherent shared sample.",
+      "catch": "WAL install coherence: max_frame and transaction_count must be installed from one coherent shared sample.",
       "landing": {
         "target": {
           "crate": "turso_core",
