@@ -277,6 +277,13 @@ pub(crate) fn apply_acceptance(
         prefix_tier: pending.prefix_tier,
         backed_by: pending.backed_by.clone(),
         linked: Some(linked_str.clone()),
+        // P-008 carry (SLICE23-SPEC aristo item 2): the verification
+        // metadata — coverage level, routed test binaries, and the
+        // optional instrumentation bundle — survives accept. The
+        // accepted_matches bucket is what the bundle union
+        // (`aristo_core::canon::union_accepted_bundles`) and the S2
+        // presence probe read. `None` for pre-P-008 pending rows.
+        verification: pending.verification.clone(),
         accepted_at: now.to_string(),
         bound_at: now.to_string(),
     };

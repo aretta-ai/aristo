@@ -1669,6 +1669,7 @@ mod tests {
                     prefix_tier: PrefixTier::Aristos,
                     backed_by: Some("test backing".into()),
                     linked: None,
+                    verification: None,
                     accepted_at: "2026-05-24T00:00:00Z".into(),
                     bound_at: "2026-05-24T00:00:00Z".into(),
                 }],

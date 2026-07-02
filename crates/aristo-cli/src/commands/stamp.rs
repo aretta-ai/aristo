@@ -1108,6 +1108,7 @@ mod derive_bindings_tests {
             prefix_tier: PrefixTier::Aristos,
             backed_by: Some("backing".into()),
             linked: linked.map(str::to_string),
+            verification: None,
             accepted_at: "2026-05-26T00:00:00Z".into(),
             bound_at: "2026-05-26T00:00:00Z".into(),
         }
