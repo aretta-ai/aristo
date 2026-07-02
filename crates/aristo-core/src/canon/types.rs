@@ -457,6 +457,60 @@ pub struct RequestVerifyResponse {
     pub previously_submitted_at: Option<String>,
 }
 
+// ─── GET /catalogue ─────────────────────────────────────────────────────────
+
+/// Response for `GET /catalogue` — the full active canon corpus
+/// catalogue (one entry per canon id, at its active version). Closed-IP
+/// fields (alternative phrasings, match signals) are stripped
+/// server-side; this is the browsable trust-card surface. Served by a
+/// per-repo conductor; addressed via the resolved data-plane base.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CanonCatalogue {
+    /// Server-stamped proprietary / confidential notice (one line per
+    /// element), written at the top of the downloaded snapshot so the
+    /// marking travels with this proprietary corpus. Empty from servers
+    /// that don't send it (older conductors).
+    #[serde(default)]
+    pub notice: Vec<String>,
+    #[serde(default)]
+    pub entries: Vec<CanonCatalogueEntry>,
+}
+
+/// One catalogue entry: the active version of a canon id (the server
+/// sorts entries by `(category, canon_id)`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CanonCatalogueEntry {
+    pub canon_id: String,
+    pub version: String,
+    pub canonical_text: String,
+    pub category: String,
+    #[serde(default)]
+    pub applies_to: Vec<String>,
+    /// Scopes that back this canon (scope -> backing string). Empty =
+    /// unbacked (the `kanon:` tier).
+    #[serde(default)]
+    pub backed_by: BTreeMap<String, String>,
+    pub coverage_level: String,
+    /// Spec ids (`S-XXX`) this canon references — the join key to the
+    /// coverage map.
+    #[serde(default)]
+    pub spec_refs: Vec<String>,
+}
+
+impl CanonCatalogueEntry {
+    /// Tier label derived from backing, mirroring the dashboard: an
+    /// entry backed by any scope is `aristos`, otherwise `kanon`. The
+    /// wire carries `backed_by`, not a tier field; this is the sole
+    /// derivation point so the CLI and any other consumer agree.
+    pub fn tier_label(&self) -> &'static str {
+        if self.backed_by.is_empty() {
+            "kanon"
+        } else {
+            "aristos"
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -851,5 +905,57 @@ mod tests {
         assert!(json.contains("annotation_text"), "got: {json}");
         assert!(json.contains("applies_to"), "got: {json}");
         assert!(json.contains("confidence_threshold"), "got: {json}");
+    }
+
+    #[test]
+    fn catalogue_tier_label_derives_from_backing() {
+        let mut backed = BTreeMap::new();
+        backed.insert(":vanilla".to_string(), "neural checker".to_string());
+        let backed_entry = CanonCatalogueEntry {
+            canon_id: "a".into(),
+            version: "v0.1.0".into(),
+            canonical_text: "a".into(),
+            category: "invariants".into(),
+            applies_to: vec!["fn".into()],
+            backed_by: backed,
+            coverage_level: "tight".into(),
+            spec_refs: vec!["S-001".into()],
+        };
+        let unbacked_entry = CanonCatalogueEntry {
+            backed_by: BTreeMap::new(),
+            ..backed_entry.clone()
+        };
+        assert_eq!(backed_entry.tier_label(), "aristos");
+        assert_eq!(unbacked_entry.tier_label(), "kanon");
+    }
+
+    #[test]
+    fn catalogue_json_round_trips_and_tolerates_empty() {
+        let cat = CanonCatalogue {
+            notice: vec!["PROPRIETARY & CONFIDENTIAL".to_string()],
+            entries: vec![CanonCatalogueEntry {
+                canon_id: "a".into(),
+                version: "v0.1.0".into(),
+                canonical_text: "text".into(),
+                category: "invariants".into(),
+                applies_to: vec!["fn".into()],
+                backed_by: BTreeMap::new(),
+                coverage_level: "none".into(),
+                spec_refs: vec![],
+            }],
+        };
+        let json = serde_json::to_string(&cat).unwrap();
+        let back: CanonCatalogue = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, cat);
+        // The notice serializes FIRST (top of the downloaded snapshot).
+        assert!(
+            json.find("notice").unwrap() < json.find("entries").unwrap(),
+            "notice must serialize before entries: {json}"
+        );
+        // The server sends {"entries":[]} when no canon dir is configured,
+        // and the notice defaults to empty for older servers that omit it.
+        let empty: CanonCatalogue = serde_json::from_str(r#"{"entries":[]}"#).unwrap();
+        assert!(empty.entries.is_empty());
+        assert!(empty.notice.is_empty());
     }
 }

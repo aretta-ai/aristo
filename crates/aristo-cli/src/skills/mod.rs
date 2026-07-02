@@ -121,6 +121,11 @@ const INSTRUMENTING: Skill = Skill {
     content: include_str!("aristo-instrumenting.md"),
 };
 
+const CATALOGUE: Skill = Skill {
+    name: "aristo-catalogue",
+    content: include_str!("aristo-catalogue.md"),
+};
+
 const BUNDLED: &[Skill] = &[
     AUTHORING,
     VERIFY,
@@ -130,6 +135,7 @@ const BUNDLED: &[Skill] = &[
     STATUS,
     HELP,
     INSTRUMENTING,
+    CATALOGUE,
 ];
 
 #[cfg(test)]
@@ -143,6 +149,27 @@ mod tests {
     #[test]
     fn authoring_skill_is_bundled() {
         assert!(find("aristo-authoring").is_some());
+    }
+
+    #[test]
+    fn authoring_and_suggestions_route_to_the_catalogue() {
+        // The catalogue is woven into the authoring + intent-suggestions
+        // flows as a reuse/discovery step, not just a standalone skill.
+        let authoring = find("aristo-authoring")
+            .expect("aristo-authoring bundled")
+            .resolved_content();
+        assert!(
+            authoring.contains("aristo canon catalogue"),
+            "aristo-authoring must route to the canon catalogue for canon reuse"
+        );
+        let suggestions = find("aristo-intent-suggestions")
+            .expect("aristo-intent-suggestions bundled")
+            .resolved_content();
+        assert!(
+            suggestions.contains("aristo canon catalogue")
+                || suggestions.contains("aristo-catalogue"),
+            "aristo-intent-suggestions must reference the catalogue for full-corpus browsing"
+        );
     }
 
     #[test]

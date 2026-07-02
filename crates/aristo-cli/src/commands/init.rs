@@ -218,6 +218,7 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool, hook: bool) -> CliRes
 /// it stays tracked and propagates to CI and fresh clones.
 const ARISTO_GITIGNORE_ENTRIES: &[&str] = &[
     ".aristo/index.toml",
+    ".aristo/catalogue.json",
     ".aristo/sessions/",
     ".aristo/nudge-state.toml",
     ".aristo/verify-queue/",

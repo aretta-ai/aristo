@@ -24,6 +24,8 @@ When the user invokes this skill (typically `/aristo-help`, or "what aristo skil
 
 - **`aristo-status`** — a friendly, read-only project readout: tier + score, verification rate, counts, review backlog, pending canon, and the engine's recommended next action. **Benefit:** see where you stand at a glance, with one nudge toward the highest-value next step.
 
+- **`aristo-catalogue`** — download + browse the canon catalogue: the full corpus of canon entries (invariants/properties) you can bind against. Fetches this project's instance corpus to a gitignored local snapshot (`.aristo/catalogue.json`) and searches it to answer "what canon entries exist for X?" / "what should I bind to?". **Benefit:** discover reusable, verification-backed invariants to bind to, without leaving the terminal.
+
 - **`aristo-help`** — this overview.
 
 ## Example scenario flows

@@ -22,7 +22,8 @@
 use std::fmt;
 
 use super::types::{
-    CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody, RequestVerifyResponse,
+    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
+    RequestVerifyResponse,
 };
 
 /// Trait abstracting over the canon API endpoints (`POST /canon/match`,
@@ -55,6 +56,13 @@ pub trait CanonClient: Send + Sync {
     /// canon-strategy.md §CS11.
     fn request_verify(&self, body: &RequestVerifyBody)
         -> Result<RequestVerifyResponse, CanonError>;
+
+    /// Fetch the full active canon catalogue (`GET /catalogue`). One
+    /// entry per canon id at its active version; closed-IP fields are
+    /// stripped server-side. Requires auth (Read capability) and is
+    /// served by a per-repo conductor, addressed via the resolved
+    /// data-plane base.
+    fn catalogue(&self) -> Result<CanonCatalogue, CanonError>;
 }
 
 /// Errors surfaced by [`CanonClient`] methods. Cleaved by recovery

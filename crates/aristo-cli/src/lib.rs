@@ -773,6 +773,12 @@ pub(crate) enum CanonAction {
     /// application is planned.
     Migrate,
 
+    /// Download the canon catalogue (the full list of available canon
+    /// entries) to `.aristo/catalogue.json` — a gitignored local
+    /// snapshot — and print a summary. Requires authentication; served
+    /// by the per-repo conductor addressed via `[instance] url`.
+    Catalogue,
+
     /// List or inspect queued §17 proof-tree suggestions (the related
     /// canon entries dragged in alongside a primary match). Read-only:
     /// it does not open a review session or mutate the queue. To review
@@ -1083,6 +1089,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 commands::canon::request_verify::run(&canon_id, notes)
             }
             CanonAction::Migrate => commands::canon::migrate::run(),
+            CanonAction::Catalogue => commands::canon::catalogue::run(),
             CanonAction::Suggestions {
                 objective,
                 counts,
