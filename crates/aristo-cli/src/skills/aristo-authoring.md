@@ -67,6 +67,18 @@ aristo canon catalogue   # downloads the corpus to .aristo/catalogue.json (gitig
 
 Search the snapshot's `canonical_text` / `category` for your invariant. On a hit, either phrase the intent to align with the entry's `canonical_text` (so `aristo stamp` matches + binds it) or bind directly via `id = "kanon:<canon_id>"`; prefer `aristos`-tier entries (verification-backed). No match → write your own. (The snapshot is a proprietary, gitignored local cache — see `/aristo-catalogue`; never commit it.)
 
+### Accepting a canon match is the USER's decision — ask first
+
+`aristo canon accept` is not a formality: it **rewrites the user's source** (annotation text → the canonical text, id → the tier-prefixed id) and creates a durable binding in the committed `.aristo/canon-matches.toml`. A wrong binding attaches the wrong proof obligations to the code. So when `aristo stamp` surfaces a pending match for an annotation you just wrote, **present it to the user and ask before accepting** — use your question tool with concrete options, showing:
+
+- the annotation's current text vs the entry's `canonical_text` (the rewrite they are agreeing to);
+- the tier(s) on offer (aristos = verification-backed, note what backs it; kanon = unverified) and the confidence;
+- what accept will do (source rewrite + id prefix + cache promotion), and that reject / leave-pending are valid choices.
+
+Offer options like: *Accept (aristos tier)* / *Accept (kanon tier)* if both are pending / *Reject* / *Leave pending for later review*. Recommend one and say why (sibling-entry disambiguation reasoning belongs here).
+
+Auto-accept WITHOUT asking only when the user explicitly pre-authorized it for this task ("bind and accept without asking", a standing instruction in CLAUDE.md, etc.). Never accept pending matches on OTHER annotations as a side effect of your task — mention them and move on.
+
 ## The shape of a good intent
 
 Write intents as English sentences with the precision of a spec. Closer to POSIX man pages, W3C normative language, Postgres documentation, or TigerBeetle's design docs than to formal logic.
