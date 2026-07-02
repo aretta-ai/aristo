@@ -13,6 +13,7 @@ pub(crate) mod accept;
 pub(crate) mod catalogue;
 pub(crate) mod list;
 pub(crate) mod migrate;
+pub(crate) mod probe;
 pub(crate) mod refresh;
 pub(crate) mod reject;
 pub(crate) mod request_verify;

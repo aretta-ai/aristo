@@ -18,6 +18,11 @@
 //! 6. `accept_with_unknown_annotation_id_errors`
 //! 7. `accept_with_unknown_canon_id_errors`
 //! 8. `accept_already_bound_annotation_refuses`
+//! 9. `accept_carries_instrumentation_bundle_into_accepted_match`
+//!    (P-008 SLICE23-SPEC: verification metadata + bundle survive
+//!    match → pending → accepted through the real binary)
+//! 10. `accept_tie_break_prefers_aristos_tier_on_equal_confidence`
+//!     (dual-tier same-canon-id rows, equal confidence → aristos: wins)
 
 use std::path::Path;
 use std::process::Command;
@@ -490,6 +495,302 @@ fn accept_then_sibling_accept_succeeds_after_line_shift() {
         post.contains(r#"id = "kanon:checkout_total_non_negative""#),
         "expected second annotation's kanon: prefix in source; got:\n{post}"
     );
+}
+
+// ─── equal-confidence dual-tier tie-break regression ─────────────────────
+
+/// Server response listing the SAME canon entry at BOTH prefix tiers
+/// (same `canon_id`/`version`, equal confidence), with the `kanon:`
+/// row FIRST — the server's order.
+fn write_dual_tier_tie_fixture(fixture_dir: &Path) {
+    std::fs::create_dir_all(fixture_dir).unwrap();
+    let body = r#"
+effective_scopes = [":vanilla"]
+canon_version = "v0.2.0"
+matched_at = "2026-06-15T09:14:22Z"
+
+results = [
+    [
+        { canon_id = "cell_written_exactly_once_per_page_edit", version = "v0.2.1", canonical_text = "edit_page writes each cell exactly once", confidence = 0.92, scope = ":vanilla", prefix_tier = "kanon:", linked = "arta_a1b2c3d4ef56", verification = { coverage_level = "loose", test_binaries = [] } },
+        { canon_id = "cell_written_exactly_once_per_page_edit", version = "v0.2.1", canonical_text = "edit_page writes each cell exactly once", confidence = 0.92, scope = ":vanilla", prefix_tier = "aristos:", backed_by = "specialized neural checker", linked = "arta_a1b2c3d4ef56", verification = { coverage_level = "tight", test_binaries = [] } }
+    ]
+]
+"#;
+    std::fs::write(fixture_dir.join("match.toml"), body).unwrap();
+}
+
+/// Regression: when the same canon entry is pending at both prefix
+/// tiers with equal confidence, accept must tie-break to the
+/// `aristos:` row. It used to sort by confidence only and take the
+/// server's first row (`kanon:`), writing a `kanon:`-prefixed id
+/// into SUT source — which aristo-macros 0.3 rejects as an invalid
+/// identifier, breaking the SUT build on 0.3-pinned forks.
+#[test]
+fn accept_tie_break_prefers_aristos_tier_on_equal_confidence() {
+    let ws = setup_workspace(ARISTOS_SOURCE);
+    let fixture = ws.path().join("fixtures/canon");
+    write_dual_tier_tie_fixture(&fixture);
+    stamp(ws.path(), &fixture);
+
+    let out = aristo_in(ws.path())
+        .args([
+            "canon",
+            "accept",
+            "edit_page_cell_write_invariant",
+            "cell_written_exactly_once_per_page_edit",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "accept failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The rewritten source must carry the aristos: prefix — never
+    // kanon:, despite the kanon row being listed first by the server.
+    let post = std::fs::read_to_string(ws.path().join("src/lib.rs")).unwrap();
+    assert!(
+        post.contains(r#"id = "aristos:cell_written_exactly_once_per_page_edit""#),
+        "expected aristos: prefix in source on equal-confidence tie; got:\n{post}"
+    );
+    assert!(
+        !post.contains("kanon:"),
+        "kanon: prefix must not reach source (0.3 macro rejects it); got:\n{post}"
+    );
+
+    // Index is re-keyed under the aristos:-prefixed id too.
+    let index_raw = std::fs::read_to_string(ws.path().join(".aristo/index.toml")).unwrap();
+    assert!(
+        index_raw.contains(r#"["aristos:cell_written_exactly_once_per_page_edit"]"#),
+        "expected aristos:-prefixed entry in index; got:\n{index_raw}"
+    );
+    assert!(
+        !index_raw.contains("kanon:cell_written_exactly_once_per_page_edit"),
+        "index must not carry the kanon:-prefixed id; got:\n{index_raw}"
+    );
+}
+
+// ─── P-008 instrumentation-bundle carry (SLICE23-SPEC aristo item 2) ──────
+
+/// Build a match fixture whose verification block carries a P-008
+/// instrumentation bundle. Constructed with the real wire types and
+/// serialized with `toml::to_string` (the mock client reads TOML) —
+/// hand-writing the nested bundle as inline-table TOML would be
+/// unreadable and typo-prone.
+fn write_instrumented_fixture(fixture_dir: &Path) {
+    use aristo_core::canon::{
+        BundleCompanion, BundleCompileCheck, BundleProvenance, CanonMatch, CanonMatchResponse,
+        InstrumentationBundle, InstrumentationRecord, PrefixTier, RecordLanding, RecordPresence,
+        VerificationMetadata,
+    };
+    let mut sut_binding = std::collections::BTreeMap::new();
+    sut_binding.insert("turso_core".to_string(), "core".to_string());
+    let bundle = InstrumentationBundle {
+        bundle_id: "turso:7b6cbae:ae85f8792372".into(),
+        provenance: BundleProvenance {
+            base_ref: "ad351877c5cf38c1fafc7f08703bfe521b8f4437".into(),
+            payload_ref: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+            macro_grammar_rev: "aristo-macros 0.3.0 (two-mode Inspect grammar)".into(),
+            sut_binding,
+            authored_at: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+        },
+        compile_check: BundleCompileCheck {
+            package: "turso_core".into(),
+            features: "aristo-instr,turso_core/aristo-instr".into(),
+        },
+        companions: vec![BundleCompanion {
+            symbol: "WalInstalledSnapshot".into(),
+            role: "return_type".into(),
+            file: "core/types.rs".into(),
+            visibility: "pub (cfg aristo-instr)".into(),
+            payload_ref: Some("7b6cbaec".into()),
+        }],
+        records: vec![
+            InstrumentationRecord {
+                accessor_id: "inspect_header_version".into(),
+                kind: "inspect_projection".into(),
+                class: "A".into(),
+                semantic_tier: "none".into(),
+                intent: "Expose the in-memory logical-log header version.".into(),
+                catch: "Logical-log durability catch (durability).".into(),
+                landing: RecordLanding {
+                    target: serde_json::json!({
+                        "crate": "turso_core",
+                        "container": "LogicalLog",
+                        "field": "header"
+                    }),
+                    annotation: Some(
+                        "#[cfg_attr(feature = \"aristo-instr\", inspect(name = \"header_version\"))]"
+                            .into(),
+                    ),
+                    ensure_derive: Some(
+                        "#[cfg_attr(feature = \"aristo-instr\", derive(Inspect))]".into(),
+                    ),
+                    required_use: vec![],
+                    companions_ref: vec![],
+                },
+                presence: RecordPresence {
+                    expected_symbol: "LogicalLog::inspect_header_version".into(),
+                    expected_signature: "fn inspect_header_version(&self) -> Option<u8>".into(),
+                    harness_probe: Some(
+                        "let _r: Option<u8> = log.inspect_header_version();".into(),
+                    ),
+                },
+                oracle: None,
+                upstream_status: "local-only".into(),
+            },
+            // Mirrors the golden fixture's record 2: hand-written
+            // accessor with all-None optional fields, so the
+            // end-to-end carry pins that Nones survive the real
+            // binary's TOML writes as absent keys → None.
+            InstrumentationRecord {
+                accessor_id: "installed_snapshot".into(),
+                kind: "hand_written_fn".into(),
+                class: "A".into(),
+                semantic_tier: "required".into(),
+                intent: "Owned snapshot of the installed read-snapshot fields.".into(),
+                catch: "WAL install coherence.".into(),
+                landing: RecordLanding {
+                    target: serde_json::json!({
+                        "crate": "turso_core",
+                        "container": "Wal (trait) / impl Wal for WalFile",
+                        "method": "installed_snapshot"
+                    }),
+                    annotation: None,
+                    ensure_derive: None,
+                    required_use: vec![],
+                    companions_ref: vec!["WalInstalledSnapshot".into()],
+                },
+                presence: RecordPresence {
+                    expected_symbol: "Wal::installed_snapshot".into(),
+                    expected_signature: "fn installed_snapshot(&self) -> WalInstalledSnapshot"
+                        .into(),
+                    harness_probe: None,
+                },
+                oracle: None,
+                upstream_status: "local-only".into(),
+            },
+        ],
+    };
+    let resp = CanonMatchResponse {
+        results: vec![vec![CanonMatch {
+            canon_id: "cell_written_exactly_once_per_page_edit".into(),
+            version: "v0.2.1".into(),
+            canonical_text: "edit_page writes each cell exactly once".into(),
+            confidence: 0.92,
+            scope: ":vanilla".into(),
+            prefix_tier: PrefixTier::Aristos,
+            backed_by: Some("specialized neural checker".into()),
+            linked: Some("arta_a1b2c3d4ef56".into()),
+            verification: VerificationMetadata {
+                coverage_level: "tight".into(),
+                test_binaries: vec!["wal_install_coherence".into()],
+                instrumentation: Some(bundle),
+            },
+        }]],
+        effective_scopes: vec![":vanilla".into()],
+        canon_version: "v0.2.0".into(),
+        matched_at: "2026-07-02T09:14:22Z".into(),
+        suggestions: None,
+    };
+    std::fs::create_dir_all(fixture_dir).unwrap();
+    std::fs::write(
+        fixture_dir.join("match.toml"),
+        toml::to_string(&resp).unwrap(),
+    )
+    .unwrap();
+}
+
+/// THE carry round-trip (SLICE23-SPEC aristo item 2): a match result
+/// carrying an instrumentation bundle → `stamp` persists it on the
+/// PendingMatch → `canon accept` moves it onto the AcceptedMatch —
+/// all through the real binary and the on-disk
+/// `.aristo/canon-matches.toml`.
+#[test]
+fn accept_carries_instrumentation_bundle_into_accepted_match() {
+    use aristo_core::canon::CanonMatchesFile;
+    use aristo_core::index::AnnotationId;
+
+    let ws = setup_workspace(ARISTOS_SOURCE);
+    let fixture = ws.path().join("fixtures/canon");
+    write_instrumented_fixture(&fixture);
+    stamp(ws.path(), &fixture);
+
+    let cache_path = ws.path().join(".aristo/canon-matches.toml");
+
+    // Post-stamp: the pending match carries the verification block.
+    let pre = CanonMatchesFile::read(&cache_path).unwrap();
+    let ann_id = AnnotationId::parse("edit_page_cell_write_invariant").unwrap();
+    let pending = &pre.entries[&ann_id].pending_matches[0];
+    let vm = pending
+        .verification
+        .as_ref()
+        .expect("stamp must persist verification metadata on the pending match");
+    assert_eq!(vm.coverage_level, "tight");
+    assert_eq!(vm.test_binaries, vec!["wal_install_coherence"]);
+    let pending_bundle = vm
+        .instrumentation
+        .as_ref()
+        .expect("stamp must persist the instrumentation bundle");
+    assert_eq!(pending_bundle.bundle_id, "turso:7b6cbae:ae85f8792372");
+    assert_eq!(pending_bundle.records.len(), 2);
+
+    // Accept moves it to accepted_matches under the prefixed id.
+    let out = aristo_in(ws.path())
+        .args([
+            "canon",
+            "accept",
+            "edit_page_cell_write_invariant",
+            "cell_written_exactly_once_per_page_edit",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "accept failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let post = CanonMatchesFile::read(&cache_path).unwrap();
+    let prefixed = AnnotationId::parse("aristos:cell_written_exactly_once_per_page_edit").unwrap();
+    let accepted = &post.entries[&prefixed].accepted_matches[0];
+    let accepted_vm = accepted
+        .verification
+        .as_ref()
+        .expect("accept must carry verification metadata onto the accepted match");
+    assert_eq!(accepted_vm.coverage_level, "tight");
+    assert_eq!(accepted_vm.test_binaries, vec!["wal_install_coherence"]);
+    let bundle = accepted_vm
+        .instrumentation
+        .as_ref()
+        .expect("accept must carry the instrumentation bundle");
+    // Bundle content survives the whole match → pending → accepted
+    // lifecycle byte-equal.
+    assert_eq!(bundle, pending_bundle);
+    assert_eq!(bundle.records[0].accessor_id, "inspect_header_version");
+    assert!(bundle.records[0].landing.annotation.is_some());
+    let hand_written = &bundle.records[1];
+    assert_eq!(hand_written.accessor_id, "installed_snapshot");
+    assert!(
+        hand_written.landing.annotation.is_none(),
+        "None optionals must survive the on-disk TOML round-trip as None"
+    );
+    assert!(hand_written.presence.harness_probe.is_none());
+    assert!(hand_written.oracle.is_none());
+    assert_eq!(
+        hand_written.landing.companions_ref,
+        vec!["WalInstalledSnapshot"]
+    );
+    assert_eq!(bundle.companions.len(), 1);
+
+    // The union helper sees exactly this bundle from the cache.
+    let union = aristo_core::canon::union_accepted_bundles(&post);
+    assert!(union.warnings.is_empty(), "got: {:?}", union.warnings);
+    assert_eq!(union.bundles.len(), 1);
+    assert_eq!(&union.bundles[0], bundle);
 }
 
 #[test]

@@ -294,6 +294,7 @@ mod tests {
                 verification: VerificationMetadata {
                     coverage_level: "none".into(),
                     test_binaries: vec![],
+                    instrumentation: None,
                 },
             }]],
             effective_scopes: vec![":vanilla".into()],

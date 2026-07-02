@@ -31,6 +31,10 @@
 //!   `pending_matches` (surfaced, not reviewed), `accepted_matches`
 //!   (bound), `rejected_matches` (suppressed until text changes).
 //!   Cache-hit semantics per L5's invalidation rules.
+//! - [`instrumentation`]: P-008 bundle helpers — union across
+//!   accepted matches (records deduped by `accessor_id`, companions
+//!   by `(symbol, file)`, per-`payload_ref` groups on provenance
+//!   mismatch) + TOML-persistence null sanitizing.
 //!
 //! **Phase 1 scope**: no verification execution. The `verification`
 //! block on [`CanonMatch`] is informational
@@ -42,6 +46,7 @@ pub mod auth;
 pub mod cache;
 pub mod client;
 pub mod http_client;
+pub mod instrumentation;
 pub mod mock_client;
 pub mod noop_client;
 pub mod rewrite;
@@ -54,12 +59,16 @@ pub use cache::{
 };
 pub use client::{AuthError, CanonClient, CanonError};
 pub use http_client::{HttpCanonClient, DEFAULT_BASE_URL};
+pub use instrumentation::{
+    sanitize_bundle_for_persistence, union_accepted_bundles, union_bundles, BundleUnion,
+};
 pub use mock_client::MockCanonClient;
 pub use noop_client::NoopCanonClient;
 pub use rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError};
 pub use types::{
-    synthesize_phase1_linked, AnnotationMatchInput, CanonCatalogue, CanonCatalogueEntry,
-    CanonEntry, CanonMatch, CanonMatchRequest, CanonMatchResponse, ClusterSuggestion, PrefixTier,
-    References, Relationship, RequestVerifyBody, RequestVerifyResponse, SuggestedEntry,
-    VerificationMetadata,
+    synthesize_phase1_linked, AnnotationMatchInput, BundleCompanion, BundleCompileCheck,
+    BundleProvenance, CanonCatalogue, CanonCatalogueEntry, CanonEntry, CanonMatch,
+    CanonMatchRequest, CanonMatchResponse, ClusterSuggestion, InstrumentationBundle,
+    InstrumentationRecord, PrefixTier, RecordLanding, RecordPresence, References, Relationship,
+    RequestVerifyBody, RequestVerifyResponse, SuggestedEntry, VerificationMetadata,
 };

@@ -1,0 +1,21 @@
+    Updating git repository `https://github.com/tursodatabase/turso.git`
+    Checking aristo-s2-presence-probe v0.0.0 (/tmp/claude-1000/-home-ubuntu-csf-aretta-books/f032f9fc-cba5-4df2-b82b-b073280969a5/scratchpad/turso-payload/target/aristo-s2-probe)
+error[E0603]: module `wal` is private
+  --> src/lib.rs:17:26
+   |
+17 | use turso_core::storage::wal::Wal;
+   |                          ^^^ private module
+   |
+note: the module `wal` is defined here
+  --> /tmp/claude-1000/-home-ubuntu-csf-aretta-books/f032f9fc-cba5-4df2-b82b-b073280969a5/scratchpad/turso-payload/core/storage/mod.rs:40:1
+   |
+40 | pub(crate) mod wal;
+   | ^^^^^^^^^^^^^^^^^^
+help: consider importing this trait instead
+   |
+17 - use turso_core::storage::wal::Wal;
+17 + use turso_core::Wal;
+   |
+
+For more information about this error, try `rustc --explain E0603`.
+error: could not compile `aristo-s2-presence-probe` (lib) due to 1 previous error

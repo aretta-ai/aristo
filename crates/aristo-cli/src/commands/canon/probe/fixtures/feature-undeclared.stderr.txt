@@ -1,0 +1,9 @@
+    Updating git repository `https://github.com/tursodatabase/turso.git`
+error: failed to select a version for `turso_core`.
+    ... required by package `aristo-s2-presence-probe v0.0.0 (/tmp/claude-1000/-home-ubuntu-csf-aretta-books/f032f9fc-cba5-4df2-b82b-b073280969a5/scratchpad/turso-e2e/target/aristo-s2-probe)`
+versions that meet the requirements `*` are: 0.7.0-pre.14, 0.6.0-pre.28
+
+package `aristo-s2-presence-probe` depends on `turso_core` with feature `aristo-instr` but `turso_core` does not have that feature.
+
+
+failed to select a version for `turso_core` which could resolve this conflict

@@ -277,6 +277,13 @@ pub(crate) fn apply_acceptance(
         prefix_tier: pending.prefix_tier,
         backed_by: pending.backed_by.clone(),
         linked: Some(linked_str.clone()),
+        // P-008 carry (SLICE23-SPEC aristo item 2): the verification
+        // metadata — coverage level, routed test binaries, and the
+        // optional instrumentation bundle — survives accept. The
+        // accepted_matches bucket is what the bundle union
+        // (`aristo_core::canon::union_accepted_bundles`) and the S2
+        // presence probe read. `None` for pre-P-008 pending rows.
+        verification: pending.verification.clone(),
         accepted_at: now.to_string(),
         bound_at: now.to_string(),
     };
@@ -374,13 +381,26 @@ fn locate_pending(
         .iter()
         .filter(|m| m.canon_id == canon_id)
         .collect();
-    // Multiple matches for the same canon_id should never happen (the
-    // server returns one match per (annotation, canon_id) pair), but
-    // be defensive: take the highest-confidence one and warn.
+    // The server can return the same canon entry at BOTH prefix tiers
+    // (a kanon: row and an aristos: row, same canon_id, often equal
+    // confidence). Take the highest-confidence one; on a tie prefer
+    // the Aristos tier — it is the verified tier, and `aristos:` is
+    // the prefix every deployed aristo-macros grammar accepts in
+    // source (0.3 rejects a `kanon:`-prefixed id as an invalid
+    // identifier, so accepting the kanon row would break the SUT
+    // build on 0.3-pinned forks).
     candidates.sort_by(|a, b| {
         b.confidence
             .partial_cmp(&a.confidence)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                use aristo_core::canon::PrefixTier;
+                match (a.prefix_tier, b.prefix_tier) {
+                    (PrefixTier::Aristos, PrefixTier::Kanon) => std::cmp::Ordering::Less,
+                    (PrefixTier::Kanon, PrefixTier::Aristos) => std::cmp::Ordering::Greater,
+                    _ => std::cmp::Ordering::Equal,
+                }
+            })
     });
     let pending = candidates.first().ok_or_else(|| CliError::Other {
         message: format!(

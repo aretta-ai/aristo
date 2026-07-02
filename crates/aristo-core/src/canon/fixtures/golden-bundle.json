@@ -1,0 +1,93 @@
+{
+  "bundle_id": "turso:7b6cbae:ae85f8792372",
+  "provenance": {
+    "base_ref": "ad351877c5cf38c1fafc7f08703bfe521b8f4437",
+    "payload_ref": "7b6cbaec04e86c0d9ac47819c77444af5054c50a",
+    "macro_grammar_rev": "aristo-macros 0.3.0 (two-mode Inspect grammar)",
+    "sut_binding": {
+      "turso_core": "core"
+    },
+    "authored_at": "7b6cbaec04e86c0d9ac47819c77444af5054c50a"
+  },
+  "compile_check": {
+    "package": "turso_core",
+    "features": "aristo-instr,turso_core/aristo-instr"
+  },
+  "companions": [
+    {
+      "symbol": "WalInstalledSnapshot",
+      "role": "return_type",
+      "file": "core/types.rs",
+      "visibility": "pub (cfg aristo-instr)",
+      "payload_ref": "7b6cbaec"
+    },
+    {
+      "symbol": "Wal::installed_snapshot",
+      "role": "trait_method_decl",
+      "file": "core/storage/wal.rs",
+      "visibility": "trait method (cfg aristo-instr)",
+      "payload_ref": "7b6cbaec"
+    }
+  ],
+  "records": [
+    {
+      "accessor_id": "inspect_header_version",
+      "kind": "inspect_projection",
+      "class": "A",
+      "semantic_tier": "none",
+      "intent": "Expose the in-memory logical-log header version so an external verifier can observe header.version advancing (None -> Some(2)) across a failed header write.",
+      "catch": "Logical-log durability: under a failed header write the log must end durable-or-intact, never a torn intermediate state.",
+      "landing": {
+        "target": {
+          "crate": "turso_core",
+          "file": "core/mvcc/persistent_storage/logical_log.rs",
+          "container": "LogicalLog",
+          "field": "header",
+          "field_type": "Option<LogHeader>"
+        },
+        "annotation": "#[cfg_attr(feature = \"aristo-instr\", inspect(ret = Option<u8>, with = |h| h.as_ref().map(|x| x.version), name = \"header_version\"))]",
+        "ensure_derive": "#[cfg_attr(feature = \"aristo-instr\", derive(Inspect))]",
+        "required_use": [],
+        "companions_ref": []
+      },
+      "presence": {
+        "expected_symbol": "LogicalLog::inspect_header_version",
+        "expected_signature": "fn inspect_header_version(&self) -> Option<u8>",
+        "harness_probe": "let _r: Option<u8> = log.inspect_header_version();"
+      },
+      "oracle": null,
+      "upstream_status": "local-only"
+    },
+    {
+      "accessor_id": "installed_snapshot",
+      "kind": "hand_written_fn",
+      "class": "A",
+      "semantic_tier": "required",
+      "intent": "Owned snapshot of the connection-local installed read-snapshot fields (max_frame/min_frame/transaction_count/checkpoint_seq) persisted on the WAL handle by install_connection_state; lets a verifier check that max_frame and transaction_count were installed from one coherent shared sample.",
+      "catch": "WAL install coherence: max_frame and transaction_count must be installed from one coherent shared sample.",
+      "landing": {
+        "target": {
+          "crate": "turso_core",
+          "file": "core/storage/wal.rs",
+          "container": "Wal (trait) / impl Wal for WalFile",
+          "method": "installed_snapshot",
+          "signature": "fn installed_snapshot(&self) -> WalInstalledSnapshot"
+        },
+        "annotation": null,
+        "ensure_derive": null,
+        "required_use": [],
+        "companions_ref": [
+          "WalInstalledSnapshot",
+          "Wal::installed_snapshot"
+        ]
+      },
+      "presence": {
+        "expected_symbol": "Wal::installed_snapshot",
+        "expected_signature": "fn installed_snapshot(&self) -> WalInstalledSnapshot",
+        "harness_probe": "let snap = wal.installed_snapshot();"
+      },
+      "oracle": null,
+      "upstream_status": "local-only"
+    }
+  ]
+}

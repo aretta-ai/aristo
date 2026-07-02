@@ -53,7 +53,7 @@ use std::path::Path;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::types::PrefixTier;
+use super::types::{PrefixTier, VerificationMetadata};
 use crate::index::AnnotationId;
 
 /// Current on-disk schema version. Bump on any breaking shape change.
@@ -156,6 +156,22 @@ pub struct PendingMatch {
     /// rationale and the Phase 2 plan that restores it to required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked: Option<String>,
+    /// Scope-aware verification metadata carried verbatim from the
+    /// `/canon/match` response (coverage level, routed test binaries,
+    /// and the optional P-008 instrumentation bundle — see
+    /// [`crate::canon::types::InstrumentationBundle`]). Persisted so
+    /// the bundle survives `canon accept` and later drives the S2
+    /// presence probe + the coverage-integrity check without a
+    /// re-fetch. **Additive evolution (same recipe as `linked`):**
+    /// caches written before this field existed deserialize with
+    /// `None`, and `None` writes no key so pre-P-008 files stay
+    /// byte-identical on re-serialize. JSON `null`s inside the
+    /// bundle's verbatim `landing.target` / `oracle` values are
+    /// stripped by the runner before persistence (TOML cannot
+    /// represent null — see
+    /// [`crate::canon::instrumentation::sanitize_bundle_for_persistence`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<VerificationMetadata>,
     /// Review state — `"open"` until the user decides.
     pub disposition: Disposition,
     /// RFC 3339 timestamp of when stamp/critique surfaced this match.
@@ -214,6 +230,15 @@ pub struct AcceptedMatch {
     /// the deriver re-synthesizes from `(canon_id, version)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linked: Option<String>,
+    /// Scope-aware verification metadata, carried from
+    /// [`PendingMatch::verification`] at accept time. This is the
+    /// authoritative persisted copy of the P-008 instrumentation
+    /// bundle for a bound annotation — the bundle union
+    /// ([`crate::canon::instrumentation::union_accepted_bundles`])
+    /// and the S2 presence probe read it from here. **Additive:**
+    /// older caches deserialize with `None`; `None` writes no key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<VerificationMetadata>,
     /// RFC 3339 timestamp of acceptance (when the user clicked
     /// `[a]ccept` in the critique session).
     pub accepted_at: String,
@@ -354,6 +379,7 @@ mod tests {
             prefix_tier: PrefixTier::Aristos,
             backed_by: Some("specialized neural checker".into()),
             linked: Some("arta_a1b2c3d4".into()),
+            verification: None,
             disposition: Disposition::Open,
             found_at: "2026-06-15T09:14:22Z".into(),
             found_by: "aristo stamp".into(),
@@ -370,6 +396,7 @@ mod tests {
             prefix_tier: PrefixTier::Aristos,
             backed_by: Some("specialized neural checker".into()),
             linked: Some("arta_a1b2c3d4".into()),
+            verification: None,
             accepted_at: "2026-06-15T09:20:00Z".into(),
             bound_at: "2026-06-15T09:20:00Z".into(),
         }
@@ -531,6 +558,209 @@ mod tests {
         assert_eq!(back, f);
     }
 
+    // ─── P-008 verification carry (SLICE23-SPEC aristo item 2) ────────────
+
+    /// Minimal instrumentation bundle for persistence tests. Record 2
+    /// of the golden fixture is mirrored in miniature: `annotation`,
+    /// `ensure_derive`, `harness_probe`, and `oracle` all `None`, so
+    /// the round-trip pins that toml 0.8 omits `None` struct fields on
+    /// encode and restores `None` from the absent keys on decode (the
+    /// bundle types deliberately carry no `skip_serializing_if` — see
+    /// the null-preservation note in `canon/types.rs`).
+    fn sample_verification_with_bundle() -> VerificationMetadata {
+        use crate::canon::types::{
+            BundleCompanion, BundleCompileCheck, BundleProvenance, InstrumentationBundle,
+            InstrumentationRecord, RecordLanding, RecordPresence,
+        };
+        let mut sut_binding = std::collections::BTreeMap::new();
+        sut_binding.insert("turso_core".to_string(), "core".to_string());
+        VerificationMetadata {
+            coverage_level: "tight".into(),
+            test_binaries: vec!["wal_install_coherence".into()],
+            instrumentation: Some(InstrumentationBundle {
+                bundle_id: "turso:7b6cbae:ae85f8792372".into(),
+                provenance: BundleProvenance {
+                    base_ref: "ad351877c5cf38c1fafc7f08703bfe521b8f4437".into(),
+                    payload_ref: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+                    macro_grammar_rev: "aristo-macros 0.3.0 (two-mode Inspect grammar)".into(),
+                    sut_binding,
+                    authored_at: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+                },
+                compile_check: BundleCompileCheck {
+                    package: "turso_core".into(),
+                    features: "aristo-instr,turso_core/aristo-instr".into(),
+                },
+                companions: vec![BundleCompanion {
+                    symbol: "WalInstalledSnapshot".into(),
+                    role: "return_type".into(),
+                    file: "core/types.rs".into(),
+                    visibility: "pub (cfg aristo-instr)".into(),
+                    payload_ref: Some("7b6cbaec".into()),
+                }],
+                records: vec![InstrumentationRecord {
+                    accessor_id: "installed_snapshot".into(),
+                    kind: "hand_written_fn".into(),
+                    class: "A".into(),
+                    semantic_tier: "required".into(),
+                    intent: "Owned snapshot of the installed read-snapshot fields.".into(),
+                    catch: "WAL install coherence.".into(),
+                    landing: RecordLanding {
+                        target: serde_json::json!({
+                            "crate": "turso_core",
+                            "container": "Wal (trait) / impl Wal for WalFile",
+                            "method": "installed_snapshot"
+                        }),
+                        annotation: None,
+                        ensure_derive: None,
+                        required_use: vec![],
+                        companions_ref: vec!["WalInstalledSnapshot".into()],
+                    },
+                    presence: RecordPresence {
+                        expected_symbol: "Wal::installed_snapshot".into(),
+                        expected_signature: "fn installed_snapshot(&self) -> WalInstalledSnapshot"
+                            .into(),
+                        harness_probe: None,
+                    },
+                    oracle: None,
+                    upstream_status: "local-only".into(),
+                }],
+            }),
+        }
+    }
+
+    #[test]
+    fn pending_match_with_verification_bundle_round_trips_through_toml() {
+        let mut p = sample_pending();
+        p.verification = Some(sample_verification_with_bundle());
+        let mut f = CanonMatchesFile::default();
+        f.entries.insert(
+            aid("wal_install_coherence_intent"),
+            CacheEntry {
+                last_match_text_hash: "blake3:7f3a9e2c".into(),
+                canon_fetched_at: "2026-07-02T09:14:22Z".into(),
+                pending_matches: vec![p],
+                accepted_matches: vec![],
+                rejected_matches: vec![],
+            },
+        );
+        let s = toml::to_string_pretty(&f).unwrap_or_else(|e| {
+            panic!("bundle-bearing pending match must be TOML-serializable: {e}")
+        });
+        let back: CanonMatchesFile = toml::from_str(&s).unwrap();
+        assert_eq!(back, f, "TOML round-trip must be lossless; encoded:\n{s}");
+        let vm = back.entries[&aid("wal_install_coherence_intent")].pending_matches[0]
+            .verification
+            .as_ref()
+            .expect("verification carried");
+        assert_eq!(vm.coverage_level, "tight");
+        assert_eq!(vm.test_binaries, vec!["wal_install_coherence"]);
+        let bundle = vm.instrumentation.as_ref().expect("bundle carried");
+        assert_eq!(bundle.records[0].accessor_id, "installed_snapshot");
+        assert!(
+            bundle.records[0].landing.annotation.is_none(),
+            "None Options inside the bundle must survive the TOML round-trip as None"
+        );
+    }
+
+    #[test]
+    fn accepted_match_with_verification_bundle_round_trips_through_toml() {
+        let mut acc = sample_accepted();
+        acc.verification = Some(sample_verification_with_bundle());
+        let mut f = CanonMatchesFile::default();
+        f.entries.insert(
+            aid("aristos:cell_written_exactly_once_per_page_edit"),
+            CacheEntry {
+                last_match_text_hash: "blake3:9d4e2f01".into(),
+                canon_fetched_at: "2026-07-02T09:30:00Z".into(),
+                pending_matches: vec![],
+                accepted_matches: vec![acc],
+                rejected_matches: vec![],
+            },
+        );
+        let s = toml::to_string_pretty(&f).unwrap_or_else(|e| {
+            panic!("bundle-bearing accepted match must be TOML-serializable: {e}")
+        });
+        let back: CanonMatchesFile = toml::from_str(&s).unwrap();
+        assert_eq!(back, f, "TOML round-trip must be lossless; encoded:\n{s}");
+        let bundle = back.entries[&aid("aristos:cell_written_exactly_once_per_page_edit")]
+            .accepted_matches[0]
+            .verification
+            .as_ref()
+            .expect("verification carried")
+            .instrumentation
+            .as_ref()
+            .expect("bundle carried");
+        assert_eq!(bundle.bundle_id, "turso:7b6cbae:ae85f8792372");
+        assert_eq!(
+            bundle.records[0].landing.target["container"],
+            serde_json::json!("Wal (trait) / impl Wal for WalFile"),
+            "verbatim target Value must survive TOML persistence"
+        );
+    }
+
+    #[test]
+    fn old_cache_without_verification_field_loads_with_none() {
+        // Back-compat (SLICE23-SPEC hard constraint: old persisted
+        // state must keep decoding): a cache written before the
+        // verification carry has no `verification` key on either
+        // bucket. `#[serde(default)]` must decode both as `None` —
+        // same additive recipe as `linked`.
+        let raw = r#"
+[__meta__]
+schema_version = 1
+
+[foo]
+last_match_text_hash = "blake3:x"
+canon_fetched_at = "2026-06-15T09:14:22Z"
+
+[[foo.pending_matches]]
+canon_id = "x"
+version = "v0.1.0"
+canonical_text = "y"
+canon_version = "v0.2.0"
+confidence = 0.9
+prefix_tier = "aristos:"
+linked = "arta_x"
+disposition = "open"
+found_at = "2026-06-15T09:14:22Z"
+found_by = "aristo stamp"
+
+[[foo.accepted_matches]]
+canon_id = "z"
+version = "v0.1.0"
+canonical_text = "y"
+canon_version = "v0.2.0"
+confidence = 1.0
+prefix_tier = "aristos:"
+accepted_at = "2026-06-14T17:02:11Z"
+bound_at = "2026-06-14T17:02:11Z"
+"#;
+        let parsed: CanonMatchesFile =
+            toml::from_str(raw).expect("pre-P-008 cache must keep loading");
+        let entry = &parsed.entries[&aid("foo")];
+        assert!(entry.pending_matches[0].verification.is_none());
+        assert!(entry.accepted_matches[0].verification.is_none());
+    }
+
+    #[test]
+    fn verification_key_omitted_on_disk_when_none() {
+        // No verification ⇒ no key, so pre-P-008-shaped caches stay
+        // byte-identical on re-serialize (same pattern as `linked`).
+        let mut f = CanonMatchesFile::default();
+        f.entries.insert(
+            aid("foo"),
+            CacheEntry {
+                last_match_text_hash: "blake3:x".into(),
+                canon_fetched_at: "2026-06-15T09:14:22Z".into(),
+                pending_matches: vec![sample_pending()],
+                accepted_matches: vec![sample_accepted()],
+                rejected_matches: vec![],
+            },
+        );
+        let s = toml::to_string(&f).unwrap();
+        assert!(!s.contains("verification"), "got: {s}");
+    }
+
     #[test]
     fn canon_prefixed_keys_round_trip() {
         // Quoted-key form for canon-bound ids (aristos: + kanon:).
@@ -560,6 +790,7 @@ mod tests {
                     prefix_tier: PrefixTier::Kanon,
                     backed_by: None,
                     linked: None,
+                    verification: None,
                     accepted_at: "2026-06-14T17:02:11Z".into(),
                     bound_at: "2026-06-14T17:02:11Z".into(),
                 }],

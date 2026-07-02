@@ -362,18 +362,35 @@ fn merge_response_into_cache(
         let pending: Vec<PendingMatch> = candidates
             .into_iter()
             .filter(|c| !cached_entry.is_rejected(&c.canon_id, &entry.text_hash))
-            .map(|c| PendingMatch {
-                canon_id: c.canon_id,
-                version: c.version,
-                canonical_text: c.canonical_text,
-                canon_version: response.canon_version.clone(),
-                confidence: c.confidence,
-                prefix_tier: c.prefix_tier,
-                backed_by: c.backed_by,
-                linked: c.linked,
-                disposition: Disposition::Open,
-                found_at: now.clone(),
-                found_by: found_by.to_string(),
+            .map(|c| {
+                // P-008 carry (SLICE23-SPEC aristo item 2): keep the
+                // whole verification block — coverage level, routed
+                // test binaries, and the optional instrumentation
+                // bundle — so it survives `canon accept` into
+                // `accepted_matches` and later drives the S2 presence
+                // probe + coverage-integrity check offline. JSON
+                // nulls inside the bundle's verbatim Values must be
+                // stripped first: the cache is TOML, and TOML cannot
+                // represent null (a stray null would brick every
+                // subsequent cache write).
+                let mut verification = c.verification;
+                if let Some(bundle) = verification.instrumentation.as_mut() {
+                    aristo_core::canon::sanitize_bundle_for_persistence(bundle);
+                }
+                PendingMatch {
+                    canon_id: c.canon_id,
+                    version: c.version,
+                    canonical_text: c.canonical_text,
+                    canon_version: response.canon_version.clone(),
+                    confidence: c.confidence,
+                    prefix_tier: c.prefix_tier,
+                    backed_by: c.backed_by,
+                    linked: c.linked,
+                    verification: Some(verification),
+                    disposition: Disposition::Open,
+                    found_at: now.clone(),
+                    found_by: found_by.to_string(),
+                }
             })
             .collect();
 
@@ -736,6 +753,7 @@ mod tests {
             verification: VerificationMetadata {
                 coverage_level: "tight".into(),
                 test_binaries: vec![],
+                instrumentation: None,
             },
         }
     }
@@ -768,6 +786,152 @@ mod tests {
         ));
     }
 
+    /// A small instrumentation bundle shaped like the golden fixture's
+    /// record 1, for the P-008 carry tests below.
+    fn sample_bundle() -> aristo_core::canon::InstrumentationBundle {
+        use aristo_core::canon::{
+            BundleCompanion, BundleCompileCheck, BundleProvenance, InstrumentationBundle,
+            InstrumentationRecord, RecordLanding, RecordPresence,
+        };
+        let mut sut_binding = BTreeMap::new();
+        sut_binding.insert("turso_core".to_string(), "core".to_string());
+        InstrumentationBundle {
+            bundle_id: "turso:7b6cbae:ae85f8792372".into(),
+            provenance: BundleProvenance {
+                base_ref: "ad351877c5cf38c1fafc7f08703bfe521b8f4437".into(),
+                payload_ref: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+                macro_grammar_rev: "aristo-macros 0.3.0 (two-mode Inspect grammar)".into(),
+                sut_binding,
+                authored_at: "7b6cbaec04e86c0d9ac47819c77444af5054c50a".into(),
+            },
+            compile_check: BundleCompileCheck {
+                package: "turso_core".into(),
+                features: "aristo-instr,turso_core/aristo-instr".into(),
+            },
+            companions: vec![BundleCompanion {
+                symbol: "WalInstalledSnapshot".into(),
+                role: "return_type".into(),
+                file: "core/types.rs".into(),
+                visibility: "pub (cfg aristo-instr)".into(),
+                payload_ref: Some("7b6cbaec".into()),
+            }],
+            records: vec![InstrumentationRecord {
+                accessor_id: "inspect_header_version".into(),
+                kind: "inspect_projection".into(),
+                class: "A".into(),
+                semantic_tier: "none".into(),
+                intent: "Expose the in-memory logical-log header version.".into(),
+                catch: "Logical-log durability catch (durability).".into(),
+                landing: RecordLanding {
+                    target: serde_json::json!({
+                        "crate": "turso_core",
+                        "container": "LogicalLog",
+                        "field": "header"
+                    }),
+                    annotation: Some(
+                        "#[cfg_attr(feature = \"aristo-instr\", inspect(name = \"header_version\"))]"
+                            .into(),
+                    ),
+                    ensure_derive: Some(
+                        "#[cfg_attr(feature = \"aristo-instr\", derive(Inspect))]".into(),
+                    ),
+                    required_use: vec![],
+                    companions_ref: vec!["WalInstalledSnapshot".into()],
+                },
+                presence: RecordPresence {
+                    expected_symbol: "LogicalLog::inspect_header_version".into(),
+                    expected_signature: "fn inspect_header_version(&self) -> Option<u8>".into(),
+                    harness_probe: Some("let _r: Option<u8> = log.inspect_header_version();".into()),
+                },
+                oracle: None,
+                upstream_status: "local-only".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn merge_response_carries_verification_metadata_into_pending() {
+        // P-008 carry (SLICE23-SPEC aristo item 2): the
+        // match→PendingMatch builder used to DROP c.verification
+        // entirely. It must now carry the whole block — coverage
+        // level, routed test binaries, and the instrumentation
+        // bundle — so `canon accept` can persist it.
+        let mut cache = CanonMatchesFile::default();
+        let batch = vec![batch_entry("alpha")];
+        let mut m = canon_match_aristos();
+        m.verification = aristo_core::canon::VerificationMetadata {
+            coverage_level: "tight".into(),
+            test_binaries: vec!["wal_install_coherence".into()],
+            instrumentation: Some(sample_bundle()),
+        };
+        let response = response_with(vec![vec![m]]);
+
+        merge_response_into_cache(&mut cache, &batch, &response, "aristo stamp");
+
+        let pending = &cache.entries[&aid("alpha")].pending_matches[0];
+        let vm = pending
+            .verification
+            .as_ref()
+            .expect("verification metadata must be carried, not dropped");
+        assert_eq!(vm.coverage_level, "tight");
+        assert_eq!(vm.test_binaries, vec!["wal_install_coherence"]);
+        let bundle = vm
+            .instrumentation
+            .as_ref()
+            .expect("instrumentation bundle must be carried");
+        assert_eq!(bundle.bundle_id, "turso:7b6cbae:ae85f8792372");
+        assert_eq!(bundle.records[0].accessor_id, "inspect_header_version");
+        // A null-free bundle is carried verbatim (sanitizing is a no-op).
+        assert_eq!(bundle, &sample_bundle());
+    }
+
+    #[test]
+    fn merge_response_strips_bundle_value_nulls_so_cache_stays_toml_writable() {
+        // The persistence hazard: `landing.target` is a verbatim
+        // serde_json::Value, and TOML cannot represent null — an
+        // unstripped null would make every subsequent cache write
+        // fail at serialize time. The carry sanitizes before
+        // persisting (dropping null-valued keys is decode-equivalent
+        // to the wire's absent-vs-null rule).
+        let mut cache = CanonMatchesFile::default();
+        let batch = vec![batch_entry("alpha")];
+        let mut m = canon_match_aristos();
+        let mut bundle = sample_bundle();
+        bundle.records[0].landing.target = serde_json::json!({
+            "container": "LogicalLog",
+            "field": "header",
+            "stray_null": null
+        });
+        m.verification = aristo_core::canon::VerificationMetadata {
+            coverage_level: "tight".into(),
+            test_binaries: vec![],
+            instrumentation: Some(bundle),
+        };
+        let response = response_with(vec![vec![m]]);
+
+        merge_response_into_cache(&mut cache, &batch, &response, "aristo stamp");
+
+        let carried = cache.entries[&aid("alpha")].pending_matches[0]
+            .verification
+            .as_ref()
+            .unwrap()
+            .instrumentation
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            carried.records[0].landing.target,
+            serde_json::json!({ "container": "LogicalLog", "field": "header" }),
+            "null-valued target keys must be stripped before persistence"
+        );
+        // The load-bearing property: the whole cache file serializes.
+        let toml_text = toml::to_string_pretty(&cache)
+            .expect("cache with a carried bundle must remain TOML-serializable");
+        assert!(
+            toml_text.contains("inspect_header_version"),
+            "got: {toml_text}"
+        );
+    }
+
     #[test]
     fn merge_response_preserves_accepted_matches() {
         let mut cache = CanonMatchesFile::default();
@@ -787,6 +951,7 @@ mod tests {
                     prefix_tier: PrefixTier::Aristos,
                     backed_by: Some("specialized neural checker".into()),
                     linked: None,
+                    verification: None,
                     accepted_at: "2026-06-14T00:00:00Z".into(),
                     bound_at: "2026-06-14T00:00:00Z".into(),
                 }],
@@ -855,6 +1020,7 @@ mod tests {
                         prefix_tier: PrefixTier::Aristos,
                         backed_by: None,
                         linked: Some("arta_x".into()),
+                        verification: None,
                         disposition: Disposition::Open,
                         found_at: "t".into(),
                         found_by: "x".into(),
@@ -868,6 +1034,7 @@ mod tests {
                         prefix_tier: PrefixTier::Kanon,
                         backed_by: None,
                         linked: Some("arta_x".into()),
+                        verification: None,
                         disposition: Disposition::Open,
                         found_at: "t".into(),
                         found_by: "x".into(),

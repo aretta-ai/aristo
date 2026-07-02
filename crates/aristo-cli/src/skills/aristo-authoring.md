@@ -67,6 +67,14 @@ aristo canon catalogue   # downloads the corpus to .aristo/catalogue.json (gitig
 
 Search the snapshot's `canonical_text` / `category` for your invariant. On a hit, either phrase the intent to align with the entry's `canonical_text` (so `aristo stamp` matches + binds it) or bind directly via `id = "kanon:<canon_id>"`; prefer `aristos`-tier entries (verification-backed). No match → write your own. (The snapshot is a proprietary, gitignored local cache — see `/aristo-catalogue`; never commit it.)
 
+### Accepting a canon match is the USER's decision — route it through the review flow
+
+`aristo canon accept` is not a formality: it **rewrites the user's source** (annotation text → the canonical text, id → the tier-prefixed id) and creates a durable binding in the committed `.aristo/canon-matches.toml`. A wrong binding attaches the wrong proof obligations to the code — the decision belongs to the user.
+
+When `aristo stamp` surfaces a pending match for an annotation you just wrote, do NOT accept it inline. **Load the `aristo-intent-suggestions` skill and run its review flow** — its Stage A (pending PRIMARY matches) owns the presentation: `AskUserQuestion` menus with the `aristo canon show` card as the preview, per-match *Accept (rewrite + bind) / Reject / Skip* decisions, tier and confidence in view. Bring your sibling-entry disambiguation reasoning into the recommendation; return here afterwards for the post-accept instrumentation contract (below).
+
+Auto-accept without the review flow only when the user explicitly pre-authorized it for this task ("bind and accept without asking", a standing CLAUDE.md instruction). Never accept pending matches on OTHER annotations as a side effect of your task — they belong to the same review flow later; mention them and move on.
+
 ## The shape of a good intent
 
 Write intents as English sentences with the precision of a spec. Closer to POSIX man pages, W3C normative language, Postgres documentation, or TigerBeetle's design docs than to formal logic.
@@ -474,6 +482,32 @@ You finish a slice with N new functions and zero intents, then promise yourself 
 - decide "no new intents needed for this slice" (which is the default story you tell yourself when the rationale has decayed).
 
 Both outcomes are silent quality losses. The fix is structural: write intents as you write the code, one at a time, in the same edit. The lint+stamp gates catch sloppy prose; only the concurrent-authoring discipline catches missed intents.
+
+## After accept: the instrumentation contract (probe, act, escalate)
+
+A canon match can arrive **carrying an instrumentation bundle** (`verification.instrumentation` on the suggestion — it persists into `.aristo/canon-matches.toml` at match time and survives `canon accept`). The bundle is the delivery half of the instrumentation handoff: it lists every `aristo::instrument` accessor the entry's routed conformance tests need from THIS repo. Each record carries the landing coordinates, the verbatim cfg-gated annotation, the expected symbol + signature, and the exact call the harness makes.
+
+**Whenever an accepted match carries a bundle, run the presence probe before declaring the binding done** (check with a grep for `instrumentation` in `.aristo/canon-matches.toml`, or just run the probe — it exits 0 with a notice when there is nothing to prove):
+
+```bash
+aristo canon probe --sut-path .
+```
+
+`--sut-path` is the SUT checkout root (usually the workspace itself). The probe generates an ephemeral crate from the bundle, compiles it feature-on and feature-off against your checkout, and reuses your own build graph (Cargo.lock + target/) — warm runs take seconds; a cold graph prints a one-time warning.
+
+**Interpret per-accessor results and ACT — do not stop at printing them:**
+
+- **PASS** — accessor present, type-checks, and the feature-off run confirms it vanishes without `aristo-instr`. Nothing to do.
+- **MISSING** (rustc E0599/E0609 naming the symbol) — absent or renamed. Read the escalation card the probe prints. If the proposed fix is **mechanical** — paste the record's `landing.annotation` at its `landing.target` coordinates, or re-place it on a renamed field (the harness keys on `name = "…"`, so a field rename does not change the contract) — apply it yourself (use the `aristo-instrumenting` skill for the macro grammar) and re-run the probe. **Ask the user only on genuine ambiguity** (two or more plausible landing sites) **or genuine absence** (the underlying state is gone from the SUT) — present the card's intent / placed-at / observed / proposed-fix lines and the three decisions: accept the fix, adjust the placement, or flag-broken.
+- **SUT_FEATURE_UNDECLARED** — the SUT's Cargo.toml declares no `aristo-instr` feature, so no accessor can compile in. This is a repo-level adoption decision, not something to patch silently: surface it to the user with the card's proposed fix.
+- **INDETERMINATE** — the compile failed with errors naming no accessor (often an unrelated build break, or an invalid annotation id). Show the first error verbatim; fix the build if the breakage is yours, otherwise surface it.
+- **SKIPPED(instr-debt: id)** — previously flagged broken. Visible debt, never silently green: leave it, and mention it in your summary.
+
+If a failure is real but out of scope for the current task, record **visible debt** rather than ignoring it: `aristo canon probe --sut-path . --flag-broken <accessor_id>` appends the evidence to `.aristo/instrumentation-debt.jsonl` (committed, append-only) and demotes that accessor to SKIPPED on future runs.
+
+If the probe warns that accepted matches route test binaries but carry **no bundle**, the server did not deliver instrumentation for them — tell the user (the conductor's books edition may predate the accessor catalog).
+
+**The exit code is the contract.** Nonzero means at least one unflagged accessor is not proven present — the binding's gated conformance tests cannot run against this checkout. Do not report the canon binding as complete while the probe fails; either land the fix, flag the debt (and say so), or escalate.
 
 ## Diff mode — backfill skipped intents on uncommitted changes
 
