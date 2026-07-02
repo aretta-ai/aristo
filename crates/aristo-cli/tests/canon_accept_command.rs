@@ -21,6 +21,8 @@
 //! 9. `accept_carries_instrumentation_bundle_into_accepted_match`
 //!    (P-008 SLICE23-SPEC: verification metadata + bundle survive
 //!    match → pending → accepted through the real binary)
+//! 10. `accept_tie_break_prefers_aristos_tier_on_equal_confidence`
+//!     (dual-tier same-canon-id rows, equal confidence → aristos: wins)
 
 use std::path::Path;
 use std::process::Command;
@@ -492,6 +494,81 @@ fn accept_then_sibling_accept_succeeds_after_line_shift() {
     assert!(
         post.contains(r#"id = "kanon:checkout_total_non_negative""#),
         "expected second annotation's kanon: prefix in source; got:\n{post}"
+    );
+}
+
+// ─── equal-confidence dual-tier tie-break regression ─────────────────────
+
+/// Server response listing the SAME canon entry at BOTH prefix tiers
+/// (same `canon_id`/`version`, equal confidence), with the `kanon:`
+/// row FIRST — the server's order.
+fn write_dual_tier_tie_fixture(fixture_dir: &Path) {
+    std::fs::create_dir_all(fixture_dir).unwrap();
+    let body = r#"
+effective_scopes = [":vanilla"]
+canon_version = "v0.2.0"
+matched_at = "2026-06-15T09:14:22Z"
+
+results = [
+    [
+        { canon_id = "cell_written_exactly_once_per_page_edit", version = "v0.2.1", canonical_text = "edit_page writes each cell exactly once", confidence = 0.92, scope = ":vanilla", prefix_tier = "kanon:", linked = "arta_a1b2c3d4ef56", verification = { coverage_level = "loose", test_binaries = [] } },
+        { canon_id = "cell_written_exactly_once_per_page_edit", version = "v0.2.1", canonical_text = "edit_page writes each cell exactly once", confidence = 0.92, scope = ":vanilla", prefix_tier = "aristos:", backed_by = "specialized neural checker", linked = "arta_a1b2c3d4ef56", verification = { coverage_level = "tight", test_binaries = [] } }
+    ]
+]
+"#;
+    std::fs::write(fixture_dir.join("match.toml"), body).unwrap();
+}
+
+/// Regression: when the same canon entry is pending at both prefix
+/// tiers with equal confidence, accept must tie-break to the
+/// `aristos:` row. It used to sort by confidence only and take the
+/// server's first row (`kanon:`), writing a `kanon:`-prefixed id
+/// into SUT source — which aristo-macros 0.3 rejects as an invalid
+/// identifier, breaking the SUT build on 0.3-pinned forks.
+#[test]
+fn accept_tie_break_prefers_aristos_tier_on_equal_confidence() {
+    let ws = setup_workspace(ARISTOS_SOURCE);
+    let fixture = ws.path().join("fixtures/canon");
+    write_dual_tier_tie_fixture(&fixture);
+    stamp(ws.path(), &fixture);
+
+    let out = aristo_in(ws.path())
+        .args([
+            "canon",
+            "accept",
+            "edit_page_cell_write_invariant",
+            "cell_written_exactly_once_per_page_edit",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "accept failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The rewritten source must carry the aristos: prefix — never
+    // kanon:, despite the kanon row being listed first by the server.
+    let post = std::fs::read_to_string(ws.path().join("src/lib.rs")).unwrap();
+    assert!(
+        post.contains(r#"id = "aristos:cell_written_exactly_once_per_page_edit""#),
+        "expected aristos: prefix in source on equal-confidence tie; got:\n{post}"
+    );
+    assert!(
+        !post.contains("kanon:"),
+        "kanon: prefix must not reach source (0.3 macro rejects it); got:\n{post}"
+    );
+
+    // Index is re-keyed under the aristos:-prefixed id too.
+    let index_raw = std::fs::read_to_string(ws.path().join(".aristo/index.toml")).unwrap();
+    assert!(
+        index_raw.contains(r#"["aristos:cell_written_exactly_once_per_page_edit"]"#),
+        "expected aristos:-prefixed entry in index; got:\n{index_raw}"
+    );
+    assert!(
+        !index_raw.contains("kanon:cell_written_exactly_once_per_page_edit"),
+        "index must not carry the kanon:-prefixed id; got:\n{index_raw}"
     );
 }
 
