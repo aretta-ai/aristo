@@ -475,6 +475,32 @@ You finish a slice with N new functions and zero intents, then promise yourself 
 
 Both outcomes are silent quality losses. The fix is structural: write intents as you write the code, one at a time, in the same edit. The lint+stamp gates catch sloppy prose; only the concurrent-authoring discipline catches missed intents.
 
+## After accept: the instrumentation contract (probe, act, escalate)
+
+A canon match can arrive **carrying an instrumentation bundle** (`verification.instrumentation` on the suggestion — it persists into `.aristo/canon-matches.toml` at match time and survives `canon accept`). The bundle is the delivery half of the instrumentation handoff: it lists every `aristo::instrument` accessor the entry's routed conformance tests need from THIS repo. Each record carries the landing coordinates, the verbatim cfg-gated annotation, the expected symbol + signature, and the exact call the harness makes.
+
+**Whenever an accepted match carries a bundle, run the presence probe before declaring the binding done** (check with a grep for `instrumentation` in `.aristo/canon-matches.toml`, or just run the probe — it exits 0 with a notice when there is nothing to prove):
+
+```bash
+aristo canon probe --sut-path .
+```
+
+`--sut-path` is the SUT checkout root (usually the workspace itself). The probe generates an ephemeral crate from the bundle, compiles it feature-on and feature-off against your checkout, and reuses your own build graph (Cargo.lock + target/) — warm runs take seconds; a cold graph prints a one-time warning.
+
+**Interpret per-accessor results and ACT — do not stop at printing them:**
+
+- **PASS** — accessor present, type-checks, and the feature-off run confirms it vanishes without `aristo-instr`. Nothing to do.
+- **MISSING** (rustc E0599/E0609 naming the symbol) — absent or renamed. Read the escalation card the probe prints. If the proposed fix is **mechanical** — paste the record's `landing.annotation` at its `landing.target` coordinates, or re-place it on a renamed field (the harness keys on `name = "…"`, so a field rename does not change the contract) — apply it yourself (use the `aristo-instrumenting` skill for the macro grammar) and re-run the probe. **Ask the user only on genuine ambiguity** (two or more plausible landing sites) **or genuine absence** (the underlying state is gone from the SUT) — present the card's intent / placed-at / observed / proposed-fix lines and the three decisions: accept the fix, adjust the placement, or flag-broken.
+- **SUT_FEATURE_UNDECLARED** — the SUT's Cargo.toml declares no `aristo-instr` feature, so no accessor can compile in. This is a repo-level adoption decision, not something to patch silently: surface it to the user with the card's proposed fix.
+- **INDETERMINATE** — the compile failed with errors naming no accessor (often an unrelated build break, or an invalid annotation id). Show the first error verbatim; fix the build if the breakage is yours, otherwise surface it.
+- **SKIPPED(instr-debt: id)** — previously flagged broken. Visible debt, never silently green: leave it, and mention it in your summary.
+
+If a failure is real but out of scope for the current task, record **visible debt** rather than ignoring it: `aristo canon probe --sut-path . --flag-broken <accessor_id>` appends the evidence to `.aristo/instrumentation-debt.jsonl` (committed, append-only) and demotes that accessor to SKIPPED on future runs.
+
+If the probe warns that accepted matches route test binaries but carry **no bundle**, the server did not deliver instrumentation for them — tell the user (the conductor's books edition may predate the accessor catalog).
+
+**The exit code is the contract.** Nonzero means at least one unflagged accessor is not proven present — the binding's gated conformance tests cannot run against this checkout. Do not report the canon binding as complete while the probe fails; either land the fix, flag the debt (and say so), or escalate.
+
 ## Diff mode — backfill skipped intents on uncommitted changes
 
 Concurrent authoring is the rule. **Diff mode is the one sanctioned exception**: a deliberate retro pass over your **uncommitted changes** to catch intents you skipped while heads-down on the code. Trigger it when the user asks to "backfill / sweep my changes for missed intents", "did I miss any annotations?", or before opening a PR.

@@ -10,6 +10,10 @@ When the user asks you to expose internal state for a verification or differenti
 
 This skill is the **mechanical-layer** counterpart to `aristo-authoring` (which covers the **logical-layer** `#[aristo::intent]` / `#[aristo::assume]` annotations). Both serve verification; the distinction is the kind of claim each makes.
 
+## Delivered bundles — when a canon match brings the instrumentation to you
+
+When a canon match delivers an **instrumentation bundle** (the accessors its routed conformance tests need, with landing coordinates and verbatim annotations), the consuming loop — run `aristo canon probe --sut-path .`, act on PASS / MISSING / SUT_FEATURE_UNDECLARED, escalate only what you cannot resolve — lives in the `aristo-authoring` skill under "After accept: the instrumentation contract". Use THIS skill for the macro grammar when landing a delivered record's annotation.
+
 ## What instrumentation is
 
 Aristo instrumentation is **codegen** that makes private SUT state observable to a verification harness. Unlike annotations (intent/assume), which are pure compile-time signal, instrumentation produces real runtime accessors / wrappers / hook points that the harness's code references.
