@@ -779,6 +779,49 @@ pub(crate) enum CanonAction {
     /// by the per-repo conductor addressed via `[instance] url`.
     Catalogue,
 
+    /// Run the S2 presence probe against a local SUT checkout: union
+    /// the instrumentation bundles carried by this repo's accepted
+    /// canon matches, generate an ephemeral probe crate (one
+    /// type-checked accessor call per record), `[patch]` the SUT
+    /// package to `--sut-path`, and `cargo check` it twice — with the
+    /// bundle's instrumentation features on (presence) and off (the
+    /// accessors must vanish; gating check). Failures are classified
+    /// per accessor — missing (rustc E0599/E0609) vs
+    /// SUT_FEATURE_UNDECLARED (cargo feature resolution) — and
+    /// rendered as escalation cards naming the conformance catch that
+    /// needs the accessor. Reuses the SUT's Cargo.lock + target/ so a
+    /// warm probe compile takes seconds. Fully offline: reads
+    /// `.aristo/canon-matches.toml`; never calls the canon API.
+    Probe {
+        /// Path to the local SUT checkout root (e.g. your
+        /// aretta-ai/turso fork clone). The probe `[patch]`es the SUT
+        /// package to this path and docks into its build graph
+        /// (Cargo.lock, target/, toolchain file).
+        #[arg(long = "sut-path", value_name = "DIR")]
+        sut_path: PathBuf,
+        /// The escalation card's `[ flag-broken ]` decision: run the
+        /// probe, verify this accessor still fails, and append the
+        /// rustc evidence to `.aristo/instrumentation-debt.jsonl`
+        /// (committed, append-only). Flagged accessors are re-surfaced
+        /// as `SKIPPED(instr-debt: <id>)` on later runs — visible
+        /// debt, never silently green.
+        #[arg(
+            long = "flag-broken",
+            value_name = "ACCESSOR_ID",
+            conflicts_with = "gen_only"
+        )]
+        flag_broken: Option<String>,
+        /// Keep the generated probe crate directory (under the SUT
+        /// target dir) instead of removing it after the run.
+        #[arg(long = "keep-probe")]
+        keep_probe: bool,
+        /// Generate and write the probe crate, then stop before
+        /// compiling (implies --keep-probe). Useful for inspecting
+        /// exactly what the probe will check.
+        #[arg(long = "gen-only")]
+        gen_only: bool,
+    },
+
     /// List or inspect queued §17 proof-tree suggestions (the related
     /// canon entries dragged in alongside a primary match). Read-only:
     /// it does not open a review session or mutate the queue. To review
@@ -1090,6 +1133,14 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             }
             CanonAction::Migrate => commands::canon::migrate::run(),
             CanonAction::Catalogue => commands::canon::catalogue::run(),
+            CanonAction::Probe {
+                sut_path,
+                flag_broken,
+                keep_probe,
+                gen_only,
+            } => {
+                commands::canon::probe::run(&sut_path, flag_broken.as_deref(), keep_probe, gen_only)
+            }
             CanonAction::Suggestions {
                 objective,
                 counts,

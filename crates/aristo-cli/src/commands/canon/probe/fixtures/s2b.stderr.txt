@@ -1,0 +1,87 @@
+    Checking presence-probe v0.0.0 (/home/ubuntu/csf/aretta-books/.planning/instrument-handoff/spike/s2-presence-probe)
+error[E0599]: no method named `inspect_txs` found for reference `&MvStore<MvccClock>` in the current scope
+  --> src/lib.rs:23:19
+   |
+23 |     let _ = store.inspect_txs(); // row 1
+   |                   ^^^^^^^^^^^ method not found in `&MvStore<MvccClock>`
+
+error[E0599]: no method named `inspect_finalized` found for reference `&MvStore<MvccClock>` in the current scope
+  --> src/lib.rs:24:19
+   |
+24 |     let _ = store.inspect_finalized(); // row 2
+   |                   ^^^^^^^^^^^^^^^^^ method not found in `&MvStore<MvccClock>`
+
+error[E0599]: no method named `inspect_tx_ids_value` found for reference `&MvStore<MvccClock>` in the current scope
+  --> src/lib.rs:25:24
+   |
+25 |     let _: u64 = store.inspect_tx_ids_value(); // row 3
+   |                        ^^^^^^^^^^^^^^^^^^^^ method not found in `&MvStore<MvccClock>`
+
+error[E0599]: no method named `inspect_version_id_counter_value` found for reference `&MvStore<MvccClock>` in the current scope
+    --> src/lib.rs:26:24
+     |
+  26 |     let _: u64 = store.inspect_version_id_counter_value(); // row 4
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: there is a method `insert_version_raw` with a similar name, but with different arguments
+    --> /home/ubuntu/.cargo/git/checkouts/turso-02d0d8bcdcd87314/7b6cbae/core/mvcc/database/mod.rs:5608:5
+     |
+5608 |     pub fn insert_version_raw(&self, versions: &mut Vec<RowVersion>, row_version: RowVersion) {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `inspect_peek_next_ts` found for reference `&MvStore<MvccClock>` in the current scope
+  --> src/lib.rs:27:24
+   |
+27 |     let _: u64 = store.inspect_peek_next_ts(); // row 6
+   |                        ^^^^^^^^^^^^^^^^^^^^ method not found in `&MvStore<MvccClock>`
+
+error[E0599]: no method named `inspect_header_version` found for reference `&LogicalLog` in the current scope
+  --> src/lib.rs:32:29
+   |
+32 |     let _: Option<u8> = log.inspect_header_version(); // row 7
+   |                             ^^^^^^^^^^^^^^^^^^^^^^ method not found in `&LogicalLog`
+
+error[E0599]: no method named `inspect_pending_running_crc` found for reference `&LogicalLog` in the current scope
+  --> src/lib.rs:33:30
+   |
+33 |     let _: Option<u32> = log.inspect_pending_running_crc(); // row 8
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `&LogicalLog`
+
+error[E0599]: no method named `inspect_mv_tx` found for reference `&Connection` in the current scope
+  --> src/lib.rs:38:31
+   |
+38 |     let _: Option<u64> = conn.inspect_mv_tx(); // row 10
+   |                               ^^^^^^^^^^^^^ method not found in `&Connection`
+
+error[E0599]: no method named `inspect_attached_mv_txs` found for reference `&Connection` in the current scope
+  --> src/lib.rs:39:18
+   |
+39 |     let _ = conn.inspect_attached_mv_txs(); // row 11
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^ method not found in `&Connection`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `presence-probe` (lib) due to 9 previous errors
+Command exited with non-zero status 101
+	Command being timed: "cargo check --offline"
+	User time (seconds): 0.18
+	System time (seconds): 0.09
+	Percent of CPU this job got: 34%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.81
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 157864
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 515
+	Minor (reclaiming a frame) page faults: 24053
+	Voluntary context switches: 629
+	Involuntary context switches: 1
+	Swaps: 0
+	File system inputs: 120288
+	File system outputs: 2504
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 101
