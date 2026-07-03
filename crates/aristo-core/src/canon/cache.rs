@@ -38,6 +38,20 @@
 //!   `text_hash`; once the annotation text changes, the rejection
 //!   no longer suppresses re-evaluation (per L5 invalidation rules).
 //!
+//! ## Source-authoritative reconcile
+//!
+//! The file is garbage-collected against source on every mutating
+//! `aristo stamp` (see [`mod@super::reconcile`]): an entry whose
+//! annotation was deleted from source is pruned, and accepted
+//! matches on an id that is local (unprefixed) in source are
+//! dropped. The live-id authority is the RAW walk — pre-validation
+//! and ignoring `[index].exclude` — so an annotation that merely
+//! fell out of the index (warning skip, exclude glob) is NOT treated
+//! as deleted. `aristo canon unbind` remains the way to unbind a
+//! LIVE annotation; deleting the annotation and re-stamping now
+//! cleans up its entry — including its rejected-match memory —
+//! automatically.
+//!
 //! ## Atomic write
 //!
 //! Writes go through a temp-then-rename dance

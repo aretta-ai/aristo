@@ -17,9 +17,12 @@
 //!   `.aristo/archive/proofs/`, never deleted; `--gc` is the only purge.
 //!
 //! - **`--check` CI mode.** Computes everything but does NOT write the index.
-//!   Exits non-zero if the regenerated entries differ from the committed cache.
-//!   (The canonical freshness gate is `aristo verify --audit --strict`, which
-//!   does not need a committed index at all.)
+//!   Exits non-zero if the regenerated entries differ from the committed
+//!   cache, or — once the index is in sync — if a dry-run of the
+//!   canon-matches reconcile finds `.aristo/canon-matches.toml` out of sync
+//!   with source. (The canonical freshness gate is
+//!   `aristo verify --audit --strict`, which does not need a committed index
+//!   at all.)
 //!
 //! Slice 17 deferred the offer-rename UX (interactive promotion of opaque ids
 //! to readable ones); opaque ids assigned by `aristo index` stay opaque until
@@ -127,6 +130,11 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool, gc: bool) 
             Some(prev) => prev == &index.entries,
         };
         if entries_unchanged {
+            // Index is in sync — now dry-run the canon-matches
+            // reconcile (same authority, same skip conditions, on a
+            // clone) so canon-matches drift fails CI the same way
+            // index drift does. Never writes.
+            check_canon_matches_drift(&ws, &index, &discovered)?;
             println!();
             println!("ok: index is up to date (no rewrite needed).");
             warn_on_counterexamples(&index);
@@ -141,6 +149,16 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool, gc: bool) 
     }
 
     atomic_write(&ws.index_path(), &toml_text)?;
+
+    // ── Source-authoritative reconcile of .aristo/canon-matches.toml
+    //    against the RAW walk (never against a possibly stale on-disk
+    //    index, and never against the post-validation entry set).
+    //    Runs before the canon step so its early returns
+    //    (--skip-canon, disabled config, cache hit, free tier,
+    //    degraded) can't let stale rows survive; under --check the
+    //    early return above runs the same reconcile as a read-only
+    //    drift check instead (check_canon_matches_drift). ────────────
+    reconcile_canon_matches(&ws, &index, &discovered)?;
 
     // ── Canon-match step (post-index write so the cache is keyed
     //    against the freshly-stamped ids). Skipped under --check so
@@ -198,6 +216,254 @@ fn run_canon_step_for_stamp(
         // Non-fatal — daily loop continues.
     }
     Ok(())
+}
+
+#[aristo::intent(
+    "The canon-matches cache is reconciled on every mutating stamp, at \
+     a point the canon step's early returns cannot skip: rows for \
+     annotations deleted from source are pruned and accepted matches \
+     on ids that are local in source are dropped, with a stderr note \
+     per category (a prune that discards accepted bindings warns \
+     louder — that's re-accept work destroyed if it was a \
+     misconfiguration). The live-id authority is deliberately WIDER \
+     than the freshly-built index: ids come from the RAW walk before \
+     build_entries validation (a warning-skipped annotation still \
+     counts as live), and when aristo.toml [index].exclude is set the \
+     walk is re-run WITHOUT the excludes (an excluded annotation still \
+     counts as live), because pruning from a walk that is known to be \
+     partial would destroy accepted bindings for annotations that \
+     still exist in source. When the authority itself is unreliable — \
+     an explicit id fails to parse, or the unexcluded walk fails — the \
+     reconcile is skipped with a note instead of mispruning. The file \
+     is rewritten ONLY when the reconcile changed something — repeated \
+     stamps must not churn a committed file. Hanging this off the \
+     canon step instead would leave the stale rows in place forever: \
+     --skip-canon / disabled-config return before the cache read, and \
+     a deleted annotation makes every surviving row a cache hit, \
+     which also returns without writing.",
+    verify = "test",
+    id = "stamp_reconciles_canon_matches_with_source"
+)]
+fn reconcile_canon_matches(
+    ws: &crate::Workspace,
+    index: &IndexFile,
+    discovered: &[aristo_core::walk::DiscoveredAnnotation],
+) -> CliResult<()> {
+    let cache_path = ws.canon_matches_path();
+    let mut cache = CanonMatchesFile::read(&cache_path).map_err(|e| CliError::Other {
+        message: format!("reading {}: {e}", cache_path.display()),
+        exit_code: 1,
+    })?;
+    if cache.entries.is_empty() {
+        // Nothing to prune or demote — skip the (possibly second)
+        // walk entirely.
+        return Ok(());
+    }
+
+    let Some(live_ids) = reconcile_live_ids(ws, index, discovered) else {
+        // Authority unreliable — the skip note was already printed.
+        return Ok(());
+    };
+
+    let report = aristo_core::canon::reconcile(&mut cache, &live_ids);
+    print_reconcile_notes(&report);
+    if report.changed() {
+        cache
+            .write_atomic(&cache_path)
+            .map_err(|e| CliError::Other {
+                message: format!("writing {}: {e}", cache_path.display()),
+                exit_code: 1,
+            })?;
+    }
+    Ok(())
+}
+
+/// The GC-authority live-id set the canon-matches reconcile prunes
+/// against: the RAW discovered annotations before `build_entries`
+/// validation, re-walked WITHOUT `[index].exclude` when excludes are
+/// configured (a partial walk must never count as deletion), unioned
+/// with the freshly-built index keys. Returns `None` — after printing
+/// a skip note — when the authority is unreliable (an explicit id
+/// fails to parse, or the unexcluded walk fails): reconciling against
+/// a lossy authority would misprune rows for annotations that still
+/// exist in source. Shared by the write path
+/// ([`reconcile_canon_matches`]) and the `--check` dry run
+/// ([`check_canon_matches_drift`]) so both judge drift by the same
+/// rules.
+fn reconcile_live_ids(
+    ws: &crate::Workspace,
+    index: &IndexFile,
+    discovered: &[aristo_core::walk::DiscoveredAnnotation],
+) -> Option<std::collections::BTreeSet<AnnotationId>> {
+    use aristo_core::walk::WalkOptions;
+
+    // GC-authority live set: the RAW discovered annotations, before
+    // build_entries validation. When [index].exclude is configured
+    // the index walk is partial by design, so re-walk without the
+    // excludes — an excluded annotation is still in source and its
+    // rows (accepted bindings, rejected-match memory) must survive.
+    let cfg = ws.load_config();
+    let raw = if cfg.index.exclude.is_empty() {
+        aristo_core::canon::raw_live_ids(discovered)
+    } else {
+        match walk_directory_with(&ws.root, &WalkOptions::none()) {
+            Ok(all) => aristo_core::canon::raw_live_ids(&all),
+            Err(e) => {
+                // The excluded paths may be excluded precisely because
+                // they don't walk cleanly — degrade to "no reconcile"
+                // rather than failing the stamp or pruning blind.
+                eprintln!(
+                    "  note: canon-matches: reconcile skipped (walk without \
+                     [index].exclude failed: {e})"
+                );
+                return None;
+            }
+        }
+    };
+    if raw.unparseable_explicit_ids > 0 {
+        eprintln!(
+            "  note: canon-matches: reconcile skipped ({} annotation(s) have \
+             unparseable ids; fix them so stale cache entries can be pruned)",
+            raw.unparseable_explicit_ids
+        );
+        return None;
+    }
+    let mut live_ids: std::collections::BTreeSet<AnnotationId> = raw.ids;
+    // Belt-and-braces: anything in the freshly-built index is live by
+    // definition (guards against ordinal drift between the excluded
+    // and unexcluded walks for idless duplicate annotations).
+    live_ids.extend(index.entries.keys().cloned());
+    Some(live_ids)
+}
+
+/// Per-category stderr notes for a [`ReconcileReport`] — shared
+/// verbatim between the write path (what the reconcile did) and the
+/// `--check` dry run (what it would do), so the affected ids read the
+/// same either way.
+fn print_reconcile_notes(report: &aristo_core::canon::ReconcileReport) {
+    if !report.pruned.is_empty() {
+        let n = report.pruned.len();
+        let (noun, id_phrase) = if n == 1 {
+            ("entry", "id is")
+        } else {
+            ("entries", "ids are")
+        };
+        let ids = report
+            .pruned
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        // "no longer in source", not "removed annotations": a dead id
+        // also arises from rewording an idless intent (the aret_* id
+        // is content-addressed) or from accept's bare→prefixed rekey.
+        eprintln!(
+            "  note: canon-matches: pruned {n} stale {noun} whose annotation \
+             {id_phrase} no longer in source: {ids}"
+        );
+    }
+    if !report.pruned_bound.is_empty() {
+        let n = report.pruned_bound.len();
+        let (noun, verb) = if n == 1 {
+            ("entry", "was")
+        } else {
+            ("entries", "were")
+        };
+        let ids = report
+            .pruned_bound
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "  warning: canon-matches: {n} pruned {noun} {verb} carrying \
+             accepted canon bindings: {ids}. If this is unexpected, restore \
+             .aristo/canon-matches.toml from git; re-binding otherwise takes \
+             a fresh `aristo canon accept`."
+        );
+    }
+    for id in &report.demoted {
+        eprintln!(
+            "  note: canon-matches: demoted `{}` (source id lost its canon prefix). \
+             Re-match with `aristo stamp --refresh-canon` and re-bind with \
+             `aristo canon accept`, or leave it local.",
+            id.as_str()
+        );
+    }
+    for id in &report.preserved_for_recovery {
+        eprintln!(
+            "  note: canon-matches: kept `{}` (annotation no longer in source, \
+             but a pending match's canon-prefixed id is live and unbound — \
+             looks like an interrupted `aristo canon accept`; re-run it to \
+             finish, after which this row is cleaned up).",
+            id.as_str()
+        );
+    }
+    // report.missing_binding (live prefixed id without a derivable
+    // binding) is already warned about by derive_bindings_from_cache
+    // earlier in this same run — no duplicate warning here.
+}
+
+#[aristo::intent(
+    "`aristo stamp --check` detects canon-matches drift the same way it \
+     detects index drift: after the index sync check passes it dry-runs \
+     the reconcile — the same live-id authority and skip conditions as \
+     the write path, run on a CLONE of the loaded cache — and exits \
+     non-zero, naming the affected ids, when the reconcile would change \
+     .aristo/canon-matches.toml. Nothing is written. When the authority \
+     is unreliable (unparseable explicit id, failed unexcluded walk) the \
+     same skip note is printed and the check passes: the write path \
+     would skip the reconcile too, so there is no drift a re-run could \
+     fix — failing would be a --check false positive, which is worse \
+     than a missed drift.",
+    verify = "test",
+    id = "stamp_check_detects_canon_matches_drift"
+)]
+fn check_canon_matches_drift(
+    ws: &crate::Workspace,
+    index: &IndexFile,
+    discovered: &[aristo_core::walk::DiscoveredAnnotation],
+) -> CliResult<()> {
+    let cache_path = ws.canon_matches_path();
+    let cache = CanonMatchesFile::read(&cache_path).map_err(|e| CliError::Other {
+        message: format!("reading {}: {e}", cache_path.display()),
+        exit_code: 1,
+    })?;
+    if cache.entries.is_empty() {
+        // Nothing the reconcile could prune or demote — skip the
+        // (possibly second) walk entirely, like the write path.
+        return Ok(());
+    }
+    let Some(live_ids) = reconcile_live_ids(ws, index, discovered) else {
+        // Authority unreliable — the skip note was already printed.
+        // The write path would skip the reconcile for the same
+        // reason, so there is no drift to fail on.
+        return Ok(());
+    };
+    // Dry run on a clone: --check never writes.
+    let mut probe = cache.clone();
+    let report = aristo_core::canon::reconcile(&mut probe, &live_ids);
+    if !report.changed() {
+        return Ok(());
+    }
+    print_reconcile_notes(&report);
+    let stale = report.pruned.len();
+    let demotions = report.demoted.len();
+    let stale_noun = if stale == 1 { "entry" } else { "entries" };
+    let demotion_noun = if demotions == 1 {
+        "demotion"
+    } else {
+        "demotions"
+    };
+    println!();
+    Err(CliError::Other {
+        message: format!(
+            "canon-matches.toml is out of sync with source ({stale} stale {stale_noun}, \
+             {demotions} {demotion_noun}). Run `aristo stamp` (without --check) to \
+             reconcile, then commit."
+        ),
+        exit_code: 2,
+    })
 }
 
 #[aristo::intent(
