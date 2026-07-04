@@ -35,6 +35,10 @@
 //!   accepted matches (records deduped by `accessor_id`, companions
 //!   by `(symbol, file)`, per-`payload_ref` groups on provenance
 //!   mismatch) + TOML-persistence null sanitizing.
+//! - [`mod@reconcile`]: source-authoritative reconciliation of the cache
+//!   against a raw (pre-validation, unexcluded) source walk — prune
+//!   rows for deleted annotations, demote rows whose source id lost
+//!   its canon prefix.
 //!
 //! **Phase 1 scope**: no verification execution. The `verification`
 //! block on [`CanonMatch`] is informational
@@ -49,6 +53,7 @@ pub mod http_client;
 pub mod instrumentation;
 pub mod mock_client;
 pub mod noop_client;
+pub mod reconcile;
 pub mod rewrite;
 pub mod types;
 
@@ -64,6 +69,7 @@ pub use instrumentation::{
 };
 pub use mock_client::MockCanonClient;
 pub use noop_client::NoopCanonClient;
+pub use reconcile::{raw_live_ids, reconcile, RawLiveIds, ReconcileReport};
 pub use rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError};
 pub use types::{
     synthesize_phase1_linked, AnnotationMatchInput, BundleCompanion, BundleCompileCheck,

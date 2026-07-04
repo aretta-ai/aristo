@@ -134,10 +134,10 @@ enum Commands {
     /// Refresh the annotation index — pick up new annotations, detect
     /// drift, and (when signed in) match against the Aretta canon.
     Stamp {
-        /// CI mode: report whether `stamp` would change the index,
-        /// without writing. Exits non-zero if it would. Skips the
-        /// canon-match step too (no outbound network calls in this
-        /// mode).
+        /// CI mode: report whether `stamp` would change the index or
+        /// `.aristo/canon-matches.toml`, without writing either.
+        /// Exits non-zero if it would. Skips the canon-match step
+        /// too (no outbound network calls in this mode).
         #[arg(long)]
         check: bool,
         /// Skip the canon-match step for this run. Doesn't disable
@@ -742,6 +742,10 @@ pub(crate) enum CanonAction {
     /// changes; canonical text + verify + parent are preserved).
     /// The next `aristo stamp` may re-pull a fresh pending match
     /// against the same annotation text.
+    ///
+    /// Unbind is for LIVE annotations. If the annotation was deleted
+    /// from source, no unbind is needed: the next `aristo stamp`
+    /// prunes its `.aristo/canon-matches.toml` entry automatically.
     Unbind {
         /// Canon-bound annotation id including the prefix (e.g.
         /// `aristos:cell_written_exactly_once_per_page_edit`).

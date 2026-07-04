@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- cli: `aristo stamp` now reconciles `.aristo/canon-matches.toml` with source — entries for annotations deleted from source are pruned (with an extra warning when the pruned rows carried accepted bindings), and accepted matches on ids that are local (unprefixed) in source are dropped, each with a stderr note. Previously a deleted annotation's entry lingered forever unless you remembered to run `aristo canon unbind` BEFORE deleting (real incident: a removed `aristos:`-bound intent kept showing as a live binding on dashboards mirroring the committed file). The live-id authority is deliberately wider than the index: ids are taken from the raw walk before validation and, when `[index].exclude` is configured, from a re-walk without the excludes — so an annotation that merely fell out of the index (warning skip, exclude glob) is never treated as deleted, and the reconcile skips itself (with a note) when an id fails to parse or the unexcluded walk fails. A dead `aristos:`/`kanon:`-keyed row whose bare id is still live is reported as a demotion and its rejected-match memory is rekeyed, not pruned. `aristo canon unbind` remains the way to unbind a LIVE annotation. Tradeoff: truly deleting an annotation now also drops its cached match-skip and rejected-match memory, so a deleted-then-restored annotation re-matches from scratch. `aristo stamp --check` detects the same drift read-only: once the index sync check passes it dry-runs the reconcile on a clone of the cache (same authority, same skip conditions) and exits non-zero — naming the affected ids — when `canon-matches.toml` is out of sync with source, writing nothing; when the authority is unreliable it prints the same skip note and passes instead of false-failing CI.
+
 ## [0.5.0] — 2026-07-02
 
 ### Added

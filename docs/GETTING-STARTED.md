@@ -23,8 +23,8 @@ are in the [glossary](./GLOSSARY.md).
   from your source and the recorded proofs. A claim whose code has drifted from
   its proof shows up as `stale` the moment you look (`aristo status`, or
   `aristo verify --audit` in CI). You don't run `aristo stamp` to keep it
-  honest; it's an optional refresh (it also syncs canon matches and archives
-  proofs for removed annotations).
+  honest; it's an optional refresh (it also syncs canon matches, prunes
+  canon-match entries for removed annotations, and archives their proofs).
 - **You bring judgment.** You decide which claims are worth making
   and accept them into the codebase. Aristo verifies the claims you
   keep; it doesn't decide them for you.
