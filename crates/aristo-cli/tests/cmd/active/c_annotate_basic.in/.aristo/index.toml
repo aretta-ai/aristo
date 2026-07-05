@@ -1,0 +1,27 @@
+[__meta__]
+schema_version = 1
+generated_by = "aristo stamp 0.5.1"
+generated_at = "2026-07-05T09:01:58.217974824Z"
+source_root = "."
+
+[db_flush_is_durability_boundary]
+kind = "intent"
+text = "flush is the durability boundary the fault injector targets"
+verify = "neural"
+status = "unknown"
+text_hash = "sha256:efca5462e71bac6490f921da0412635830dfa2135fe0aa29f1538da3af309572"
+body_hash = "sha256:b780a8afeee975b9ec4d9a45ef239847b375c995b690d286c5f983b37dc171e1"
+file = "db.c"
+site = "fn db_flush (line 6)"
+covered_region = "function"
+
+[db_open_recovers_durable_prefix]
+kind = "intent"
+text = "open recovers the durable prefix, replaying intact records newest-write-wins"
+verify = "test"
+status = "unknown"
+text_hash = "sha256:b0fa5aa515d785925a96c1d269061ebbbdfecf8eddb83946d25b729b31976d52"
+body_hash = "sha256:b780a8afeee975b9ec4d9a45ef239847b375c995b690d286c5f983b37dc171e1"
+file = "db.c"
+site = "fn db_open (line 1)"
+covered_region = "function"
