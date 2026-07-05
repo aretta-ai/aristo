@@ -16,10 +16,11 @@
 //!
 //! Scope (narrow by design, expanding per slice):
 //!
-//! - **Function and type-definition directives.** A directive attaches to the
-//!   function, or the `struct` / `union` / `enum` definition (tagged or
-//!   `typedef`), on the next line. Statement-form directives land in a later
-//!   slice.
+//! - **Function, type, and statement directives.** A directive attaches to the
+//!   function or the `struct` / `union` / `enum` definition (tagged or
+//!   `typedef`) on the next line; or, inside a function body, to the statement
+//!   on the next line (`CoveredRegion::Statement` — the C analog of Rust's
+//!   `intent_stmt!`), at any nesting depth.
 //! - **Attachment is by adjacency, or by explicit target.** A directive with no
 //!   `site` attaches to the item on the line directly below it (a blank-line gap
 //!   detaches it). A directive whose first argument is `site = "name"` instead
@@ -127,6 +128,15 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
             // recorded in pass 1, so `resolve_run` finds it by row.
             resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
             run.clear();
+            // Statement-form directives live inside function bodies; descend.
+            if child.kind() == "function_definition" {
+                if let Some(name) = c_function_name(&child, source) {
+                    let site = format!("fn {name}");
+                    if let Some(body) = child.child_by_field_name("body") {
+                        walk_stmt_directives(&body, &site, &items, &by_name, source, &mut found);
+                    }
+                }
+            }
         }
     }
     resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
@@ -264,6 +274,130 @@ fn build_c_annotation(
         &item.site,
         line,
         item.region,
+        body_text,
+    ))
+}
+
+/// Walk a function body recursively for statement-form directives — the C
+/// analog of Rust's `intent_stmt!`. A directive attaches to the statement on
+/// the line directly below it, with the enclosing function as its `site` and
+/// `CoveredRegion::Statement`. A directive carrying `site` still resolves to
+/// the named top-level item, exactly as at file scope.
+fn walk_stmt_directives(
+    block: &Node,
+    enclosing_site: &str,
+    items: &[CItem],
+    by_name: &HashMap<String, usize>,
+    source: &str,
+    found: &mut Vec<ExtractedAnnotation>,
+) {
+    let mut run: Vec<CPendingDirective> = Vec::new();
+    let mut cursor = block.walk();
+    // `named_children` skips the `{ } ;` punctuation tokens, so every
+    // non-comment child here is a real statement / declaration.
+    for child in block.named_children(&mut cursor) {
+        if child.kind() == "comment" {
+            match parse_directive(child.utf8_text(source.as_bytes()).unwrap_or("")) {
+                Some(dir) => {
+                    if let Some(last) = run.last() {
+                        if child.start_position().row != last.end_row + 1 {
+                            resolve_stmt_run(
+                                &run,
+                                None,
+                                enclosing_site,
+                                items,
+                                by_name,
+                                source,
+                                found,
+                            );
+                            run.clear();
+                        }
+                    }
+                    run.push(CPendingDirective {
+                        dir,
+                        start_row: child.start_position().row,
+                        end_row: child.end_position().row,
+                    });
+                }
+                None => {
+                    resolve_stmt_run(&run, None, enclosing_site, items, by_name, source, found);
+                    run.clear();
+                }
+            }
+        } else {
+            resolve_stmt_run(
+                &run,
+                Some(child),
+                enclosing_site,
+                items,
+                by_name,
+                source,
+                found,
+            );
+            run.clear();
+            // Descend so directives nested in loop / if / block bodies attach too.
+            walk_stmt_directives(&child, enclosing_site, items, by_name, source, found);
+        }
+    }
+    resolve_stmt_run(&run, None, enclosing_site, items, by_name, source, found);
+}
+
+/// Resolve a run of in-body directives: `site` ones to their named top-level
+/// item, the rest by adjacency to `stmt` (the statement directly below the
+/// run, when it is on the next line).
+fn resolve_stmt_run(
+    run: &[CPendingDirective],
+    stmt: Option<Node>,
+    enclosing_site: &str,
+    items: &[CItem],
+    by_name: &HashMap<String, usize>,
+    source: &str,
+    found: &mut Vec<ExtractedAnnotation>,
+) {
+    let Some(last) = run.last() else {
+        return;
+    };
+    let adjacent = stmt.filter(|s| s.start_position().row == last.end_row + 1);
+    for pending in run {
+        let line = pending.start_row + 1;
+        match &pending.dir.site {
+            Some(name) => {
+                if let Some(&idx) = by_name.get(name) {
+                    if let Some(ann) = build_c_annotation(&pending.dir, &items[idx], line, source) {
+                        found.push(ann);
+                    }
+                }
+            }
+            None => {
+                if let Some(stmt) = adjacent {
+                    if let Some(ann) =
+                        build_c_stmt_annotation(&pending.dir, &stmt, enclosing_site, line, source)
+                    {
+                        found.push(ann);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Build a statement-form annotation: covered region is the whole statement's
+/// bytes, the form is `Statement`, and the site is the enclosing function.
+fn build_c_stmt_annotation(
+    dir: &CDirective,
+    stmt: &Node,
+    enclosing_site: &str,
+    line: usize,
+    source: &str,
+) -> Option<ExtractedAnnotation> {
+    let body_text = source.get(stmt.start_byte()..stmt.end_byte())?.to_string();
+    Some(make_annotation(
+        dir.kind,
+        AnnotationForm::Statement,
+        dir.args.clone(),
+        enclosing_site,
+        line,
+        CoveredRegion::Statement,
         body_text,
     ))
 }
@@ -688,6 +822,77 @@ int beta(void) { return 0; }
         // The second directive is adjacent to `beta` but `site` retargets it.
         assert_eq!(ann[1].id.as_deref(), Some("exp"));
         assert_eq!(ann[1].site, "fn alpha");
+    }
+
+    // ─── statement-form directives (C-2): the intent_stmt analog ─────────
+
+    #[test]
+    fn extracts_stmt_directive_before_a_loop() {
+        let src = "\
+int checksum(const char *buf, int n) {
+    int sum = 0;
+    // @aristo intent(\"each byte contributes once; no index is read twice\", verify = \"test\")
+    for (int i = 0; i < n; i++) {
+        sum += buf[i];
+    }
+    return sum;
+}
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].form, AnnotationForm::Statement);
+        assert_eq!(ann[0].covered_region, CoveredRegion::Statement);
+        assert_eq!(ann[0].site, "fn checksum", "site is the enclosing function");
+    }
+
+    #[test]
+    fn extracts_stmt_directive_nested_in_a_loop_body() {
+        let src = "\
+int f(int n) {
+    for (int i = 0; i < n; i++) {
+        // @aristo intent(\"the accumulator never overflows for valid n\")
+        long acc = i;
+        (void) acc;
+    }
+    return 0;
+}
+";
+        let ann = extract(src);
+        assert_eq!(
+            ann.len(),
+            1,
+            "a directive nested in a loop body must attach"
+        );
+        assert_eq!(ann[0].form, AnnotationForm::Statement);
+        assert_eq!(ann[0].site, "fn f");
+    }
+
+    #[test]
+    fn stmt_directive_body_hash_tracks_the_statement() {
+        let a = extract("int f() {\n// @aristo intent(\"x\")\nint y = 1;\nreturn y;\n}\n");
+        let b = extract("int f() {\n// @aristo intent(\"x\")\nint y = 2;\nreturn y;\n}\n");
+        assert_eq!(a.len(), 1);
+        assert_ne!(
+            a[0].body_hash, b[0].body_hash,
+            "the covered statement changed"
+        );
+    }
+
+    #[test]
+    fn function_and_statement_directives_come_out_in_source_order() {
+        let src = "\
+// @aristo intent(\"function-level\", id = \"fn_level\")
+int g(int n) {
+    // @aristo intent(\"statement-level\", id = \"stmt_level\")
+    int t = n;
+    return t;
+}
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 2);
+        assert_eq!(ann[0].id.as_deref(), Some("fn_level"));
+        assert_eq!(ann[1].id.as_deref(), Some("stmt_level"));
+        assert!(ann[0].line < ann[1].line);
     }
 
     #[test]
