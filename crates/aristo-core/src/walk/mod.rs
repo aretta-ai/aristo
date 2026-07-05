@@ -25,7 +25,10 @@ pub use count::{
 pub use extract::{
     extract_from_source, AnnotationForm, ExtractError, ExtractedAnnotation, ParentRaw,
 };
-pub use extract_c::{extract_c_inspect_directives, extract_from_c_source, CInspectDirective};
+pub use extract_c::{
+    extract_c_expose_directives, extract_c_inspect_directives, extract_from_c_source,
+    CExposeDirective, CInspectDirective,
+};
 pub use fs::{
     walk_directory, walk_directory_with, walk_for_freshness, walk_for_freshness_with,
     DiscoveredAnnotation, FsWalkError, WalkOptions,

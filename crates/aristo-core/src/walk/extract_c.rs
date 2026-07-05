@@ -526,6 +526,17 @@ fn is_aristo_directive(comment_text: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Strip a directive keyword only at a real word boundary: `strip_keyword("inspect(…", "inspect")`
+/// succeeds, but `strip_keyword("inspected…", "inspect")` returns `None` — an
+/// `inspect`-prefixed longer identifier is not the `inspect` keyword.
+fn strip_keyword<'a>(s: &'a str, kw: &str) -> Option<&'a str> {
+    let rest = s.strip_prefix(kw)?;
+    match rest.chars().next() {
+        Some(c) if c.is_alphanumeric() || c == '_' => None,
+        _ => Some(rest),
+    }
+}
+
 /// Recognize `// @aristo inspect(...)` and parse its args. Returns `None` when
 /// the comment is not an inspect directive at all; `Some(Ok)` when it parses;
 /// `Some(Err(msg))` when it IS an inspect directive but its args are malformed
@@ -534,7 +545,7 @@ fn is_aristo_directive(comment_text: &str) -> bool {
 fn parse_inspect_directive(comment_text: &str) -> Option<Result<InspectArgs, String>> {
     let body = comment_text.strip_prefix("//")?.trim_start();
     let rest = body.strip_prefix("@aristo")?.trim_start();
-    let rest = rest.strip_prefix("inspect")?.trim();
+    let rest = strip_keyword(rest, "inspect")?.trim();
     // A recognized `inspect` keyword commits: from here, any parse failure is a
     // malformed inspect directive, not a "different directive".
     let inner = match rest.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
@@ -695,6 +706,140 @@ pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirectiv
             last_directive_row = None;
         } else {
             run.clear();
+            last_directive_row = None;
+        }
+    }
+    if !problems.is_empty() {
+        return Err(ExtractError::CInspectInvalid(problems.join("\n")));
+    }
+    Ok(found)
+}
+
+// ─── expose directives (I-4): reach a TU-local function from a harness ────
+
+/// A parsed `// @aristo expose` directive: a request to emit a type-checked
+/// prototype for one function so a harness can call it. The function is marked
+/// `ARISTO_TU_LOCAL` (external linkage when instrumented); this makes its
+/// signature callable without the harness hand-writing an unchecked prototype.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CExposeDirective {
+    /// The function's name (for ordering / diagnostics).
+    pub name: String,
+    /// The verbatim source signature — everything from the function's first
+    /// token up to (not including) the `{`. It keeps any `ARISTO_TU_LOCAL`
+    /// prefix, which expands to nothing when the harness compiles instrumented,
+    /// so the emitted `<signature>;` is exactly the real declaration.
+    pub signature: String,
+    /// 1-indexed line of the directive.
+    pub line: usize,
+}
+
+/// Recognize `// @aristo expose`. `None` = not an expose directive; `Some(Ok)`
+/// = the bare form we support; `Some(Err)` = the `expose(as = "...")` forwarder
+/// form, which renames the symbol and is not built yet (documented, deferred).
+fn parse_expose_directive(comment_text: &str) -> Option<Result<(), String>> {
+    let body = comment_text.strip_prefix("//")?.trim_start();
+    let rest = body.strip_prefix("@aristo")?.trim_start();
+    let rest = strip_keyword(rest, "expose")?.trim();
+    if rest.is_empty() {
+        return Some(Ok(()));
+    }
+    match rest.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
+        Some(inner) if inner.trim().is_empty() => Some(Ok(())),
+        Some(inner) => Some(Err(format!(
+            "the `expose({})` forwarder form is not yet supported; use bare \
+             `// @aristo expose` on a function marked `ARISTO_TU_LOCAL`",
+            inner.trim()
+        ))),
+        None => Some(Err("expected `// @aristo expose` (bare)".to_string())),
+    }
+}
+
+/// The verbatim signature of a function definition: source bytes from the
+/// function's start up to its body's opening brace, trimmed. Robust to the
+/// `ARISTO_TU_LOCAL` macro prefix (which tree-sitter mis-parses into an ERROR
+/// node) precisely because it uses byte ranges, not the mangled parse tree.
+fn c_function_signature(func: &Node, source: &str) -> Option<String> {
+    let body = func.child_by_field_name("body")?;
+    let sig = source.get(func.start_byte()..body.start_byte())?;
+    Some(sig.trim().to_string())
+}
+
+#[aristo::intent(
+    "The exposed prototype is the function's VERBATIM source signature (bytes \
+     up to the body brace), not a signature rebuilt from tree-sitter fields. A \
+     function carrying the `ARISTO_TU_LOCAL` macro prefix mis-parses into an \
+     ERROR node (the macro is read as the return type and the real return type \
+     as an error), so reconstructing `<type> <declarator>` from the tree would \
+     emit a WRONG prototype. Byte-range extraction is immune: the emitted \
+     `<signature>;` is exactly the real declaration, and `ARISTO_TU_LOCAL` \
+     expands to nothing when the harness compiles instrumented.",
+    verify = "test",
+    id = "expose_prototype_is_verbatim_signature_not_reconstructed"
+)]
+pub fn extract_c_expose_directives(source: &str) -> Result<Vec<CExposeDirective>, ExtractError> {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_c::LANGUAGE.into())
+        .map_err(|e| ExtractError::CParse(format!("tree-sitter-c language load failed: {e}")))?;
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| ExtractError::CParse("tree-sitter returned no parse tree".to_string()))?;
+    let root = tree.root_node();
+    let src_bytes = source.as_bytes();
+
+    let mut found = Vec::new();
+    let mut problems: Vec<String> = Vec::new();
+    // Number of expose directives in the current contiguous `// @aristo` block.
+    let mut pending_expose = 0usize;
+    let mut last_directive_row: Option<usize> = None;
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "comment" {
+            if let Some(last) = last_directive_row {
+                if child.start_position().row != last + 1 {
+                    pending_expose = 0;
+                }
+            }
+            let text = child.utf8_text(src_bytes).unwrap_or("");
+            if is_aristo_directive(text) {
+                match parse_expose_directive(text) {
+                    Some(Ok(())) => pending_expose += 1,
+                    Some(Err(msg)) => {
+                        problems.push(format!("line {}: {msg}", child.start_position().row + 1))
+                    }
+                    None => {}
+                }
+                last_directive_row = Some(child.end_position().row);
+            } else {
+                pending_expose = 0;
+                last_directive_row = None;
+            }
+        } else {
+            if child.kind() == "function_definition" && pending_expose > 0 {
+                if let Some(last) = last_directive_row {
+                    if child.start_position().row == last + 1 {
+                        match (
+                            c_function_name(&child, source),
+                            c_function_signature(&child, source),
+                        ) {
+                            (Some(name), Some(signature)) => {
+                                // Emit once even if several expose directives stack.
+                                found.push(CExposeDirective {
+                                    name,
+                                    signature,
+                                    line: child.start_position().row + 1,
+                                });
+                            }
+                            _ => problems.push(format!(
+                                "line {}: could not resolve the exposed function's signature",
+                                child.start_position().row + 1
+                            )),
+                        }
+                    }
+                }
+            }
+            pending_expose = 0;
             last_directive_row = None;
         }
     }
@@ -1367,5 +1512,74 @@ struct S { int a; };
             extract(src).is_empty(),
             "inspect is not an index annotation"
         );
+    }
+
+    #[test]
+    fn inspectfoo_is_not_an_inspect_directive() {
+        // Keyword-boundary guard: `inspectfoo(...)` is not `inspect`.
+        assert!(parse_inspect_directive("// @aristo inspectfoo(x = \"1\")").is_none());
+    }
+
+    // ─── expose directives (I-4): TU-local function prototypes ────────────
+
+    fn expose(s: &str) -> Vec<CExposeDirective> {
+        extract_c_expose_directives(s).expect("test source must parse as C")
+    }
+
+    #[test]
+    fn exposes_a_tu_local_function_verbatim_signature() {
+        let src = "\
+// @aristo expose
+ARISTO_TU_LOCAL int recover_replay(Db *db) { return 0; }
+";
+        let d = expose(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].name, "recover_replay");
+        // Verbatim signature keeps the macro prefix (expands to nothing on).
+        assert_eq!(d[0].signature, "ARISTO_TU_LOCAL int recover_replay(Db *db)");
+    }
+
+    #[test]
+    fn exposes_a_plain_static_function() {
+        let src = "\
+// @aristo expose
+static long tally(const char *buf, int n) { return 0; }
+";
+        let d = expose(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].signature, "static long tally(const char *buf, int n)");
+    }
+
+    #[test]
+    fn expose_forwarder_form_is_a_hard_error() {
+        // The `as=` forwarder is documented-but-unbuilt: reject loudly.
+        let src = "\
+// @aristo expose(as = \"recover_for_test\")
+ARISTO_TU_LOCAL int recover_replay(Db *db) { return 0; }
+";
+        let err = extract_c_expose_directives(src).unwrap_err();
+        assert!(err.to_string().contains("forwarder"), "got: {err}");
+    }
+
+    #[test]
+    fn expose_without_a_function_below_is_dropped() {
+        let src = "\
+// @aristo expose
+
+int detached(void) { return 0; }
+";
+        assert!(expose(src).is_empty());
+    }
+
+    #[test]
+    fn expose_ignores_inspect_and_index_directives() {
+        // Only expose directives produce expose records.
+        let src = "\
+// @aristo intent(\"does a thing\", id = \"x\")
+int f(void) { return 0; }
+// @aristo inspect(field = \"a\", ret = \"int\")
+struct S { int a; };
+";
+        assert!(expose(src).is_empty());
     }
 }
