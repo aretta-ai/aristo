@@ -14,19 +14,22 @@
 //! parsed by the shared [`AnnotationArgs`] grammar so the two languages can never
 //! drift apart. "Same shape, different skin."
 //!
-//! Slice C-1 scope, deliberately narrow (expanded in later slices):
+//! Scope (narrow by design, expanding per slice):
 //!
-//! - **Function-level directives only.** Struct/type sites and statement-form
-//!   directives land in C-2.
+//! - **Function and type-definition directives.** A directive attaches to the
+//!   function, or the `struct` / `union` / `enum` definition (tagged or
+//!   `typedef`), on the next line. Statement-form directives land in a later
+//!   slice.
 //! - **Attachment is by adjacency** — the directive must be on the line directly
 //!   above the function definition, with no blank line between. A gap detaches
 //!   the directive (it is dropped). The explicit `site = "..."` escape hatch for
-//!   macro-defined / non-adjacent targets lands in C-2.
+//!   macro-defined / non-adjacent targets lands in a later slice.
 //! - **Block comments `/* ... */` are not directives** — only `//` line comments,
 //!   because a block comment can float anywhere (mid-expression, mid-argument).
-//! - **The covered region is the function's brace-delimited body** (`{ ... }`),
-//!   hashed verbatim — identical treatment to a Rust `fn`'s block, so a code edit
-//!   flips `body_hash` while a prose-only edit to the directive does not.
+//! - **The covered region is the item's brace-delimited body** (`{ ... }`) — a
+//!   function's block, or a type's field / enumerator list — hashed verbatim,
+//!   like a Rust `fn` block or struct body, so a code edit flips `body_hash`
+//!   while a prose-only edit to the directive does not.
 
 use tree_sitter::{Node, Parser};
 
@@ -66,48 +69,47 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
     let mut found = Vec::new();
 
     // Comments are tree-sitter "extra" nodes that appear as siblings between
-    // top-level declarations, so a directive comment and the function it
-    // annotates are adjacent children of the translation unit. Walk them in
-    // source order, accumulating a contiguous run of directive comments; when
-    // a function definition follows immediately below the run, the whole run
-    // attaches to it (mirrors Rust allowing multiple `#[aristo::*]` on one item).
+    // top-level declarations, so a directive comment and the item it annotates
+    // are adjacent children of the translation unit. Walk them in source order,
+    // accumulating a contiguous run of directive comments; when a supported
+    // item (function, or struct/union/enum definition) follows immediately
+    // below the run, the whole run attaches to it (mirrors Rust allowing
+    // multiple `#[aristo::*]` on one item).
     let mut pending: Vec<(CDirective, Node)> = Vec::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
-        match child.kind() {
-            "comment" => {
-                let text = child.utf8_text(src_bytes).unwrap_or("");
-                match parse_directive(text) {
-                    Some(dir) => {
-                        // Keep the run contiguous: a directive not on the line
-                        // immediately below the previous one starts a fresh run.
-                        if let Some((_, last)) = pending.last() {
-                            if child.start_position().row != last.end_position().row + 1 {
-                                pending.clear();
-                            }
+        if child.kind() == "comment" {
+            let text = child.utf8_text(src_bytes).unwrap_or("");
+            match parse_directive(text) {
+                Some(dir) => {
+                    // Keep the run contiguous: a directive not on the line
+                    // immediately below the previous one starts a fresh run.
+                    if let Some((_, last)) = pending.last() {
+                        if child.start_position().row != last.end_position().row + 1 {
+                            pending.clear();
                         }
-                        pending.push((dir, child));
                     }
-                    // A non-directive comment breaks the contiguous run.
-                    None => pending.clear(),
+                    pending.push((dir, child));
                 }
+                // A non-directive comment breaks the contiguous run.
+                None => pending.clear(),
             }
-            "function_definition" => {
-                if let Some((_, last)) = pending.last() {
-                    // Adjacency: the function starts on the line directly below
-                    // the last directive comment. Any gap detaches the run.
-                    if child.start_position().row == last.end_position().row + 1 {
-                        for (dir, comment) in &pending {
-                            if let Some(ann) = build_c_annotation(dir, comment, &child, source) {
-                                found.push(ann);
-                            }
+        } else if let Some(item) = c_item(&child, source) {
+            if let Some((_, last)) = pending.last() {
+                // Adjacency: the item starts on the line directly below the
+                // last directive comment. Any gap detaches the run.
+                if child.start_position().row == last.end_position().row + 1 {
+                    for (dir, comment) in &pending {
+                        if let Some(ann) = build_c_annotation(dir, comment, &item, source) {
+                            found.push(ann);
                         }
                     }
                 }
-                pending.clear();
             }
-            // Any other top-level item breaks a dangling directive pairing.
-            _ => pending.clear(),
+            pending.clear();
+        } else {
+            // Any other top-level node breaks a dangling directive pairing.
+            pending.clear();
         }
     }
 
@@ -139,7 +141,7 @@ fn parse_directive(comment_text: &str) -> Option<CDirective> {
     })
 }
 
-/// Build one [`ExtractedAnnotation`] from a directive attached to a function.
+/// Build one [`ExtractedAnnotation`] from a directive attached to a C item.
 /// Reuses the Rust-side argument grammar and annotation builder verbatim, so
 /// hashing and field semantics are identical across languages. Malformed
 /// argument lists are skipped silently — same policy as the Rust extractor,
@@ -147,27 +149,105 @@ fn parse_directive(comment_text: &str) -> Option<CDirective> {
 fn build_c_annotation(
     dir: &CDirective,
     comment: &Node,
-    func: &Node,
+    item: &CItem,
     source: &str,
 ) -> Option<ExtractedAnnotation> {
-    let name = c_function_name(func, source)?;
-    let site = format!("fn {name}");
-    // Body = the function's `{ ... }` compound statement, excluding the
-    // signature and the directive comment — so a prose-only edit to the
-    // directive leaves body_hash unchanged, and only a code edit flips it.
-    let body = func.child_by_field_name("body")?;
-    let body_text = source.get(body.start_byte()..body.end_byte())?.to_string();
+    // Body = the item's brace-delimited region (a function's `{ ... }` block,
+    // or a type's `{ ... }` field / enumerator list), excluding the signature
+    // and the directive — so a prose-only edit to the directive leaves
+    // body_hash unchanged, and only a code edit to the body flips it.
+    let body_text = source
+        .get(item.body.start_byte()..item.body.end_byte())?
+        .to_string();
     let line = comment.start_position().row + 1; // 1-indexed, like the Rust extractor
     let args: AnnotationArgs = syn::parse_str(&dir.args).ok()?;
     Some(make_annotation(
         dir.kind,
         AnnotationForm::Attribute,
         args,
-        &site,
+        &item.site,
         line,
-        CoveredRegion::Function,
+        item.region,
         body_text,
     ))
+}
+
+/// A C item an annotation can attach to: the display site label, the node
+/// whose bytes feed `body_hash`, and the covered-region kind.
+struct CItem<'t> {
+    site: String,
+    body: Node<'t>,
+    region: CoveredRegion,
+}
+
+/// Resolve the top-level C item a directive attaches to. C-1 covered
+/// functions; C-2 adds tagged and typedef `struct` / `union` / `enum`
+/// definitions (covered region = the `{ ... }` field / enumerator list).
+fn c_item<'t>(node: &Node<'t>, source: &str) -> Option<CItem<'t>> {
+    match node.kind() {
+        "function_definition" => {
+            let name = c_function_name(node, source)?;
+            let body = node.child_by_field_name("body")?;
+            Some(CItem {
+                site: format!("fn {name}"),
+                body,
+                region: CoveredRegion::Function,
+            })
+        }
+        // `struct Name { ... };` / `union` / `enum` — a bare tagged definition
+        // is a top-level specifier (not wrapped in a `declaration`).
+        "struct_specifier" | "union_specifier" | "enum_specifier" => {
+            c_tagged_type_item(node, source)
+        }
+        // `typedef struct { ... } Name;` — the site name is the new typedef
+        // name; the body is the (usually anonymous) specifier's list.
+        "type_definition" => c_typedef_type_item(node, source),
+        _ => None,
+    }
+}
+
+/// A bare top-level `struct Name { ... };` (also union / enum): name and body
+/// come from the specifier itself.
+fn c_tagged_type_item<'t>(spec: &Node<'t>, source: &str) -> Option<CItem<'t>> {
+    let keyword = type_keyword(spec)?;
+    let name = spec
+        .child_by_field_name("name")?
+        .utf8_text(source.as_bytes())
+        .ok()?;
+    // A specifier with no `{ ... }` body is a *reference* (`struct Foo x;`),
+    // not a definition — there is nothing to cover, so it does not attach.
+    let body = spec.child_by_field_name("body")?;
+    Some(CItem {
+        site: format!("{keyword} {name}"),
+        body,
+        region: CoveredRegion::Type,
+    })
+}
+
+/// `typedef struct { ... } Name;` — the site name is the typedef name; the
+/// body is the specifier's list.
+fn c_typedef_type_item<'t>(td: &Node<'t>, source: &str) -> Option<CItem<'t>> {
+    let spec = td.child_by_field_name("type")?;
+    let keyword = type_keyword(&spec)?;
+    let body = spec.child_by_field_name("body")?;
+    let name = td
+        .child_by_field_name("declarator")?
+        .utf8_text(source.as_bytes())
+        .ok()?;
+    Some(CItem {
+        site: format!("{keyword} {name}"),
+        body,
+        region: CoveredRegion::Type,
+    })
+}
+
+fn type_keyword(spec: &Node) -> Option<&'static str> {
+    match spec.kind() {
+        "struct_specifier" => Some("struct"),
+        "union_specifier" => Some("union"),
+        "enum_specifier" => Some("enum"),
+        _ => None,
+    }
 }
 
 /// Resolve a `function_definition`'s name by descending its declarator chain
@@ -358,6 +438,78 @@ int bad(void) { return 0; }
             a[0].body_hash, c[0].body_hash,
             "body changed → hash changes"
         );
+    }
+
+    // ─── type sites (C-2): struct / union / enum ─────────────────────────
+
+    #[test]
+    fn extracts_directive_on_tagged_struct() {
+        let src = "\
+// @aristo intent(\"a live key maps to the newest record's location\", id = \"keydir_entry\")
+struct Entry {
+    unsigned long file_id;
+    unsigned long offset;
+};
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].site, "struct Entry");
+        assert_eq!(ann[0].covered_region, CoveredRegion::Type);
+    }
+
+    #[test]
+    fn extracts_directive_on_enum_and_union() {
+        let src = "\
+// @aristo intent(\"record tag discriminates a put from a tombstone\")
+enum RecordTag { PUT, TOMBSTONE };
+// @aristo intent(\"payload is interpreted per the record tag\")
+union Payload { long as_int; double as_float; };
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 2);
+        assert_eq!(ann[0].site, "enum RecordTag");
+        assert_eq!(ann[0].covered_region, CoveredRegion::Type);
+        assert_eq!(ann[1].site, "union Payload");
+        assert_eq!(ann[1].covered_region, CoveredRegion::Type);
+    }
+
+    #[test]
+    fn extracts_directive_on_typedef_struct() {
+        let src = "\
+// @aristo intent(\"opaque store handle; single-writer\", id = \"db_handle\")
+typedef struct {
+    int fd;
+    unsigned long next_seqno;
+} Db;
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].site, "struct Db");
+        assert_eq!(ann[0].covered_region, CoveredRegion::Type);
+    }
+
+    #[test]
+    fn type_body_hash_changes_with_fields_but_not_directive_text() {
+        let a = extract("// @aristo intent(\"v1\")\nstruct S { int a; };\n");
+        let b = extract("// @aristo intent(\"v2\")\nstruct S { int a; };\n");
+        let c = extract("// @aristo intent(\"v1\")\nstruct S { int a; int b; };\n");
+        assert_ne!(a[0].text_hash, b[0].text_hash);
+        assert_eq!(a[0].body_hash, b[0].body_hash, "field list unchanged");
+        assert_ne!(a[0].body_hash, c[0].body_hash, "field added → hash changes");
+    }
+
+    #[test]
+    fn directive_on_a_plain_variable_declaration_does_not_attach() {
+        // `struct Foo x;` is a reference, not a definition — no body to cover.
+        let src = "\
+struct Foo { int a; };
+// @aristo intent(\"not a definition\")
+struct Foo x;
+";
+        // Only the definition would attach IF annotated; the directive here
+        // sits above a variable declaration and must be dropped.
+        let ann = extract(src);
+        assert!(ann.is_empty());
     }
 
     #[test]
