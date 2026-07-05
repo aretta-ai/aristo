@@ -457,6 +457,7 @@ fn source_slice(source: &str, span: proc_macro2::Span) -> String {
 
 // ─── Argument parsing (mirrors aristo-macros::IntentArgs) ─────────────────
 
+#[derive(Clone)]
 pub(crate) struct AnnotationArgs {
     text: String,
     verify: Option<String>,

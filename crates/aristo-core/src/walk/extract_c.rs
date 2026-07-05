@@ -20,16 +20,20 @@
 //!   function, or the `struct` / `union` / `enum` definition (tagged or
 //!   `typedef`), on the next line. Statement-form directives land in a later
 //!   slice.
-//! - **Attachment is by adjacency** — the directive must be on the line directly
-//!   above the function definition, with no blank line between. A gap detaches
-//!   the directive (it is dropped). The explicit `site = "..."` escape hatch for
-//!   macro-defined / non-adjacent targets lands in a later slice.
+//! - **Attachment is by adjacency, or by explicit target.** A directive with no
+//!   `site` attaches to the item on the line directly below it (a blank-line gap
+//!   detaches it). A directive whose first argument is `site = "name"` instead
+//!   attaches to the function or type named `name` anywhere in the file — the
+//!   escape hatch for macro-defined or doc-comment-separated targets adjacency
+//!   can't reach.
 //! - **Block comments `/* ... */` are not directives** — only `//` line comments,
 //!   because a block comment can float anywhere (mid-expression, mid-argument).
 //! - **The covered region is the item's brace-delimited body** (`{ ... }`) — a
 //!   function's block, or a type's field / enumerator list — hashed verbatim,
 //!   like a Rust `fn` block or struct body, so a code edit flips `body_hash`
 //!   while a prose-only edit to the directive does not.
+
+use std::collections::HashMap;
 
 use tree_sitter::{Node, Parser};
 
@@ -38,12 +42,13 @@ use crate::walk::extract::{
     make_annotation, AnnotationArgs, AnnotationForm, ExtractError, ExtractedAnnotation,
 };
 
-/// A recognized `// @aristo <kind>(<args>)` directive, before the argument
-/// list is parsed. `args` is the raw substring between the outer parentheses,
-/// fed verbatim to the shared Rust argument grammar.
+/// A recognized, fully-parsed `// @aristo <kind>(<args>)` directive. `site` is
+/// the optional C-only target selector (Option B: peeled off before the shared
+/// Rust grammar sees the args); `args` is the shared grammar's output.
 struct CDirective {
     kind: AnnotationKind,
-    args: String,
+    site: Option<String>,
+    args: AnnotationArgs,
 }
 
 #[aristo::intent(
@@ -66,59 +71,73 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
     let root = tree.root_node();
     let src_bytes = source.as_bytes();
 
-    let mut found = Vec::new();
+    // Pass 1: index every top-level item — by bare name (for `site = "..."`,
+    // which may target an item defined anywhere in the file) and by start row
+    // (for adjacency).
+    let mut items: Vec<CItem> = Vec::new();
+    let mut by_name: HashMap<String, usize> = HashMap::new();
+    let mut item_at_row: HashMap<usize, usize> = HashMap::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if let Some(item) = c_item(&child, source) {
+            let idx = items.len();
+            // First definition wins on a duplicate name (C forbids two anyway;
+            // this just keeps `site` resolution deterministic).
+            by_name.entry(item.name.clone()).or_insert(idx);
+            item_at_row.insert(child.start_position().row, idx);
+            items.push(item);
+        }
+    }
 
-    // Comments are tree-sitter "extra" nodes that appear as siblings between
-    // top-level declarations, so a directive comment and the item it annotates
-    // are adjacent children of the translation unit. Walk them in source order,
-    // accumulating a contiguous run of directive comments; when a supported
-    // item (function, or struct/union/enum definition) follows immediately
-    // below the run, the whole run attaches to it (mirrors Rust allowing
-    // multiple `#[aristo::*]` on one item).
-    let mut pending: Vec<(CDirective, Node)> = Vec::new();
+    // Pass 2: gather each contiguous run of directive comments and resolve it.
+    // Comments are tree-sitter "extra" nodes interleaved among the top-level
+    // declarations. A directive with `site = "..."` attaches to the named item;
+    // otherwise it attaches to the item on the line directly below its run.
+    // Runs resolve in source order, so annotations come out in source order.
+    let mut found = Vec::new();
+    let mut run: Vec<CPendingDirective> = Vec::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         if child.kind() == "comment" {
             let text = child.utf8_text(src_bytes).unwrap_or("");
             match parse_directive(text) {
                 Some(dir) => {
-                    // Keep the run contiguous: a directive not on the line
-                    // immediately below the previous one starts a fresh run.
-                    if let Some((_, last)) = pending.last() {
-                        if child.start_position().row != last.end_position().row + 1 {
-                            pending.clear();
+                    // A directive not on the line immediately below the
+                    // previous one starts a fresh run.
+                    if let Some(last) = run.last() {
+                        if child.start_position().row != last.end_row + 1 {
+                            resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
+                            run.clear();
                         }
                     }
-                    pending.push((dir, child));
+                    run.push(CPendingDirective {
+                        dir,
+                        start_row: child.start_position().row,
+                        end_row: child.end_position().row,
+                    });
                 }
                 // A non-directive comment breaks the contiguous run.
-                None => pending.clear(),
-            }
-        } else if let Some(item) = c_item(&child, source) {
-            if let Some((_, last)) = pending.last() {
-                // Adjacency: the item starts on the line directly below the
-                // last directive comment. Any gap detaches the run.
-                if child.start_position().row == last.end_position().row + 1 {
-                    for (dir, comment) in &pending {
-                        if let Some(ann) = build_c_annotation(dir, comment, &item, source) {
-                            found.push(ann);
-                        }
-                    }
+                None => {
+                    resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
+                    run.clear();
                 }
             }
-            pending.clear();
         } else {
-            // Any other top-level node breaks a dangling directive pairing.
-            pending.clear();
+            // Any non-comment node ends the run; its adjacent item (if any) was
+            // recorded in pass 1, so `resolve_run` finds it by row.
+            resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
+            run.clear();
         }
     }
+    resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
 
     Ok(found)
 }
 
-/// Recognize `// @aristo intent(<args>)` / `// @aristo assume(<args>)`.
-/// Returns the kind and the raw argument substring on a hit, `None` otherwise.
-/// Only `//` line comments are directives; block comments are ignored.
+/// Recognize `// @aristo intent(<args>)` / `// @aristo assume(<args>)` and
+/// fully parse the argument list. Returns `None` for a non-directive comment
+/// or malformed args — the compile/lint layer reports malformed args; the
+/// extractor does not double-report. Only `//` line comments are directives.
 fn parse_directive(comment_text: &str) -> Option<CDirective> {
     let body = comment_text.strip_prefix("//")?.trim_start();
     let rest = body.strip_prefix("@aristo")?.trim_start();
@@ -135,21 +154,100 @@ fn parse_directive(comment_text: &str) -> Option<CDirective> {
 
     let rest = rest.trim();
     let inner = rest.strip_prefix('(')?.strip_suffix(')')?;
+    let parsed: CArgs = syn::parse_str(inner).ok()?;
     Some(CDirective {
         kind,
-        args: inner.to_string(),
+        site: parsed.site,
+        args: parsed.args,
     })
 }
 
+/// C directive arguments: an optional C-only `site = "..."` target selector
+/// peeled off here so it never reaches the shared Rust grammar (decision
+/// "Option B"), followed by the shared [`AnnotationArgs`].
+#[aristo::intent(
+    "`site` is a C-only target selector and is peeled off here, never entering \
+     the shared AnnotationArgs grammar (design decision Option B). Adding site \
+     to AnnotationArgs to `simplify` this would pollute the Rust contract with \
+     a field Rust has no use for — Rust attaches structurally and never needs \
+     an explicit target. site must be the first argument so this peel stays a \
+     single leading-token check instead of a full re-parse of the arg list.",
+    verify = "neural",
+    id = "c_site_selector_stays_out_of_shared_grammar"
+)]
+struct CArgs {
+    site: Option<String>,
+    args: AnnotationArgs,
+}
+
+impl syn::parse::Parse for CArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut site = None;
+        // A leading `site = "..."` is the only ident-first form: the shared
+        // grammar always starts with the positional text string literal, so an
+        // identifier in first position can only be a C-side key.
+        if input.peek(syn::Ident) && input.peek2(syn::Token![=]) {
+            let ident: syn::Ident = input.fork().parse()?;
+            if ident == "site" {
+                input.parse::<syn::Ident>()?;
+                input.parse::<syn::Token![=]>()?;
+                let lit: syn::LitStr = input.parse()?;
+                site = Some(lit.value());
+                input.parse::<syn::Token![,]>()?;
+            }
+        }
+        let args: AnnotationArgs = input.parse()?;
+        Ok(CArgs { site, args })
+    }
+}
+
+/// A pending directive within a contiguous run, carrying its comment's row
+/// span (for adjacency and the 1-indexed line the annotation records).
+struct CPendingDirective {
+    dir: CDirective,
+    start_row: usize,
+    end_row: usize,
+}
+
+/// Resolve one contiguous run of directives to their target items and push the
+/// resulting annotations (in run order = source order). A directive with
+/// `site` resolves by name; otherwise by adjacency to the item directly below
+/// the run. A directive with no resolvable target (unknown `site`, or no item
+/// below) is dropped.
+fn resolve_run(
+    run: &[CPendingDirective],
+    items: &[CItem],
+    by_name: &HashMap<String, usize>,
+    item_at_row: &HashMap<usize, usize>,
+    source: &str,
+    found: &mut Vec<ExtractedAnnotation>,
+) {
+    let Some(last) = run.last() else {
+        return;
+    };
+    let adjacent = item_at_row.get(&(last.end_row + 1)).copied();
+    for pending in run {
+        let target = match &pending.dir.site {
+            Some(name) => by_name.get(name).copied(),
+            None => adjacent,
+        };
+        if let Some(idx) = target {
+            if let Some(ann) =
+                build_c_annotation(&pending.dir, &items[idx], pending.start_row + 1, source)
+            {
+                found.push(ann);
+            }
+        }
+    }
+}
+
 /// Build one [`ExtractedAnnotation`] from a directive attached to a C item.
-/// Reuses the Rust-side argument grammar and annotation builder verbatim, so
-/// hashing and field semantics are identical across languages. Malformed
-/// argument lists are skipped silently — same policy as the Rust extractor,
-/// where the compile/lint layer is responsible for the diagnostic.
+/// Reuses the (already-parsed) shared argument grammar and annotation builder
+/// verbatim, so hashing and field semantics are identical across languages.
 fn build_c_annotation(
     dir: &CDirective,
-    comment: &Node,
     item: &CItem,
+    line: usize,
     source: &str,
 ) -> Option<ExtractedAnnotation> {
     // Body = the item's brace-delimited region (a function's `{ ... }` block,
@@ -159,12 +257,10 @@ fn build_c_annotation(
     let body_text = source
         .get(item.body.start_byte()..item.body.end_byte())?
         .to_string();
-    let line = comment.start_position().row + 1; // 1-indexed, like the Rust extractor
-    let args: AnnotationArgs = syn::parse_str(&dir.args).ok()?;
     Some(make_annotation(
         dir.kind,
         AnnotationForm::Attribute,
-        args,
+        dir.args.clone(),
         &item.site,
         line,
         item.region,
@@ -172,9 +268,11 @@ fn build_c_annotation(
     ))
 }
 
-/// A C item an annotation can attach to: the display site label, the node
-/// whose bytes feed `body_hash`, and the covered-region kind.
+/// A C item an annotation can attach to: the bare `name` (for `site = "..."`
+/// resolution), the display `site` label, the node whose bytes feed
+/// `body_hash`, and the covered-region kind.
 struct CItem<'t> {
+    name: String,
     site: String,
     body: Node<'t>,
     region: CoveredRegion,
@@ -190,6 +288,7 @@ fn c_item<'t>(node: &Node<'t>, source: &str) -> Option<CItem<'t>> {
             let body = node.child_by_field_name("body")?;
             Some(CItem {
                 site: format!("fn {name}"),
+                name,
                 body,
                 region: CoveredRegion::Function,
             })
@@ -213,12 +312,14 @@ fn c_tagged_type_item<'t>(spec: &Node<'t>, source: &str) -> Option<CItem<'t>> {
     let name = spec
         .child_by_field_name("name")?
         .utf8_text(source.as_bytes())
-        .ok()?;
+        .ok()?
+        .to_string();
     // A specifier with no `{ ... }` body is a *reference* (`struct Foo x;`),
     // not a definition — there is nothing to cover, so it does not attach.
     let body = spec.child_by_field_name("body")?;
     Some(CItem {
         site: format!("{keyword} {name}"),
+        name,
         body,
         region: CoveredRegion::Type,
     })
@@ -233,9 +334,11 @@ fn c_typedef_type_item<'t>(td: &Node<'t>, source: &str) -> Option<CItem<'t>> {
     let name = td
         .child_by_field_name("declarator")?
         .utf8_text(source.as_bytes())
-        .ok()?;
+        .ok()?
+        .to_string();
     Some(CItem {
         site: format!("{keyword} {name}"),
+        name,
         body,
         region: CoveredRegion::Type,
     })
@@ -510,6 +613,81 @@ struct Foo x;
         // sits above a variable declaration and must be dropped.
         let ann = extract(src);
         assert!(ann.is_empty());
+    }
+
+    // ─── explicit target selection (C-2): site = "..." ──────────────────
+    // `site = "name"` must be the FIRST argument — it is peeled off before the
+    // shared grammar (Option B; see CArgs).
+
+    #[test]
+    fn site_targets_a_function_not_adjacent() {
+        // The directive sits above a variable declaration (which adjacency
+        // cannot attach to), but `site` names the function below it.
+        let src = "\
+// @aristo intent(site = \"db_open\", \"open recovers the durable prefix\", verify = \"test\", id = \"recover\")
+static int internal_state;
+
+int db_open(const char *dir) { return 0; }
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].site, "fn db_open");
+        assert_eq!(ann[0].id.as_deref(), Some("recover"));
+        assert_eq!(ann[0].verify.as_deref(), Some("\"test\""));
+    }
+
+    #[test]
+    fn site_reaches_past_an_intervening_comment() {
+        // A kernel-doc / Doxygen block between the directive and the function
+        // breaks adjacency; `site` reaches the target anyway.
+        let src = "\
+// @aristo intent(site = \"clamp\", \"clamps the value into the range\")
+// an ordinary doc comment that would break plain adjacency
+int clamp(int x) { return x; }
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].site, "fn clamp");
+    }
+
+    #[test]
+    fn site_targets_a_type_by_name() {
+        let src = "\
+// @aristo intent(site = \"Entry\", \"a live key maps to its newest record\")
+int unrelated(void) { return 0; }
+typedef struct { unsigned long off; } Entry;
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].site, "struct Entry");
+        assert_eq!(ann[0].covered_region, CoveredRegion::Type);
+    }
+
+    #[test]
+    fn site_to_unknown_name_is_dropped() {
+        // `site` present but no such item — adjacency is not a fallback.
+        let src = "\
+// @aristo intent(site = \"nope\", \"targets a nonexistent item\")
+int real(void) { return 0; }
+";
+        assert!(extract(src).is_empty());
+    }
+
+    #[test]
+    fn site_overrides_adjacency() {
+        let src = "\
+// @aristo intent(\"attaches by adjacency\", id = \"adj\")
+int alpha(void) { return 0; }
+// @aristo intent(site = \"alpha\", \"overrides adjacency to target alpha\", id = \"exp\")
+int beta(void) { return 0; }
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 2);
+        assert_eq!(ann[0].id.as_deref(), Some("adj"));
+        assert_eq!(ann[0].site, "fn alpha");
+        // The second directive is adjacent to `beta` but `site` retargets it.
+        assert_eq!(ann[1].id.as_deref(), Some("exp"));
+        assert_eq!(ann[1].site, "fn alpha");
     }
 
     #[test]
