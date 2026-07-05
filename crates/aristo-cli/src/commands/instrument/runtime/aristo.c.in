@@ -1,0 +1,78 @@
+/*
+ * aristo.c - Aristo C instrumentation runtime.
+ *
+ * Vendored by `aristo instrument vendor-c` (aristo {{SDK_VERSION}}).
+ * Compile this file only in instrumented builds (with -DARISTO_INSTRUMENT);
+ * in production it holds no external symbols and need not be built.
+ */
+#include "aristo.h"
+
+#ifdef ARISTO_INSTRUMENT
+
+/*
+ * Per-thread hook storage. C11 _Thread_local gives each harness thread its
+ * own fault policy with no locking, so parallel scenarios never interfere.
+ */
+static _Thread_local aristo_yield_fn g_yield_fn    = 0;
+static _Thread_local void           *g_yield_state = 0;
+static _Thread_local aristo_fault_fn g_fault_fn    = 0;
+static _Thread_local void           *g_fault_state = 0;
+
+void aristo_set_hook(aristo_yield_fn fn, void *state) {
+    g_yield_fn = fn;
+    g_yield_state = state;
+}
+
+void aristo_set_fault_hook(aristo_fault_fn fn, void *state) {
+    g_fault_fn = fn;
+    g_fault_state = state;
+}
+
+/*
+ * Take-call-restore: clear the slot during dispatch so a re-entrant point
+ * reached inside the hook is inert, then restore - UNLESS the hook installed
+ * a new hook (a fresh set leaves the slot non-empty), in which case the new
+ * pair is kept. A hook that clears ITSELF is therefore silently re-armed;
+ * express fail-once with your own counter, not by self-clearing.
+ */
+void aristo_yield_point(const char *label) {
+    aristo_yield_fn fn = g_yield_fn;
+    void *state = g_yield_state;
+    if (!fn) {
+        return;
+    }
+    g_yield_fn = 0;
+    g_yield_state = 0;
+    fn(label, state);
+    if (!g_yield_fn) {
+        g_yield_fn = fn;
+        g_yield_state = state;
+    }
+}
+
+aristo_decision aristo_fault_point(const char *label) {
+    aristo_fault_fn fn = g_fault_fn;
+    void *state = g_fault_state;
+    if (!fn) {
+        return ARISTO_CONTINUE;
+    }
+    g_fault_fn = 0;
+    g_fault_state = 0;
+    aristo_decision d = fn(label, state);
+    if (!g_fault_fn) {
+        g_fault_fn = fn;
+        g_fault_state = state;
+    }
+    return d;
+}
+
+#else /* !ARISTO_INSTRUMENT */
+
+/*
+ * Production build: no external symbols. ISO C forbids an empty translation
+ * unit, so declare one file-scope typedef to keep -Wpedantic quiet. This file
+ * need not be added to a production build at all.
+ */
+typedef int aristo_runtime_translation_unit_is_not_empty;
+
+#endif /* ARISTO_INSTRUMENT */

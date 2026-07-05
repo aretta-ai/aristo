@@ -597,6 +597,12 @@ enum Commands {
         #[command(subcommand)]
         action: CanonAction,
     },
+
+    /// Manage C instrumentation artifacts: vendor the C runtime, run codegen.
+    Instrument {
+        #[command(subcommand)]
+        action: InstrumentAction,
+    },
 }
 
 /// Subcommands under `aristo auth`. Each operates on the persistent
@@ -658,6 +664,19 @@ pub(crate) enum AuthAction {
     /// Remove the stored credentials file. Idempotent — running
     /// `logout` when not logged in is not an error.
     Logout,
+}
+
+/// Subcommands under `aristo instrument`.
+#[derive(clap::Subcommand, Debug)]
+pub(crate) enum InstrumentAction {
+    /// Emit the vendored C runtime (`aristo.h` + `aristo.c`) into a SUT so it
+    /// can link Aristo's fault-injection / observation points. C11, gated by
+    /// `-DARISTO_INSTRUMENT`.
+    VendorC {
+        /// Directory to write `aristo.h` / `aristo.c` into.
+        #[arg(long, default_value = "aristo")]
+        out: PathBuf,
+    },
 }
 
 /// Subcommands under `aristo canon`.
@@ -1150,6 +1169,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 counts,
                 filter,
             } => commands::canon::suggestions::run(objective, counts, filter),
+        },
+        Commands::Instrument { action } => match action {
+            InstrumentAction::VendorC { out } => commands::instrument::vendor_c::run(out),
         },
     }
 }
