@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- core: Aristo can now read annotations from **C** source. `// @aristo intent(...)` / `// @aristo assume(...)` line-comment directives placed on the line directly above a function are extracted via a tree-sitter C parser, reusing the exact same argument grammar and hashing as Rust — so an edit to the function body marks the intent stale while a prose-only edit to the directive does not. Slice C-1 scope: function-level directives, attached by adjacency (no blank line between directive and function); a contiguous run of directives all attach. Struct/type and statement-form sites, and the explicit `site = "..."` escape hatch, follow in later slices. Not yet wired into the directory walk (next slice).
+
 ## [0.5.1] — 2026-07-04
 
 ### Fixed
