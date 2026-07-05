@@ -163,6 +163,12 @@ static aristo_decision fail_nth(const char *label, void *state) {
     if (!strcmp(label, p->tgt) && ++p->seen == p->nth) return aristo_inject(42);
     return ARISTO_CONTINUE;
 }
+/* a one-shot that clears ITSELF: must fire once, then stay cleared */
+static aristo_decision self_clearing(const char *label, void *state) {
+    (void)label; (void)state;
+    aristo_set_fault_hook(0, 0);
+    return aristo_inject(99);
+}
 int main(void) {
     if (aristo_is_inject(aristo_fault_point("x"))) return 1;      /* no hook -> Continue */
     Pol p = { "sync", 3, 0, 0 };
@@ -174,6 +180,11 @@ int main(void) {
     if (p.reentrant_inject) return 5;                            /* re-entrant saw Continue */
     aristo_set_fault_hook(0, 0);
     if (aristo_is_inject(aristo_fault_point("sync"))) return 6;  /* cleared */
+    /* self-clearing one-shot: fires once, then STAYS cleared (dirty-flag semantics) */
+    aristo_set_fault_hook(self_clearing, 0);
+    aristo_decision e = aristo_fault_point("any");              /* fires -> inject 99 */
+    if (!aristo_is_inject(e) || e.code != 99) return 7;
+    if (aristo_is_inject(aristo_fault_point("any"))) return 8;   /* stays cleared, NOT re-armed */
     return 0;
 }
 "#;
@@ -189,6 +200,14 @@ int run(int x) {
     if (aristo_is_inject(d)) return -1;
     return helper(x);
 }
+"#;
+
+    /// A TU that includes `aristo.c` twice: the include-once guard must make
+    /// the second a no-op (no duplicate-symbol / redefinition error).
+    const C_DOUBLE_INCLUDE: &str = r#"
+#include "aristo.c"
+#include "aristo.c"
+int probe(void) { aristo_set_fault_hook(0, 0); return 0; }
 "#;
 
     fn find_c_compiler() -> Option<&'static str> {
@@ -252,5 +271,22 @@ int run(int x) {
             .status()
             .unwrap();
         assert!(off.success(), "flag-off TU failed to compile clean ({cc})");
+
+        // Include-once guard: `#include "aristo.c"` twice in one TU must not
+        // produce a duplicate-symbol / redefinition error (amalgamation safety).
+        fs::write(dir.join("double.c"), C_DOUBLE_INCLUDE).unwrap();
+        let dbl = std::process::Command::new(cc)
+            .args(strict)
+            .args(["-O1", "-DARISTO_INSTRUMENT", "-c"])
+            .arg(&inc)
+            .arg(dir.join("double.c"))
+            .arg("-o")
+            .arg(dir.join("double.o"))
+            .status()
+            .unwrap();
+        assert!(
+            dbl.success(),
+            "double-#include of aristo.c failed — include-once guard missing ({cc})"
+        );
     }
 }

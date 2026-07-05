@@ -4,7 +4,14 @@
  * Vendored by `aristo instrument vendor-c` (aristo {{SDK_VERSION}}).
  * Compile this file only in instrumented builds (with -DARISTO_INSTRUMENT);
  * in production it holds no external symbols and need not be built.
+ *
+ * Guarded so a unity / amalgamation build may `#include "aristo.c"` once
+ * without a duplicate-symbol error. (Two SEPARATE translation units must
+ * still include it only once between them - the guard is per-TU.)
  */
+#ifndef ARISTO_C_INCLUDED
+#define ARISTO_C_INCLUDED
+
 #include "aristo.h"
 
 #ifdef ARISTO_INSTRUMENT
@@ -12,28 +19,35 @@
 /*
  * Per-thread hook storage. C11 _Thread_local gives each harness thread its
  * own fault policy with no locking, so parallel scenarios never interfere.
+ * `dirty` records whether the hook called the setter DURING its own dispatch.
  */
 static _Thread_local aristo_yield_fn g_yield_fn    = 0;
 static _Thread_local void           *g_yield_state = 0;
+static _Thread_local int             g_yield_dirty = 0;
 static _Thread_local aristo_fault_fn g_fault_fn    = 0;
 static _Thread_local void           *g_fault_state = 0;
+static _Thread_local int             g_fault_dirty = 0;
 
 void aristo_set_hook(aristo_yield_fn fn, void *state) {
     g_yield_fn = fn;
     g_yield_state = state;
+    g_yield_dirty = 1;
 }
 
 void aristo_set_fault_hook(aristo_fault_fn fn, void *state) {
     g_fault_fn = fn;
     g_fault_state = state;
+    g_fault_dirty = 1;
 }
 
 /*
- * Take-call-restore: clear the slot during dispatch so a re-entrant point
- * reached inside the hook is inert, then restore - UNLESS the hook installed
- * a new hook (a fresh set leaves the slot non-empty), in which case the new
- * pair is kept. A hook that clears ITSELF is therefore silently re-armed;
- * express fail-once with your own counter, not by self-clearing.
+ * Take-call-restore. Before calling the hook we clear the slot (so a point
+ * reached re-entrantly inside the hook is inert) AND clear `dirty`. After the
+ * hook returns: if it did NOT call the setter (dirty still 0) we restore the
+ * original {fn,state}; if it DID call the setter - installing a new hook, OR
+ * clearing itself with set(NULL, NULL) - we keep whatever it set. Tracking the
+ * setter *call* (not the resulting fn value) is what makes a self-clearing
+ * one-shot actually stay cleared.
  */
 void aristo_yield_point(const char *label) {
     aristo_yield_fn fn = g_yield_fn;
@@ -43,8 +57,9 @@ void aristo_yield_point(const char *label) {
     }
     g_yield_fn = 0;
     g_yield_state = 0;
+    g_yield_dirty = 0;
     fn(label, state);
-    if (!g_yield_fn) {
+    if (!g_yield_dirty) {
         g_yield_fn = fn;
         g_yield_state = state;
     }
@@ -58,8 +73,9 @@ aristo_decision aristo_fault_point(const char *label) {
     }
     g_fault_fn = 0;
     g_fault_state = 0;
+    g_fault_dirty = 0;
     aristo_decision d = fn(label, state);
-    if (!g_fault_fn) {
+    if (!g_fault_dirty) {
         g_fault_fn = fn;
         g_fault_state = state;
     }
@@ -76,3 +92,5 @@ aristo_decision aristo_fault_point(const char *label) {
 typedef int aristo_runtime_translation_unit_is_not_empty;
 
 #endif /* ARISTO_INSTRUMENT */
+
+#endif /* ARISTO_C_INCLUDED */
