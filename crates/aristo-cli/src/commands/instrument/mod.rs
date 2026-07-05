@@ -5,7 +5,47 @@
 //! `aristo.c`) the SUT links, plus (later) a code generator. `vendor-c` emits
 //! the runtime; everything is gated by `-DARISTO_INSTRUMENT`.
 
+pub(crate) mod gen_c;
 pub(crate) mod vendor_c;
+
+use std::fs;
+use std::path::Path;
+
+use crate::CliResult;
+
+/// Outcome of writing a generated / vendored file, so callers emit the right
+/// created / updated / unchanged notice.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum WriteOutcome {
+    Created,
+    Updated,
+    Unchanged,
+}
+
+#[aristo::intent(
+    "Re-emitting identical content leaves the file byte-identical and returns \
+     Unchanged; Created (file absent) and Updated (content differed) are the \
+     other two outcomes. Idempotence is the Unchanged case specifically — a \
+     re-run on up-to-date output must not rewrite the file, which would churn \
+     its mtime and dirty a clean tree. Shared by vendor-c and gen-c.",
+    verify = "test",
+    id = "instrument_write_is_idempotent"
+)]
+pub(crate) fn write_file(path: &Path, content: &str) -> CliResult<WriteOutcome> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if path.exists() {
+        let existing = fs::read_to_string(path)?;
+        if existing == content {
+            return Ok(WriteOutcome::Unchanged);
+        }
+        fs::write(path, content)?;
+        return Ok(WriteOutcome::Updated);
+    }
+    fs::write(path, content)?;
+    Ok(WriteOutcome::Created)
+}
 
 /// ABI version of the vendored C runtime + generated-code contract, and the
 /// single source of truth for it: it is substituted into `runtime/aristo.h.in`
