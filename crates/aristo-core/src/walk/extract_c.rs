@@ -526,15 +526,81 @@ fn is_aristo_directive(comment_text: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Recognize `// @aristo inspect(<args>)`. Returns the parsed args, or `None`
-/// for a non-inspect comment or malformed args (skipped silently — same policy
-/// as intent/assume).
-fn parse_inspect_directive(comment_text: &str) -> Option<InspectArgs> {
+/// Recognize `// @aristo inspect(...)` and parse its args. Returns `None` when
+/// the comment is not an inspect directive at all; `Some(Ok)` when it parses;
+/// `Some(Err(msg))` when it IS an inspect directive but its args are malformed
+/// — which is a hard error, because gen-c is the only thing that validates a
+/// comment directive (unlike intent/assume, whose macro layer reports).
+fn parse_inspect_directive(comment_text: &str) -> Option<Result<InspectArgs, String>> {
     let body = comment_text.strip_prefix("//")?.trim_start();
     let rest = body.strip_prefix("@aristo")?.trim_start();
     let rest = rest.strip_prefix("inspect")?.trim();
-    let inner = rest.strip_prefix('(')?.strip_suffix(')')?;
-    syn::parse_str::<InspectArgs>(inner).ok()
+    // A recognized `inspect` keyword commits: from here, any parse failure is a
+    // malformed inspect directive, not a "different directive".
+    let inner = match rest.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
+        Some(inner) => inner,
+        None => return Some(Err("expected `inspect(...)`".to_string())),
+    };
+    Some(syn::parse_str::<InspectArgs>(inner).map_err(|e| e.to_string()))
+}
+
+/// Collect the direct field names of a struct/union body, and whether every
+/// member was understood. Returns `(names, complete)`: `complete` is false if
+/// any member could not be reduced to a simple field name (anonymous member,
+/// bitfield shape we don't model, etc.). Callers must only reject an unknown
+/// field when `complete` is true — a codegen tool must never reject a *valid*
+/// field it merely failed to parse.
+#[aristo::intent(
+    "`complete` is false whenever ANY struct member could not be reduced to a \
+     plain field name — an anonymous union/struct member, a bitfield, or any \
+     shape this walker does not model. The unknown-field check MUST gate on \
+     `complete`: rejecting a field when the member list is only partially \
+     understood would fail a build on VALID code (a false negative), which for \
+     a codegen tool is worse than the silent-drop it replaced. Widening the \
+     set of members treated as \"understood\" without proving they are truly \
+     enumerable re-opens the false-reject hole.",
+    verify = "test",
+    id = "c_struct_field_completeness_gates_unknown_field_rejection"
+)]
+fn c_struct_field_names(body: &Node, source: &str) -> (Vec<String>, bool) {
+    let mut names = Vec::new();
+    let mut complete = true;
+    let mut cursor = body.walk();
+    for decl in body.named_children(&mut cursor) {
+        if decl.kind() != "field_declaration" {
+            // A non-field member (nested struct def, static assert, etc.) — we
+            // can't vouch for completeness.
+            complete = false;
+            continue;
+        }
+        let mut found_one = false;
+        let mut dc = decl.walk();
+        for child in decl.named_children(&mut dc) {
+            if let Some(n) = field_declarator_name(&child, source) {
+                names.push(n);
+                found_one = true;
+            }
+        }
+        // A field_declaration with no resolvable declarator (anonymous union
+        // member, bitfield-only) means we didn't see everything.
+        if !found_one {
+            complete = false;
+        }
+    }
+    (names, complete)
+}
+
+/// Descend a struct member's declarator to its `field_identifier`, past pointer
+/// / array wrappers. `None` for a member with no plain field name.
+fn field_declarator_name(node: &Node, source: &str) -> Option<String> {
+    let mut cur = *node;
+    for _ in 0..16 {
+        if cur.kind() == "field_identifier" {
+            return cur.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+        }
+        cur = cur.child_by_field_name("declarator")?;
+    }
+    None
 }
 
 #[aristo::intent(
@@ -560,6 +626,10 @@ pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirectiv
     let src_bytes = source.as_bytes();
 
     let mut found = Vec::new();
+    // Every malformed inspect directive (F1) and unknown-field reference (F2)
+    // is collected here and reported together — a codegen input error, since
+    // nothing else validates a comment directive.
+    let mut problems: Vec<String> = Vec::new();
     // A block of contiguous `// @aristo` directive lines; we collect the
     // inspect args and track the row of the last directive of ANY kind so a
     // Type item directly below the block attaches.
@@ -578,8 +648,12 @@ pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirectiv
             }
             let text = child.utf8_text(src_bytes).unwrap_or("");
             if is_aristo_directive(text) {
-                if let Some(args) = parse_inspect_directive(text) {
-                    run.push((args, child.start_position().row));
+                match parse_inspect_directive(text) {
+                    Some(Ok(args)) => run.push((args, child.start_position().row)),
+                    Some(Err(msg)) => {
+                        problems.push(format!("line {}: {msg}", child.start_position().row + 1))
+                    }
+                    None => {} // a non-inspect aristo directive (intent/assume/expose)
                 }
                 last_directive_row = Some(child.end_position().row);
             } else {
@@ -591,7 +665,20 @@ pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirectiv
             if item.region == CoveredRegion::Type && !run.is_empty() {
                 if let Some(last) = last_directive_row {
                     if child.start_position().row == last + 1 {
+                        // F2: reject a field the struct doesn't declare — but
+                        // only when we're sure we enumerated all fields, never
+                        // rejecting a valid field we merely failed to parse.
+                        let (fields, complete) = c_struct_field_names(&item.body, source);
                         for (args, start_row) in &run {
+                            if complete && !fields.contains(&args.field) {
+                                problems.push(format!(
+                                    "line {}: field `{}` is not declared in `{}`",
+                                    start_row + 1,
+                                    args.field,
+                                    item.name
+                                ));
+                                continue;
+                            }
                             found.push(CInspectDirective {
                                 type_name: item.name.clone(),
                                 field: args.field.clone(),
@@ -610,6 +697,9 @@ pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirectiv
             run.clear();
             last_directive_row = None;
         }
+    }
+    if !problems.is_empty() {
+        return Err(ExtractError::CInspectInvalid(problems.join("\n")));
     }
     Ok(found)
 }
@@ -1206,13 +1296,64 @@ struct S { int a; };
     }
 
     #[test]
-    fn inspect_missing_required_arg_is_skipped() {
-        // No `ret` — malformed, skipped silently (compile/lint layer reports).
+    fn inspect_missing_required_ret_is_a_hard_error() {
+        // No `ret` — a recognized inspect directive with bad args is a loud
+        // error (F1), never a silent drop: gen-c is the only validator.
         let src = "\
 // @aristo inspect(field = \"a\")
 struct S { int a; };
 ";
-        assert!(inspect(src).is_empty());
+        let err = extract_c_inspect_directives(src).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("line 1"), "error must name the line: {msg}");
+        assert!(
+            msg.contains("ret"),
+            "error must name the missing arg: {msg}"
+        );
+    }
+
+    #[test]
+    fn inspect_unknown_arg_is_a_hard_error() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\", bogus = \"x\")
+struct S { int a; };
+";
+        assert!(extract_c_inspect_directives(src).is_err());
+    }
+
+    #[test]
+    fn inspect_unknown_field_is_a_hard_error() {
+        // F2: the struct doesn't declare `nope` — rejected, pointing at the
+        // directive line and the type.
+        let src = "\
+// @aristo inspect(field = \"nope\", ret = \"int\")
+struct S { int a; long b; };
+";
+        let err = extract_c_inspect_directives(src).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("nope") && msg.contains('S'), "got: {msg}");
+    }
+
+    #[test]
+    fn inspect_valid_field_passes_field_check() {
+        let src = "\
+// @aristo inspect(field = \"b\", ret = \"long\")
+struct S { int a; long b; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].field, "b");
+    }
+
+    #[test]
+    fn inspect_field_check_is_conservative_on_pointer_fields() {
+        // A pointer field must still be recognized as declared (no false reject).
+        let src = "\
+// @aristo inspect(field = \"buf\", ret = \"const char *\")
+struct S { char *buf; unsigned long len; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1, "pointer field must be recognized as declared");
     }
 
     #[test]

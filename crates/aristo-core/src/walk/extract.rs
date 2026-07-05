@@ -81,6 +81,12 @@ pub enum ExtractError {
     Parse(#[from] syn::Error),
     #[error("source did not parse as C: {0}")]
     CParse(String),
+    /// One or more `// @aristo inspect(...)` directives are malformed (bad
+    /// args, or a field the struct doesn't declare). The message lists each
+    /// problem with its line — a codegen input error the author must fix, since
+    /// nothing else validates a comment directive.
+    #[error("invalid inspect directive(s):\n{0}")]
+    CInspectInvalid(String),
 }
 
 #[aristo::intent(
