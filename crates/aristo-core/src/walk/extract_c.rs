@@ -97,37 +97,69 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
     // Runs resolve in source order, so annotations come out in source order.
     let mut found = Vec::new();
     let mut run: Vec<CPendingDirective> = Vec::new();
+    // Row of the last `// @aristo` directive of ANY kind — adjacency to the
+    // item below the block is measured from here, so a foreign directive
+    // (e.g. inspect) between an intent and its item does not detach it.
+    let mut last_directive_row: Option<usize> = None;
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         if child.kind() == "comment" {
+            // A comment not directly below the previous directive breaks the block.
+            if let Some(last) = last_directive_row {
+                if child.start_position().row != last + 1 {
+                    resolve_run(
+                        &run,
+                        last_directive_row,
+                        &items,
+                        &by_name,
+                        &item_at_row,
+                        source,
+                        &mut found,
+                    );
+                    run.clear();
+                    last_directive_row = None;
+                }
+            }
             let text = child.utf8_text(src_bytes).unwrap_or("");
-            match parse_directive(text) {
-                Some(dir) => {
-                    // A directive not on the line immediately below the
-                    // previous one starts a fresh run.
-                    if let Some(last) = run.last() {
-                        if child.start_position().row != last.end_row + 1 {
-                            resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
-                            run.clear();
-                        }
-                    }
+            if is_aristo_directive(text) {
+                // An intent/assume joins the run; a foreign aristo directive
+                // (inspect/expose) is transparent — it neither joins nor breaks.
+                if let Some(dir) = parse_directive(text) {
                     run.push(CPendingDirective {
                         dir,
                         start_row: child.start_position().row,
                         end_row: child.end_position().row,
                     });
                 }
-                // A non-directive comment breaks the contiguous run.
-                None => {
-                    resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
-                    run.clear();
-                }
+                last_directive_row = Some(child.end_position().row);
+            } else {
+                // A plain comment breaks the block.
+                resolve_run(
+                    &run,
+                    last_directive_row,
+                    &items,
+                    &by_name,
+                    &item_at_row,
+                    source,
+                    &mut found,
+                );
+                run.clear();
+                last_directive_row = None;
             }
         } else {
             // Any non-comment node ends the run; its adjacent item (if any) was
             // recorded in pass 1, so `resolve_run` finds it by row.
-            resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
+            resolve_run(
+                &run,
+                last_directive_row,
+                &items,
+                &by_name,
+                &item_at_row,
+                source,
+                &mut found,
+            );
             run.clear();
+            last_directive_row = None;
             // Statement-form directives live inside function bodies; descend.
             if child.kind() == "function_definition" {
                 if let Some(name) = c_function_name(&child, source) {
@@ -139,7 +171,15 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
             }
         }
     }
-    resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
+    resolve_run(
+        &run,
+        last_directive_row,
+        &items,
+        &by_name,
+        &item_at_row,
+        source,
+        &mut found,
+    );
 
     Ok(found)
 }
@@ -226,16 +266,19 @@ struct CPendingDirective {
 /// below) is dropped.
 fn resolve_run(
     run: &[CPendingDirective],
+    block_end_row: Option<usize>,
     items: &[CItem],
     by_name: &HashMap<String, usize>,
     item_at_row: &HashMap<usize, usize>,
     source: &str,
     found: &mut Vec<ExtractedAnnotation>,
 ) {
-    let Some(last) = run.last() else {
+    if run.is_empty() {
         return;
-    };
-    let adjacent = item_at_row.get(&(last.end_row + 1)).copied();
+    }
+    // Adjacency is measured from the last aristo directive of any kind, so an
+    // interleaved foreign directive (inspect/expose) does not detach the run.
+    let adjacent = block_end_row.and_then(|r| item_at_row.get(&(r + 1)).copied());
     for pending in run {
         let target = match &pending.dir.site {
             Some(name) => by_name.get(name).copied(),
@@ -400,6 +443,175 @@ fn build_c_stmt_annotation(
         CoveredRegion::Statement,
         body_text,
     ))
+}
+
+// ─── inspect directives (I-2): field-accessor codegen input ──────────────
+
+/// A parsed `// @aristo inspect(...)` directive: the codegen input for one
+/// read-only field accessor. Unlike `intent`/`assume` (which feed the index),
+/// `inspect` feeds `aristo instrument gen-c`, so it is extracted separately
+/// and carries no proof fields — only what codegen needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CInspectDirective {
+    /// The enclosing type's name — the `<Type>` in `aristo_inspect_<Type>_<field>`.
+    pub type_name: String,
+    /// The struct member to snapshot (required).
+    pub field: String,
+    /// The accessor's C return type, verbatim (required). Clone mode needs a
+    /// public/standard type; projection mode uses the projector's return type.
+    pub ret: String,
+    /// Projection mode: the name of an author-written pure function
+    /// `ret with(const <FieldType> *)`. `None` = clone mode (`return self->field`).
+    pub with: Option<String>,
+    /// Optional override for the `<field>` suffix of the accessor name.
+    pub name: Option<String>,
+    /// 1-indexed line of the directive.
+    pub line: usize,
+}
+
+impl CInspectDirective {
+    /// The generated accessor's name: `aristo_inspect_<Type>_<suffix>`, where
+    /// `suffix` is `name` if given, else `field`.
+    pub fn accessor_name(&self) -> String {
+        let suffix = self.name.as_deref().unwrap_or(&self.field);
+        format!("aristo_inspect_{}_{}", self.type_name, suffix)
+    }
+}
+
+/// Parsed key=value args of an inspect directive, before type-attachment.
+struct InspectArgs {
+    field: String,
+    ret: String,
+    with: Option<String>,
+    name: Option<String>,
+}
+
+impl syn::parse::Parse for InspectArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let (mut field, mut ret, mut with, mut name) = (None, None, None, None);
+        while !input.is_empty() {
+            let key: syn::Ident = input.parse()?;
+            input.parse::<syn::Token![=]>()?;
+            let val: syn::LitStr = input.parse()?;
+            match key.to_string().as_str() {
+                "field" => field = Some(val.value()),
+                "ret" => ret = Some(val.value()),
+                "with" => with = Some(val.value()),
+                "name" => name = Some(val.value()),
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown inspect arg `{other}`"),
+                    ))
+                }
+            }
+            if input.peek(syn::Token![,]) {
+                input.parse::<syn::Token![,]>()?;
+            }
+        }
+        Ok(InspectArgs {
+            field: field.ok_or_else(|| input.error("inspect requires `field`"))?,
+            ret: ret.ok_or_else(|| input.error("inspect requires `ret`"))?,
+            with,
+            name,
+        })
+    }
+}
+
+/// True if a `//` comment is any `// @aristo …` directive (of any kind).
+fn is_aristo_directive(comment_text: &str) -> bool {
+    comment_text
+        .strip_prefix("//")
+        .map(|b| b.trim_start().starts_with("@aristo"))
+        .unwrap_or(false)
+}
+
+/// Recognize `// @aristo inspect(<args>)`. Returns the parsed args, or `None`
+/// for a non-inspect comment or malformed args (skipped silently — same policy
+/// as intent/assume).
+fn parse_inspect_directive(comment_text: &str) -> Option<InspectArgs> {
+    let body = comment_text.strip_prefix("//")?.trim_start();
+    let rest = body.strip_prefix("@aristo")?.trim_start();
+    let rest = rest.strip_prefix("inspect")?.trim();
+    let inner = rest.strip_prefix('(')?.strip_suffix(')')?;
+    syn::parse_str::<InspectArgs>(inner).ok()
+}
+
+#[aristo::intent(
+    "inspect directives attach to the type on the line directly below a \
+     contiguous block of `// @aristo` directive lines — an intervening \
+     intent/assume directive does NOT break the block (adjacency is measured \
+     from the last aristo directive of any kind), but a plain comment or a \
+     blank-line gap does. This keeps a struct's intent and its inspect \
+     directives freely interleavable above it while a reformatter that \
+     inserts a blank line still (correctly) detaches them.",
+    verify = "test",
+    id = "extract_c_inspect_attaches_across_mixed_directive_block"
+)]
+pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirective>, ExtractError> {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_c::LANGUAGE.into())
+        .map_err(|e| ExtractError::CParse(format!("tree-sitter-c language load failed: {e}")))?;
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| ExtractError::CParse("tree-sitter returned no parse tree".to_string()))?;
+    let root = tree.root_node();
+    let src_bytes = source.as_bytes();
+
+    let mut found = Vec::new();
+    // A block of contiguous `// @aristo` directive lines; we collect the
+    // inspect args and track the row of the last directive of ANY kind so a
+    // Type item directly below the block attaches.
+    let mut run: Vec<(InspectArgs, usize)> = Vec::new(); // (args, start_row)
+    let mut last_directive_row: Option<usize> = None;
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "comment" {
+            // A comment not directly below the previous directive breaks the
+            // block. (`last_directive_row` is reassigned below in both arms, so
+            // only the run needs clearing here.)
+            if let Some(last) = last_directive_row {
+                if child.start_position().row != last + 1 {
+                    run.clear();
+                }
+            }
+            let text = child.utf8_text(src_bytes).unwrap_or("");
+            if is_aristo_directive(text) {
+                if let Some(args) = parse_inspect_directive(text) {
+                    run.push((args, child.start_position().row));
+                }
+                last_directive_row = Some(child.end_position().row);
+            } else {
+                // A plain comment breaks the block.
+                run.clear();
+                last_directive_row = None;
+            }
+        } else if let Some(item) = c_item(&child, source) {
+            if item.region == CoveredRegion::Type && !run.is_empty() {
+                if let Some(last) = last_directive_row {
+                    if child.start_position().row == last + 1 {
+                        for (args, start_row) in &run {
+                            found.push(CInspectDirective {
+                                type_name: item.name.clone(),
+                                field: args.field.clone(),
+                                ret: args.ret.clone(),
+                                with: args.with.clone(),
+                                name: args.name.clone(),
+                                line: start_row + 1,
+                            });
+                        }
+                    }
+                }
+            }
+            run.clear();
+            last_directive_row = None;
+        } else {
+            run.clear();
+            last_directive_row = None;
+        }
+    }
+    Ok(found)
 }
 
 /// A C item an annotation can attach to: the bare `name` (for `site = "..."`
@@ -902,5 +1114,117 @@ int g(int n) {
 int f(void) { return 0; }
 ";
         assert!(extract(src).is_empty());
+    }
+
+    // ─── inspect directives (I-2): codegen input, separate from the index ──
+
+    fn inspect(s: &str) -> Vec<CInspectDirective> {
+        extract_c_inspect_directives(s).expect("test source must parse as C")
+    }
+
+    #[test]
+    fn extracts_clone_inspect_on_typedef_struct() {
+        let src = "\
+// @aristo inspect(field = \"next_seqno\", ret = \"uint64_t\")
+typedef struct {
+    int fd;
+    unsigned long next_seqno;
+} Db;
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].type_name, "Db");
+        assert_eq!(d[0].field, "next_seqno");
+        assert_eq!(d[0].ret, "uint64_t");
+        assert_eq!(d[0].with, None); // clone mode
+        assert_eq!(d[0].accessor_name(), "aristo_inspect_Db_next_seqno");
+    }
+
+    #[test]
+    fn extracts_projection_inspect_with_and_name() {
+        let src = "\
+// @aristo inspect(field = \"keydir\", ret = \"size_t\", with = \"keydir_live_count\", name = \"live_keys\")
+struct Db { int keydir; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].with.as_deref(), Some("keydir_live_count"));
+        assert_eq!(d[0].name.as_deref(), Some("live_keys"));
+        // name overrides the suffix
+        assert_eq!(d[0].accessor_name(), "aristo_inspect_Db_live_keys");
+    }
+
+    #[test]
+    fn multiple_inspects_stack_and_keep_source_order() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+// @aristo inspect(field = \"b\", ret = \"long\")
+struct S { int a; long b; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].field, "a");
+        assert_eq!(d[1].field, "b");
+        assert!(d[0].line < d[1].line);
+    }
+
+    #[test]
+    fn inspect_attaches_across_an_interleaved_intent() {
+        // An intent directive between/around inspects must NOT break the block.
+        let src = "\
+// @aristo intent(\"the store handle; single-writer\", id = \"db_handle\")
+// @aristo inspect(field = \"next_seqno\", ret = \"uint64_t\")
+typedef struct { unsigned long next_seqno; } Db;
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1, "inspect after an intent still attaches");
+        assert_eq!(d[0].accessor_name(), "aristo_inspect_Db_next_seqno");
+        // And the intent still reaches the index via the other pass.
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].id.as_deref(), Some("db_handle"));
+    }
+
+    #[test]
+    fn blank_line_detaches_inspect_from_the_struct() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+
+struct S { int a; };
+";
+        assert!(inspect(src).is_empty());
+    }
+
+    #[test]
+    fn plain_comment_breaks_the_inspect_block() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+// an ordinary comment
+struct S { int a; };
+";
+        assert!(inspect(src).is_empty());
+    }
+
+    #[test]
+    fn inspect_missing_required_arg_is_skipped() {
+        // No `ret` — malformed, skipped silently (compile/lint layer reports).
+        let src = "\
+// @aristo inspect(field = \"a\")
+struct S { int a; };
+";
+        assert!(inspect(src).is_empty());
+    }
+
+    #[test]
+    fn inspect_directives_do_not_leak_into_the_index() {
+        // The index walk (intent/assume) must ignore inspect directives.
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+struct S { int a; };
+";
+        assert!(
+            extract(src).is_empty(),
+            "inspect is not an index annotation"
+        );
     }
 }
