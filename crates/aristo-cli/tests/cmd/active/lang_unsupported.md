@@ -8,7 +8,7 @@ When neither manifest detection nor the optional `aristo.toml [language]` hint r
 $ aristo lang
 ? 2
 error: Cannot detect a supported language in this repository.
-       Aristo supports: Rust.
+       Aristo supports: Rust, C.
        Planned: Python, Go, TypeScript.
 
 ```
