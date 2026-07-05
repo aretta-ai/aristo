@@ -1,5 +1,5 @@
-//! Filesystem walker — find every `.rs` file under a project root and
-//! extract annotations from each.
+//! Filesystem walker — find every source file (`.rs`, and `.c`/`.h` for the
+//! C front-end) under a project root and extract annotations from each.
 //!
 //! Built-in ignore set excludes the directories that are never source: build
 //! output (`target/`), version control (`.git/`), Aristo state
@@ -19,6 +19,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::config::IndexConfig;
 use crate::walk::extract::{extract_from_source, ExtractError, ExtractedAnnotation};
+use crate::walk::extract_c::extract_from_c_source;
 
 /// One annotation discovered during a filesystem walk. Wraps
 /// [`ExtractedAnnotation`] with the file path (relative to the walk root)
@@ -126,6 +127,42 @@ impl WalkOptions {
 /// also skipped.
 const DEFAULT_IGNORED_DIRS: &[&str] = &["target", ".git", ".aristo", "node_modules"];
 
+/// The source languages Aristo extracts annotations from, selected by file
+/// extension. Each dispatches to its own front-end but produces the same
+/// [`ExtractedAnnotation`] records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SourceLang {
+    Rust,
+    C,
+}
+
+impl SourceLang {
+    fn extract(self, source: &str) -> Result<Vec<ExtractedAnnotation>, ExtractError> {
+        match self {
+            SourceLang::Rust => extract_from_source(source),
+            SourceLang::C => extract_from_c_source(source),
+        }
+    }
+}
+
+#[aristo::intent(
+    "Both the annotation walk and the freshness preflight route their \
+     extension check through this one function, so they can never disagree \
+     on which files count as source. Filtering `.c`/`.h` in here but not in \
+     the freshness walk would silently stop drift detection for C files — \
+     they would be indexed once but never re-checked for staleness. `.h` is \
+     treated as C.",
+    verify = "test",
+    id = "source_language_extension_set_is_single_authority"
+)]
+fn language_for_extension(ext: Option<&str>) -> Option<SourceLang> {
+    match ext {
+        Some("rs") => Some(SourceLang::Rust),
+        Some("c") | Some("h") => Some(SourceLang::C),
+        _ => None,
+    }
+}
+
 /// Walk `root` recursively, parse every `.rs` file, and collect the
 /// annotations they contain.
 ///
@@ -176,9 +213,10 @@ pub fn walk_directory_with(
         if !entry.file_type().is_file() {
             continue;
         }
-        if entry.path().extension().and_then(|s| s.to_str()) != Some("rs") {
+        let ext = entry.path().extension().and_then(|s| s.to_str());
+        let Some(lang) = language_for_extension(ext) else {
             continue;
-        }
+        };
 
         let abs_path = entry.path();
         let rel_for_glob = abs_path.strip_prefix(root).unwrap_or(abs_path);
@@ -189,7 +227,7 @@ pub fn walk_directory_with(
             path: abs_path.to_path_buf(),
             source,
         })?;
-        let annotations = extract_from_source(&source).map_err(|source| FsWalkError::Parse {
+        let annotations = lang.extract(&source).map_err(|source| FsWalkError::Parse {
             path: abs_path.to_path_buf(),
             source,
         })?;
@@ -256,7 +294,8 @@ pub fn walk_for_freshness_with(
         if !entry.file_type().is_file() {
             continue;
         }
-        if entry.path().extension().and_then(|s| s.to_str()) != Some("rs") {
+        let ext = entry.path().extension().and_then(|s| s.to_str());
+        if language_for_extension(ext).is_none() {
             continue;
         }
         let rel_for_glob = entry.path().strip_prefix(root).unwrap_or(entry.path());
@@ -312,6 +351,69 @@ mod tests {
         assert_eq!(found[1].file, PathBuf::from("src/b.rs"));
         assert_eq!(found[0].annotation.text, "from a");
         assert_eq!(found[1].annotation.text, "from b");
+    }
+
+    #[test]
+    fn finds_c_annotations() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "src/db.c",
+            "// @aristo intent(\"opens the store\")\nint db_open(const char *dir) { return 0; }\n",
+        );
+        let found = walk_directory(tmp.path()).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].file, PathBuf::from("src/db.c"));
+        assert_eq!(found[0].annotation.text, "opens the store");
+        assert_eq!(found[0].annotation.site, "fn db_open");
+    }
+
+    #[test]
+    fn finds_annotations_in_mixed_rust_and_c_projects() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "src/a.rs",
+            r#"#[aristo::intent("from rust")] fn a() {}"#,
+        );
+        write(
+            tmp.path(),
+            "src/z.c",
+            "// @aristo intent(\"from c\")\nint z(void) { return 0; }\n",
+        );
+        let found = walk_directory(tmp.path()).unwrap();
+        assert_eq!(found.len(), 2);
+        // Lexicographic file order: a.rs before z.c.
+        assert_eq!(found[0].annotation.text, "from rust");
+        assert_eq!(found[1].annotation.text, "from c");
+    }
+
+    #[test]
+    fn scans_header_files_as_c() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "include/util.h",
+            "// @aristo intent(\"clamps to the range\")\nstatic inline int clamp(int x) { return x; }\n",
+        );
+        let found = walk_directory(tmp.path()).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].annotation.site, "fn clamp");
+    }
+
+    #[test]
+    fn freshness_walk_includes_c_and_header_files() {
+        // The single-authority invariant: whatever the annotation walk counts
+        // as source, the freshness preflight must too — else C files would be
+        // indexed once and never re-checked for drift.
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "src/main.c", "int main(void) { return 0; }\n");
+        write(tmp.path(), "include/api.h", "int api(void);\n");
+        write(tmp.path(), "README.md", "# not source\n");
+        let paths = walk_for_freshness(tmp.path()).unwrap();
+        assert_eq!(paths.len(), 2, "both .c and .h are source; .md is not");
+        assert!(paths.iter().any(|p| p.ends_with("src/main.c")));
+        assert!(paths.iter().any(|p| p.ends_with("include/api.h")));
     }
 
     #[test]
