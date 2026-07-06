@@ -1,0 +1,7 @@
+**Aristo verified intent — `stamp_reconciles_canon_matches_with_source`**
+
+The canon-matches cache is reconciled on every mutating stamp, at a point the canon step's early returns cannot skip: rows for annotations deleted from source are pruned and accepted matches on ids that are local in source are dropped, with a stderr note per category (a prune that discards accepted bindings warns louder — that's re-accept work destroyed if it was a misconfiguration). The live-id authority is deliberately WIDER than the freshly-built index: ids come from the RAW walk before build_entries validation (a warning-skipped annotation still counts as live), and when aristo.toml [index].exclude is set the walk is re-run WITHOUT the excludes (an excluded annotation still counts as live), because pruning from a walk that is known to be partial would destroy accepted bindings for annotations that still exist in source. When the authority itself is unreliable — an explicit id fails to parse, or the unexcluded walk fails — the reconcile is skipped with a note instead of mispruning. The file is rewritten ONLY when the reconcile changed something — repeated stamps must not churn a committed file. Hanging this off the canon step instead would leave the stale rows in place forever: --skip-canon / disabled-config return before the cache read, and a deleted annotation makes every surviving row a cache hit, which also returns without writing.
+
+<sub>Verify level: **test**</sub>
+
+---

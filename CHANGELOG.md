@@ -8,6 +8,20 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- cli: `aristo status` / `aristo metrics` no longer error on a repository containing C source. Their tier computation reuses the freshness walk (which now includes `.c`/`.h`) but parses each file as Rust with `syn`; it now skips non-`.rs` files, where previously a single `.c` file made both commands fail with a Rust parse error.
+- docs: the C extractor's module doc no longer links to the crate-private `AnnotationArgs`, which broke the `cargo doc` CI gate (`-D rustdoc::private-intra-doc-links`).
+- docs: regenerated `.aristo/doc/` artifacts so `aristo doc --check` passes — picks up the C-extractor intents and refreshes pre-existing entries whose source prose had been reworded.
+
+### Added
+- core: Aristo can now read annotations from **C** source. `// @aristo intent(...)` / `// @aristo assume(...)` line-comment directives placed on the line directly above a function are extracted via a tree-sitter C parser, reusing the exact same argument grammar and hashing as Rust — so an edit to the function body marks the intent stale while a prose-only edit to the directive does not. Slice C-1 scope: function-level directives, attached by adjacency (no blank line between directive and function); a contiguous run of directives all attach. Struct/type and statement-form sites, and the explicit `site = "..."` escape hatch, follow in later slices.
+- core: the directory walk now scans `.c`/`.h` files alongside `.rs`, so `aristo index` / `aristo stamp` (and the freshness preflight) pick up C annotations in a mixed Rust+C project. The set of source extensions is a single authority shared by the annotation walk and the freshness walk, so C files are re-checked for drift exactly like Rust files.
+- tests: C annotation discovery is pinned by the `c_annotate_basic` end-to-end scenario (`aristo stamp --check` finds the two intents in a `.c` file and confirms the committed index is in sync with source) plus an index-content test asserting the exact site / file / text — the executable spec for slice C-1.
+- core: C directives now attach to `struct` / `union` / `enum` definitions (tagged and `typedef` forms), not just functions. The covered region is the type's `{ ... }` field / enumerator list, so adding or changing a field marks the intent stale while a prose-only directive edit does not (slice C-2). Parent lists (`parent = ["a", "b"]`) already work on C directives via the shared argument grammar.
+- core: a C directive can name its target explicitly with a leading `site = "name"` argument, attaching to the function or type named `name` anywhere in the file instead of by adjacency. This reaches targets adjacency can't — a function defined by a macro tree-sitter can't parse (e.g. the Linux kernel's `SYSCALL_DEFINE3`, annotated via `site` on the helper it delegates to), or a function separated from its directive by a mandatory doc-comment block. `site` is a C-only concern peeled off before the shared Rust grammar, and must be the first argument (slice C-2).
+- core: C directives can now be **statement-form** — placed inside a function body, a directive attaches to the statement on the next line (the analog of Rust's `intent_stmt!`), at any nesting depth, with the enclosing function as its site and the covered region being that statement. This completes the C-2 surface: C annotation now covers functions, types, and statements (slice C-2).
+- cli: `aristo lang` now detects **C** and emits a C annotation cheat sheet. Detection uses a C build manifest (`Makefile`, `CMakeLists.txt`, `compile_commands.json`, ...) or a `.c`/`.h` source in the directory (`Cargo.toml` still wins in a mixed repo root), plus `--file foo.c`/`.h` for per-file detection in a polyglot repo. The cheat sheet documents the `// @aristo intent(...)` directive form, the `site = "..."` selector, verify levels, and parent linkage, so the authoring skills emit correct C syntax instead of guessing. This closes out the C annotation surface (slice C-3).
+
 ## [0.5.1] — 2026-07-04
 
 ### Fixed

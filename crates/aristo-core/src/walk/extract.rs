@@ -79,6 +79,8 @@ pub struct ExtractedAnnotation {
 pub enum ExtractError {
     #[error("source did not parse as Rust: {0}")]
     Parse(#[from] syn::Error),
+    #[error("source did not parse as C: {0}")]
+    CParse(String),
 }
 
 #[aristo::intent(
@@ -181,7 +183,7 @@ impl<'a> Walker<'a> {
     }
 }
 
-fn make_annotation(
+pub(crate) fn make_annotation(
     kind: AnnotationKind,
     form: AnnotationForm,
     args: AnnotationArgs,
@@ -455,7 +457,8 @@ fn source_slice(source: &str, span: proc_macro2::Span) -> String {
 
 // ─── Argument parsing (mirrors aristo-macros::IntentArgs) ─────────────────
 
-struct AnnotationArgs {
+#[derive(Clone)]
+pub(crate) struct AnnotationArgs {
     text: String,
     verify: Option<String>,
     parent: Option<ParentRaw>,

@@ -83,6 +83,40 @@ fn indexes_intent_attribute_on_a_function() {
 }
 
 #[test]
+fn indexes_c_intent_directive_on_a_function() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+
+    // A `.c` file at the workspace root — no `src/` convention in C.
+    fs::write(
+        tmp.path().join("db.c"),
+        "// @aristo intent(\"opens the store and recovers the durable prefix\", verify = \"test\", id = \"db_open_recovers\")\n\
+         int db_open(const char *dir) {\n    return 0;\n}\n",
+    )
+    .unwrap();
+
+    aristo_in(tmp.path())
+        .arg("index")
+        .assert()
+        .success()
+        .stdout(contains("Found 1 annotations"));
+
+    let index = fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap();
+    let parsed: aristo_core::index::IndexFile = toml::from_str(&index).unwrap();
+    assert_eq!(parsed.entries.len(), 1);
+    let id = aristo_core::index::AnnotationId::parse("db_open_recovers").unwrap();
+    let entry = parsed.entries.get(&id).expect("entry by readable id");
+    match entry {
+        aristo_core::index::IndexEntry::Intent(e) => {
+            assert_eq!(e.text, "opens the store and recovers the durable prefix");
+            assert_eq!(e.site, "fn db_open (line 1)");
+            assert!(e.file.ends_with("db.c"));
+        }
+        other => panic!("expected Intent, got {other:?}"),
+    }
+}
+
+#[test]
 fn assigns_opaque_id_when_user_omits_id() {
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
