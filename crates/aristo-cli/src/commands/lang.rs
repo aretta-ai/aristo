@@ -66,11 +66,14 @@ a function body — to the statement on the next line.
   // @aristo assume(\"OS guarantee or library invariant\")
   int the_thing(void) { ... }
 
-## Explicit target (site = \"name\" as the FIRST argument)
+## Explicit target (site = \"name\" as the FIRST argument, intent only)
   // @aristo intent(site = \"do_read\", \"text here\", verify = \"test\")
-  SYSCALL_DEFINE3(read, ...) { ... }
-Reaches a target adjacency can't: a macro-defined function, or one held off
-from its directive by a doc-comment block. Resolves by name anywhere in the file.
+  static int do_read(...) { ... }
+Reaches a target adjacency can't: a function or type DEFINED anywhere else in
+the file (e.g. one held off from its directive by a doc-comment block, or the
+plain helper a definition-macro like SYSCALL_DEFINE delegates to). It resolves
+by matching the name of a real definition — it CANNOT reach a function that is
+itself *synthesized by a macro* (no such definition exists to match).
 
 ## Parent linkage (singular or list)
   parent = \"balance_no_duplicate_cells\"
