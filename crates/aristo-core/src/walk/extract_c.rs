@@ -11,7 +11,7 @@
 //! The directive keyword (`intent` / `assume`) picks the kind. The parenthesized
 //! argument list uses the **exact same grammar** as the Rust `#[aristo::intent(...)]`
 //! macro — positional text string, then `verify = ...`, `parent = ...`, `id = ...` —
-//! parsed by the shared [`AnnotationArgs`] grammar so the two languages can never
+//! parsed by the shared `AnnotationArgs` grammar so the two languages can never
 //! drift apart. "Same shape, different skin."
 //!
 //! Scope (narrow by design, expanding per slice):
@@ -214,7 +214,7 @@ fn parse_directive(comment_text: &str) -> Option<CDirective> {
 
 /// C directive arguments: an optional C-only `site = "..."` target selector
 /// peeled off here so it never reaches the shared Rust grammar (decision
-/// "Option B"), followed by the shared [`AnnotationArgs`].
+/// "Option B"), followed by the shared `AnnotationArgs`.
 #[aristo::intent(
     "`site` is a C-only target selector and is peeled off here, never entering \
      the shared AnnotationArgs grammar (design decision Option B). Adding site \
