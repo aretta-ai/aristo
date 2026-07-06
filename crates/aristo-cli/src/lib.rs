@@ -597,6 +597,12 @@ enum Commands {
         #[command(subcommand)]
         action: CanonAction,
     },
+
+    /// Manage C instrumentation artifacts: vendor the C runtime, run codegen.
+    Instrument {
+        #[command(subcommand)]
+        action: InstrumentAction,
+    },
 }
 
 /// Subcommands under `aristo auth`. Each operates on the persistent
@@ -658,6 +664,37 @@ pub(crate) enum AuthAction {
     /// Remove the stored credentials file. Idempotent — running
     /// `logout` when not logged in is not an error.
     Logout,
+}
+
+/// Subcommands under `aristo instrument`.
+#[derive(clap::Subcommand, Debug)]
+pub(crate) enum InstrumentAction {
+    /// Emit the vendored C runtime (`aristo.h` + `aristo.c`) into a SUT so it
+    /// can link Aristo's fault-injection / observation points. C11, gated by
+    /// `-DARISTO_INSTRUMENT`.
+    VendorC {
+        /// Directory to write `aristo.h` / `aristo.c` into.
+        #[arg(long, default_value = "aristo")]
+        out: PathBuf,
+    },
+
+    /// Render read-only field accessors from `// @aristo inspect(...)`
+    /// directives into a gated `aristo_generated.{h,c}` pair.
+    GenC {
+        /// One or more C source files to read directives from.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// The opaque-handle header the generated `.h` includes.
+        #[arg(long, default_value = "db.h")]
+        handle_header: String,
+        /// Directory to write `aristo_generated.{h,c}` into.
+        #[arg(long, default_value = "aristo")]
+        out: PathBuf,
+        /// Verify committed generated files match the directives; write
+        /// nothing, exit non-zero on drift (CI gate).
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 /// Subcommands under `aristo canon`.
@@ -1150,6 +1187,15 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 counts,
                 filter,
             } => commands::canon::suggestions::run(objective, counts, filter),
+        },
+        Commands::Instrument { action } => match action {
+            InstrumentAction::VendorC { out } => commands::instrument::vendor_c::run(out),
+            InstrumentAction::GenC {
+                paths,
+                handle_header,
+                out,
+                check,
+            } => commands::instrument::gen_c::run(paths, handle_header, out, check),
         },
     }
 }

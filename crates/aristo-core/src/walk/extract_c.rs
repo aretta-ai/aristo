@@ -97,37 +97,69 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
     // Runs resolve in source order, so annotations come out in source order.
     let mut found = Vec::new();
     let mut run: Vec<CPendingDirective> = Vec::new();
+    // Row of the last `// @aristo` directive of ANY kind — adjacency to the
+    // item below the block is measured from here, so a foreign directive
+    // (e.g. inspect) between an intent and its item does not detach it.
+    let mut last_directive_row: Option<usize> = None;
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         if child.kind() == "comment" {
+            // A comment not directly below the previous directive breaks the block.
+            if let Some(last) = last_directive_row {
+                if child.start_position().row != last + 1 {
+                    resolve_run(
+                        &run,
+                        last_directive_row,
+                        &items,
+                        &by_name,
+                        &item_at_row,
+                        source,
+                        &mut found,
+                    );
+                    run.clear();
+                    last_directive_row = None;
+                }
+            }
             let text = child.utf8_text(src_bytes).unwrap_or("");
-            match parse_directive(text) {
-                Some(dir) => {
-                    // A directive not on the line immediately below the
-                    // previous one starts a fresh run.
-                    if let Some(last) = run.last() {
-                        if child.start_position().row != last.end_row + 1 {
-                            resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
-                            run.clear();
-                        }
-                    }
+            if is_aristo_directive(text) {
+                // An intent/assume joins the run; a foreign aristo directive
+                // (inspect/expose) is transparent — it neither joins nor breaks.
+                if let Some(dir) = parse_directive(text) {
                     run.push(CPendingDirective {
                         dir,
                         start_row: child.start_position().row,
                         end_row: child.end_position().row,
                     });
                 }
-                // A non-directive comment breaks the contiguous run.
-                None => {
-                    resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
-                    run.clear();
-                }
+                last_directive_row = Some(child.end_position().row);
+            } else {
+                // A plain comment breaks the block.
+                resolve_run(
+                    &run,
+                    last_directive_row,
+                    &items,
+                    &by_name,
+                    &item_at_row,
+                    source,
+                    &mut found,
+                );
+                run.clear();
+                last_directive_row = None;
             }
         } else {
             // Any non-comment node ends the run; its adjacent item (if any) was
             // recorded in pass 1, so `resolve_run` finds it by row.
-            resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
+            resolve_run(
+                &run,
+                last_directive_row,
+                &items,
+                &by_name,
+                &item_at_row,
+                source,
+                &mut found,
+            );
             run.clear();
+            last_directive_row = None;
             // Statement-form directives live inside function bodies; descend.
             if child.kind() == "function_definition" {
                 if let Some(name) = c_function_name(&child, source) {
@@ -139,7 +171,15 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
             }
         }
     }
-    resolve_run(&run, &items, &by_name, &item_at_row, source, &mut found);
+    resolve_run(
+        &run,
+        last_directive_row,
+        &items,
+        &by_name,
+        &item_at_row,
+        source,
+        &mut found,
+    );
 
     Ok(found)
 }
@@ -226,16 +266,19 @@ struct CPendingDirective {
 /// below) is dropped.
 fn resolve_run(
     run: &[CPendingDirective],
+    block_end_row: Option<usize>,
     items: &[CItem],
     by_name: &HashMap<String, usize>,
     item_at_row: &HashMap<usize, usize>,
     source: &str,
     found: &mut Vec<ExtractedAnnotation>,
 ) {
-    let Some(last) = run.last() else {
+    if run.is_empty() {
         return;
-    };
-    let adjacent = item_at_row.get(&(last.end_row + 1)).copied();
+    }
+    // Adjacency is measured from the last aristo directive of any kind, so an
+    // interleaved foreign directive (inspect/expose) does not detach the run.
+    let adjacent = block_end_row.and_then(|r| item_at_row.get(&(r + 1)).copied());
     for pending in run {
         let target = match &pending.dir.site {
             Some(name) => by_name.get(name).copied(),
@@ -400,6 +443,410 @@ fn build_c_stmt_annotation(
         CoveredRegion::Statement,
         body_text,
     ))
+}
+
+// ─── inspect directives (I-2): field-accessor codegen input ──────────────
+
+/// A parsed `// @aristo inspect(...)` directive: the codegen input for one
+/// read-only field accessor. Unlike `intent`/`assume` (which feed the index),
+/// `inspect` feeds `aristo instrument gen-c`, so it is extracted separately
+/// and carries no proof fields — only what codegen needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CInspectDirective {
+    /// The enclosing type's name — the `<Type>` in `aristo_inspect_<Type>_<field>`.
+    pub type_name: String,
+    /// The struct member to snapshot (required).
+    pub field: String,
+    /// The accessor's C return type, verbatim (required). Clone mode needs a
+    /// public/standard type; projection mode uses the projector's return type.
+    pub ret: String,
+    /// Projection mode: the name of an author-written pure function
+    /// `ret with(const <FieldType> *)`. `None` = clone mode (`return self->field`).
+    pub with: Option<String>,
+    /// Optional override for the `<field>` suffix of the accessor name.
+    pub name: Option<String>,
+    /// 1-indexed line of the directive.
+    pub line: usize,
+}
+
+impl CInspectDirective {
+    /// The generated accessor's name: `aristo_inspect_<Type>_<suffix>`, where
+    /// `suffix` is `name` if given, else `field`.
+    pub fn accessor_name(&self) -> String {
+        let suffix = self.name.as_deref().unwrap_or(&self.field);
+        format!("aristo_inspect_{}_{}", self.type_name, suffix)
+    }
+}
+
+/// Parsed key=value args of an inspect directive, before type-attachment.
+struct InspectArgs {
+    field: String,
+    ret: String,
+    with: Option<String>,
+    name: Option<String>,
+}
+
+impl syn::parse::Parse for InspectArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let (mut field, mut ret, mut with, mut name) = (None, None, None, None);
+        while !input.is_empty() {
+            let key: syn::Ident = input.parse()?;
+            input.parse::<syn::Token![=]>()?;
+            let val: syn::LitStr = input.parse()?;
+            match key.to_string().as_str() {
+                "field" => field = Some(val.value()),
+                "ret" => ret = Some(val.value()),
+                "with" => with = Some(val.value()),
+                "name" => name = Some(val.value()),
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown inspect arg `{other}`"),
+                    ))
+                }
+            }
+            if input.peek(syn::Token![,]) {
+                input.parse::<syn::Token![,]>()?;
+            }
+        }
+        Ok(InspectArgs {
+            field: field.ok_or_else(|| input.error("inspect requires `field`"))?,
+            ret: ret.ok_or_else(|| input.error("inspect requires `ret`"))?,
+            with,
+            name,
+        })
+    }
+}
+
+/// True if a `//` comment is any `// @aristo …` directive (of any kind).
+fn is_aristo_directive(comment_text: &str) -> bool {
+    comment_text
+        .strip_prefix("//")
+        .map(|b| b.trim_start().starts_with("@aristo"))
+        .unwrap_or(false)
+}
+
+/// Strip a directive keyword only at a real word boundary: `strip_keyword("inspect(…", "inspect")`
+/// succeeds, but `strip_keyword("inspected…", "inspect")` returns `None` — an
+/// `inspect`-prefixed longer identifier is not the `inspect` keyword.
+fn strip_keyword<'a>(s: &'a str, kw: &str) -> Option<&'a str> {
+    let rest = s.strip_prefix(kw)?;
+    match rest.chars().next() {
+        Some(c) if c.is_alphanumeric() || c == '_' => None,
+        _ => Some(rest),
+    }
+}
+
+/// Recognize `// @aristo inspect(...)` and parse its args. Returns `None` when
+/// the comment is not an inspect directive at all; `Some(Ok)` when it parses;
+/// `Some(Err(msg))` when it IS an inspect directive but its args are malformed
+/// — which is a hard error, because gen-c is the only thing that validates a
+/// comment directive (unlike intent/assume, whose macro layer reports).
+fn parse_inspect_directive(comment_text: &str) -> Option<Result<InspectArgs, String>> {
+    let body = comment_text.strip_prefix("//")?.trim_start();
+    let rest = body.strip_prefix("@aristo")?.trim_start();
+    let rest = strip_keyword(rest, "inspect")?.trim();
+    // A recognized `inspect` keyword commits: from here, any parse failure is a
+    // malformed inspect directive, not a "different directive".
+    let inner = match rest.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
+        Some(inner) => inner,
+        None => return Some(Err("expected `inspect(...)`".to_string())),
+    };
+    Some(syn::parse_str::<InspectArgs>(inner).map_err(|e| e.to_string()))
+}
+
+/// Collect the direct field names of a struct/union body, and whether every
+/// member was understood. Returns `(names, complete)`: `complete` is false if
+/// any member could not be reduced to a simple field name (anonymous member,
+/// bitfield shape we don't model, etc.). Callers must only reject an unknown
+/// field when `complete` is true — a codegen tool must never reject a *valid*
+/// field it merely failed to parse.
+#[aristo::intent(
+    "`complete` is false whenever ANY struct member could not be reduced to a \
+     plain field name — an anonymous union/struct member, a bitfield, or any \
+     shape this walker does not model. The unknown-field check MUST gate on \
+     `complete`: rejecting a field when the member list is only partially \
+     understood would fail a build on VALID code (a false negative), which for \
+     a codegen tool is worse than the silent-drop it replaced. Widening the \
+     set of members treated as \"understood\" without proving they are truly \
+     enumerable re-opens the false-reject hole.",
+    verify = "test",
+    id = "c_struct_field_completeness_gates_unknown_field_rejection"
+)]
+fn c_struct_field_names(body: &Node, source: &str) -> (Vec<String>, bool) {
+    let mut names = Vec::new();
+    let mut complete = true;
+    let mut cursor = body.walk();
+    for decl in body.named_children(&mut cursor) {
+        if decl.kind() != "field_declaration" {
+            // A non-field member (nested struct def, static assert, etc.) — we
+            // can't vouch for completeness.
+            complete = false;
+            continue;
+        }
+        let mut found_one = false;
+        let mut dc = decl.walk();
+        for child in decl.named_children(&mut dc) {
+            if let Some(n) = field_declarator_name(&child, source) {
+                names.push(n);
+                found_one = true;
+            }
+        }
+        // A field_declaration with no resolvable declarator (anonymous union
+        // member, bitfield-only) means we didn't see everything.
+        if !found_one {
+            complete = false;
+        }
+    }
+    (names, complete)
+}
+
+/// Descend a struct member's declarator to its `field_identifier`, past pointer
+/// / array wrappers. `None` for a member with no plain field name.
+fn field_declarator_name(node: &Node, source: &str) -> Option<String> {
+    let mut cur = *node;
+    for _ in 0..16 {
+        if cur.kind() == "field_identifier" {
+            return cur.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+        }
+        cur = cur.child_by_field_name("declarator")?;
+    }
+    None
+}
+
+#[aristo::intent(
+    "inspect directives attach to the type on the line directly below a \
+     contiguous block of `// @aristo` directive lines — an intervening \
+     intent/assume directive does NOT break the block (adjacency is measured \
+     from the last aristo directive of any kind), but a plain comment or a \
+     blank-line gap does. This keeps a struct's intent and its inspect \
+     directives freely interleavable above it while a reformatter that \
+     inserts a blank line still (correctly) detaches them.",
+    verify = "test",
+    id = "extract_c_inspect_attaches_across_mixed_directive_block"
+)]
+pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirective>, ExtractError> {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_c::LANGUAGE.into())
+        .map_err(|e| ExtractError::CParse(format!("tree-sitter-c language load failed: {e}")))?;
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| ExtractError::CParse("tree-sitter returned no parse tree".to_string()))?;
+    let root = tree.root_node();
+    let src_bytes = source.as_bytes();
+
+    let mut found = Vec::new();
+    // Every malformed inspect directive (F1) and unknown-field reference (F2)
+    // is collected here and reported together — a codegen input error, since
+    // nothing else validates a comment directive.
+    let mut problems: Vec<String> = Vec::new();
+    // A block of contiguous `// @aristo` directive lines; we collect the
+    // inspect args and track the row of the last directive of ANY kind so a
+    // Type item directly below the block attaches.
+    let mut run: Vec<(InspectArgs, usize)> = Vec::new(); // (args, start_row)
+    let mut last_directive_row: Option<usize> = None;
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "comment" {
+            // A comment not directly below the previous directive breaks the
+            // block. (`last_directive_row` is reassigned below in both arms, so
+            // only the run needs clearing here.)
+            if let Some(last) = last_directive_row {
+                if child.start_position().row != last + 1 {
+                    run.clear();
+                }
+            }
+            let text = child.utf8_text(src_bytes).unwrap_or("");
+            if is_aristo_directive(text) {
+                match parse_inspect_directive(text) {
+                    Some(Ok(args)) => run.push((args, child.start_position().row)),
+                    Some(Err(msg)) => {
+                        problems.push(format!("line {}: {msg}", child.start_position().row + 1))
+                    }
+                    None => {} // a non-inspect aristo directive (intent/assume/expose)
+                }
+                last_directive_row = Some(child.end_position().row);
+            } else {
+                // A plain comment breaks the block.
+                run.clear();
+                last_directive_row = None;
+            }
+        } else if let Some(item) = c_item(&child, source) {
+            if item.region == CoveredRegion::Type && !run.is_empty() {
+                if let Some(last) = last_directive_row {
+                    if child.start_position().row == last + 1 {
+                        // F2: reject a field the struct doesn't declare — but
+                        // only when we're sure we enumerated all fields, never
+                        // rejecting a valid field we merely failed to parse.
+                        let (fields, complete) = c_struct_field_names(&item.body, source);
+                        for (args, start_row) in &run {
+                            if complete && !fields.contains(&args.field) {
+                                problems.push(format!(
+                                    "line {}: field `{}` is not declared in `{}`",
+                                    start_row + 1,
+                                    args.field,
+                                    item.name
+                                ));
+                                continue;
+                            }
+                            found.push(CInspectDirective {
+                                type_name: item.name.clone(),
+                                field: args.field.clone(),
+                                ret: args.ret.clone(),
+                                with: args.with.clone(),
+                                name: args.name.clone(),
+                                line: start_row + 1,
+                            });
+                        }
+                    }
+                }
+            }
+            run.clear();
+            last_directive_row = None;
+        } else {
+            run.clear();
+            last_directive_row = None;
+        }
+    }
+    if !problems.is_empty() {
+        return Err(ExtractError::CInspectInvalid(problems.join("\n")));
+    }
+    Ok(found)
+}
+
+// ─── expose directives (I-4): reach a TU-local function from a harness ────
+
+/// A parsed `// @aristo expose` directive: a request to emit a type-checked
+/// prototype for one function so a harness can call it. The function is marked
+/// `ARISTO_TU_LOCAL` (external linkage when instrumented); this makes its
+/// signature callable without the harness hand-writing an unchecked prototype.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CExposeDirective {
+    /// The function's name (for ordering / diagnostics).
+    pub name: String,
+    /// The verbatim source signature — everything from the function's first
+    /// token up to (not including) the `{`. It keeps any `ARISTO_TU_LOCAL`
+    /// prefix, which expands to nothing when the harness compiles instrumented,
+    /// so the emitted `<signature>;` is exactly the real declaration.
+    pub signature: String,
+    /// 1-indexed line of the directive.
+    pub line: usize,
+}
+
+/// Recognize `// @aristo expose`. `None` = not an expose directive; `Some(Ok)`
+/// = the bare form we support; `Some(Err)` = the `expose(as = "...")` forwarder
+/// form, which renames the symbol and is not built yet (documented, deferred).
+fn parse_expose_directive(comment_text: &str) -> Option<Result<(), String>> {
+    let body = comment_text.strip_prefix("//")?.trim_start();
+    let rest = body.strip_prefix("@aristo")?.trim_start();
+    let rest = strip_keyword(rest, "expose")?.trim();
+    if rest.is_empty() {
+        return Some(Ok(()));
+    }
+    match rest.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
+        Some(inner) if inner.trim().is_empty() => Some(Ok(())),
+        Some(inner) => Some(Err(format!(
+            "the `expose({})` forwarder form is not yet supported; use bare \
+             `// @aristo expose` on a function marked `ARISTO_TU_LOCAL`",
+            inner.trim()
+        ))),
+        None => Some(Err("expected `// @aristo expose` (bare)".to_string())),
+    }
+}
+
+/// The verbatim signature of a function definition: source bytes from the
+/// function's start up to its body's opening brace, trimmed. Robust to the
+/// `ARISTO_TU_LOCAL` macro prefix (which tree-sitter mis-parses into an ERROR
+/// node) precisely because it uses byte ranges, not the mangled parse tree.
+fn c_function_signature(func: &Node, source: &str) -> Option<String> {
+    let body = func.child_by_field_name("body")?;
+    let sig = source.get(func.start_byte()..body.start_byte())?;
+    Some(sig.trim().to_string())
+}
+
+#[aristo::intent(
+    "The exposed prototype is the function's VERBATIM source signature (bytes \
+     up to the body brace), not a signature rebuilt from tree-sitter fields. A \
+     function carrying the `ARISTO_TU_LOCAL` macro prefix mis-parses into an \
+     ERROR node (the macro is read as the return type and the real return type \
+     as an error), so reconstructing `<type> <declarator>` from the tree would \
+     emit a WRONG prototype. Byte-range extraction is immune: the emitted \
+     `<signature>;` is exactly the real declaration, and `ARISTO_TU_LOCAL` \
+     expands to nothing when the harness compiles instrumented.",
+    verify = "test",
+    id = "expose_prototype_is_verbatim_signature_not_reconstructed"
+)]
+pub fn extract_c_expose_directives(source: &str) -> Result<Vec<CExposeDirective>, ExtractError> {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_c::LANGUAGE.into())
+        .map_err(|e| ExtractError::CParse(format!("tree-sitter-c language load failed: {e}")))?;
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| ExtractError::CParse("tree-sitter returned no parse tree".to_string()))?;
+    let root = tree.root_node();
+    let src_bytes = source.as_bytes();
+
+    let mut found = Vec::new();
+    let mut problems: Vec<String> = Vec::new();
+    // Number of expose directives in the current contiguous `// @aristo` block.
+    let mut pending_expose = 0usize;
+    let mut last_directive_row: Option<usize> = None;
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "comment" {
+            if let Some(last) = last_directive_row {
+                if child.start_position().row != last + 1 {
+                    pending_expose = 0;
+                }
+            }
+            let text = child.utf8_text(src_bytes).unwrap_or("");
+            if is_aristo_directive(text) {
+                match parse_expose_directive(text) {
+                    Some(Ok(())) => pending_expose += 1,
+                    Some(Err(msg)) => {
+                        problems.push(format!("line {}: {msg}", child.start_position().row + 1))
+                    }
+                    None => {}
+                }
+                last_directive_row = Some(child.end_position().row);
+            } else {
+                pending_expose = 0;
+                last_directive_row = None;
+            }
+        } else {
+            if child.kind() == "function_definition" && pending_expose > 0 {
+                if let Some(last) = last_directive_row {
+                    if child.start_position().row == last + 1 {
+                        match (
+                            c_function_name(&child, source),
+                            c_function_signature(&child, source),
+                        ) {
+                            (Some(name), Some(signature)) => {
+                                // Emit once even if several expose directives stack.
+                                found.push(CExposeDirective {
+                                    name,
+                                    signature,
+                                    line: child.start_position().row + 1,
+                                });
+                            }
+                            _ => problems.push(format!(
+                                "line {}: could not resolve the exposed function's signature",
+                                child.start_position().row + 1
+                            )),
+                        }
+                    }
+                }
+            }
+            pending_expose = 0;
+            last_directive_row = None;
+        }
+    }
+    if !problems.is_empty() {
+        return Err(ExtractError::CInspectInvalid(problems.join("\n")));
+    }
+    Ok(found)
 }
 
 /// A C item an annotation can attach to: the bare `name` (for `site = "..."`
@@ -902,5 +1349,237 @@ int g(int n) {
 int f(void) { return 0; }
 ";
         assert!(extract(src).is_empty());
+    }
+
+    // ─── inspect directives (I-2): codegen input, separate from the index ──
+
+    fn inspect(s: &str) -> Vec<CInspectDirective> {
+        extract_c_inspect_directives(s).expect("test source must parse as C")
+    }
+
+    #[test]
+    fn extracts_clone_inspect_on_typedef_struct() {
+        let src = "\
+// @aristo inspect(field = \"next_seqno\", ret = \"uint64_t\")
+typedef struct {
+    int fd;
+    unsigned long next_seqno;
+} Db;
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].type_name, "Db");
+        assert_eq!(d[0].field, "next_seqno");
+        assert_eq!(d[0].ret, "uint64_t");
+        assert_eq!(d[0].with, None); // clone mode
+        assert_eq!(d[0].accessor_name(), "aristo_inspect_Db_next_seqno");
+    }
+
+    #[test]
+    fn extracts_projection_inspect_with_and_name() {
+        let src = "\
+// @aristo inspect(field = \"keydir\", ret = \"size_t\", with = \"keydir_live_count\", name = \"live_keys\")
+struct Db { int keydir; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].with.as_deref(), Some("keydir_live_count"));
+        assert_eq!(d[0].name.as_deref(), Some("live_keys"));
+        // name overrides the suffix
+        assert_eq!(d[0].accessor_name(), "aristo_inspect_Db_live_keys");
+    }
+
+    #[test]
+    fn multiple_inspects_stack_and_keep_source_order() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+// @aristo inspect(field = \"b\", ret = \"long\")
+struct S { int a; long b; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].field, "a");
+        assert_eq!(d[1].field, "b");
+        assert!(d[0].line < d[1].line);
+    }
+
+    #[test]
+    fn inspect_attaches_across_an_interleaved_intent() {
+        // An intent directive between/around inspects must NOT break the block.
+        let src = "\
+// @aristo intent(\"the store handle; single-writer\", id = \"db_handle\")
+// @aristo inspect(field = \"next_seqno\", ret = \"uint64_t\")
+typedef struct { unsigned long next_seqno; } Db;
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1, "inspect after an intent still attaches");
+        assert_eq!(d[0].accessor_name(), "aristo_inspect_Db_next_seqno");
+        // And the intent still reaches the index via the other pass.
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].id.as_deref(), Some("db_handle"));
+    }
+
+    #[test]
+    fn blank_line_detaches_inspect_from_the_struct() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+
+struct S { int a; };
+";
+        assert!(inspect(src).is_empty());
+    }
+
+    #[test]
+    fn plain_comment_breaks_the_inspect_block() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+// an ordinary comment
+struct S { int a; };
+";
+        assert!(inspect(src).is_empty());
+    }
+
+    #[test]
+    fn inspect_missing_required_ret_is_a_hard_error() {
+        // No `ret` — a recognized inspect directive with bad args is a loud
+        // error (F1), never a silent drop: gen-c is the only validator.
+        let src = "\
+// @aristo inspect(field = \"a\")
+struct S { int a; };
+";
+        let err = extract_c_inspect_directives(src).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("line 1"), "error must name the line: {msg}");
+        assert!(
+            msg.contains("ret"),
+            "error must name the missing arg: {msg}"
+        );
+    }
+
+    #[test]
+    fn inspect_unknown_arg_is_a_hard_error() {
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\", bogus = \"x\")
+struct S { int a; };
+";
+        assert!(extract_c_inspect_directives(src).is_err());
+    }
+
+    #[test]
+    fn inspect_unknown_field_is_a_hard_error() {
+        // F2: the struct doesn't declare `nope` — rejected, pointing at the
+        // directive line and the type.
+        let src = "\
+// @aristo inspect(field = \"nope\", ret = \"int\")
+struct S { int a; long b; };
+";
+        let err = extract_c_inspect_directives(src).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("nope") && msg.contains('S'), "got: {msg}");
+    }
+
+    #[test]
+    fn inspect_valid_field_passes_field_check() {
+        let src = "\
+// @aristo inspect(field = \"b\", ret = \"long\")
+struct S { int a; long b; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].field, "b");
+    }
+
+    #[test]
+    fn inspect_field_check_is_conservative_on_pointer_fields() {
+        // A pointer field must still be recognized as declared (no false reject).
+        let src = "\
+// @aristo inspect(field = \"buf\", ret = \"const char *\")
+struct S { char *buf; unsigned long len; };
+";
+        let d = inspect(src);
+        assert_eq!(d.len(), 1, "pointer field must be recognized as declared");
+    }
+
+    #[test]
+    fn inspect_directives_do_not_leak_into_the_index() {
+        // The index walk (intent/assume) must ignore inspect directives.
+        let src = "\
+// @aristo inspect(field = \"a\", ret = \"int\")
+struct S { int a; };
+";
+        assert!(
+            extract(src).is_empty(),
+            "inspect is not an index annotation"
+        );
+    }
+
+    #[test]
+    fn inspectfoo_is_not_an_inspect_directive() {
+        // Keyword-boundary guard: `inspectfoo(...)` is not `inspect`.
+        assert!(parse_inspect_directive("// @aristo inspectfoo(x = \"1\")").is_none());
+    }
+
+    // ─── expose directives (I-4): TU-local function prototypes ────────────
+
+    fn expose(s: &str) -> Vec<CExposeDirective> {
+        extract_c_expose_directives(s).expect("test source must parse as C")
+    }
+
+    #[test]
+    fn exposes_a_tu_local_function_verbatim_signature() {
+        let src = "\
+// @aristo expose
+ARISTO_TU_LOCAL int recover_replay(Db *db) { return 0; }
+";
+        let d = expose(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].name, "recover_replay");
+        // Verbatim signature keeps the macro prefix (expands to nothing on).
+        assert_eq!(d[0].signature, "ARISTO_TU_LOCAL int recover_replay(Db *db)");
+    }
+
+    #[test]
+    fn exposes_a_plain_static_function() {
+        let src = "\
+// @aristo expose
+static long tally(const char *buf, int n) { return 0; }
+";
+        let d = expose(src);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].signature, "static long tally(const char *buf, int n)");
+    }
+
+    #[test]
+    fn expose_forwarder_form_is_a_hard_error() {
+        // The `as=` forwarder is documented-but-unbuilt: reject loudly.
+        let src = "\
+// @aristo expose(as = \"recover_for_test\")
+ARISTO_TU_LOCAL int recover_replay(Db *db) { return 0; }
+";
+        let err = extract_c_expose_directives(src).unwrap_err();
+        assert!(err.to_string().contains("forwarder"), "got: {err}");
+    }
+
+    #[test]
+    fn expose_without_a_function_below_is_dropped() {
+        let src = "\
+// @aristo expose
+
+int detached(void) { return 0; }
+";
+        assert!(expose(src).is_empty());
+    }
+
+    #[test]
+    fn expose_ignores_inspect_and_index_directives() {
+        // Only expose directives produce expose records.
+        let src = "\
+// @aristo intent(\"does a thing\", id = \"x\")
+int f(void) { return 0; }
+// @aristo inspect(field = \"a\", ret = \"int\")
+struct S { int a; };
+";
+        assert!(expose(src).is_empty());
     }
 }

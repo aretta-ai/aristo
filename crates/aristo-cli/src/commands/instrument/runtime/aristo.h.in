@@ -1,0 +1,82 @@
+/*
+ * aristo.h - Aristo C instrumentation runtime.
+ *
+ * Vendored by `aristo instrument vendor-c` (aristo {{SDK_VERSION}}).
+ * Do not edit by hand; re-vendor to update. Standard C11, no compiler
+ * extensions.
+ *
+ * Everything instrumentation-related is gated by ARISTO_INSTRUMENT (set via
+ * -DARISTO_INSTRUMENT). With the flag absent the macros expand to nothing /
+ * Continue / static, and at -O1 or higher the compiled .text/.data/.rodata
+ * are byte-identical to un-annotated source.
+ */
+#ifndef ARISTO_H
+#define ARISTO_H
+
+#include <stdint.h>
+
+/*
+ * ABI version of the runtime + generated-code contract. Bump on ANY layout
+ * change to aristo_decision, the hook typedefs, or the macro signatures.
+ */
+#define ARISTO_ABI {{ARISTO_ABI}}
+
+/*
+ * aristo_decision is defined in BOTH build modes so a fault-point call site
+ * (`aristo_decision d = ARISTO_FAULT_POINT(...)`) compiles either way.
+ */
+typedef struct {
+    uint8_t  inject; /* 0 => Continue; non-zero => inject a fault          */
+    uint64_t code;   /* opaque selector, meaningful only to the SUT        */
+} aristo_decision;
+
+/*
+ * Continue value. ARISTO_CONTINUE is a compound literal (automatic storage
+ * only). Use ARISTO_CONTINUE_INIT for a static/global initializer.
+ */
+#define ARISTO_CONTINUE       ((aristo_decision){ 0, 0 })
+#define ARISTO_CONTINUE_INIT  { 0, 0 }
+
+static inline int aristo_is_inject(aristo_decision d) { return d.inject != 0; }
+
+#ifdef ARISTO_INSTRUMENT
+
+_Static_assert(ARISTO_ABI == {{ARISTO_ABI}},
+    "aristo.h ABI does not match the code generated against it; "
+    "re-vendor aristo.h/aristo.c from the same aristo CLI version");
+
+static inline aristo_decision aristo_inject(uint64_t code) {
+    aristo_decision d;
+    d.inject = 1;
+    d.code = code;
+    return d;
+}
+
+typedef void            (*aristo_yield_fn)(const char *label, void *state);
+typedef aristo_decision (*aristo_fault_fn)(const char *label, void *state);
+
+/*
+ * Install (or clear, with fn == NULL) the calling thread's hook. Hooks are
+ * thread-local; a fresh set replaces the prior hook with no chaining. The
+ * setter returns void - save/restore is the harness's job.
+ */
+void aristo_set_hook(aristo_yield_fn fn, void *state);
+void aristo_set_fault_hook(aristo_fault_fn fn, void *state);
+
+/* Dispatch targets - call only via the macros below. */
+void            aristo_yield_point(const char *label);
+aristo_decision aristo_fault_point(const char *label);
+
+#define ARISTO_YIELD_POINT(label) aristo_yield_point((label))
+#define ARISTO_FAULT_POINT(label) aristo_fault_point((label))
+#define ARISTO_TU_LOCAL           /* external linkage: linkable by a harness */
+
+#else /* !ARISTO_INSTRUMENT */
+
+#define ARISTO_YIELD_POINT(label) ((void)0)
+#define ARISTO_FAULT_POINT(label) ARISTO_CONTINUE
+#define ARISTO_TU_LOCAL           static /* production: translation-unit-local */
+
+#endif /* ARISTO_INSTRUMENT */
+
+#endif /* ARISTO_H */
