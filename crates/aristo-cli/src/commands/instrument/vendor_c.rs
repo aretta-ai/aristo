@@ -36,13 +36,13 @@ pub(crate) fn run(out: PathBuf) -> CliResult<()> {
         };
         println!("  • {name}  {verb}");
     }
+    let dir = out.display();
     println!();
     println!("ok: Aristo C runtime vendored (2 files).");
-    println!(
-        "    Add {}/ to your include path; compile aristo.c and pass",
-        out.display()
-    );
-    println!("    -DARISTO_INSTRUMENT in instrumented builds (C11, -O1+).");
+    println!("    Instrumented build: add -I{dir} to the include path, compile");
+    println!("    {dir}/aristo.c, and pass -DARISTO_INSTRUMENT (C11, -O1+).");
+    println!("    Note: any file that uses ARISTO_TU_LOCAL includes aristo.h in");
+    println!("    BOTH builds, so -I{dir} must be on the production compile line too.");
     Ok(())
 }
 
