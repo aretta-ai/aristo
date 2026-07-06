@@ -72,14 +72,17 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
     let root = tree.root_node();
     let src_bytes = source.as_bytes();
 
+    // Effective top-level nodes, flattened through any `#ifndef`/`#if` guard
+    // so declarations in a guarded header are seen (see `effective_top_level`).
+    let top = effective_top_level(&root);
+
     // Pass 1: index every top-level item — by bare name (for `site = "..."`,
     // which may target an item defined anywhere in the file) and by start row
     // (for adjacency).
     let mut items: Vec<CItem> = Vec::new();
     let mut by_name: HashMap<String, usize> = HashMap::new();
     let mut item_at_row: HashMap<usize, usize> = HashMap::new();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
+    for &child in &top {
         if let Some(item) = c_item(&child, source) {
             let idx = items.len();
             // First definition wins on a duplicate name (C forbids two anyway;
@@ -101,8 +104,7 @@ pub fn extract_from_c_source(source: &str) -> Result<Vec<ExtractedAnnotation>, E
     // item below the block is measured from here, so a foreign directive
     // (e.g. inspect) between an intent and its item does not detach it.
     let mut last_directive_row: Option<usize> = None;
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
+    for &child in &top {
         if child.kind() == "comment" {
             // A comment not directly below the previous directive breaks the block.
             if let Some(last) = last_directive_row {
@@ -646,8 +648,7 @@ pub fn extract_c_inspect_directives(source: &str) -> Result<Vec<CInspectDirectiv
     // Type item directly below the block attaches.
     let mut run: Vec<(InspectArgs, usize)> = Vec::new(); // (args, start_row)
     let mut last_directive_row: Option<usize> = None;
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
+    for child in effective_top_level(&root) {
         if child.kind() == "comment" {
             // A comment not directly below the previous directive breaks the
             // block. (`last_directive_row` is reassigned below in both arms, so
@@ -793,8 +794,7 @@ pub fn extract_c_expose_directives(source: &str) -> Result<Vec<CExposeDirective>
     // Number of expose directives in the current contiguous `// @aristo` block.
     let mut pending_expose = 0usize;
     let mut last_directive_row: Option<usize> = None;
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
+    for child in effective_top_level(&root) {
         if child.kind() == "comment" {
             if let Some(last) = last_directive_row {
                 if child.start_position().row != last + 1 {
@@ -857,6 +857,48 @@ struct CItem<'t> {
     site: String,
     body: Node<'t>,
     region: CoveredRegion,
+}
+
+#[aristo::intent(
+    "The effective top-level items of a C file are flattened THROUGH \
+     conditional-compilation wrappers, because tree-sitter nests everything \
+     inside an `#ifndef`/`#define` header guard (or any `#if`/`#ifdef`) in a \
+     `preproc_ifdef`/`preproc_if` node — so a plain walk of the root's direct \
+     children misses every declaration in a guarded header, which is \
+     essentially every real C header. We cannot evaluate the conditions, so we \
+     flatten EVERY branch (matching how the extractor already reads raw source \
+     without preprocessing), and we drop the preprocessor's own infrastructure \
+     nodes (the guard name, `#define`, `#include`) so they never split a \
+     directive run. Reverting to a direct-children walk silently re-hides all \
+     header annotations.",
+    verify = "test",
+    id = "c_effective_top_level_flattens_preproc_guards"
+)]
+fn effective_top_level<'t>(root: &Node<'t>) -> Vec<Node<'t>> {
+    let mut out = Vec::new();
+    collect_effective(root, &mut out);
+    out
+}
+
+fn collect_effective<'t>(node: &Node<'t>, out: &mut Vec<Node<'t>>) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        match child.kind() {
+            // Descend through every conditional branch — we can't pick the
+            // active one, so we flatten them all.
+            "preproc_ifdef" | "preproc_if" | "preproc_else" | "preproc_elif"
+            | "preproc_elifdef" | "preproc_elifndef" => collect_effective(&child, out),
+            // Preprocessor infrastructure that is not a declaration and must
+            // not break a directive run (the guard name, #define, #include, …).
+            "identifier"
+            | "preproc_def"
+            | "preproc_function_def"
+            | "preproc_call"
+            | "preproc_include"
+            | "preproc_import" => {}
+            _ => out.push(child),
+        }
+    }
 }
 
 /// Resolve the top-level C item a directive attaches to. C-1 covered
@@ -1581,5 +1623,76 @@ int f(void) { return 0; }
 struct S { int a; };
 ";
         assert!(expose(src).is_empty());
+    }
+
+    // ─── #ifndef header-guard descent (F1 — ART stress test) ─────────────
+
+    #[test]
+    fn intent_inside_ifndef_header_guard_is_found() {
+        // The universal header guard wraps everything in a `preproc_ifdef`
+        // node; the walk must descend into it or every header annotation is
+        // silently invisible.
+        let src = "\
+#ifndef ART_NODE_H
+#define ART_NODE_H
+
+// @aristo intent(\"node type tags the adaptive size class\", id = \"node_type\")
+typedef enum { NODE4, NODE16, NODE48, NODE256 } art_node_type;
+
+#endif /* ART_NODE_H */
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1, "intent in a guarded header must be indexed");
+        assert_eq!(ann[0].id.as_deref(), Some("node_type"));
+        assert_eq!(ann[0].site, "enum art_node_type");
+    }
+
+    #[test]
+    fn inspect_and_expose_inside_ifndef_guard_are_found() {
+        let src = "\
+#ifndef ART_H
+#define ART_H
+#include <stddef.h>
+
+// @aristo inspect(field = \"size\", ret = \"size_t\")
+struct art_tree { void *root; size_t size; };
+
+// @aristo expose
+int art_helper(int x) { return x; }
+
+#endif
+";
+        let ins = inspect(src);
+        assert_eq!(ins.len(), 1, "inspect in a guarded header must be found");
+        assert_eq!(ins[0].accessor_name(), "aristo_inspect_art_tree_size");
+        let exp = expose(src);
+        assert_eq!(exp.len(), 1, "expose in a guarded header must be found");
+        assert_eq!(exp[0].name, "art_helper");
+    }
+
+    #[test]
+    fn pragma_once_header_still_works() {
+        let src = "\
+#pragma once
+// @aristo inspect(field = \"n\", ret = \"int\")
+struct T { int n; };
+";
+        assert_eq!(inspect(src).len(), 1);
+    }
+
+    #[test]
+    fn nested_ifdef_inside_guard_is_flattened() {
+        let src = "\
+#ifndef H
+#define H
+#ifdef FEATURE
+// @aristo intent(\"feature-gated fn\", id = \"g\")
+int gated(void) { return 0; }
+#endif
+#endif
+";
+        let ann = extract(src);
+        assert_eq!(ann.len(), 1, "annotation in a nested #ifdef must be found");
+        assert_eq!(ann[0].id.as_deref(), Some("g"));
     }
 }

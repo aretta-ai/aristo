@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Fixed
+- core: C annotations inside a header guard are now found. Every real C header wraps its body in `#ifndef X / #define X … #endif`, which tree-sitter nests in a `preproc_ifdef` node; the extractor walked only the file's direct children, so it silently found **zero** directives (intents, `inspect`, `expose`) in any guarded header — while `#pragma once` happened to work. The C walks now flatten through `#ifndef`/`#ifdef`/`#if` conditionals (every branch, since we can't evaluate them), so directives in guarded headers and feature-gated blocks are extracted. Surfaced by instrumenting a real C codebase (an adaptive radix tree).
 - cli: `aristo status` / `aristo metrics` no longer error on a repository containing C source. Their tier computation reuses the freshness walk (which now includes `.c`/`.h`) but parses each file as Rust with `syn`; it now skips non-`.rs` files, where previously a single `.c` file made both commands fail with a Rust parse error.
 - docs: the C extractor's module doc no longer links to the crate-private `AnnotationArgs`, which broke the `cargo doc` CI gate (`-D rustdoc::private-intra-doc-links`).
 - docs: regenerated `.aristo/doc/` artifacts so `aristo doc --check` passes (including the C instrument-surface intents) — picks up the C-extractor intents and refreshes pre-existing entries whose source prose had been reworded.
