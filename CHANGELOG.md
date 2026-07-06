@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Fixed
+- cli: `aristo status` / `aristo metrics` no longer error on a repository containing C source. Their tier computation reuses the freshness walk (which now includes `.c`/`.h`) but parses each file as Rust with `syn`; it now skips non-`.rs` files, where previously a single `.c` file made both commands fail with a Rust parse error.
 - docs: the C extractor's module doc no longer links to the crate-private `AnnotationArgs`, which broke the `cargo doc` CI gate (`-D rustdoc::private-intra-doc-links`).
 - docs: regenerated `.aristo/doc/` artifacts so `aristo doc --check` passes (including the C instrument-surface intents) — picks up the C-extractor intents and refreshes pre-existing entries whose source prose had been reworded.
 

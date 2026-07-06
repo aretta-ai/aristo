@@ -51,6 +51,17 @@ pub fn count_fns_per_module(root: &Path) -> Result<FnCountByModule, FsWalkError>
 
 /// Same as [`count_fns_per_module`] but honors `opts` (the same exclude
 /// globs `aristo stamp` applies).
+#[aristo::intent(
+    "The fn-counter parses each file as Rust with `syn`, so it processes \
+     ONLY `.rs` files — even though `walk_for_freshness_with` also returns \
+     `.c`/`.h` (which it must, for the freshness preflight to drift-check C \
+     source). Feeding a `.c` file into the Rust parser here is a hard error, \
+     so tier/metrics computation would blow up on any mixed Rust+C repo. The \
+     `.rs` filter must stay until this counter learns to count C functions \
+     too; widening the walk without re-narrowing here re-breaks it.",
+    verify = "test",
+    id = "count_fns_processes_rust_files_only"
+)]
 pub fn count_fns_per_module_with(
     root: &Path,
     opts: &WalkOptions,
@@ -62,6 +73,10 @@ pub fn count_fns_per_module_with(
 
     let mut out = FnCountByModule::new();
     for abs in paths {
+        // The freshness walk includes `.c`/`.h`; the fn-counter is Rust-only.
+        if abs.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
         let source = std::fs::read_to_string(&abs).map_err(|source| FsWalkError::Io {
             path: abs.clone(),
             source,
@@ -382,6 +397,24 @@ mod tests {
         let opts = WalkOptions::from_patterns(&["**/tests/ui/**"]).unwrap();
         let counts = count_fns_per_module_with(tmp.path(), &opts).unwrap();
         assert_eq!(counts.len(), 1);
+        assert_eq!(counts.get(&PathBuf::from("src/lib.rs")), Some(&1));
+    }
+
+    #[test]
+    fn count_fns_per_module_skips_c_files_without_erroring() {
+        // Regression: the freshness walk includes `.c`/`.h`, but the Rust
+        // fn-counter must skip them — a `.c` file next to Rust source once
+        // blew up `aristo status` / `metrics` with a syn parse error.
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "src/lib.rs", "fn keep() {}");
+        write(
+            tmp.path(),
+            "src/db.c",
+            "int db_open(const char *d) { return 0; }",
+        );
+        write(tmp.path(), "include/api.h", "int api(void);");
+        let counts = count_fns_per_module(tmp.path()).unwrap();
+        assert_eq!(counts.len(), 1, "only the .rs file is counted");
         assert_eq!(counts.get(&PathBuf::from("src/lib.rs")), Some(&1));
     }
 }
