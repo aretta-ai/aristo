@@ -1,6 +1,6 @@
 **Aristo verified intent — `pending_neural_file_is_sdk_to_agent_request_not_a_result`**
 
-Each pending verify task is a REQUEST from the SDK to the in-agent skill, enqueued at `.aristo/verify-queue/pending/<id>.toml`. Workers pop one at a time via `aristo verify --pop-next`. The SDK never reads these task files back as verdicts — verdicts arrive via `aristo verify --submit-verdict` and land at `.aristo/proofs/<id>.proof` after the mechanical validator gates them. A refactor that has the SDK auto-process its own queue (e.g., to call an LLM directly) would conflate the CLI with the agent and break the design split: the CLI never makes LLM calls; the agent never bypasses the SDK validator.
+Each pending verify task is a request from the SDK to the in-agent skill, not a result the SDK reads back. The SDK writes it to the verify queue and consumes verdicts only through the submit path, after the validator gates them. A refactor that has the SDK process its own queue directly would erase the CLI/agent split the queue exists to enforce.
 
 <sub>Verify level: **neural**</sub>
 

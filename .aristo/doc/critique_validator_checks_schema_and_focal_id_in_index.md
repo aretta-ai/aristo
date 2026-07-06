@@ -1,6 +1,6 @@
 **Aristo verified intent — `critique_validator_checks_schema_and_focal_id_in_index`**
 
-The critique validator gates writes on schema integrity: enum values for category and severity (serde rejects unknown variants at parse time, so by the time we run the checks here those are already known to be in the locked set), the focal id resolves in the current index, and the rationale field is non-empty (a finding without a rationale is noise — silently dropping the requirement would let agents emit categorized-but-uninformative critiques). Unlike the verify validator there is no proof-tree integrity check because findings carry no derivations.
+The critique validator gates every write on schema integrity: category and severity must be known enum variants, the focal id must resolve in the current index, and every finding must carry a non-empty rationale. The rationale gate is load-bearing — dropping it would let agents emit categorized but uninformative critiques, which are just noise. There is no proof-tree integrity check as in the verify validator, because findings carry no derivations.
 
 <sub>Verify level: **neural**</sub>
 
