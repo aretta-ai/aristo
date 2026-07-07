@@ -1,0 +1,149 @@
+/*
+ * aristo_seam.c - Aristo LD_PRELOAD seam-fault shim (Linux; glibc / musl).
+ *
+ * Vendored by `aristo instrument vendor-c --seam` (aristo {{SDK_VERSION}}).
+ * A zero-source fault seam: compile this to a shared object and preload it
+ * before a DYNAMICALLY-LINKED target, and it interposes libc allocation calls
+ * so a harness can fail the Nth one WITHOUT touching the SUT's source or
+ * rebuilding it.
+ *
+ *   cc -std=c11 -shared -fPIC -D_GNU_SOURCE aristo_seam.c -o aristo_seam.so -ldl
+ *   ARISTO_SEAM_FN=calloc ARISTO_SEAM_NTH=1 LD_PRELOAD=./aristo_seam.so ./your_prog
+ *
+ * It interposes the ALLOCATION seam (calloc / malloc, plus free to guard the
+ * bootstrap arena below), counts each per name, and on the Nth call to the
+ * configured function returns NULL with errno set; every other call forwards to
+ * the real libc symbol (resolved via dlsym(RTLD_NEXT)). Config is entirely
+ * runtime env — no per-SUT codegen:
+ *
+ *   ARISTO_SEAM_FN     which fn to target: calloc | malloc  (unset = disabled)
+ *   ARISTO_SEAM_NTH    fail the Nth matching call, 1-based   (default 1)
+ *   ARISTO_SEAM_ERRNO  errno to set on the failing call      (default ENOMEM)
+ *
+ * PRECONDITIONS (hard): the target must be DYNAMICALLY linked — a `-static`
+ * build silently ignores LD_PRELOAD and the seam never fires. Linux/glibc or
+ * musl only; macOS uses DYLD_INSERT_LIBRARIES (separate) and Windows has no
+ * equivalent. This shim is TEST-ONLY — it is never compiled or linked into the
+ * SUT, so the SUT's cost-zero property is unaffected. The read/write/fsync I/O
+ * seam extends the same pattern when a SUT with a durability seam needs it.
+ */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE /* for RTLD_NEXT; harmless if the build already passed it */
+#endif
+#include <dlfcn.h>
+#include <errno.h>
+#include <stdatomic.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Real libc symbols, resolved lazily on first use via RTLD_NEXT. */
+static void *(*real_calloc)(size_t, size_t);
+static void *(*real_malloc)(size_t);
+static void (*real_free)(void *);
+
+/*
+ * Bootstrap arena. dlsym() itself may allocate (notably on musl, and in glibc
+ * during early startup) — and since we have interposed calloc/malloc, that
+ * allocation re-enters THIS shim before `real_*` is resolved. `resolving`
+ * guards that window; reentrant allocations are served from a small static
+ * buffer (already zero, so it doubles as calloc storage) and `free` treats
+ * arena pointers as no-ops. The window is single-threaded (process startup),
+ * so a plain int guard is sufficient.
+ */
+static char arena[16384];
+static size_t arena_used;
+static int resolving;
+
+static void *arena_alloc(size_t bytes) {
+    size_t aligned = (bytes + 15u) & ~(size_t)15u;
+    if (arena_used + aligned > sizeof arena) {
+        return NULL;
+    }
+    void *p = &arena[arena_used];
+    arena_used += aligned;
+    return p;
+}
+
+static int in_arena(const void *p) {
+    return (const char *)p >= arena && (const char *)p < arena + sizeof arena;
+}
+
+/* Runtime config, parsed once after the real symbols are resolved. */
+static const char *cfg_fn;
+static unsigned long cfg_nth = 1;
+static int cfg_errno;
+static _Atomic unsigned long count_calloc;
+static _Atomic unsigned long count_malloc;
+
+static void parse_config(void) {
+    cfg_fn = getenv("ARISTO_SEAM_FN");
+    const char *nth = getenv("ARISTO_SEAM_NTH");
+    if (nth) {
+        unsigned long v = strtoul(nth, NULL, 10);
+        cfg_nth = v ? v : 1;
+    }
+    const char *e = getenv("ARISTO_SEAM_ERRNO");
+    if (e) {
+        cfg_errno = atoi(e);
+    }
+}
+
+/* Resolve real_* + config exactly once. Re-entrant-safe via `resolving`. */
+static void ensure_ready(void) {
+    if (real_calloc) {
+        return;
+    }
+    resolving = 1;
+    real_calloc = (void *(*)(size_t, size_t))dlsym(RTLD_NEXT, "calloc");
+    real_malloc = (void *(*)(size_t))dlsym(RTLD_NEXT, "malloc");
+    real_free = (void (*)(void *))dlsym(RTLD_NEXT, "free");
+    parse_config();
+    resolving = 0;
+}
+
+/* True iff THIS call (the one being counted now) is the configured Nth. */
+static int should_fail(const char *fn, _Atomic unsigned long *counter) {
+    if (!cfg_fn || strcmp(cfg_fn, fn) != 0) {
+        return 0;
+    }
+    unsigned long n = atomic_fetch_add_explicit(counter, 1, memory_order_relaxed) + 1;
+    return n == cfg_nth;
+}
+
+void *calloc(size_t nmemb, size_t size) {
+    if (!real_calloc) {
+        if (resolving) {
+            return arena_alloc(nmemb * size); /* zeroed: arena is static */
+        }
+        ensure_ready();
+    }
+    if (should_fail("calloc", &count_calloc)) {
+        errno = cfg_errno ? cfg_errno : ENOMEM;
+        return NULL;
+    }
+    return real_calloc(nmemb, size);
+}
+
+void *malloc(size_t size) {
+    if (!real_malloc) {
+        if (resolving) {
+            return arena_alloc(size);
+        }
+        ensure_ready();
+    }
+    if (should_fail("malloc", &count_malloc)) {
+        errno = cfg_errno ? cfg_errno : ENOMEM;
+        return NULL;
+    }
+    return real_malloc(size);
+}
+
+void free(void *ptr) {
+    if (in_arena(ptr)) {
+        return; /* bootstrap-arena pointer: never handed to the real allocator */
+    }
+    if (!real_free) {
+        ensure_ready();
+    }
+    real_free(ptr);
+}
