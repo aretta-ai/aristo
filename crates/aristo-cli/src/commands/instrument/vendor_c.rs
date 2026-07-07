@@ -7,8 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{write_file, WriteOutcome};
-use crate::CliResult;
+use super::{drifted_files, write_file, WriteOutcome};
+use crate::{CliError, CliResult};
 
 const ARISTO_H_TEMPLATE: &str = include_str!("runtime/aristo.h.in");
 const ARISTO_C_TEMPLATE: &str = include_str!("runtime/aristo.c.in");
@@ -23,12 +23,32 @@ fn resolve(template: &str) -> String {
         .replace("{{ARISTO_ABI}}", &super::ARISTO_ABI.to_string())
 }
 
-pub(crate) fn run(out: PathBuf) -> CliResult<()> {
-    println!("→ Vendoring the Aristo C runtime to {}/ …", out.display());
+pub(crate) fn run(out: PathBuf, check: bool) -> CliResult<()> {
     let files = [
         ("aristo.h", resolve(ARISTO_H_TEMPLATE)),
         ("aristo.c", resolve(ARISTO_C_TEMPLATE)),
     ];
+    if check {
+        let drifted = drifted_files(&files, &out);
+        if drifted.is_empty() {
+            println!(
+                "ok: vendored Aristo C runtime is up to date (aristo {}).",
+                env!("CARGO_PKG_VERSION")
+            );
+            return Ok(());
+        }
+        return Err(CliError::Other {
+            message: format!(
+                "vendored Aristo C runtime is stale: {} differ from the aristo {} \
+                 templates.\n       Re-run `aristo instrument vendor-c` (or `make \
+                 revendor`) and commit the result.",
+                drifted.join(", "),
+                env!("CARGO_PKG_VERSION")
+            ),
+            exit_code: 2,
+        });
+    }
+    println!("→ Vendoring the Aristo C runtime to {}/ …", out.display());
     for (name, content) in &files {
         let outcome = write_file(&out.join(name), content)?;
         let verb = match outcome {
@@ -117,7 +137,7 @@ ok: Aristo C runtime vendored (2 files).
     fn vendor_writes_both_files_with_expected_shape() {
         let tmp = tempfile::tempdir().unwrap();
         let out = tmp.path().join("aristo");
-        run(out.clone()).unwrap();
+        run(out.clone(), false).unwrap();
 
         let h = fs::read_to_string(out.join("aristo.h")).unwrap();
         let c = fs::read_to_string(out.join("aristo.c")).unwrap();
@@ -136,12 +156,39 @@ ok: Aristo C runtime vendored (2 files).
     fn vendor_is_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
         let out = tmp.path().join("aristo");
-        run(out.clone()).unwrap();
+        run(out.clone(), false).unwrap();
         let h1 = fs::read_to_string(out.join("aristo.h")).unwrap();
         let c1 = fs::read_to_string(out.join("aristo.c")).unwrap();
-        run(out.clone()).unwrap(); // second run must not change bytes
+        run(out.clone(), false).unwrap(); // second run must not change bytes
         assert_eq!(h1, fs::read_to_string(out.join("aristo.h")).unwrap());
         assert_eq!(c1, fs::read_to_string(out.join("aristo.c")).unwrap());
+    }
+
+    #[test]
+    fn check_passes_on_freshly_vendored_runtime() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("aristo");
+        run(out.clone(), false).unwrap();
+        // --check on the just-written runtime is up to date (writes nothing).
+        run(out, true).unwrap();
+    }
+
+    #[test]
+    fn check_fails_on_missing_and_on_drift() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("aristo");
+        // Absent runtime -> stale (a missing file is never "up to date").
+        assert!(
+            run(out.clone(), true).is_err(),
+            "--check must fail when the runtime is absent"
+        );
+        // Vendor, then hand-edit one file -> stale.
+        run(out.clone(), false).unwrap();
+        fs::write(out.join("aristo.c"), "/* hand-edited */\n").unwrap();
+        assert!(
+            run(out, true).is_err(),
+            "--check must fail when a vendored file drifts from the CLI template"
+        );
     }
 
     #[test]

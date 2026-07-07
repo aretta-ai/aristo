@@ -676,6 +676,10 @@ pub(crate) enum InstrumentAction {
         /// Directory to write `aristo.h` / `aristo.c` into.
         #[arg(long, default_value = "aristo")]
         out: PathBuf,
+        /// Verify the vendored runtime files match the current CLI templates;
+        /// write nothing, exit non-zero on drift (CI gate).
+        #[arg(long)]
+        check: bool,
     },
 
     /// Render read-only field accessors from `// @aristo inspect(...)`
@@ -1189,7 +1193,9 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             } => commands::canon::suggestions::run(objective, counts, filter),
         },
         Commands::Instrument { action } => match action {
-            InstrumentAction::VendorC { out } => commands::instrument::vendor_c::run(out),
+            InstrumentAction::VendorC { out, check } => {
+                commands::instrument::vendor_c::run(out, check)
+            }
             InstrumentAction::GenC {
                 paths,
                 handle_header,
