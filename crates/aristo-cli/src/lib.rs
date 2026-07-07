@@ -680,6 +680,10 @@ pub(crate) enum InstrumentAction {
         /// write nothing, exit non-zero on drift (CI gate).
         #[arg(long)]
         check: bool,
+        /// Emit the LD_PRELOAD seam shim (`aristo_seam.c`) instead of the
+        /// in-process runtime — a test-only, Linux-only libc fault seam.
+        #[arg(long)]
+        seam: bool,
     },
 
     /// Render read-only field accessors from `// @aristo inspect(...)`
@@ -1193,8 +1197,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             } => commands::canon::suggestions::run(objective, counts, filter),
         },
         Commands::Instrument { action } => match action {
-            InstrumentAction::VendorC { out, check } => {
-                commands::instrument::vendor_c::run(out, check)
+            InstrumentAction::VendorC { out, check, seam } => {
+                commands::instrument::vendor_c::run(out, check, seam)
             }
             InstrumentAction::GenC {
                 paths,
