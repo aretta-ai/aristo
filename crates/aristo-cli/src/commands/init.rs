@@ -101,8 +101,9 @@ const GH_VERIFY_WORKFLOW: &str = "\
 #      `[instance] url = \"https://<org>.aretta.ai\"` in aristo.toml (committed,
 #      and it fixes local `aristo verify` too). Alternatively add a repository
 #      Variable ARETTA_API_URL = your org's URL and wire it on the verify job
-#      (`env: { ARETTA_API_URL: ${{ vars.ARETTA_API_URL }} }`) — but only when
-#      that Variable is actually set; an empty value misroutes the data plane.
+#      (`env: { ARETTA_API_URL: ${{ vars.ARETTA_API_URL }} }`) — an unset
+#      Variable expands to empty, which aristo treats as unset (falls back to
+#      [instance] url or the default), so it's safe to leave off for prod.
 # NOT on pull_request — verify needs the checked-out commit pushed to origin.
 name: aristo verify
 on:
