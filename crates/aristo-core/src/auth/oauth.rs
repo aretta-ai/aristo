@@ -63,17 +63,23 @@ pub struct CliTokenResponse {
     pub arta_token: String,
     /// JWT for any `/dashboard/api/*` calls the SDK might want.
     /// Optional — the SDK doesn't need it for canon API access (the
-    /// arta_token is the primary credential).
+    /// arta_token is the primary credential). `serde(default)` so a
+    /// conductor that drops this SDK-unused field can't break login.
+    #[serde(default)]
     pub jwt: String,
     /// GitHub user identity.
     pub user: GitHubUser,
     /// Internal opaque id for the minted token, useful for later
-    /// revocation via the dashboard.
+    /// revocation via the dashboard. `serde(default)` — SDK-unused, so a
+    /// dropped field must not break login.
+    #[serde(default)]
     pub token_id: String,
     /// Lowercased `owner/repo` (the proxy normalizes case).
     pub repo_full_name: String,
     /// Last 4 chars of the token, for masked display in `aristo
-    /// auth status`.
+    /// auth status`. `serde(default)` — SDK-unused, so a dropped field
+    /// must not break login.
+    #[serde(default)]
     pub last_4: String,
 }
 
@@ -309,6 +315,24 @@ mod tests {
         assert_eq!(r.user.login, "octocat");
         assert_eq!(r.user.id, 42);
         assert_eq!(r.last_4, "wxyz");
+    }
+
+    #[test]
+    fn map_response_cli_token_tolerates_missing_sdk_unused_fields() {
+        // A conductor that drops the SDK-unused fields (jwt / token_id /
+        // last_4) must not break login — only arta_token / user /
+        // repo_full_name are required.
+        let body = r#"{
+            "arta_token": "arta_min",
+            "user": { "id": 7, "login": "min" },
+            "repo_full_name": "owner/repo"
+        }"#;
+        let r: CliTokenResponse = map_response(200, body).expect("decode without optional fields");
+        assert_eq!(r.arta_token, "arta_min");
+        assert_eq!(r.repo_full_name, "owner/repo");
+        assert_eq!(r.jwt, "");
+        assert_eq!(r.token_id, "");
+        assert_eq!(r.last_4, "");
     }
 
     #[test]

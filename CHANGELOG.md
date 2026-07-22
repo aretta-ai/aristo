@@ -38,6 +38,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - docs: the C extractor's module doc no longer links to the crate-private `AnnotationArgs`, which broke the `cargo doc` CI gate (`-D rustdoc::private-intra-doc-links`).
 - docs: regenerated `.aristo/doc/` artifacts so `aristo doc --check` passes (including the C instrument-surface intents) — picks up the C-extractor intents and refreshes pre-existing entries whose source prose had been reworded.
 - cli: `aristo auth login` now gives a clear message when the auth server answers with **410 Gone** — it explains that the server no longer mints CLI tokens (your CLI is pointed at the retired platform default) and points you at re-running against your org's server (`--server <url>` / `ARETTA_API_URL`) or upgrading, instead of a bare `HTTP 410: …`. The server's own message is still surfaced.
+- core: `aristo auth login` no longer breaks if the conductor omits the SDK-unused token-response fields (`jwt`, `token_id`, `last_4`) — they now decode as `serde(default)`, so only `arta_token` / `user` / `repo_full_name` are required. Previously a dropped field failed the whole login with a decode error.
 
 ## [0.5.1] — 2026-07-04
 
