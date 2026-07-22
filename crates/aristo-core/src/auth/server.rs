@@ -135,18 +135,25 @@ pub enum LoginServerSource {
     Flag,
     /// Resolved from the `ARETTA_API_URL` environment variable.
     Env,
-    /// Neither flag nor env — the built-in production default.
+    /// Resolved by zero-config org discovery (queried at the
+    /// prod-default platform when neither flag nor env was supplied).
+    Discovered,
+    /// Neither flag nor env nor discovery — the built-in production
+    /// default.
     Default,
 }
 
 impl LoginServerSource {
     /// Short provenance suffix for the "Authenticating against …" line,
     /// or `None` for the built-in [`Default`](Self::Default) (where
-    /// naming the source adds no signal).
-    pub fn provenance(self) -> Option<&'static str> {
+    /// naming the source adds no signal). `repo_full_name` is
+    /// interpolated only for [`Discovered`](Self::Discovered)
+    /// (`discovered for <repo>`), where the repo is what was looked up.
+    pub fn provenance(self, repo_full_name: &str) -> Option<String> {
         match self {
-            Self::Flag => Some("from --server"),
-            Self::Env => Some("from ARETTA_API_URL"),
+            Self::Flag => Some("from --server".to_string()),
+            Self::Env => Some("from ARETTA_API_URL".to_string()),
+            Self::Discovered => Some(format!("discovered for {repo_full_name}")),
             Self::Default => None,
         }
     }
@@ -189,6 +196,52 @@ pub fn login_server(
         return (ServerUrl::parse(v), LoginServerSource::Env);
     }
     (ServerUrl::Prod, LoginServerSource::Default)
+}
+
+/// Resolve the login (auth-plane) server with zero-config org discovery
+/// folded into the precedence. Highest first:
+///
+/// 1. `flag` — an explicit `--server` value.
+/// 2. `env_override` — the `ARETTA_API_URL` env var (blank = unset).
+/// 3. **discovery** — `discover(platform)`, run *only* when neither
+///    flag nor env is supplied. `Some` redirects login to the
+///    discovered `base_url`; `None` (404 / miss / any error) falls
+///    through to `platform`.
+/// 4. `platform` — the discovery platform itself, which is also the
+///    miss fallback (the prod default in production; see below).
+///
+/// `discover` is invoked at most once, and **never** when an explicit
+/// choice (flag or env) is present — an explicit server always wins and
+/// skips the network lookup entirely. It receives `platform` so the
+/// caller can query `<platform>/.well-known/aretta-org`.
+///
+/// `platform` is the "prod default platform" in production
+/// (`code.aretta.ai`); the caller may relocate it (e.g. a self-hosted
+/// deployment, or a test capture server) so discovery *and* its miss
+/// fallback move together. The flag/env tiers delegate to
+/// [`login_server`] so the two resolvers can't drift.
+pub fn login_server_discovering(
+    flag: Option<&str>,
+    env_override: Option<&str>,
+    platform: &ServerUrl,
+    discover: impl FnOnce(&ServerUrl) -> Option<super::discovery::DiscoveredOrg>,
+) -> (ServerUrl, LoginServerSource) {
+    let (server, source) = login_server(flag, env_override);
+    // An explicit choice (flag or env) short-circuits discovery: the
+    // network lookup runs only when `login_server` fell to the default.
+    if source != LoginServerSource::Default {
+        return (server, source);
+    }
+    // Neither flag nor env: query discovery at `platform`, and fall back
+    // to `platform` itself (not a hardcoded prod) on a miss so the two
+    // move together when the platform is relocated.
+    match discover(platform) {
+        Some(org) => (
+            ServerUrl::parse(&org.base_url),
+            LoginServerSource::Discovered,
+        ),
+        None => (platform.clone(), LoginServerSource::Default),
+    }
 }
 
 #[cfg(test)]
@@ -357,11 +410,103 @@ mod tests {
 
     #[test]
     fn login_server_provenance_named_only_when_not_default() {
-        assert_eq!(LoginServerSource::Flag.provenance(), Some("from --server"));
+        let repo = "owner/repo";
         assert_eq!(
-            LoginServerSource::Env.provenance(),
+            LoginServerSource::Flag.provenance(repo).as_deref(),
+            Some("from --server")
+        );
+        assert_eq!(
+            LoginServerSource::Env.provenance(repo).as_deref(),
             Some("from ARETTA_API_URL")
         );
-        assert_eq!(LoginServerSource::Default.provenance(), None);
+        assert_eq!(
+            LoginServerSource::Discovered.provenance(repo).as_deref(),
+            Some("discovered for owner/repo")
+        );
+        assert_eq!(LoginServerSource::Default.provenance(repo), None);
+    }
+
+    // ─── login_server_discovering (precedence + discovery tier) ──────────────
+
+    use super::super::discovery::DiscoveredOrg;
+
+    fn discovered(base_url: &str) -> DiscoveredOrg {
+        DiscoveredOrg {
+            org: "acme".into(),
+            base_url: base_url.into(),
+        }
+    }
+
+    #[test]
+    fn discovering_flag_skips_the_network_lookup() {
+        // An explicit --server wins outright: the discovery closure must
+        // never run (it panics if it does).
+        let (server, source) = login_server_discovering(
+            Some("dev"),
+            Some("https://turso.aretta.ai"),
+            &ServerUrl::Prod,
+            |_| panic!("discovery must not run when --server is given"),
+        );
+        assert_eq!(server, ServerUrl::Dev);
+        assert_eq!(source, LoginServerSource::Flag);
+    }
+
+    #[test]
+    fn discovering_env_skips_the_network_lookup() {
+        // ARETTA_API_URL (no flag) also short-circuits discovery.
+        let (server, source) = login_server_discovering(
+            None,
+            Some("https://turso.aretta.ai"),
+            &ServerUrl::Prod,
+            |_| panic!("discovery must not run when ARETTA_API_URL is set"),
+        );
+        assert_eq!(server, ServerUrl::Custom("https://turso.aretta.ai".into()));
+        assert_eq!(source, LoginServerSource::Env);
+    }
+
+    #[test]
+    fn discovering_uses_discovered_base_url_at_the_platform() {
+        // Neither flag nor env: discovery runs, is handed the platform,
+        // and its base_url wins with the Discovered source.
+        let mut queried_platform = None;
+        let (server, source) = login_server_discovering(None, None, &ServerUrl::Prod, |platform| {
+            queried_platform = Some(platform.as_str().to_string());
+            Some(discovered("https://turso.aretta.ai"))
+        });
+        assert_eq!(server, ServerUrl::Custom("https://turso.aretta.ai".into()));
+        assert_eq!(source, LoginServerSource::Discovered);
+        assert_eq!(queried_platform.as_deref(), Some(ServerUrl::PROD));
+    }
+
+    #[test]
+    fn discovering_falls_back_to_the_platform_on_miss() {
+        // Discovery ran but the repo isn't mapped (None) → the platform
+        // (prod default here).
+        let (server, source) = login_server_discovering(None, None, &ServerUrl::Prod, |_| None);
+        assert_eq!(server, ServerUrl::Prod);
+        assert_eq!(source, LoginServerSource::Default);
+    }
+
+    #[test]
+    fn discovering_miss_fallback_follows_a_relocated_platform() {
+        // When the platform is relocated (self-host / test), a discovery
+        // miss falls back to *that* platform, not a hardcoded prod — so
+        // discovery and its fallback move together.
+        let platform = ServerUrl::Custom("http://127.0.0.1:9".into());
+        let (server, source) = login_server_discovering(None, None, &platform, |_| None);
+        assert_eq!(server, platform);
+        assert_eq!(source, LoginServerSource::Default);
+    }
+
+    #[test]
+    fn discovering_blank_env_still_runs_discovery() {
+        // A blank ARETTA_API_URL is treated as unset, so discovery is
+        // still eligible (mirrors login_server's blank-env handling).
+        let (server, source) =
+            login_server_discovering(None, Some("   "), &ServerUrl::Prod, |_| {
+                Some(discovered("https://x.aretta.ai"))
+            });
+        assert_eq!(server, ServerUrl::Custom("https://x.aretta.ai".into()));
+        assert_eq!(source, LoginServerSource::Discovered);
     }
 }

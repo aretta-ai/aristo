@@ -121,8 +121,9 @@ pub fn oauth_start(server: &ServerUrl) -> Result<OAuthInit, AuthError> {
 
 /// Minimal URL-encoder for query-param values. Hand-rolled instead
 /// of pulling a dep — only encodes the reserved chars we actually
-/// emit (`:` `/`).
-fn url_encode(s: &str) -> String {
+/// emit (`:` `/`). Shared with [`super::discovery`], which encodes the
+/// `repo` query param the same way.
+pub(crate) fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for byte in s.bytes() {
         match byte {
