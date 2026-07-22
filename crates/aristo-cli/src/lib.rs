@@ -641,9 +641,12 @@ pub(crate) enum AuthAction {
         /// (`https://aretta.example.com`).
         ///
         /// Precedence when unset: this flag > the `ARETTA_API_URL` env
-        /// var (parsed the same way, full URLs included) > the
-        /// `prod` default. Honoring `ARETTA_API_URL` keeps the login
-        /// (auth) plane pointed at the same deployment as the data plane.
+        /// var (parsed the same way, full URLs included) > zero-config
+        /// org discovery for the repo > the `prod` default. Discovery
+        /// runs only when neither this flag nor `ARETTA_API_URL` is set,
+        /// so an explicit choice always wins and skips the lookup.
+        /// Honoring `ARETTA_API_URL` keeps the login (auth) plane pointed
+        /// at the same deployment as the data plane.
         #[arg(long)]
         server: Option<String>,
         /// Repo to scope the OAuth-minted token to (`owner/repo`).

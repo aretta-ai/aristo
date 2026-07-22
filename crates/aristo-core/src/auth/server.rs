@@ -203,21 +203,27 @@ pub fn login_server(
 ///
 /// 1. `flag` — an explicit `--server` value.
 /// 2. `env_override` — the `ARETTA_API_URL` env var (blank = unset).
-/// 3. **discovery** — `discover(<prod default>)`, run *only* when
-///    neither flag nor env is supplied. `Some` redirects login to the
+/// 3. **discovery** — `discover(platform)`, run *only* when neither
+///    flag nor env is supplied. `Some` redirects login to the
 ///    discovered `base_url`; `None` (404 / miss / any error) falls
-///    through.
-/// 4. The prod default ([`ServerUrl::Prod`] = `code.aretta.ai`).
+///    through to `platform`.
+/// 4. `platform` — the discovery platform itself, which is also the
+///    miss fallback (the prod default in production; see below).
 ///
 /// `discover` is invoked at most once, and **never** when an explicit
 /// choice (flag or env) is present — an explicit server always wins and
-/// skips the network lookup entirely. It receives the pre-discovery
-/// platform (the prod default) so the caller can query
-/// `<platform>/.well-known/aretta-org`. Delegates the flag/env/default
-/// tiers to [`login_server`] so the two resolvers can't drift.
+/// skips the network lookup entirely. It receives `platform` so the
+/// caller can query `<platform>/.well-known/aretta-org`.
+///
+/// `platform` is the "prod default platform" in production
+/// (`code.aretta.ai`); the caller may relocate it (e.g. a self-hosted
+/// deployment, or a test capture server) so discovery *and* its miss
+/// fallback move together. The flag/env tiers delegate to
+/// [`login_server`] so the two resolvers can't drift.
 pub fn login_server_discovering(
     flag: Option<&str>,
     env_override: Option<&str>,
+    platform: &ServerUrl,
     discover: impl FnOnce(&ServerUrl) -> Option<super::discovery::DiscoveredOrg>,
 ) -> (ServerUrl, LoginServerSource) {
     let (server, source) = login_server(flag, env_override);
@@ -226,14 +232,15 @@ pub fn login_server_discovering(
     if source != LoginServerSource::Default {
         return (server, source);
     }
-    // Neither flag nor env: `server` is the prod default here — query
-    // discovery at it, and adopt the result iff the repo maps to an org.
-    match discover(&server) {
+    // Neither flag nor env: query discovery at `platform`, and fall back
+    // to `platform` itself (not a hardcoded prod) on a miss so the two
+    // move together when the platform is relocated.
+    match discover(platform) {
         Some(org) => (
             ServerUrl::parse(&org.base_url),
             LoginServerSource::Discovered,
         ),
-        None => (server, source),
+        None => (platform.clone(), LoginServerSource::Default),
     }
 }
 
@@ -434,10 +441,12 @@ mod tests {
     fn discovering_flag_skips_the_network_lookup() {
         // An explicit --server wins outright: the discovery closure must
         // never run (it panics if it does).
-        let (server, source) =
-            login_server_discovering(Some("dev"), Some("https://turso.aretta.ai"), |_| {
-                panic!("discovery must not run when --server is given")
-            });
+        let (server, source) = login_server_discovering(
+            Some("dev"),
+            Some("https://turso.aretta.ai"),
+            &ServerUrl::Prod,
+            |_| panic!("discovery must not run when --server is given"),
+        );
         assert_eq!(server, ServerUrl::Dev);
         assert_eq!(source, LoginServerSource::Flag);
     }
@@ -445,20 +454,22 @@ mod tests {
     #[test]
     fn discovering_env_skips_the_network_lookup() {
         // ARETTA_API_URL (no flag) also short-circuits discovery.
-        let (server, source) =
-            login_server_discovering(None, Some("https://turso.aretta.ai"), |_| {
-                panic!("discovery must not run when ARETTA_API_URL is set")
-            });
+        let (server, source) = login_server_discovering(
+            None,
+            Some("https://turso.aretta.ai"),
+            &ServerUrl::Prod,
+            |_| panic!("discovery must not run when ARETTA_API_URL is set"),
+        );
         assert_eq!(server, ServerUrl::Custom("https://turso.aretta.ai".into()));
         assert_eq!(source, LoginServerSource::Env);
     }
 
     #[test]
-    fn discovering_uses_discovered_base_url_at_prod_platform() {
-        // Neither flag nor env: discovery runs, is handed the prod
-        // platform, and its base_url wins with the Discovered source.
+    fn discovering_uses_discovered_base_url_at_the_platform() {
+        // Neither flag nor env: discovery runs, is handed the platform,
+        // and its base_url wins with the Discovered source.
         let mut queried_platform = None;
-        let (server, source) = login_server_discovering(None, None, |platform| {
+        let (server, source) = login_server_discovering(None, None, &ServerUrl::Prod, |platform| {
             queried_platform = Some(platform.as_str().to_string());
             Some(discovered("https://turso.aretta.ai"))
         });
@@ -468,10 +479,22 @@ mod tests {
     }
 
     #[test]
-    fn discovering_falls_back_to_prod_on_miss() {
-        // Discovery ran but the repo isn't mapped (None) → prod default.
-        let (server, source) = login_server_discovering(None, None, |_| None);
+    fn discovering_falls_back_to_the_platform_on_miss() {
+        // Discovery ran but the repo isn't mapped (None) → the platform
+        // (prod default here).
+        let (server, source) = login_server_discovering(None, None, &ServerUrl::Prod, |_| None);
         assert_eq!(server, ServerUrl::Prod);
+        assert_eq!(source, LoginServerSource::Default);
+    }
+
+    #[test]
+    fn discovering_miss_fallback_follows_a_relocated_platform() {
+        // When the platform is relocated (self-host / test), a discovery
+        // miss falls back to *that* platform, not a hardcoded prod — so
+        // discovery and its fallback move together.
+        let platform = ServerUrl::Custom("http://127.0.0.1:9".into());
+        let (server, source) = login_server_discovering(None, None, &platform, |_| None);
+        assert_eq!(server, platform);
         assert_eq!(source, LoginServerSource::Default);
     }
 
@@ -479,9 +502,10 @@ mod tests {
     fn discovering_blank_env_still_runs_discovery() {
         // A blank ARETTA_API_URL is treated as unset, so discovery is
         // still eligible (mirrors login_server's blank-env handling).
-        let (server, source) = login_server_discovering(None, Some("   "), |_| {
-            Some(discovered("https://x.aretta.ai"))
-        });
+        let (server, source) =
+            login_server_discovering(None, Some("   "), &ServerUrl::Prod, |_| {
+                Some(discovered("https://x.aretta.ai"))
+            });
         assert_eq!(server, ServerUrl::Custom("https://x.aretta.ai".into()));
         assert_eq!(source, LoginServerSource::Discovered);
     }
