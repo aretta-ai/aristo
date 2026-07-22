@@ -125,6 +125,72 @@ pub fn data_plane_base(
     server.as_str().to_string()
 }
 
+/// Where the login (auth-plane) server URL was resolved from. Carried
+/// alongside the [`ServerUrl`] so the caller can name the provenance on
+/// the "Authenticating against …" line — making a stale `ARETTA_API_URL`
+/// export visible at a glance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginServerSource {
+    /// The user passed `--server` explicitly.
+    Flag,
+    /// Resolved from the `ARETTA_API_URL` environment variable.
+    Env,
+    /// Neither flag nor env — the built-in production default.
+    Default,
+}
+
+impl LoginServerSource {
+    /// Short provenance suffix for the "Authenticating against …" line,
+    /// or `None` for the built-in [`Default`](Self::Default) (where
+    /// naming the source adds no signal).
+    pub fn provenance(self) -> Option<&'static str> {
+        match self {
+            Self::Flag => Some("from --server"),
+            Self::Env => Some("from ARETTA_API_URL"),
+            Self::Default => None,
+        }
+    }
+}
+
+/// Resolve the base URL for **auth-plane** login — where an `arta_*`
+/// token is minted. Precedence, highest first:
+///
+/// 1. `flag` — an explicit `--server` value the user passed. Threaded
+///    as `Option<&str>` so `None` means "unset" (distinguishing a
+///    user-supplied value from clap's default); parsed via
+///    [`ServerUrl::parse`].
+/// 2. `env_override` — the `ARETTA_API_URL` env var. A blank/whitespace
+///    value is treated as unset; a present value is parsed via
+///    [`ServerUrl::parse`] so full URLs and bare hosts both work, and
+///    the minted token's server matches the data plane
+///    ([`data_plane_base`]).
+/// 3. The prod default ([`ServerUrl::Prod`] = `code.aretta.ai`).
+///
+/// This mirrors the data-plane precedence so the auth plane and data
+/// plane agree: without honoring `ARETTA_API_URL` here, a user who
+/// exported it to target an org conductor would still authenticate
+/// against prod and mint a token that org rejects.
+///
+/// Kept pure — env is passed in, not read here — so it is unit-testable
+/// under the workspace's `unsafe_code` ban on `std::env::set_var`.
+///
+/// (The sibling [`data_plane_base`] carries an `#[aristo::intent]` for
+/// this same precedence-invariant class; a matching intent for this
+/// function should be authored via the `aristo-authoring` skill in a
+/// follow-up rather than hand-written — see CLAUDE.md §10.)
+pub fn login_server(
+    flag: Option<&str>,
+    env_override: Option<&str>,
+) -> (ServerUrl, LoginServerSource) {
+    if let Some(f) = flag {
+        return (ServerUrl::parse(f), LoginServerSource::Flag);
+    }
+    if let Some(v) = env_override.map(str::trim).filter(|s| !s.is_empty()) {
+        return (ServerUrl::parse(v), LoginServerSource::Env);
+    }
+    (ServerUrl::Prod, LoginServerSource::Default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,5 +307,61 @@ mod tests {
     fn data_plane_base_falls_back_to_server() {
         let s = data_plane_base(None, None, &ServerUrl::Prod);
         assert_eq!(s, "https://code.aretta.ai");
+    }
+
+    // ─── login_server precedence ────────────────────────────────────────────
+
+    #[test]
+    fn login_server_flag_beats_env() {
+        // An explicit --server always wins, even when ARETTA_API_URL is set.
+        let (server, source) = login_server(Some("dev"), Some("https://turso.aretta.ai"));
+        assert_eq!(server, ServerUrl::Dev);
+        assert_eq!(source, LoginServerSource::Flag);
+    }
+
+    #[test]
+    fn login_server_env_beats_default() {
+        // No flag: ARETTA_API_URL wins over the prod default. This is the
+        // field bug — the old login path ignored the env and hit prod.
+        let (server, source) = login_server(None, Some("https://turso.aretta.ai"));
+        assert_eq!(server, ServerUrl::Custom("https://turso.aretta.ai".into()));
+        assert_eq!(source, LoginServerSource::Env);
+    }
+
+    #[test]
+    fn login_server_env_parsed_via_serverurl_parse() {
+        // The env value goes through ServerUrl::parse: well-known aliases,
+        // bare hosts (→ https://), and trailing slashes all normalize.
+        assert_eq!(login_server(None, Some("dev")).0, ServerUrl::Dev);
+        assert_eq!(
+            login_server(None, Some("turso.aretta.ai/")).0,
+            ServerUrl::Custom("https://turso.aretta.ai".into())
+        );
+    }
+
+    #[test]
+    fn login_server_blank_env_is_ignored() {
+        // A blank/whitespace ARETTA_API_URL is treated as unset, not as an
+        // empty custom server, so it falls through to the prod default.
+        let (server, source) = login_server(None, Some("   "));
+        assert_eq!(server, ServerUrl::Prod);
+        assert_eq!(source, LoginServerSource::Default);
+    }
+
+    #[test]
+    fn login_server_unset_env_falls_back_to_prod() {
+        let (server, source) = login_server(None, None);
+        assert_eq!(server, ServerUrl::Prod);
+        assert_eq!(source, LoginServerSource::Default);
+    }
+
+    #[test]
+    fn login_server_provenance_named_only_when_not_default() {
+        assert_eq!(LoginServerSource::Flag.provenance(), Some("from --server"));
+        assert_eq!(
+            LoginServerSource::Env.provenance(),
+            Some("from ARETTA_API_URL")
+        );
+        assert_eq!(LoginServerSource::Default.provenance(), None);
     }
 }
