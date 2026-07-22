@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-07-22
+
 ### Fixed
 - cli: `aristo auth login` now honors `ARETTA_API_URL` when `--server` isn't passed, matching the rest of the CLI (which already treats `ARETTA_API_URL` as the highest-precedence data-plane override). Login now resolves its server as `--server` flag > `ARETTA_API_URL` env (parsed like `--server`, full URLs included) > the `code.aretta.ai` prod default, and the "Authenticating against …" line names where the server came from when it wasn't the default (e.g. `Authenticating against https://turso.aretta.ai (from ARETTA_API_URL)`). Previously login read the server only from `--server` (default `prod`) and ignored the env, so a user who exported `ARETTA_API_URL=https://turso.aretta.ai` still authenticated against the legacy `code.aretta.ai` server and minted a token their org server rejects — the auth plane and data plane silently disagreed.
 
