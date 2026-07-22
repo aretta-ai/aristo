@@ -629,12 +629,17 @@ pub(crate) enum AuthAction {
         #[arg(long, value_name = "TOKEN")]
         token: Option<String>,
         /// Aretta server to authenticate against. Accepts:
-        /// `prod` / `production` (= https://code.aretta.ai, default),
+        /// `prod` / `production` (= https://code.aretta.ai),
         /// `dev` / `development` / `staging` (= https://dev.aretta.ai),
         /// or a full URL for self-hosted deployments
         /// (`https://aretta.example.com`).
-        #[arg(long, default_value = "prod")]
-        server: String,
+        ///
+        /// Precedence when unset: this flag > the `ARETTA_API_URL` env
+        /// var (parsed the same way, full URLs included) > the
+        /// `prod` default. Honoring `ARETTA_API_URL` keeps the login
+        /// (auth) plane pointed at the same deployment as the data plane.
+        #[arg(long)]
+        server: Option<String>,
         /// Repo to scope the OAuth-minted token to (`owner/repo`).
         /// Defaults to auto-deriving from `<cwd>/.git/config`'s
         /// `remote.origin.url`. Required for non-git directories or
