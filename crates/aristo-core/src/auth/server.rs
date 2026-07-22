@@ -72,8 +72,10 @@ impl std::fmt::Display for ServerUrl {
 /// dispatch and canon match. Precedence, highest first:
 ///
 /// 1. `env_override` — the `ARETTA_API_URL` env var (CI / test /
-///    staging redirect). Returned verbatim, preserving the prior
-///    `env::var(...).unwrap_or_else(...)` behavior at the call sites.
+///    staging redirect). A blank/whitespace value is treated as unset
+///    (matching [`login_server`]), so it falls through instead of
+///    routing to an empty base; a present value is returned verbatim
+///    (trimmed, not normalized), preserving CI/test redirects.
 /// 2. `instance` — the project's `[instance] url` from `aristo.toml`,
 ///    normalized through [`ServerUrl::parse`] (a bare host gets
 ///    `https://`, a trailing `/` is stripped). Blank/whitespace is
@@ -94,13 +96,16 @@ impl std::fmt::Display for ServerUrl {
 #[aristo::intent(
     "Data-plane base-URL precedence is exactly ARETTA_API_URL (env) > \
      aristo.toml [instance] url > the account server, in that order and \
-     no other. The env override is returned verbatim (preserving the \
-     prior override behavior and CI/test redirects); the [instance] url \
-     is normalized via ServerUrl::parse; server.as_str() is the final \
+     no other. A blank/whitespace env override is treated as unset \
+     (matching the login resolver, login_server) so it falls through to \
+     [instance] then server instead of routing to an empty base. A \
+     present env override is returned verbatim (trimmed, not \
+     normalized), preserving CI/test redirects; the [instance] url is \
+     normalized via ServerUrl::parse; server.as_str() is the final \
      fallback (its default is code.aretta.ai). Reordering these tiers, \
-     or normalizing or dropping the verbatim env override, would \
-     silently misroute verify and canon-match requests to the wrong \
-     Aretta deployment.",
+     dropping the blank-as-unset guard, or normalizing or dropping a \
+     present verbatim env override, would silently misroute verify and \
+     canon-match requests to the wrong Aretta deployment.",
     verify = "neural",
     id = "data_plane_base_precedence"
 )]
@@ -109,7 +114,7 @@ pub fn data_plane_base(
     instance: Option<&str>,
     server: &ServerUrl,
 ) -> String {
-    if let Some(v) = env_override {
+    if let Some(v) = env_override.map(str::trim).filter(|s| !s.is_empty()) {
         return v.to_string();
     }
     if let Some(inst) = instance.map(str::trim).filter(|s| !s.is_empty()) {
@@ -346,6 +351,23 @@ mod tests {
             &ServerUrl::Prod,
         );
         assert_eq!(s, "https://ci.example.com");
+    }
+
+    #[test]
+    fn data_plane_base_empty_env_falls_through_to_instance() {
+        // An empty ARETTA_API_URL (e.g. an unset CI Variable expands to
+        // "") is treated as unset — matching login_server — so it falls
+        // through to [instance] rather than routing to an empty base.
+        let s = data_plane_base(Some(""), Some("https://turso.aretta.ai"), &ServerUrl::Prod);
+        assert_eq!(s, "https://turso.aretta.ai");
+    }
+
+    #[test]
+    fn data_plane_base_whitespace_env_falls_through_to_server() {
+        // Whitespace-only is likewise unset; with no [instance] it falls
+        // all the way through to the account server.
+        let s = data_plane_base(Some("   "), None, &ServerUrl::Prod);
+        assert_eq!(s, "https://code.aretta.ai");
     }
 
     #[test]
