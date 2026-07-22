@@ -202,6 +202,16 @@ where
             AuthError::Malformed(format!("proxy returned 2xx with unparseable body: {e}"))
         }),
         401 | 403 => Err(AuthError::Invalid),
+        // 410 Gone: the retired platform default (e.g. code.aretta.ai)
+        // returns this once it stops minting CLI tokens. Say so plainly and
+        // point at the fix, while still surfacing whatever the server sent.
+        410 => Err(AuthError::Malformed(format!(
+            "this server no longer mints CLI tokens (HTTP 410 Gone) — your CLI \
+             is pointed at the retired platform default. Re-run against your \
+             org's server (`--server <url>` or `ARETTA_API_URL=<url>`), or \
+             upgrade aristo. Server said: {}",
+            extract_error_message(body).unwrap_or_else(|| truncate(body, 200))
+        ))),
         400..=499 => {
             // Try to surface the proxy's error field if it's there.
             let msg = extract_error_message(body)
@@ -311,6 +321,28 @@ mod tests {
     fn map_response_403_maps_to_invalid() {
         let r: Result<OAuthInit, _> = map_response(403, r#"{"error":"forbidden"}"#);
         assert_eq!(r.unwrap_err(), AuthError::Invalid);
+    }
+
+    #[test]
+    fn map_response_410_gone_gives_retired_platform_message() {
+        let r: Result<CliTokenResponse, _> = map_response(
+            410,
+            r#"{"error":"CLI token minting disabled on this host"}"#,
+        );
+        match r.unwrap_err() {
+            AuthError::Malformed(m) => {
+                assert!(m.contains("no longer mints CLI tokens"), "got: {m}");
+                assert!(m.contains("410"), "got: {m}");
+                assert!(m.contains("retired platform default"), "got: {m}");
+                // The re-run guidance and the server's own message both survive.
+                assert!(m.contains("ARETTA_API_URL"), "got: {m}");
+                assert!(
+                    m.contains("CLI token minting disabled on this host"),
+                    "got: {m}"
+                );
+            }
+            other => panic!("expected Malformed, got {other:?}"),
+        }
     }
 
     #[test]
