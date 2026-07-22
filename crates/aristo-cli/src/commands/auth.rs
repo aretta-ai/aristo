@@ -88,7 +88,7 @@ fn login_via_oauth(
     //    came from when it wasn't the default, so a stale ARETTA_API_URL
     //    export is visible before the user authorizes.
     eprintln!();
-    match source.provenance() {
+    match source.provenance(&repo_full_name) {
         Some(prov) => eprintln!("Authenticating against {server} ({prov})"),
         None => eprintln!("Authenticating against {server}"),
     }
