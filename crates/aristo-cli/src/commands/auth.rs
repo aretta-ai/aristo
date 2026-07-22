@@ -27,7 +27,9 @@
 
 use std::io::Read;
 
-use aristo_core::auth::{self, derive_repo_full_name, AuthError, ServerUrl, Token};
+use aristo_core::auth::{
+    self, derive_repo_full_name, login_server, AuthError, LoginServerSource, ServerUrl, Token,
+};
 
 use crate::{AuthAction, CliError, CliResult};
 
@@ -39,7 +41,7 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
             token,
             server,
             repo,
-        } => login(stdin, token, &server, repo),
+        } => login(stdin, token, server, repo),
         AuthAction::Status => status(),
         AuthAction::Token => token(),
         AuthAction::Logout => logout(),
@@ -51,29 +53,45 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
 fn login(
     read_stdin: bool,
     token_flag: Option<String>,
-    server_spec: &str,
+    server_flag: Option<String>,
     repo_flag: Option<String>,
 ) -> CliResult<()> {
-    let server = ServerUrl::parse(server_spec);
-
-    // Bypass modes — caller supplied a raw token directly.
+    // Bypass modes — caller supplied a raw token directly. The token's
+    // server-side scope is already set, so `--server` / `ARETTA_API_URL`
+    // don't participate here.
     if read_stdin || token_flag.is_some() {
         return login_with_raw_token(read_stdin, token_flag);
     }
 
-    // Default: GitHub OAuth flow.
-    login_via_oauth(&server, repo_flag)
+    // OAuth flow: resolve the server the token is minted against.
+    // Precedence: --server flag > ARETTA_API_URL env > prod default.
+    // Honoring the env keeps the auth plane aligned with the data plane,
+    // which already treats ARETTA_API_URL as its highest-precedence
+    // override (see `crate::data_plane`).
+    let env_override = std::env::var("ARETTA_API_URL").ok();
+    let (server, source) = login_server(server_flag.as_deref(), env_override.as_deref());
+
+    login_via_oauth(&server, source, repo_flag)
 }
 
-fn login_via_oauth(server: &ServerUrl, repo_flag: Option<String>) -> CliResult<()> {
+fn login_via_oauth(
+    server: &ServerUrl,
+    source: LoginServerSource,
+    repo_flag: Option<String>,
+) -> CliResult<()> {
     let repo_full_name = resolve_repo_full_name(repo_flag)?;
 
     // 1. Fetch the GitHub OAuth URL from the proxy.
     let init = auth::oauth_start(server).map_err(auth_error_to_cli)?;
 
-    // 2. Show the URL + try to open the browser.
+    // 2. Show the URL + try to open the browser. Name where the server
+    //    came from when it wasn't the default, so a stale ARETTA_API_URL
+    //    export is visible before the user authorizes.
     eprintln!();
-    eprintln!("Authenticating against {server}");
+    match source.provenance() {
+        Some(prov) => eprintln!("Authenticating against {server} ({prov})"),
+        None => eprintln!("Authenticating against {server}"),
+    }
     eprintln!("Scoping token to repo: {repo_full_name}");
     eprintln!();
     eprintln!("Open this URL to authorize with GitHub:");
