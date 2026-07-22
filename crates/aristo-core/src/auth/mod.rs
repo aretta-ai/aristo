@@ -52,7 +52,9 @@ pub use server::{
     data_plane_base, login_server, login_server_discovering, LoginServerSource, ServerUrl,
 };
 pub use store::{
-    clear, clear_with, clear_with_home, config_dir, credentials_path, save, save_full,
-    save_full_with, save_with, save_with_home, CredentialsRecord, CREDENTIALS_FILENAME,
+    clear, clear_with, clear_with_home, config_dir, credentials_path, load_store, load_store_with,
+    save, save_full, save_full_with, save_store, save_store_with, save_with, save_with_home,
+    upsert_entry, upsert_entry_with, CredentialEntry, CredentialStore, CredentialsRecord,
+    CREDENTIALS_FILENAME,
 };
 pub use token::Token;
