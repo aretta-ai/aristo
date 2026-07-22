@@ -48,38 +48,20 @@ pub fn save_with_home(token: &Token, home_override: Option<&Path>) -> io::Result
     save_with(token, None, home_override)
 }
 
-/// Persist with full env-var + home-dir overrides. The XDG override
-/// controls only the path resolution; the actual token is the `token`
-/// argument.
+/// Persist a bare token with full env-var + home-dir overrides. Upserts
+/// a single entry keyed `(prod, no-repo)` into the multi-repo store —
+/// callers that know the server/repo persist a full record via
+/// [`save_full_with`] instead.
 pub fn save_with(
     token: &Token,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
 ) -> io::Result<()> {
-    let path = credentials_path_with(xdg_config_home, home_override).map_err(io_from_auth_error)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let body = CredentialsFile {
-        aretta: AretaCredentials {
-            token: token.as_str().to_string(),
-            issued_at: now_iso8601(),
-            server: None,
-            user_login: None,
-            user_id: None,
-            repo: None,
-        },
-    };
-    let toml_text = toml::to_string_pretty(&body)
-        .map_err(|e| io::Error::other(format!("serialize credentials: {e}")))?;
-
-    // Write atomically: write to <path>.tmp then rename.
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, toml_text.as_bytes())?;
-    #[cfg(unix)]
-    set_unix_owner_only(&tmp)?;
-    fs::rename(&tmp, &path)?;
-    Ok(())
+    upsert_entry_with(
+        CredentialEntry::bare(token.clone(), super::server::ServerUrl::Prod, None),
+        xdg_config_home,
+        home_override,
+    )
 }
 
 /// Remove the credentials file, if it exists. Idempotent — missing
@@ -222,14 +204,12 @@ pub struct CredentialsRecord {
 }
 
 /// Persist a full credentials record (token + server + user + repo).
+/// Upserts the entry keyed `(server, repo)` into the multi-repo store,
+/// migrating any older single-slot file and preserving other entries.
 /// Reads env vars for path resolution; see [`save_full_with`] for the
 /// explicit-overrides variant used by tests.
 pub fn save_full(creds: &CredentialsRecord) -> io::Result<()> {
-    save_full_with(
-        creds,
-        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
-        home_dir().as_deref(),
-    )
+    upsert_entry(creds.into())
 }
 
 /// Persist a full credentials record with explicit path overrides.
@@ -238,28 +218,7 @@ pub fn save_full_with(
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
 ) -> io::Result<()> {
-    let path = credentials_path_with(xdg_config_home, home_override).map_err(io_from_auth_error)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let body = CredentialsFile {
-        aretta: AretaCredentials {
-            token: creds.token.as_str().to_string(),
-            issued_at: now_iso8601(),
-            server: Some(creds.server.as_str().to_string()),
-            user_login: creds.user_login.clone(),
-            user_id: creds.user_id,
-            repo: creds.repo.clone(),
-        },
-    };
-    let toml_text = toml::to_string_pretty(&body)
-        .map_err(|e| io::Error::other(format!("serialize credentials: {e}")))?;
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, toml_text.as_bytes())?;
-    #[cfg(unix)]
-    set_unix_owner_only(&tmp)?;
-    fs::rename(&tmp, &path)?;
-    Ok(())
+    upsert_entry_with(creds.into(), xdg_config_home, home_override)
 }
 
 // ─── v2 multi-repo store ─────────────────────────────────────────────────────

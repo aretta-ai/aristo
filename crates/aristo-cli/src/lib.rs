@@ -649,12 +649,12 @@ pub(crate) enum AuthAction {
         /// at the same deployment as the data plane.
         #[arg(long)]
         server: Option<String>,
-        /// Repo to scope the OAuth-minted token to (`owner/repo`).
-        /// Defaults to auto-deriving from `<cwd>/.git/config`'s
-        /// `remote.origin.url`. Required for non-git directories or
-        /// when the remote isn't a GitHub URL. Ignored in `--stdin` /
-        /// `--token` bypass modes (where the token is supplied
-        /// directly with its server-side scope already set).
+        /// Repo to scope the minted token to (`owner/repo`). Defaults to
+        /// auto-deriving from `<cwd>/.git/config`'s `remote.origin.url`.
+        /// Required for non-git directories or when the remote isn't a
+        /// GitHub URL. In `--stdin` / `--token` bypass modes it (with
+        /// `--server`) keys the stored credential for later multi-repo
+        /// lookup — best-effort there, so it may be omitted.
         #[arg(long, value_name = "OWNER/REPO")]
         repo: Option<String>,
     },

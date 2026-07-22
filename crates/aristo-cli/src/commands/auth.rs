@@ -28,8 +28,8 @@
 use std::io::Read;
 
 use aristo_core::auth::{
-    self, derive_repo_full_name, login_server_discovering, AuthError, LoginServerSource, ServerUrl,
-    Token,
+    self, derive_repo_full_name, login_server, login_server_discovering, AuthError,
+    LoginServerSource, ServerUrl, Token,
 };
 
 use crate::{AuthAction, CliError, CliResult};
@@ -57,11 +57,12 @@ fn login(
     server_flag: Option<String>,
     repo_flag: Option<String>,
 ) -> CliResult<()> {
-    // Bypass modes — caller supplied a raw token directly. The token's
-    // server-side scope is already set, so `--server` / `ARETTA_API_URL`
-    // don't participate here.
+    // Bypass modes — caller supplied a raw token directly. No OAuth and
+    // no discovery (the token's scope is already fixed server-side), but
+    // `--server` / `--repo` still key the stored entry so the multi-repo
+    // store can look it up later.
     if read_stdin || token_flag.is_some() {
-        return login_with_raw_token(read_stdin, token_flag);
+        return login_with_raw_token(read_stdin, token_flag, server_flag, repo_flag);
     }
 
     // OAuth flow. Resolve the repo first — both zero-config discovery
@@ -164,7 +165,12 @@ fn login_via_oauth(
     Ok(())
 }
 
-fn login_with_raw_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<()> {
+fn login_with_raw_token(
+    read_stdin: bool,
+    token_flag: Option<String>,
+    server_flag: Option<String>,
+    repo_flag: Option<String>,
+) -> CliResult<()> {
     let token_raw = collect_raw_token(read_stdin, token_flag)?;
     let trimmed = token_raw.trim();
     if trimmed.is_empty() {
@@ -178,8 +184,22 @@ fn login_with_raw_token(read_stdin: bool, token_flag: Option<String>) -> CliResu
             exit_code: 2,
         });
     }
-    let token = Token::new(trimmed);
-    auth::save(&token).map_err(CliError::Io)?;
+    // Key the entry by (resolved server, repo). No discovery — the token
+    // scope is already fixed server-side; we only record where it came
+    // from so the multi-repo store can look it up. Server precedence is
+    // --server > ARETTA_API_URL > prod; the repo is --repo or the cwd's
+    // git remote (best-effort — absent is fine for a scriptless paste).
+    let env_override = std::env::var("ARETTA_API_URL").ok();
+    let (server, _) = login_server(server_flag.as_deref(), env_override.as_deref());
+    let repo = resolve_repo_best_effort(repo_flag)?;
+    let creds = aristo_core::auth::CredentialsRecord {
+        token: Token::new(trimmed),
+        server,
+        user_login: None,
+        user_id: None,
+        repo,
+    };
+    aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
 
     let path = auth::credentials_path().map_err(auth_error_to_cli)?;
     println!("ok: authenticated. token saved to {}", path.display());
@@ -206,25 +226,45 @@ fn collect_raw_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<
     })
 }
 
+/// Validate a `--repo owner/repo` flag value.
+fn validate_repo_flag(raw: &str) -> CliResult<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(CliError::Other {
+            message: "--repo must be `owner/repo` (got empty string)".into(),
+            exit_code: 2,
+        });
+    }
+    if !trimmed.contains('/') {
+        return Err(CliError::Other {
+            message: format!("--repo `{trimmed}` is not in `owner/repo` form"),
+            exit_code: 2,
+        });
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Resolve `owner/repo`, requiring one: the `--repo` flag, else the
+/// cwd's git remote (erroring with a `--repo` hint if neither works).
 fn resolve_repo_full_name(repo_flag: Option<String>) -> CliResult<String> {
     if let Some(r) = repo_flag {
-        let trimmed = r.trim();
-        if trimmed.is_empty() {
-            return Err(CliError::Other {
-                message: "--repo must be `owner/repo` (got empty string)".into(),
-                exit_code: 2,
-            });
-        }
-        if !trimmed.contains('/') {
-            return Err(CliError::Other {
-                message: format!("--repo `{trimmed}` is not in `owner/repo` form"),
-                exit_code: 2,
-            });
-        }
-        return Ok(trimmed.to_string());
+        return validate_repo_flag(&r);
     }
     let cwd = std::env::current_dir().map_err(CliError::Io)?;
     derive_repo_full_name(&cwd).map_err(auth_error_to_cli)
+}
+
+/// Resolve `owner/repo` best-effort: the `--repo` flag (validated), else
+/// the cwd's git remote, else `None`. Used where a missing repo is
+/// acceptable (a raw-token paste, or a repo-scoped lookup that renders
+/// its own "which repo?" error).
+fn resolve_repo_best_effort(repo_flag: Option<String>) -> CliResult<Option<String>> {
+    if let Some(r) = repo_flag {
+        return Ok(Some(validate_repo_flag(&r)?));
+    }
+    Ok(std::env::current_dir()
+        .ok()
+        .and_then(|cwd| derive_repo_full_name(&cwd).ok()))
 }
 
 fn try_open_browser(url: &str) -> std::io::Result<()> {
