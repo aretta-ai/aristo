@@ -93,7 +93,16 @@ const GH_VERIFY_WORKFLOW: &str = "\
 # annotations in source (the index is regenerated from source on demand).
 # Manual + nightly.
 #
-# Setup: add a repository secret ARETTA_TOKEN (your arta_* token; paid tier).
+# Setup:
+#   1. Add a repository secret ARETTA_TOKEN (your arta_* token; paid tier).
+#   2. Hosted org (your server is not code.aretta.ai)? Point the data plane at
+#      your org's server so the token is spent there — a bare token otherwise
+#      resolves to the code.aretta.ai default. Simplest: commit
+#      `[instance] url = \"https://<org>.aretta.ai\"` in aristo.toml (committed,
+#      and it fixes local `aristo verify` too). Alternatively add a repository
+#      Variable ARETTA_API_URL = your org's URL and wire it on the verify job
+#      (`env: { ARETTA_API_URL: ${{ vars.ARETTA_API_URL }} }`) — but only when
+#      that Variable is actually set; an empty value misroutes the data plane.
 # NOT on pull_request — verify needs the checked-out commit pushed to origin.
 name: aristo verify
 on:
@@ -340,6 +349,12 @@ fn print_verify_token_help(cwd: &Path) {
         "  2. Token value:    `aristo auth token` prints yours — pipe to your clipboard, e.g. `aristo auth token | pbcopy`"
     );
     println!("                     ...or `aristo auth login` to mint a new one.");
+    println!(
+        "  3. Hosted org?     If your server isn't code.aretta.ai, point verify at it: commit\n\
+        \x20                    `[instance] url = \"https://<org>.aretta.ai\"` in aristo.toml (simplest), or set a\n\
+        \x20                    repository Variable ARETTA_API_URL to your org's URL. A bare token otherwise\n\
+        \x20                    defaults to code.aretta.ai, so verify would hit the wrong server."
+    );
 }
 
 fn serialize_default_config() -> CliResult<String> {

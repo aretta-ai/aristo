@@ -41,6 +41,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - core: `aristo auth login` no longer breaks if the conductor omits the SDK-unused token-response fields (`jwt`, `token_id`, `last_4`) — they now decode as `serde(default)`, so only `arta_token` / `user` / `repo_full_name` are required. Previously a dropped field failed the whole login with a decode error.
 - cli: `aristo auth login`'s "no token provided" help no longer points at the dead `code.aretta.ai/dashboard/settings/tokens` page (it 404s); it now directs you to `aristo auth login` (OAuth, default) or the `--stdin` / `--token` bypass paths.
 - docs: clarified that `ARETTA_API_URL` short-circuits zero-config discovery, so `ARETTA_DISCOVERY_URL` has no effect when both are set — `ARETTA_API_URL` pins the login server outright, and `ARETTA_DISCOVERY_URL` only matters when discovery actually runs.
+- cli: `aristo init --ci-verify` now steers hosted-org CI to the right server. The generated `aristo-verify.yml` and the post-init token-setup help explain that a bare `ARETTA_TOKEN` resolves to the `code.aretta.ai` default, so a hosted org must point its data plane at its own server — either by committing `[instance] url = "https://<org>.aretta.ai"` in `aristo.toml` (simplest; also fixes local `aristo verify`) or by setting an `ARETTA_API_URL` repo Variable. Previously the generated workflow wired only the token, silently sending a hosted org's verify to the wrong server.
 
 ## [0.5.1] — 2026-07-04
 
