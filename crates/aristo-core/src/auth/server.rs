@@ -220,6 +220,13 @@ pub fn login_server(
 /// deployment, or a test capture server) so discovery *and* its miss
 /// fallback move together. The flag/env tiers delegate to
 /// [`login_server`] so the two resolvers can't drift.
+///
+/// Env-var interaction: because a present `ARETTA_API_URL` (the env tier)
+/// short-circuits discovery, the discovery `platform` — which
+/// `ARETTA_DISCOVERY_URL` relocates (see the CLI's `discovery_platform`) —
+/// is ignored whenever `ARETTA_API_URL` is set. The two never both take
+/// effect: `ARETTA_API_URL` pins the login server outright,
+/// `ARETTA_DISCOVERY_URL` only matters when discovery actually runs.
 pub fn login_server_discovering(
     flag: Option<&str>,
     env_override: Option<&str>,

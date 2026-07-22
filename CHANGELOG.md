@@ -40,6 +40,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - cli: `aristo auth login` now gives a clear message when the auth server answers with **410 Gone** — it explains that the server no longer mints CLI tokens (your CLI is pointed at the retired platform default) and points you at re-running against your org's server (`--server <url>` / `ARETTA_API_URL`) or upgrading, instead of a bare `HTTP 410: …`. The server's own message is still surfaced.
 - core: `aristo auth login` no longer breaks if the conductor omits the SDK-unused token-response fields (`jwt`, `token_id`, `last_4`) — they now decode as `serde(default)`, so only `arta_token` / `user` / `repo_full_name` are required. Previously a dropped field failed the whole login with a decode error.
 - cli: `aristo auth login`'s "no token provided" help no longer points at the dead `code.aretta.ai/dashboard/settings/tokens` page (it 404s); it now directs you to `aristo auth login` (OAuth, default) or the `--stdin` / `--token` bypass paths.
+- docs: clarified that `ARETTA_API_URL` short-circuits zero-config discovery, so `ARETTA_DISCOVERY_URL` has no effect when both are set — `ARETTA_API_URL` pins the login server outright, and `ARETTA_DISCOVERY_URL` only matters when discovery actually runs.
 
 ## [0.5.1] — 2026-07-04
 
