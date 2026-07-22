@@ -176,8 +176,7 @@ fn login_with_raw_token(
     if trimmed.is_empty() {
         return Err(CliError::Other {
             message: "no token provided.\n\
-                     Get an API token at https://code.aretta.ai/dashboard/settings/tokens, then run\n  \
-                       `aristo auth login` (OAuth flow, default),\n  \
+                     Run `aristo auth login` (OAuth flow, default) to mint one interactively, or if you already have an arta_* token:\n  \
                        `aristo auth login --stdin` (pipe), or\n  \
                        `aristo auth login --token <TOKEN>` (scripting)."
                 .into(),
