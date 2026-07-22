@@ -34,6 +34,7 @@
 //! requires; tests pass explicit env-var + home-dir overrides instead
 //! of mutating process state.
 
+pub mod discovery;
 pub mod error;
 pub mod git;
 pub mod oauth;
@@ -42,6 +43,7 @@ pub mod server;
 pub mod store;
 pub mod token;
 
+pub use discovery::{discover_org, DiscoveredOrg};
 pub use error::AuthError;
 pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};

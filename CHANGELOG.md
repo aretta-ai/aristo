@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- core: zero-config org discovery client (`auth::discover_org`) — queries `GET <platform>/.well-known/aretta-org?repo=<owner/repo>` for the org hosting a repo. A 200 with a usable `base_url` returns the discovered org; a 404, any non-2xx, a timeout (3s cap), a transport error, or an unparseable body all return `None` so the caller falls back to its pre-discovery server unchanged. Backs the upcoming zero-config `aristo auth login` (the user no longer needs `--server`/`ARETTA_API_URL` for a hosted repo).
+
 ### Fixed
 - cli: `aristo auth login` now honors `ARETTA_API_URL` when `--server` isn't passed, matching the rest of the CLI (which already treats `ARETTA_API_URL` as the highest-precedence data-plane override). Login now resolves its server as `--server` flag > `ARETTA_API_URL` env (parsed like `--server`, full URLs included) > the `code.aretta.ai` prod default, and the "Authenticating against …" line names where the server came from when it wasn't the default (e.g. `Authenticating against https://turso.aretta.ai (from ARETTA_API_URL)`). Previously login read the server only from `--server` (default `prod`) and ignored the env, so a user who exported `ARETTA_API_URL=https://turso.aretta.ai` still authenticated against the legacy `code.aretta.ai` server and minted a token their org server rejects — the auth plane and data plane silently disagreed.
 - cli: `aristo status` / `aristo metrics` no longer error on a repository containing C source. Their tier computation reuses the freshness walk (which now includes `.c`/`.h`) but parses each file as Rust with `syn`; it now skips non-`.rs` files, where previously a single `.c` file made both commands fail with a Rust parse error.
