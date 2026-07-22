@@ -1,18 +1,16 @@
-//! Aretta server URL — `code.aretta.ai` (prod) / `dev.aretta.ai`
-//! (dev) / `Custom(<url>)` (self-hosted, on-prem).
+//! Aretta server URL — `code.aretta.ai` (prod) / `Custom(<url>)`
+//! (self-hosted, on-prem, or a per-org conductor).
 //!
 //! Lives here, in [`crate::auth`], rather than in `canon::http_client`,
 //! because the server URL is a **credential property**: an `arta_*`
-//! token issued by `dev.aretta.ai` is not valid against
-//! `code.aretta.ai`. Whatever persists the token also persists the
-//! server it came from.
+//! token issued by one deployment is not valid against another.
+//! Whatever persists the token also persists the server it came from.
 //!
 //! ## Parsing user input
 //!
 //! The CLI's `--server <spec>` flag accepts:
 //!
 //! - `prod` / `production` → [`ServerUrl::Prod`]
-//! - `dev` / `development` / `staging` → [`ServerUrl::Dev`]
 //! - any other string that starts with `http://` or `https://` →
 //!   [`ServerUrl::Custom`]
 //! - any other string → [`ServerUrl::Custom`] with `https://` prefix
@@ -24,8 +22,6 @@ pub enum ServerUrl {
     /// `https://code.aretta.ai` — production.
     #[default]
     Prod,
-    /// `https://dev.aretta.ai` — dev / staging.
-    Dev,
     /// Self-hosted or on-prem deployment. The string includes the
     /// scheme (`http://` or `https://`).
     Custom(String),
@@ -34,15 +30,12 @@ pub enum ServerUrl {
 impl ServerUrl {
     /// Production base URL.
     pub const PROD: &'static str = "https://code.aretta.ai";
-    /// Dev / staging base URL.
-    pub const DEV: &'static str = "https://dev.aretta.ai";
 
     /// Base URL as a `&str` suitable for `format!` / `Url::parse`.
     /// Returns the full scheme + host (no trailing slash).
     pub fn as_str(&self) -> &str {
         match self {
             Self::Prod => Self::PROD,
-            Self::Dev => Self::DEV,
             Self::Custom(s) => s,
         }
     }
@@ -53,7 +46,6 @@ impl ServerUrl {
         let trimmed = raw.trim();
         match trimmed {
             "prod" | "production" => Self::Prod,
-            "dev" | "development" | "staging" => Self::Dev,
             "" => Self::Prod,
             // Already a full URL — pass through.
             other if other.starts_with("http://") || other.starts_with("https://") => {
@@ -63,9 +55,10 @@ impl ServerUrl {
         }
     }
 
-    /// True iff this is one of the well-known Aretta servers.
+    /// True iff this is a well-known Aretta server (the `code.aretta.ai`
+    /// production default). Self-hosted / per-org `Custom` URLs are not.
     pub fn is_well_known(&self) -> bool {
-        matches!(self, Self::Prod | Self::Dev)
+        matches!(self, Self::Prod)
     }
 }
 
@@ -261,11 +254,6 @@ mod tests {
     }
 
     #[test]
-    fn dev_resolves_to_dev_aretta_ai() {
-        assert_eq!(ServerUrl::Dev.as_str(), "https://dev.aretta.ai");
-    }
-
-    #[test]
     fn parse_prod_aliases() {
         assert_eq!(ServerUrl::parse("prod"), ServerUrl::Prod);
         assert_eq!(ServerUrl::parse("production"), ServerUrl::Prod);
@@ -274,10 +262,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_dev_aliases() {
-        assert_eq!(ServerUrl::parse("dev"), ServerUrl::Dev);
-        assert_eq!(ServerUrl::parse("development"), ServerUrl::Dev);
-        assert_eq!(ServerUrl::parse("staging"), ServerUrl::Dev);
+    fn former_dev_aliases_are_now_plain_custom_hosts() {
+        // Operator-ruled surface removal (0.6.0): dev.aretta.ai is retired,
+        // so `dev` / `development` / `staging` are no longer well-known
+        // aliases — they fall through to the bare-host path like any other
+        // input (`dev` → `https://dev`). No special-case, no error branch.
+        assert_eq!(
+            ServerUrl::parse("dev"),
+            ServerUrl::Custom("https://dev".into())
+        );
+        assert_eq!(
+            ServerUrl::parse("development"),
+            ServerUrl::Custom("https://development".into())
+        );
+        assert_eq!(
+            ServerUrl::parse("staging"),
+            ServerUrl::Custom("https://staging".into())
+        );
     }
 
     #[test]
@@ -320,16 +321,14 @@ mod tests {
     }
 
     #[test]
-    fn is_well_known_matches_prod_and_dev_only() {
+    fn is_well_known_matches_prod_only() {
         assert!(ServerUrl::Prod.is_well_known());
-        assert!(ServerUrl::Dev.is_well_known());
         assert!(!ServerUrl::Custom("https://example.com".into()).is_well_known());
     }
 
     #[test]
     fn display_renders_full_url() {
         assert_eq!(format!("{}", ServerUrl::Prod), "https://code.aretta.ai");
-        assert_eq!(format!("{}", ServerUrl::Dev), "https://dev.aretta.ai");
         assert_eq!(
             format!("{}", ServerUrl::Custom("https://x.example.com".into())),
             "https://x.example.com"
@@ -359,8 +358,12 @@ mod tests {
 
     #[test]
     fn data_plane_base_blank_instance_is_ignored() {
-        let s = data_plane_base(None, Some("   "), &ServerUrl::Dev);
-        assert_eq!(s, "https://dev.aretta.ai");
+        let s = data_plane_base(
+            None,
+            Some("   "),
+            &ServerUrl::Custom("https://staging.example.com".into()),
+        );
+        assert_eq!(s, "https://staging.example.com");
     }
 
     #[test]
@@ -374,8 +377,11 @@ mod tests {
     #[test]
     fn login_server_flag_beats_env() {
         // An explicit --server always wins, even when ARETTA_API_URL is set.
-        let (server, source) = login_server(Some("dev"), Some("https://turso.aretta.ai"));
-        assert_eq!(server, ServerUrl::Dev);
+        let (server, source) = login_server(
+            Some("https://flag.example.com"),
+            Some("https://turso.aretta.ai"),
+        );
+        assert_eq!(server, ServerUrl::Custom("https://flag.example.com".into()));
         assert_eq!(source, LoginServerSource::Flag);
     }
 
@@ -390,9 +396,9 @@ mod tests {
 
     #[test]
     fn login_server_env_parsed_via_serverurl_parse() {
-        // The env value goes through ServerUrl::parse: well-known aliases,
+        // The env value goes through ServerUrl::parse: the `prod` alias,
         // bare hosts (→ https://), and trailing slashes all normalize.
-        assert_eq!(login_server(None, Some("dev")).0, ServerUrl::Dev);
+        assert_eq!(login_server(None, Some("prod")).0, ServerUrl::Prod);
         assert_eq!(
             login_server(None, Some("turso.aretta.ai/")).0,
             ServerUrl::Custom("https://turso.aretta.ai".into())
@@ -449,12 +455,12 @@ mod tests {
         // An explicit --server wins outright: the discovery closure must
         // never run (it panics if it does).
         let (server, source) = login_server_discovering(
-            Some("dev"),
+            Some("https://flag.example.com"),
             Some("https://turso.aretta.ai"),
             &ServerUrl::Prod,
             |_| panic!("discovery must not run when --server is given"),
         );
-        assert_eq!(server, ServerUrl::Dev);
+        assert_eq!(server, ServerUrl::Custom("https://flag.example.com".into()));
         assert_eq!(source, LoginServerSource::Flag);
     }
 

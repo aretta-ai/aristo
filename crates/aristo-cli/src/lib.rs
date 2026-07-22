@@ -636,9 +636,8 @@ pub(crate) enum AuthAction {
         token: Option<String>,
         /// Aretta server to authenticate against. Accepts:
         /// `prod` / `production` (= https://code.aretta.ai),
-        /// `dev` / `development` / `staging` (= https://dev.aretta.ai),
-        /// or a full URL for self-hosted deployments
-        /// (`https://aretta.example.com`).
+        /// or a full URL for a self-hosted deployment or per-org
+        /// conductor (`https://aretta.example.com`).
         ///
         /// Precedence when unset: this flag > the `ARETTA_API_URL` env
         /// var (parsed the same way, full URLs included) > zero-config

@@ -807,7 +807,7 @@ repo = "owner/legacy"
             "2026-07-22T00:00:00Z",
         ));
         store.upsert(entry(
-            ServerUrl::Dev,
+            ServerUrl::Custom("https://staging.example.com".into()),
             "owner/repo",
             "dev-tok",
             "2026-07-22T00:00:00Z",
@@ -831,7 +831,7 @@ repo = "owner/legacy"
             "2026-07-22T00:00:00Z",
         ));
         store.upsert(entry(
-            ServerUrl::Dev,
+            ServerUrl::Custom("https://staging.example.com".into()),
             "owner/repo",
             "newer",
             "2026-07-22T05:00:00Z",
