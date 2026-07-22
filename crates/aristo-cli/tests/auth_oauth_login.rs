@@ -259,6 +259,52 @@ fn auth_login_oauth_403_unknown_user_surfaces_invalid_error() {
 }
 
 #[test]
+fn auth_login_oauth_410_gone_surfaces_retired_platform_hint() {
+    // A legacy/retired server that no longer mints CLI tokens answers the
+    // token exchange with 410 Gone. The CLI must translate that into a
+    // clear "wrong/retired server" message (not a bare "HTTP 410").
+    let workspace = TempDir::new().unwrap();
+
+    let (base, _handle) = spawn_two_step_mock(
+        CannedResponse {
+            status_line: "200 OK",
+            body: r#"{"url":"https://github.com/login/oauth/authorize?client_id=x"}"#.into(),
+        },
+        CannedResponse {
+            status_line: "410 Gone",
+            body: r#"{"error":"code.aretta.ai no longer mints CLI tokens"}"#.into(),
+        },
+    );
+
+    let mut cmd = isolated(workspace.path());
+    cmd.args(["auth", "login", "--server", &base, "--repo", "owner/repo"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().expect("spawn");
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(b"some-code\n").unwrap();
+    }
+    let output = child.wait_with_output().expect("wait");
+    assert!(!output.status.success(), "410 should error");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no longer mints CLI tokens"),
+        "expected retired-platform hint; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("ARETTA_API_URL") || stderr.contains("--server"),
+        "expected re-run guidance; got: {stderr}"
+    );
+
+    // No credentials file should be written on a failed login.
+    let creds_path = workspace.path().join("home/xdg/aristo/credentials");
+    assert!(!creds_path.exists(), "no creds after a 410");
+}
+
+#[test]
 fn auth_login_oauth_requires_repo_or_git_remote() {
     // No --repo flag, no .git/config — must refuse.
     let workspace = TempDir::new().unwrap();

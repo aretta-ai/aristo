@@ -9,12 +9,11 @@
 //! 3. No token → [`AuthError::NoToken`]. The SDK surfaces "run
 //!    `aristo auth login`" as the recovery hint.
 
-use std::fs;
 use std::path::Path;
 
 use super::error::AuthError;
 use super::server::ServerUrl;
-use super::store::{credentials_path_with, home_dir, CredentialsFile};
+use super::store::{home_dir, load_store_with};
 use super::token::Token;
 
 /// Full resolved-credentials record. Returned by [`resolve_full`] for
@@ -54,31 +53,48 @@ pub fn resolve() -> Result<Token, AuthError> {
 
 /// Resolve with explicit env-var and home-dir overrides. Tests use
 /// this to avoid mutating process state (the workspace forbids
-/// `unsafe_code`, which `std::env::set_var` requires).
+/// `unsafe_code`, which `std::env::set_var` requires). No repo hint —
+/// resolves the env token, else the sole stored entry.
 pub fn resolve_with(
     env_token: Option<&str>,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
 ) -> Result<Token, AuthError> {
-    Ok(resolve_full_with(env_token, xdg_config_home, home_override)?.token)
+    Ok(resolve_full_with(env_token, xdg_config_home, home_override, None)?.token)
 }
 
 /// Like [`resolve`] but returns the full credentials record (server,
-/// user, repo) when available. Use this from canon command call
-/// sites that need the server URL paired with the token.
+/// user, repo). Use this from canon / verify call sites that need the
+/// server URL paired with the token. Prefers the entry scoped to the
+/// current repo (derived best-effort from the cwd's `.git/config`),
+/// falling back to the sole stored entry.
 pub fn resolve_full() -> Result<ResolvedCreds, AuthError> {
+    let repo_hint = cwd_repo_hint();
     resolve_full_with(
         std::env::var(ENV_VAR).ok().as_deref(),
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
         home_dir().as_deref(),
+        repo_hint.as_deref(),
     )
 }
 
-/// Resolve a full credentials record with explicit overrides.
+/// Best-effort `owner/repo` for the current directory, or `None` when
+/// the cwd isn't a GitHub-remote git repo. Used to pick the right entry
+/// from a multi-repo store.
+fn cwd_repo_hint() -> Option<String> {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| super::git::derive_repo_full_name(&cwd).ok())
+}
+
+/// Resolve a full credentials record with explicit overrides and a repo
+/// hint. Precedence: `ARETTA_TOKEN` env > the entry scoped to
+/// `repo_hint` > the sole stored entry (single-repo grace).
 pub fn resolve_full_with(
     env_token: Option<&str>,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
+    repo_hint: Option<&str>,
 ) -> Result<ResolvedCreds, AuthError> {
     // 1. Env var first — CI-friendly precedence. No metadata
     //    available; default to Prod server, no user/repo.
@@ -94,58 +110,24 @@ pub fn resolve_full_with(
             });
         }
     }
-    // 2. On-disk credentials file.
-    let path = credentials_path_with(xdg_config_home, home_override)?;
-    if !path.exists() {
+    // 2. On-disk store (reads v2, migrates v1 + bare-token transparently).
+    let store = load_store_with(xdg_config_home, home_override)?;
+    if store.is_empty() {
         return Err(AuthError::NoToken);
     }
-    let raw = fs::read_to_string(&path)
-        .map_err(|e| AuthError::Malformed(format!("read {}: {e}", path.display())))?;
-    // Try TOML first. If it doesn't parse and the file looks like a
-    // bare-token (old format pre-commit-4), accept that for back-compat.
-    let parsed: CredentialsFile = match toml::from_str(&raw) {
-        Ok(p) => p,
-        Err(_) => {
-            // Back-compat: maybe it's a bare token (no TOML structure).
-            // The OLD format was the [aretta] TOML shape; a plain text
-            // file with no `[aretta]` header would only come from a
-            // pre-PR-1 ancestor or a hand-edited file. Treat as a bare
-            // token if it's a single non-empty line.
-            let token = raw.trim();
-            if token.is_empty() || token.contains('=') || token.contains('[') {
-                return Err(AuthError::Malformed(format!(
-                    "credentials file at {} is not parseable",
-                    path.display()
-                )));
-            }
-            return Ok(ResolvedCreds {
-                token: Token::new(token),
-                server: ServerUrl::Prod,
-                user_login: None,
-                user_id: None,
-                repo: None,
-            });
-        }
-    };
-    let token = parsed.aretta.token.trim();
-    if token.is_empty() {
-        return Err(AuthError::Malformed(format!(
-            "credentials file at {} has an empty token",
-            path.display()
-        )));
-    }
-    let server = parsed
-        .aretta
-        .server
-        .as_deref()
-        .map(ServerUrl::parse)
-        .unwrap_or(ServerUrl::Prod);
+    // 3. Prefer the entry scoped to the current repo; else fall back to
+    //    the sole entry so a one-credential user always resolves even
+    //    without (or with a non-matching) repo hint.
+    let entry = repo_hint
+        .and_then(|r| store.find_by_repo(r))
+        .or_else(|| store.sole())
+        .ok_or(AuthError::NoToken)?;
     Ok(ResolvedCreds {
-        token: Token::new(token),
-        server,
-        user_login: parsed.aretta.user_login.clone(),
-        user_id: parsed.aretta.user_id,
-        repo: parsed.aretta.repo.clone(),
+        token: entry.token.clone(),
+        server: entry.server.clone(),
+        user_login: entry.user_login.clone(),
+        user_id: entry.user_id,
+        repo: entry.repo.clone(),
     })
 }
 
@@ -153,6 +135,7 @@ pub fn resolve_full_with(
 mod tests {
     use super::super::store::save_with;
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -280,5 +263,113 @@ issued_at = "2026-05-20T00:00:00Z"
         save_with(&Token::new("xdg-tok"), Some(env.xdg_str()), dummy_home()).unwrap();
         let tok = resolve_with(None, Some(env.xdg_str()), dummy_home()).unwrap();
         assert_eq!(tok.as_str(), "xdg-tok");
+    }
+
+    // ─── multi-repo resolution (repo hint) ───────────────────────────────────
+
+    use crate::auth::store::{save_store_with, CredentialEntry, CredentialStore};
+
+    fn v2_entry(repo: &str, token: &str, minted_at: &str) -> CredentialEntry {
+        CredentialEntry {
+            server: ServerUrl::Prod,
+            repo: Some(repo.to_string()),
+            token: Token::new(token),
+            minted_at: minted_at.to_string(),
+            user_login: None,
+            user_id: None,
+        }
+    }
+
+    fn write_v2(env: &TestEnv, entries: Vec<CredentialEntry>) {
+        save_store_with(
+            &CredentialStore { entries },
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn repo_hint_selects_the_matching_entry() {
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![
+                v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z"),
+                v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
+            ],
+        );
+        let creds =
+            resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some("owner/b")).unwrap();
+        assert_eq!(creds.token.as_str(), "tok-b");
+        assert_eq!(creds.repo.as_deref(), Some("owner/b"));
+    }
+
+    #[test]
+    fn sole_entry_resolves_without_a_hint() {
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![v2_entry("owner/only", "tok", "2026-07-22T00:00:00Z")],
+        );
+        let creds = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), None).unwrap();
+        assert_eq!(creds.token.as_str(), "tok");
+    }
+
+    #[test]
+    fn sole_entry_grace_covers_a_mismatched_hint() {
+        // One credential, but the cwd repo doesn't match it — the single
+        // entry still resolves (backward-compatible single-repo grace).
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z")],
+        );
+        let creds = resolve_full_with(
+            None,
+            Some(env.xdg_str()),
+            dummy_home(),
+            Some("owner/elsewhere"),
+        )
+        .unwrap();
+        assert_eq!(creds.token.as_str(), "tok-a");
+    }
+
+    #[test]
+    fn multi_entry_no_match_is_no_token() {
+        // Several credentials, none matching the repo hint, no sole
+        // fallback → not authenticated for this repo.
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![
+                v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z"),
+                v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
+            ],
+        );
+        let err = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some("owner/c"))
+            .unwrap_err();
+        assert_eq!(err, AuthError::NoToken);
+    }
+
+    #[test]
+    fn env_token_bypasses_the_store() {
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![
+                v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z"),
+                v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
+            ],
+        );
+        let creds = resolve_full_with(
+            Some("env-tok"),
+            Some(env.xdg_str()),
+            dummy_home(),
+            Some("owner/a"),
+        )
+        .unwrap();
+        assert_eq!(creds.token.as_str(), "env-tok");
+        assert_eq!(creds.server, ServerUrl::Prod);
     }
 }

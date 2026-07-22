@@ -170,7 +170,7 @@ fn login_with_token_flag_persists_credentials_file() {
         "creds file should contain token"
     );
     assert!(
-        body.contains("issued_at"),
+        body.contains("minted_at"),
         "creds file should include timestamp"
     );
 }

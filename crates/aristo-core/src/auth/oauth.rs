@@ -63,17 +63,23 @@ pub struct CliTokenResponse {
     pub arta_token: String,
     /// JWT for any `/dashboard/api/*` calls the SDK might want.
     /// Optional — the SDK doesn't need it for canon API access (the
-    /// arta_token is the primary credential).
+    /// arta_token is the primary credential). `serde(default)` so a
+    /// conductor that drops this SDK-unused field can't break login.
+    #[serde(default)]
     pub jwt: String,
     /// GitHub user identity.
     pub user: GitHubUser,
     /// Internal opaque id for the minted token, useful for later
-    /// revocation via the dashboard.
+    /// revocation via the dashboard. `serde(default)` — SDK-unused, so a
+    /// dropped field must not break login.
+    #[serde(default)]
     pub token_id: String,
     /// Lowercased `owner/repo` (the proxy normalizes case).
     pub repo_full_name: String,
     /// Last 4 chars of the token, for masked display in `aristo
-    /// auth status`.
+    /// auth status`. `serde(default)` — SDK-unused, so a dropped field
+    /// must not break login.
+    #[serde(default)]
     pub last_4: String,
 }
 
@@ -121,8 +127,9 @@ pub fn oauth_start(server: &ServerUrl) -> Result<OAuthInit, AuthError> {
 
 /// Minimal URL-encoder for query-param values. Hand-rolled instead
 /// of pulling a dep — only encodes the reserved chars we actually
-/// emit (`:` `/`).
-fn url_encode(s: &str) -> String {
+/// emit (`:` `/`). Shared with [`super::discovery`], which encodes the
+/// `repo` query param the same way.
+pub(crate) fn url_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for byte in s.bytes() {
         match byte {
@@ -201,6 +208,16 @@ where
             AuthError::Malformed(format!("proxy returned 2xx with unparseable body: {e}"))
         }),
         401 | 403 => Err(AuthError::Invalid),
+        // 410 Gone: the retired platform default (e.g. code.aretta.ai)
+        // returns this once it stops minting CLI tokens. Say so plainly and
+        // point at the fix, while still surfacing whatever the server sent.
+        410 => Err(AuthError::Malformed(format!(
+            "this server no longer mints CLI tokens (HTTP 410 Gone) — your CLI \
+             is pointed at the retired platform default. Re-run against your \
+             org's server (`--server <url>` or `ARETTA_API_URL=<url>`), or \
+             upgrade aristo. Server said: {}",
+            extract_error_message(body).unwrap_or_else(|| truncate(body, 200))
+        ))),
         400..=499 => {
             // Try to surface the proxy's error field if it's there.
             let msg = extract_error_message(body)
@@ -301,6 +318,24 @@ mod tests {
     }
 
     #[test]
+    fn map_response_cli_token_tolerates_missing_sdk_unused_fields() {
+        // A conductor that drops the SDK-unused fields (jwt / token_id /
+        // last_4) must not break login — only arta_token / user /
+        // repo_full_name are required.
+        let body = r#"{
+            "arta_token": "arta_min",
+            "user": { "id": 7, "login": "min" },
+            "repo_full_name": "owner/repo"
+        }"#;
+        let r: CliTokenResponse = map_response(200, body).expect("decode without optional fields");
+        assert_eq!(r.arta_token, "arta_min");
+        assert_eq!(r.repo_full_name, "owner/repo");
+        assert_eq!(r.jwt, "");
+        assert_eq!(r.token_id, "");
+        assert_eq!(r.last_4, "");
+    }
+
+    #[test]
     fn map_response_401_maps_to_invalid() {
         let r: Result<OAuthInit, _> = map_response(401, r#"{"error":"bad token"}"#);
         assert_eq!(r.unwrap_err(), AuthError::Invalid);
@@ -310,6 +345,28 @@ mod tests {
     fn map_response_403_maps_to_invalid() {
         let r: Result<OAuthInit, _> = map_response(403, r#"{"error":"forbidden"}"#);
         assert_eq!(r.unwrap_err(), AuthError::Invalid);
+    }
+
+    #[test]
+    fn map_response_410_gone_gives_retired_platform_message() {
+        let r: Result<CliTokenResponse, _> = map_response(
+            410,
+            r#"{"error":"CLI token minting disabled on this host"}"#,
+        );
+        match r.unwrap_err() {
+            AuthError::Malformed(m) => {
+                assert!(m.contains("no longer mints CLI tokens"), "got: {m}");
+                assert!(m.contains("410"), "got: {m}");
+                assert!(m.contains("retired platform default"), "got: {m}");
+                // The re-run guidance and the server's own message both survive.
+                assert!(m.contains("ARETTA_API_URL"), "got: {m}");
+                assert!(
+                    m.contains("CLI token minting disabled on this host"),
+                    "got: {m}"
+                );
+            }
+            other => panic!("expected Malformed, got {other:?}"),
+        }
     }
 
     #[test]

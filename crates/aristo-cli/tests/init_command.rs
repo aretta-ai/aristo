@@ -309,7 +309,10 @@ fn ci_verify_flag_writes_both_workflows() {
         .success()
         // On completion, --ci-verify prints token-setup guidance.
         .stdout(contains("ARETTA_TOKEN"))
-        .stdout(contains("aristo auth token"));
+        .stdout(contains("aristo auth token"))
+        // ...including how a hosted org points verify at its own server.
+        .stdout(contains("ARETTA_API_URL"))
+        .stdout(contains("[instance] url"));
 
     // --ci-verify implies the lite gate, plus the verify workflow.
     assert!(
@@ -327,5 +330,11 @@ fn ci_verify_flag_writes_both_workflows() {
     assert!(
         content.contains("ARETTA_TOKEN"),
         "verify workflow wires the token secret; got:\n{content}"
+    );
+    // Hosted-org guidance: point the data plane at the org's server so a
+    // bare token isn't spent against the code.aretta.ai default.
+    assert!(
+        content.contains("ARETTA_API_URL") && content.contains("[instance] url"),
+        "verify workflow explains hosted-org server setup; got:\n{content}"
     );
 }
