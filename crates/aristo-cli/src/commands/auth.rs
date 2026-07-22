@@ -44,8 +44,8 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
             repo,
         } => login(stdin, token, server, repo),
         AuthAction::Status => status(),
-        AuthAction::Token => token(),
-        AuthAction::Logout => logout(),
+        AuthAction::Token { repo } => token(repo),
+        AuthAction::Logout { all, repo } => logout(all, repo),
     }
 }
 
@@ -297,71 +297,85 @@ fn auth_error_to_cli(e: AuthError) -> CliError {
     }
 }
 
+/// Map a store-load error into a CLI error with a recovery hint. The
+/// store loader only ever returns `Malformed` (empty is `Ok`), but any
+/// other variant is mapped defensively.
+fn store_error_to_cli(e: AuthError) -> CliError {
+    match e {
+        AuthError::Malformed(msg) => CliError::Other {
+            message: format!(
+                "credentials file is malformed: {msg}\n  \
+                 Run `aristo auth logout --all` then `aristo auth login` to re-create it."
+            ),
+            exit_code: 1,
+        },
+        other => auth_error_to_cli(other),
+    }
+}
+
+/// A trailing note when `ARETTA_TOKEN` is set — it overrides the store,
+/// so removing entries doesn't stop canon calls from using it.
+fn note_env_still_set() {
+    if std::env::var(auth::ENV_VAR).is_ok() {
+        println!(
+            "    note: {} is set in the environment; canon calls will still use it.",
+            auth::ENV_VAR
+        );
+    }
+}
+
 // ─── status ────────────────────────────────────────────────────────────────
 
 fn status() -> CliResult<()> {
-    match aristo_core::auth::resolve_full() {
-        Ok(creds) => {
-            // Don't print the token. Just identify its source + the
-            // associated server / user / repo so the user can confirm
-            // what's wired up.
-            let from_env = std::env::var(auth::ENV_VAR)
-                .ok()
-                .is_some_and(|v| !v.trim().is_empty());
-            if from_env {
-                println!(
-                    "ok: authenticated via {} environment variable.",
-                    auth::ENV_VAR
-                );
-                println!("    (env var takes precedence over the on-disk credentials file.)");
-            } else {
-                let path = auth::credentials_path().map_err(|e| CliError::Other {
-                    message: format!("couldn't resolve credentials path: {e}"),
-                    exit_code: 1,
-                })?;
-                println!("ok: authenticated via {}", path.display());
-            }
-            println!("    server: {}", creds.server);
-            if let Some(login) = &creds.user_login {
-                println!("    user:   {login}");
-            }
-            if let Some(repo) = &creds.repo {
-                println!("    repo:   {repo}");
-            }
-            Ok(())
-        }
-        Err(AuthError::NoToken) => {
+    let env_set = std::env::var(auth::ENV_VAR)
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty());
+    if env_set {
+        println!(
+            "ok: authenticated via {} environment variable.",
+            auth::ENV_VAR
+        );
+        println!("    (env var takes precedence over the on-disk credentials file.)");
+    }
+
+    // List every stored credential — never the token itself.
+    let store = auth::load_store().map_err(store_error_to_cli)?;
+    if store.is_empty() {
+        if !env_set {
             println!("not authenticated.");
             println!(
                 "    Run `aristo auth login` to log in, or set the {} env var for CI.",
                 auth::ENV_VAR
             );
-            // `aristo auth status` shouldn't exit non-zero just
-            // because the user isn't logged in — that would break
-            // CI gating patterns that check for canon availability
-            // optionally. Use a typed condition (parse stdout) for
-            // CI gating.
-            Ok(())
+            // Not an error — CI gates on the stdout text, not the exit
+            // code (unauthenticated must not fail the process).
         }
-        Err(AuthError::Invalid) => {
-            // Phase 1 `resolve()` never returns Invalid (server
-            // validation is deferred to the first canon API call),
-            // but handle it defensively so future-proofing is clean.
-            Err(CliError::Other {
-                message: "stored token was rejected by the server. \
-                          Run `aristo auth login` to refresh."
-                    .into(),
-                exit_code: 1,
-            })
-        }
-        Err(AuthError::Malformed(msg)) => Err(CliError::Other {
-            message: format!(
-                "credentials file is malformed: {msg}\n  \
-                 Run `aristo auth logout` then `aristo auth login` to re-create it."
-            ),
-            exit_code: 1,
-        }),
+        return Ok(());
     }
+
+    let path = auth::credentials_path().map_err(auth_error_to_cli)?;
+    if env_set {
+        println!(
+            "    also stored (shadowed by {}): {} credential(s) in {}",
+            auth::ENV_VAR,
+            store.len(),
+            path.display()
+        );
+    } else {
+        println!(
+            "ok: authenticated — {} credential(s) in {}",
+            store.len(),
+            path.display()
+        );
+    }
+    for e in &store.entries {
+        let repo = e.repo.as_deref().unwrap_or("(unscoped)");
+        match &e.user_login {
+            Some(user) => println!("    • server: {}   repo: {repo}   user: {user}", e.server),
+            None => println!("    • server: {}   repo: {repo}", e.server),
+        }
+    }
+    Ok(())
 }
 
 // ─── token ─────────────────────────────────────────────────────────────────
@@ -369,31 +383,64 @@ fn status() -> CliResult<()> {
 /// Print the resolved token to stdout — and NOTHING else — so it pipes
 /// cleanly into a clipboard tool (`aristo auth token | pbcopy`) or a CI
 /// secret. Unlike `status`, this deliberately prints the secret value, so
-/// it's only ever written to stdout on explicit request.
-fn token() -> CliResult<()> {
-    match aristo_core::auth::resolve_full() {
-        Ok(creds) => {
-            println!("{}", creds.token.as_str());
-            Ok(())
+/// it's only ever written to stdout on explicit request. Resolves the
+/// entry for `--repo` (or the cwd's repo), falling back to the sole
+/// stored entry.
+fn token(repo_flag: Option<String>) -> CliResult<()> {
+    // Env var wins outright (CI precedence), like `resolve`.
+    if let Ok(v) = std::env::var(auth::ENV_VAR) {
+        let v = v.trim();
+        if !v.is_empty() {
+            println!("{v}");
+            return Ok(());
         }
-        Err(AuthError::NoToken) => Err(CliError::Other {
+    }
+    let store = auth::load_store().map_err(store_error_to_cli)?;
+    if store.is_empty() {
+        return Err(CliError::Other {
             message: format!(
                 "not authenticated — no token found.\n  \
                  Run `aristo auth login` to mint one, or set the {} env var.",
                 auth::ENV_VAR
             ),
             exit_code: 1,
-        }),
-        Err(AuthError::Malformed(msg)) => Err(CliError::Other {
-            message: format!(
-                "credentials file is malformed: {msg}\n  \
-                 Run `aristo auth logout` then `aristo auth login` to re-create it."
-            ),
-            exit_code: 1,
-        }),
-        Err(AuthError::Invalid) => Err(CliError::Other {
-            message: "stored token was rejected by the server. \
-                      Run `aristo auth login` to refresh."
+        });
+    }
+    // An explicit `--repo` must match strictly — no single-entry
+    // fallback, so asking for a repo you're not logged in to errors
+    // rather than silently handing back a different repo's token. With
+    // no `--repo`, prefer the cwd's repo, else the sole stored entry.
+    let entry = if let Some(raw) = repo_flag {
+        let repo = validate_repo_flag(&raw)?;
+        match store.find_by_repo(&repo) {
+            Some(e) => Some(e),
+            None => {
+                return Err(CliError::Other {
+                    message: format!(
+                        "no credential for {repo}; run `aristo auth login --repo {repo}` \
+                         (or `aristo auth status` to list what's stored)."
+                    ),
+                    exit_code: 1,
+                })
+            }
+        }
+    } else {
+        let cwd_repo = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| derive_repo_full_name(&cwd).ok());
+        cwd_repo
+            .as_deref()
+            .and_then(|r| store.find_by_repo(r))
+            .or_else(|| store.sole())
+    };
+    match entry {
+        Some(e) => {
+            println!("{}", e.token.as_str());
+            Ok(())
+        }
+        None => Err(CliError::Other {
+            message: "several credentials stored — pass `--repo <owner/repo>` to pick one \
+                      (or `aristo auth status` to list)."
                 .into(),
             exit_code: 1,
         }),
@@ -402,28 +449,75 @@ fn token() -> CliResult<()> {
 
 // ─── logout ────────────────────────────────────────────────────────────────
 
-fn logout() -> CliResult<()> {
-    // Resolve the path first so we can include it in the success
-    // message even if the file didn't exist (idempotent).
-    let path = auth::credentials_path().map_err(|e| CliError::Other {
-        message: format!("couldn't resolve credentials path: {e}"),
-        exit_code: 1,
+fn logout(all: bool, repo_flag: Option<String>) -> CliResult<()> {
+    let path = auth::credentials_path().map_err(auth_error_to_cli)?;
+
+    // `--all`: remove the whole file. Works even on a corrupt file.
+    if all {
+        let existed = path.exists();
+        auth::clear().map_err(CliError::Io)?;
+        if existed {
+            println!(
+                "ok: logged out. all credentials cleared from {}",
+                path.display()
+            );
+        } else {
+            println!("ok: not logged in (no credentials to clear).");
+        }
+        note_env_still_set();
+        return Ok(());
+    }
+
+    let mut store = auth::load_store().map_err(|e| match e {
+        AuthError::Malformed(msg) => CliError::Other {
+            message: format!(
+                "credentials file is malformed: {msg}\n  \
+                 Run `aristo auth logout --all` to reset it."
+            ),
+            exit_code: 1,
+        },
+        other => auth_error_to_cli(other),
     })?;
-    let existed = path.exists();
-    auth::clear().map_err(CliError::Io)?;
-    if existed {
-        println!(
-            "ok: logged out. credentials cleared from {}",
-            path.display()
-        );
-    } else {
+    if store.is_empty() {
         println!("ok: not logged in (no credentials to clear).");
+        note_env_still_set();
+        return Ok(());
     }
-    if std::env::var(auth::ENV_VAR).is_ok() {
-        println!(
-            "    note: {} is set in the environment; canon calls will still use it.",
-            auth::ENV_VAR
-        );
+
+    // Which entry? `--repo` / the cwd repo; or the sole entry when that
+    // is unambiguous (single-repo convenience).
+    let repo_hint = resolve_repo_best_effort(repo_flag)?;
+    let removed_label = match &repo_hint {
+        Some(r) => {
+            if store.remove_by_repo(r) == 0 {
+                println!("ok: no credential for {r} to remove (nothing changed).");
+                note_env_still_set();
+                return Ok(());
+            }
+            format!("of {r}")
+        }
+        None => {
+            if store.len() == 1 {
+                store.entries.clear();
+                "the stored credential".to_string()
+            } else {
+                return Err(CliError::Other {
+                    message: "several credentials stored — pass `--repo <owner/repo>` to log out \
+                              of one, or `--all` to clear everything."
+                        .into(),
+                    exit_code: 2,
+                });
+            }
+        }
+    };
+
+    // Persist: drop the file when the store is now empty, else rewrite it.
+    if store.is_empty() {
+        auth::clear().map_err(CliError::Io)?;
+    } else {
+        auth::save_store(&store).map_err(CliError::Io)?;
     }
+    println!("ok: logged out {removed_label}. updated {}", path.display());
+    note_env_still_set();
     Ok(())
 }
