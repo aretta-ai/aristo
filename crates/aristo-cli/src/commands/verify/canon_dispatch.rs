@@ -1547,6 +1547,10 @@ impl VerifyClient for RecordingMock {
     ) -> Result<aristo_core::canon_verify::GetVerifySessionResponse, VerifyError> {
         self.inner.get_session(session_id, wait_seconds)
     }
+
+    fn cancel_session(&self, session_id: &str) -> Result<(), VerifyError> {
+        self.inner.cancel_session(session_id)
+    }
 }
 
 #[cfg(test)]

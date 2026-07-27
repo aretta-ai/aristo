@@ -35,6 +35,8 @@ pub struct MockVerifyClient {
     get_responses: Mutex<Vec<Result<GetVerifySessionResponse, VerifyError>>>,
     posted: Mutex<Vec<VerifySessionRequest>>,
     fetched: Mutex<Vec<(String, Option<u32>)>>,
+    cancelled: Mutex<Vec<String>>,
+    cancel_error: Mutex<Option<VerifyError>>,
 }
 
 impl MockVerifyClient {
@@ -46,6 +48,8 @@ impl MockVerifyClient {
             get_responses: Mutex::new(Vec::new()),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
+            cancelled: Mutex::new(Vec::new()),
+            cancel_error: Mutex::new(None),
         }
     }
 
@@ -56,6 +60,8 @@ impl MockVerifyClient {
             get_responses: Mutex::new(Vec::new()),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
+            cancelled: Mutex::new(Vec::new()),
+            cancel_error: Mutex::new(None),
         }
     }
 
@@ -84,6 +90,8 @@ impl MockVerifyClient {
             get_responses: Mutex::new(get_results),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
+            cancelled: Mutex::new(Vec::new()),
+            cancel_error: Mutex::new(None),
         }
     }
 
@@ -110,6 +118,8 @@ impl MockVerifyClient {
             get_responses: Mutex::new(get_results),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
+            cancelled: Mutex::new(Vec::new()),
+            cancel_error: Mutex::new(None),
         }
     }
 
@@ -122,6 +132,18 @@ impl MockVerifyClient {
     /// Inspect `(session_id, wait_seconds)` pairs the SDK has fetched.
     pub fn fetched_sessions(&self) -> Vec<(String, Option<u32>)> {
         self.fetched.lock().expect("mock mutex").clone()
+    }
+
+    /// Session ids `cancel_session` was called with, in order.
+    pub fn cancelled_sessions(&self) -> Vec<String> {
+        self.cancelled.lock().expect("mock mutex").clone()
+    }
+
+    /// Queue an error for the NEXT `cancel_session` call (one-shot).
+    /// Without a queued error every cancel succeeds — cancel is
+    /// best-effort in the CLI, so the default models the happy path.
+    pub fn set_cancel_error(&self, err: VerifyError) {
+        *self.cancel_error.lock().expect("mock mutex") = Some(err);
     }
 }
 
@@ -171,6 +193,17 @@ impl VerifyClient for MockVerifyClient {
             panic!("MockVerifyClient: get_session called but no canned response remains");
         }
         queue.remove(0)
+    }
+
+    fn cancel_session(&self, session_id: &str) -> Result<(), VerifyError> {
+        self.cancelled
+            .lock()
+            .expect("mock mutex")
+            .push(session_id.to_string());
+        match self.cancel_error.lock().expect("mock mutex").take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
 
@@ -318,5 +351,30 @@ mod tests {
     fn placeholder_status_consumed() {
         // Mirror docs/ensure AnnotationOutcomeStatus stays reachable from this module.
         let _ = AnnotationOutcomeStatus::Verified;
+    }
+
+    #[test]
+    fn cancel_records_session_id_and_defaults_to_ok() {
+        let mock = MockVerifyClient::with_get_responses(vec![]);
+        mock.cancel_session("01HMCANCEL")
+            .expect("default cancel is Ok");
+        assert_eq!(mock.cancelled_sessions(), vec!["01HMCANCEL".to_string()]);
+    }
+
+    #[test]
+    fn cancel_replays_queued_error_once() {
+        let mock = MockVerifyClient::with_get_responses(vec![]);
+        mock.set_cancel_error(VerifyError::Server {
+            status: 503,
+            message: "upstream".into(),
+        });
+        match mock.cancel_session("sid").unwrap_err() {
+            VerifyError::Server { status: 503, .. } => {}
+            other => panic!("expected queued Server 503, got {other:?}"),
+        }
+        // The error is one-shot; the next cancel succeeds again.
+        mock.cancel_session("sid")
+            .expect("queued error is one-shot");
+        assert_eq!(mock.cancelled_sessions().len(), 2);
     }
 }
