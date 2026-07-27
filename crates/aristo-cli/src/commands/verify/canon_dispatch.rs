@@ -330,8 +330,11 @@ pub(crate) fn run_canon_dispatch(
         // Share the client with the signal handler: an interrupted
         // wait cancels the server-side session on the way out.
         let client: std::sync::Arc<dyn VerifyClient> = std::sync::Arc::from(client);
-        install_cancel_on_interrupt(client.clone(), &resp.session_id);
+        let armed = install_cancel_on_interrupt(client.clone(), &resp.session_id);
         let final_snapshot = poll_until_terminal(&*client, &resp.session_id)?;
+        // Terminal state reached — disarm so a late interrupt (during
+        // rendering) exits without cancelling a finished session.
+        disarm(&armed);
         render_final_snapshot(&final_snapshot, &expectations);
         let verdict = waiver::evaluate(&final_snapshot, &expectations);
         if verdict.is_red() {
@@ -596,19 +599,60 @@ fn install_detach_on_interrupt(session_id: &str) {
 /// it; a `--view` attach gets [`install_detach_on_interrupt`]
 /// instead. Installation is itself best-effort: if no handler slot
 /// is available the wait simply proceeds without cancel-on-interrupt.
-fn install_cancel_on_interrupt(client: std::sync::Arc<dyn VerifyClient>, session_id: &str) {
-    let sid = session_id.to_string();
+fn install_cancel_on_interrupt(
+    client: std::sync::Arc<dyn VerifyClient>,
+    session_id: &str,
+) -> std::sync::Arc<std::sync::Mutex<Option<String>>> {
+    let armed = std::sync::Arc::new(std::sync::Mutex::new(Some(session_id.to_string())));
+    let interrupting = std::sync::atomic::AtomicBool::new(false);
+    let armed_in_handler = std::sync::Arc::clone(&armed);
     let installed = ctrlc::set_handler(move || {
-        eprintln!();
-        eprintln!("interrupt received — requesting cancel of verify session {sid}…");
-        cancel_best_effort(&*client, &sid);
-        std::process::exit(INTERRUPT_EXIT_CODE);
+        std::process::exit(interrupt_action(&interrupting, &armed_in_handler, &*client));
     });
     if installed.is_err() {
         eprintln!(
             "  note: interrupt handler unavailable; Ctrl-C will NOT cancel \
              the server-side session."
         );
+    }
+    armed
+}
+
+/// Everything the interrupt handler does except the process exit (the
+/// test seam). First signal with an armed session → best-effort
+/// server-side cancel. A REPEAT signal (the user really wants out,
+/// e.g. the cancel POST is stuck in its 5-second window) exits
+/// immediately without touching the network; so does a disarmed slot
+/// (the session already reached a terminal state — see [`disarm`]).
+fn interrupt_action(
+    interrupting: &std::sync::atomic::AtomicBool,
+    armed: &std::sync::Mutex<Option<String>>,
+    client: &dyn VerifyClient,
+) -> i32 {
+    if interrupting.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // Second signal: straight out, no cleanup attempts.
+        return INTERRUPT_EXIT_CODE;
+    }
+    match armed.lock().ok().and_then(|mut slot| slot.take()) {
+        Some(sid) => {
+            eprintln!();
+            eprintln!("interrupt received — requesting cancel of verify session {sid}…");
+            cancel_best_effort(client, &sid);
+        }
+        None => {
+            eprintln!();
+            eprintln!("interrupt received — session already settled; exiting.");
+        }
+    }
+    INTERRUPT_EXIT_CODE
+}
+
+/// Disarm cancel-on-interrupt once the session is terminal: a late
+/// interrupt (during rendering / waiver evaluation) then exits
+/// without POSTing a spurious cancel for a finished session.
+fn disarm(armed: &std::sync::Mutex<Option<String>>) {
+    if let Ok(mut slot) = armed.lock() {
+        slot.take();
     }
 }
 
@@ -2419,6 +2463,40 @@ mod tests {
         // no scare-warning on every local run. CI opts into loudness
         // via --require-dispatch.
         assert_eq!(zero_dispatch_warning(0, 0, 0), None);
+    }
+
+    #[test]
+    fn interrupt_action_cancels_once_then_exits_immediately_on_repeat() {
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        let interrupting = std::sync::atomic::AtomicBool::new(false);
+        let armed = std::sync::Mutex::new(Some("sid".to_string()));
+        // First signal: cancel the owned session, exit 130.
+        assert_eq!(interrupt_action(&interrupting, &armed, &mock), 130);
+        assert_eq!(mock.cancelled_sessions(), vec!["sid".to_string()]);
+        // Second signal: the user really wants out — immediate exit,
+        // no network, no second cancel.
+        assert_eq!(interrupt_action(&interrupting, &armed, &mock), 130);
+        assert_eq!(
+            mock.cancelled_sessions().len(),
+            1,
+            "a repeat signal must not retry the cancel"
+        );
+    }
+
+    #[test]
+    fn interrupt_action_after_disarm_skips_cancel() {
+        // Once the session reached a terminal state the caller
+        // disarms; a late interrupt (during rendering) must exit
+        // without POSTing a cancel for a finished session.
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        let interrupting = std::sync::atomic::AtomicBool::new(false);
+        let armed = std::sync::Mutex::new(Some("sid".to_string()));
+        disarm(&armed);
+        assert_eq!(interrupt_action(&interrupting, &armed, &mock), 130);
+        assert!(
+            mock.cancelled_sessions().is_empty(),
+            "a settled session must not receive a late cancel"
+        );
     }
 
     #[test]
