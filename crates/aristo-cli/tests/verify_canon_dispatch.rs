@@ -410,6 +410,36 @@ fn wait_4xx_poll_error_stays_fatal() {
 }
 
 #[test]
+fn wait_deadline_expiry_exits_with_distinct_message() {
+    // ARISTO_VERIFY_WAIT_TIMEOUT_SECS=0 forces immediate expiry: the
+    // CLI must exit non-zero with the deadline message + re-attach
+    // hint instead of polling forever.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMSTUCK", "view_url": "https://x", "plan_size": 1}
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .env("ARISTO_VERIFY_WAIT_TIMEOUT_SECS", "0")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stderr(contains("deadline exceeded"))
+        .stderr(contains("aristo verify --view 01HMSTUCK --wait"));
+}
+
+#[test]
 fn wait_blocks_until_session_terminal_and_renders_final_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
     let _bare = init_repo_with_pushed_head(tmp.path());

@@ -326,7 +326,10 @@ enum Commands {
         /// state, rendering a snapshot at each long-poll return and
         /// emitting a `still running…` heartbeat every 60s. Exit code
         /// is derived from the final summary: `0` iff every
-        /// annotation is `verified` or `no_coverage`. Without
+        /// annotation is `verified` or `no_coverage`. Transient poll
+        /// failures (server 5xx, network, timeout) are retried with
+        /// backoff; the whole wait is bounded by a 45-minute deadline
+        /// (override via `ARISTO_VERIFY_WAIT_TIMEOUT_SECS`). Without
         /// `--wait` the SDK detaches after dispatch (prints session
         /// id and exits 0). Combine with `--view <id>` to attach to
         /// a session another invocation started.

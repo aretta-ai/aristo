@@ -406,6 +406,11 @@ struct PollConfig {
     interval: Duration,
     /// Consecutive transient-failure budget before giving up.
     max_transient_retries: u32,
+    /// Overall wall-clock ceiling for the whole `--wait`. Without one,
+    /// a wedged-queued session polls until the CI runner's own job
+    /// kill (potentially hours). Generous by design — it's a backstop,
+    /// not a pacing knob.
+    max_wait: Duration,
 }
 
 impl PollConfig {
@@ -413,7 +418,51 @@ impl PollConfig {
         Self {
             interval: poll_interval(),
             max_transient_retries: MAX_TRANSIENT_POLL_RETRIES,
+            max_wait: wait_deadline(),
         }
+    }
+}
+
+/// Default overall `--wait` deadline: 45 minutes. Comfortably above a
+/// normal full-verify fleet run; small enough that a wedged session
+/// surfaces within the same working session instead of eating a
+/// multi-hour CI job.
+const WAIT_DEADLINE_DEFAULT: Duration = Duration::from_secs(45 * 60);
+
+/// `ARISTO_VERIFY_WAIT_TIMEOUT_SECS` overrides the overall `--wait`
+/// deadline (whole seconds). Unset or unparsable → the 45-minute
+/// default.
+fn wait_deadline() -> Duration {
+    if let Ok(raw) = std::env::var("ARISTO_VERIFY_WAIT_TIMEOUT_SECS") {
+        if let Ok(n) = raw.parse::<u64>() {
+            return Duration::from_secs(n);
+        }
+    }
+    WAIT_DEADLINE_DEFAULT
+}
+
+/// Render a deadline for the failure message: whole minutes when
+/// exact (`45m`), else seconds (`90s`).
+fn fmt_deadline(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs >= 60 && secs.is_multiple_of(60) {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
+fn wait_deadline_exceeded(session_id: &str, max_wait: Duration) -> CliError {
+    CliError::Other {
+        message: format!(
+            "verify --wait deadline exceeded: the session did not reach a terminal \
+             state within {}.\n  \
+             The session keeps running server-side — re-attach with:\n  \
+             aristo verify --view {session_id} --wait\n  \
+             (Deadline is configurable via ARISTO_VERIFY_WAIT_TIMEOUT_SECS.)",
+            fmt_deadline(max_wait)
+        ),
+        exit_code: 1,
     }
 }
 
@@ -477,6 +526,9 @@ fn transient_retries_exhausted(last: &VerifyError, session_id: &str, budget: u32
 /// retried with exponential backoff for up to
 /// `cfg.max_transient_retries` CONSECUTIVE failures; a successful
 /// poll resets the budget. Non-transient errors abort immediately.
+/// Independent of either, `cfg.max_wait` bounds the whole wait —
+/// checked before every poll so a wedged session can't outlive the
+/// deadline by more than one long-poll round-trip.
 fn poll_until_terminal_with<C: VerifyClient + ?Sized>(
     client: &C,
     session_id: &str,
@@ -488,6 +540,9 @@ fn poll_until_terminal_with<C: VerifyClient + ?Sized>(
     let mut consecutive_transient: u32 = 0;
 
     loop {
+        if started.elapsed() >= cfg.max_wait {
+            return Err(wait_deadline_exceeded(session_id, cfg.max_wait));
+        }
         let snapshot = match client.get_session(session_id, Some(LONGPOLL_WAIT_SECS)) {
             Ok(s) => {
                 consecutive_transient = 0;
@@ -2052,6 +2107,7 @@ mod tests {
         PollConfig {
             interval: Duration::ZERO,
             max_transient_retries: 5,
+            max_wait: Duration::from_secs(3600),
         }
     }
 
@@ -2137,6 +2193,7 @@ mod tests {
         let cfg = PollConfig {
             interval: Duration::ZERO,
             max_transient_retries: 2,
+            max_wait: Duration::from_secs(3600),
         };
         let msg = other_message(
             poll_until_terminal_with(&mock, "sid", &cfg)
@@ -2155,6 +2212,42 @@ mod tests {
             3,
             "budget 2 = initial call + 2 retries"
         );
+    }
+
+    #[test]
+    fn poll_deadline_expiry_exits_with_distinct_message() {
+        // Zero deadline → the loop must give up BEFORE any poll (an
+        // empty mock panics if polled) with a message that names the
+        // deadline, the re-attach command, and the env knob.
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        let cfg = PollConfig {
+            interval: Duration::ZERO,
+            max_transient_retries: 5,
+            max_wait: Duration::ZERO,
+        };
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &cfg)
+                .expect_err("an expired deadline must abort the wait"),
+        );
+        assert!(
+            msg.contains("deadline exceeded"),
+            "deadline expiry needs its own distinct message: {msg}"
+        );
+        assert!(
+            msg.contains("aristo verify --view sid --wait"),
+            "deadline message must offer the re-attach command: {msg}"
+        );
+        assert!(
+            msg.contains("ARISTO_VERIFY_WAIT_TIMEOUT_SECS"),
+            "deadline message must name the env override: {msg}"
+        );
+    }
+
+    #[test]
+    fn fmt_deadline_prefers_whole_minutes() {
+        assert_eq!(fmt_deadline(Duration::from_secs(45 * 60)), "45m");
+        assert_eq!(fmt_deadline(Duration::from_secs(90)), "90s");
+        assert_eq!(fmt_deadline(Duration::ZERO), "0s");
     }
 
     #[test]
