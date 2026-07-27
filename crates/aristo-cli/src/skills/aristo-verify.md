@@ -1,6 +1,6 @@
 ---
 name: aristo-verify
-description: Drives the whole aristo verification loop. Opens with a scope × mode menu (Changed·neural is the default; full/both run server proofs and need sign-in), dispatches the neural arm via local one-shot workers (`.aristo/pending-neural.toml` → `aristo verify --pop-next` → `aristo verify --submit-verdict` → `aristo verify --apply-verdicts`; the SDK is the sole writer of `.proof` files) and the full arm as a background server session (`aristo verify --wait/--view/--tags`), then reviews results card-by-card (subject-only failure + success cards) inside a proof-review session. Fix-or-waive via `aristo verify --accept --because`.
+description: Drives the whole aristo verification loop. Opens with a scope × mode menu (Changed·neural is the default; full/both run server proofs and need sign-in), dispatches the neural arm via local one-shot workers (`.aristo/pending-neural.toml` → `aristo verify --pop-next` → `aristo verify --submit-verdict` → `aristo verify --apply-verdicts`; the SDK is the sole writer of `.proof` files) and the full arm as a background server session (`aristo verify --wait/--view/--tags`), then reviews results card-by-card (subject-only failure + success cards; server sessions may be summary-only until the server attaches per-annotation results — see step 2B) inside a proof-review session. Fix-or-waive via `aristo verify --accept --because`.
 sdk_version: {{SDK_VERSION}}
 ---
 
@@ -309,11 +309,17 @@ This runs the mechanical validator on every `.proof` file in `.aristo/proofs/`, 
 - Continue with the rest of the prompt / the neural arm. When you want results, re-attach: `aristo verify --view <session-id>` (snapshot) or `aristo verify --view <session-id> --wait` (block until terminal, with a `still running…` heartbeat).
 - **both** = run step 2A locally AND kick 2B in the background; review whichever completes (neural is usually first).
 
+**Server-dependent detail level (current behavior).** Hosted-org servers currently return **summary-level** session results — status, verified/failed counts, and the exit code — with an empty `annotations` array; the per-annotation failure cards documented in step 3 are attached only when the server serves per-annotation results (they return at parity; the CLI already renders them whenever present). When a session response carries no annotations:
+
+- Report the **summary + session id + dashboard link** as the server arm's outcome; that IS the result, not a failure of the skill.
+- Skip the card-by-card walk for the server arm (there are no cards to render); the neural arm's local `.aristo/proofs/` review is unaffected.
+- Ignore `waiver … matched no annotation this run` stderr notes from that run — an empty annotations array cannot prove a waiver stale, so do NOT advise removing waivers based on it.
+
 Never block the user on the server session. If the token is missing, the SDK reports it — fall back to neural (step 2A) and tell the user.
 
 ## Step 3 — results review (card-driven, inside a proof-review session)
 
-After the dispatched arms produce verdicts (neural via `--apply-verdicts`; full via `--view`), review them card by card. Wrap the whole review in a **proof-review session** so every decision lands as a substrate-recorded triage state.
+After the dispatched arms produce verdicts (neural via `--apply-verdicts`; full via `--view`), review them card by card. Wrap the whole review in a **proof-review session** so every decision lands as a substrate-recorded triage state. For the full arm, card-by-card review requires the session response to carry per-annotation results — a summary-only response (see step 2B) has nothing to card; report the tally and move on.
 
 ### 3.0 Open the session
 

@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- docs(skills): the `aristo-verify` skill now describes server (`full`) verify sessions honestly for current hosted-org servers: results are summary-level (status + counts + exit code) until the server attaches per-annotation results, at which point the per-failure differential cards documented since 0.2.0 render again — the card documentation stays, marked server-dependent. The skill also stops treating "waiver matched no annotation" notes from a summary-only run as evidence a waiver is stale.
+
 ### Added
 - core: the canon-verify client can now request server-side cancellation of an in-flight session (`POST /verify/sessions/:id/cancel`) with a short 5-second timeout so it fits inside a CI runner's SIGINT→SIGKILL grace window; groundwork for cancel-on-interrupt in `aristo verify --wait`.
 - cli: interrupting `aristo verify --wait` (Ctrl-C, or a CI job cancellation / force-push sending SIGINT/SIGTERM) now fires a best-effort server-side cancel of the in-flight session before exiting (code 130), instead of silently orphaning a live fleet run.
