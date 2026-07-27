@@ -9,7 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Changed
-- **cli: `aristo verify --wait` is now bounded — it gives up after 2 hours by default** (previously it polled forever). The bound sits above the server's own session budget (1-hour box jobs, 90-minute server poll ceiling), so normal runs are unaffected; expiry exits non-zero with a distinct "deadline exceeded" message, a re-attach command, and the override knob: set `ARISTO_VERIFY_WAIT_TIMEOUT_SECS=<seconds>` to raise or lower it.
+- **cli: `aristo verify --wait` is now bounded — it gives up after 2 hours by default** (previously it polled forever). The bound sits above the server's own session budget (1-hour box jobs, 90-minute server poll ceiling), so normal runs are unaffected; expiry exits non-zero with a distinct "deadline exceeded" message, a re-attach command, and the override knob: set `ARISTO_VERIFY_WAIT_TIMEOUT_SECS=<seconds>` to raise or lower it, or `0` to disable the deadline entirely. An unparsable value falls back to the default with a loud stderr note, never silently.
 - docs(skills): the `aristo-verify` skill now describes server (`full`) verify sessions honestly for current hosted-org servers: results are summary-level (status + counts + exit code) until the server attaches per-annotation results, at which point the per-failure differential cards documented since 0.2.0 render again — the card documentation stays, marked server-dependent. The skill also stops treating "waiver matched no annotation" notes from a summary-only run as evidence a waiver is stale.
 
 ### Added

@@ -443,15 +443,34 @@ impl PollConfig {
 const WAIT_DEADLINE_DEFAULT: Duration = Duration::from_secs(2 * 60 * 60);
 
 /// `ARISTO_VERIFY_WAIT_TIMEOUT_SECS` overrides the overall `--wait`
-/// deadline (whole seconds). Unset or unparsable → the 2-hour
-/// default.
+/// deadline (whole seconds). `0` disables the deadline entirely (the
+/// documented escape hatch for runs longer than any fixed bound);
+/// unset → the 2-hour default; unparsable → a loud stderr note naming
+/// the rejected value, then the default (never silent).
 fn wait_deadline() -> Duration {
-    if let Ok(raw) = std::env::var("ARISTO_VERIFY_WAIT_TIMEOUT_SECS") {
-        if let Ok(n) = raw.parse::<u64>() {
-            return Duration::from_secs(n);
-        }
+    let raw = std::env::var("ARISTO_VERIFY_WAIT_TIMEOUT_SECS").ok();
+    wait_deadline_from(raw.as_deref())
+}
+
+/// [`wait_deadline`] on an explicit value (test seam — env reads are
+/// process-global and would race across parallel tests).
+fn wait_deadline_from(raw: Option<&str>) -> Duration {
+    match raw {
+        None => WAIT_DEADLINE_DEFAULT,
+        Some(raw) => match raw.parse::<u64>() {
+            // 0 = no deadline: `elapsed >= Duration::MAX` never holds.
+            Ok(0) => Duration::MAX,
+            Ok(n) => Duration::from_secs(n),
+            Err(_) => {
+                eprintln!(
+                    "warning: ARISTO_VERIFY_WAIT_TIMEOUT_SECS={raw:?} is not a whole number \
+                     of seconds; using the default deadline of {}. (0 disables the deadline.)",
+                    fmt_deadline(WAIT_DEADLINE_DEFAULT)
+                );
+                WAIT_DEADLINE_DEFAULT
+            }
+        },
     }
-    WAIT_DEADLINE_DEFAULT
 }
 
 /// Render a deadline for the failure message: whole minutes when
@@ -2432,6 +2451,19 @@ mod tests {
         assert_eq!(fmt_deadline(Duration::from_secs(45 * 60)), "45m");
         assert_eq!(fmt_deadline(Duration::from_secs(90)), "90s");
         assert_eq!(fmt_deadline(Duration::ZERO), "0s");
+    }
+
+    #[test]
+    fn wait_deadline_from_env_edge_values() {
+        // Unset → default.
+        assert_eq!(wait_deadline_from(None), WAIT_DEADLINE_DEFAULT);
+        // A plain number of seconds.
+        assert_eq!(wait_deadline_from(Some("90")), Duration::from_secs(90));
+        // 0 = no deadline (documented escape hatch), NOT instant expiry.
+        assert_eq!(wait_deadline_from(Some("0")), Duration::MAX);
+        // Unparsable → default (with a loud stderr note, not silence).
+        assert_eq!(wait_deadline_from(Some("bogus")), WAIT_DEADLINE_DEFAULT);
+        assert_eq!(wait_deadline_from(Some("-5")), WAIT_DEADLINE_DEFAULT);
     }
 
     #[test]

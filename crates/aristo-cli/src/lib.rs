@@ -329,7 +329,8 @@ enum Commands {
         /// annotation is `verified` or `no_coverage`. Transient poll
         /// failures (server 5xx, network, timeout) are retried with
         /// backoff; the whole wait is bounded by a 2-hour deadline
-        /// (override via `ARISTO_VERIFY_WAIT_TIMEOUT_SECS`). Without
+        /// (override via `ARISTO_VERIFY_WAIT_TIMEOUT_SECS`; `0`
+        /// disables the deadline). Without
         /// `--wait` the SDK detaches after dispatch (prints session
         /// id and exits 0). Combine with `--view <id>` to attach to
         /// a session another invocation started.

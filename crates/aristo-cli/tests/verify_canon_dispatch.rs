@@ -502,9 +502,39 @@ fn wait_4xx_poll_error_stays_fatal() {
 
 #[test]
 fn wait_deadline_expiry_exits_with_distinct_message() {
-    // ARISTO_VERIFY_WAIT_TIMEOUT_SECS=0 forces immediate expiry: the
-    // CLI must exit non-zero with the deadline message + re-attach
-    // hint instead of polling forever.
+    // ARISTO_VERIFY_WAIT_TIMEOUT_SECS=1 against a session that never
+    // goes terminal: the CLI must exit non-zero with the deadline
+    // message + re-attach hint instead of polling forever.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        &fixture_with_running_gets("01HMSTUCK", 8000, true),
+    );
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .env("ARISTO_VERIFY_WAIT_TIMEOUT_SECS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stderr(contains("deadline exceeded"))
+        .stderr(contains("aristo verify --view 01HMSTUCK --wait"));
+}
+
+#[test]
+fn wait_timeout_zero_disables_the_deadline() {
+    // ARISTO_VERIFY_WAIT_TIMEOUT_SECS=0 means NO deadline (the
+    // documented escape hatch), not instant expiry: a session that
+    // completes must still render its verdict and exit 0.
     let tmp = tempfile::tempdir().unwrap();
     let _bare = init_repo_with_pushed_head(tmp.path());
     workspace_with_one_canon_bound_full_intent(tmp.path());
@@ -513,7 +543,28 @@ fn wait_deadline_expiry_exits_with_distinct_message() {
     write_aretta_token(home.path(), "https://example.test");
 
     let fixture_body = r#"{
-      "post": {"session_id": "01HMSTUCK", "view_url": "https://x", "plan_size": 1}
+      "post": {"session_id": "01HMNODEADLINE", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        {
+          "session_id": "01HMNODEADLINE",
+          "status": "running",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        },
+        {
+          "session_id": "01HMNODEADLINE",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
     }"#;
     let fixture_path = write_full_fixture(tmp.path(), fixture_body);
 
@@ -525,9 +576,51 @@ fn wait_deadline_expiry_exits_with_distinct_message() {
         .env("ARISTO_VERIFY_WAIT_TIMEOUT_SECS", "0")
         .args(["verify", "--wait"])
         .assert()
-        .failure()
-        .stderr(contains("deadline exceeded"))
-        .stderr(contains("aristo verify --view 01HMSTUCK --wait"));
+        .success()
+        .stdout(contains("status: done (1/1 verified)"))
+        .stderr(contains("deadline exceeded").not());
+}
+
+#[test]
+fn wait_timeout_unparsable_warns_and_uses_default() {
+    // A bogus ARISTO_VERIFY_WAIT_TIMEOUT_SECS must not be silently
+    // swallowed: the run proceeds on the default deadline with a loud
+    // stderr note naming the rejected value.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMBOGUS", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        {
+          "session_id": "01HMBOGUS",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .env("ARISTO_VERIFY_WAIT_TIMEOUT_SECS", "ninety")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stderr(contains("ARISTO_VERIFY_WAIT_TIMEOUT_SECS"))
+        .stderr(contains("ninety"));
 }
 
 #[test]
