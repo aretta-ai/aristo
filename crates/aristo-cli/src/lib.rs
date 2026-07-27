@@ -342,8 +342,16 @@ enum Commands {
         /// cache, zero canon-bound `verify="full"` entries, or
         /// everything skipped as already clean). Without this flag a
         /// zero-dispatch run exits 0, which CI reads as "verified"
-        /// even though nothing ran.
-        #[arg(long = "require-dispatch", conflicts_with = "view")]
+        /// even though nothing ran. Usable only on the dispatch path:
+        /// combining it with a verb that cannot dispatch is a usage
+        /// error, never a silent no-op.
+        #[arg(
+            long = "require-dispatch",
+            conflicts_with_all = [
+                "view", "audit", "pop_next", "queue_status",
+                "submit_verdict", "apply_verdicts", "accept"
+            ]
+        )]
         require_dispatch: bool,
         /// Re-attach to a previously-dispatched canon-verify session
         /// by id. Skips the source eligibility scan, push-first

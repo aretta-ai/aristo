@@ -407,6 +407,31 @@ fn require_dispatch_conflicts_with_view() {
         .code(2);
 }
 
+#[test]
+fn require_dispatch_conflicts_with_every_non_dispatch_verb() {
+    // Every verify verb that early-returns before the dispatch path
+    // must reject --require-dispatch as a usage error — a silently
+    // ignored CI guard is a misconfigured CI that still looks green.
+    let tmp = tempfile::tempdir().unwrap();
+    for conflicting in [
+        vec!["--audit"],
+        vec!["--pop-next"],
+        vec!["--queue-status"],
+        vec!["--apply-verdicts"],
+        vec!["--submit-verdict", "--id", "x", "--json", "{}"],
+        vec!["--accept", "foo", "--because", "reason"],
+    ] {
+        let mut args = vec!["verify", "--require-dispatch"];
+        args.extend(&conflicting);
+        aristo_in(tmp.path())
+            .args(&args)
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(contains("cannot be used with"));
+    }
+}
+
 /// Fixture builder for `--wait` / `--view` paths: takes a JSON object
 /// describing the post-and-gets sequence and writes it to a file the
 /// SDK reads via ARISTO_CANON_VERIFY_FIXTURE.
