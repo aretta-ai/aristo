@@ -289,9 +289,9 @@ pub(crate) fn run_canon_dispatch(
     if !pushed {
         return Err(CliError::Other {
             message: format!(
-                "HEAD ({}) is not pushed to origin. Push your branch first; \
-                 `aristo verify --watch` for local-edit sync is planned but \
-                 not yet shipped.",
+                "HEAD ({}) is not pushed to origin. Push your branch first — \
+                 the server verifies the commit it fetches from your remote, \
+                 so a local-only commit cannot be verified.",
                 short_sha(&commit_sha)
             ),
             exit_code: 1,

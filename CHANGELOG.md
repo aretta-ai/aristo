@@ -14,6 +14,7 @@ The `verify --wait` robustness release. `aristo verify --wait` is the loop custo
 
 ### Fixed
 - cli: `aristo verify --wait` now survives transient poll failures (server 5xx, network drops, transport timeouts) with bounded exponential-backoff retries instead of aborting the whole CI wait on a single blip; auth and 4xx errors still fail immediately, and a sustained outage exits with a re-attach hint.
+- cli: the push-first precheck error no longer advertises `aristo verify --watch` — a flag that does not exist; it now explains why the push is required (the server verifies the commit it fetches from your remote).
 
 ### Changed
 - **cli: `aristo verify --wait` is now bounded — it gives up after 2 hours by default** (previously it polled forever). The bound sits above the server's own session budget (1-hour box jobs, 90-minute server poll ceiling), so normal runs are unaffected; expiry exits non-zero with a distinct "deadline exceeded" message, a re-attach command, and the override knob: set `ARISTO_VERIFY_WAIT_TIMEOUT_SECS=<seconds>` to raise or lower it, or `0` to disable the deadline entirely. An unparsable value falls back to the default with a loud stderr note, never silently.
