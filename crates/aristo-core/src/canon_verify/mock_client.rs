@@ -64,13 +64,24 @@ impl MockVerifyClient {
     /// synthesized default (use [`Self::with_post_response`] when you
     /// need control over the POST result too).
     pub fn with_get_responses(get_responses: Vec<GetVerifySessionResponse>) -> Self {
+        Self::with_get_results(get_responses.into_iter().map(Ok).collect())
+    }
+
+    /// Construct a mock that replays this sequence of GET *results* —
+    /// including error outcomes — one per `get_session` call. The seam
+    /// for exercising the CLI's `--wait` poll-loop failure handling
+    /// (transient 5xx/network blips vs. fatal 4xx). POST always
+    /// succeeds with a synthesized default.
+    pub fn with_get_results(
+        get_results: Vec<Result<GetVerifySessionResponse, VerifyError>>,
+    ) -> Self {
         Self {
             post_response: Mutex::new(Some(Ok(PostVerifySessionResponse {
                 session_id: "mock-session".into(),
                 view_url: "https://mock.aretta.ai/dashboard/jobs/mock-session".into(),
                 plan_size: 0,
             }))),
-            get_responses: Mutex::new(get_responses.into_iter().map(Ok).collect::<Vec<_>>()),
+            get_responses: Mutex::new(get_results),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
         }
@@ -83,9 +94,20 @@ impl MockVerifyClient {
         post: PostVerifySessionResponse,
         get_responses: Vec<GetVerifySessionResponse>,
     ) -> Self {
+        Self::with_post_and_get_results(post, get_responses.into_iter().map(Ok).collect())
+    }
+
+    /// [`Self::with_post_and_gets`], but the GET sequence may include
+    /// error outcomes — the fixture seam behind
+    /// `ARISTO_CANON_VERIFY_FIXTURE` uses this to simulate mid-poll
+    /// server/network failures against the real CLI binary.
+    pub fn with_post_and_get_results(
+        post: PostVerifySessionResponse,
+        get_results: Vec<Result<GetVerifySessionResponse, VerifyError>>,
+    ) -> Self {
         Self {
             post_response: Mutex::new(Some(Ok(post))),
-            get_responses: Mutex::new(get_responses.into_iter().map(Ok).collect::<Vec<_>>()),
+            get_responses: Mutex::new(get_results),
             posted: Mutex::new(Vec::new()),
             fetched: Mutex::new(Vec::new()),
         }
@@ -246,6 +268,31 @@ mod tests {
             fetched,
             vec![("sid".into(), None), ("sid".into(), Some(30))]
         );
+    }
+
+    #[test]
+    fn get_results_replays_errors_and_responses_in_order() {
+        let done = done_response(VerifySessionSummary {
+            total_annotations: 0,
+            verified: 0,
+            failed: 0,
+            build_failed: 0,
+            inconclusive: 0,
+            no_coverage: 0,
+        });
+        let mock = MockVerifyClient::with_get_results(vec![
+            Err(VerifyError::Server {
+                status: 503,
+                message: "upstream restart".into(),
+            }),
+            Ok(done.clone()),
+        ]);
+        match mock.get_session("sid", None).unwrap_err() {
+            VerifyError::Server { status: 503, .. } => {}
+            other => panic!("expected Server 503 first, got {other:?}"),
+        }
+        assert_eq!(mock.get_session("sid", None).unwrap(), done);
+        assert_eq!(mock.fetched_sessions().len(), 2);
     }
 
     #[test]

@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- cli: `aristo verify --wait` now survives transient poll failures (server 5xx, network drops, transport timeouts) with bounded exponential-backoff retries instead of aborting the whole CI wait on a single blip; auth and 4xx errors still fail immediately, and a sustained outage exits with a re-attach hint.
+
 ## [0.6.0] — 2026-07-22
 
 ### Added

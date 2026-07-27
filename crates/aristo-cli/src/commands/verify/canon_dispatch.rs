@@ -397,6 +397,45 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     Ok(())
 }
 
+/// Tuning knobs for [`poll_until_terminal`]. Production reads them
+/// from env/defaults via [`PollConfig::from_env`]; unit tests drive
+/// [`poll_until_terminal_with`] directly (no env mutation — parallel
+/// tests must not race on process-global state).
+struct PollConfig {
+    /// Between-poll sleep (also the base unit for retry backoff).
+    interval: Duration,
+    /// Consecutive transient-failure budget before giving up.
+    max_transient_retries: u32,
+}
+
+impl PollConfig {
+    fn from_env() -> Self {
+        Self {
+            interval: poll_interval(),
+            max_transient_retries: MAX_TRANSIENT_POLL_RETRIES,
+        }
+    }
+}
+
+/// Transient-retry budget for `--wait` polling: how many CONSECUTIVE
+/// failed polls (server 5xx / network / transport timeout) are
+/// absorbed before giving up. A successful poll resets the count, so
+/// a long run tolerates any number of isolated blips — only a
+/// sustained outage aborts the wait.
+const MAX_TRANSIENT_POLL_RETRIES: u32 = 5;
+
+/// Cap on the exponential between-retry backoff, so a deep retry
+/// never sleeps unreasonably long.
+const RETRY_BACKOFF_CAP: Duration = Duration::from_secs(30);
+
+/// Exponential backoff before transient retry `attempt` (1-based):
+/// `interval * 2^attempt`, capped at [`RETRY_BACKOFF_CAP`].
+fn retry_backoff(interval: Duration, attempt: u32) -> Duration {
+    interval
+        .saturating_mul(2u32.saturating_pow(attempt.min(16)))
+        .min(RETRY_BACKOFF_CAP)
+}
+
 /// Long-poll loop until the session reaches a terminal state. Renders
 /// an intermediate snapshot at first non-terminal response so the user
 /// sees the in-flight state; emits a heartbeat every 60s.
@@ -404,14 +443,75 @@ fn poll_until_terminal<C: VerifyClient + ?Sized>(
     client: &C,
     session_id: &str,
 ) -> CliResult<GetVerifySessionResponse> {
+    poll_until_terminal_with(client, session_id, &PollConfig::from_env())
+}
+
+/// Is this error worth retrying? Server 5xx, network transport
+/// failures, and transport timeouts are transient — a proxy restart
+/// or server redeploy mid-run must not kill a CI wait with the
+/// verdict almost in hand. Auth and 4xx are deterministic (a retry
+/// re-sends the same rejected request) and decode errors indicate a
+/// client↔server contract mismatch; all of those stay fatal.
+fn is_transient(e: &VerifyError) -> bool {
+    matches!(
+        e,
+        VerifyError::Server { .. } | VerifyError::Network(_) | VerifyError::Timeout
+    )
+}
+
+fn transient_retries_exhausted(last: &VerifyError, session_id: &str, budget: u32) -> CliError {
+    CliError::Other {
+        message: format!(
+            "verify --wait gave up after {budget} consecutive transient poll failures \
+             (last error: {last}).\n  \
+             The session may still be running server-side — re-attach with:\n  \
+             aristo verify --view {session_id} --wait"
+        ),
+        exit_code: 1,
+    }
+}
+
+/// [`poll_until_terminal`] with explicit knobs (test seam).
+///
+/// Failure policy: a transient poll error ([`is_transient`]) is
+/// retried with exponential backoff for up to
+/// `cfg.max_transient_retries` CONSECUTIVE failures; a successful
+/// poll resets the budget. Non-transient errors abort immediately.
+fn poll_until_terminal_with<C: VerifyClient + ?Sized>(
+    client: &C,
+    session_id: &str,
+    cfg: &PollConfig,
+) -> CliResult<GetVerifySessionResponse> {
     let started = Instant::now();
     let mut last_heartbeat = started;
     let mut intermediate_rendered = false;
+    let mut consecutive_transient: u32 = 0;
 
     loop {
-        let snapshot = client
-            .get_session(session_id, Some(LONGPOLL_WAIT_SECS))
-            .map_err(verify_error_to_cli)?;
+        let snapshot = match client.get_session(session_id, Some(LONGPOLL_WAIT_SECS)) {
+            Ok(s) => {
+                consecutive_transient = 0;
+                s
+            }
+            Err(e) if is_transient(&e) => {
+                consecutive_transient += 1;
+                if consecutive_transient > cfg.max_transient_retries {
+                    return Err(transient_retries_exhausted(
+                        &e,
+                        session_id,
+                        cfg.max_transient_retries,
+                    ));
+                }
+                eprintln!(
+                    "  note: transient error polling verify session ({e}); \
+                     retrying ({consecutive_transient}/{})…",
+                    cfg.max_transient_retries
+                );
+                std::thread::sleep(retry_backoff(cfg.interval, consecutive_transient));
+                continue;
+            }
+            Err(e) => return Err(verify_error_to_cli(e)),
+        };
         if snapshot.status.is_terminal() {
             return Ok(snapshot);
         }
@@ -434,7 +534,7 @@ fn poll_until_terminal<C: VerifyClient + ?Sized>(
         // Back off briefly so we don't hammer when the server returns
         // immediately (i.e., when ?wait= is ignored — current proxy
         // state).
-        std::thread::sleep(poll_interval());
+        std::thread::sleep(cfg.interval);
     }
 }
 
@@ -1285,18 +1385,26 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
         view_url: p.view_url,
         plan_size: p.plan_size,
     });
-    // Pre-canned GET response sequence (for --view + --wait paths).
-    let get_responses: Vec<GetVerifySessionResponse> = parsed.gets.unwrap_or_default();
+    // Pre-canned GET result sequence (for --view + --wait paths).
+    // Entries are either session snapshots or `{"error": {...}}`
+    // objects simulating failed polls (poll-resilience tests).
+    let get_results: Vec<Result<GetVerifySessionResponse, VerifyError>> = parsed
+        .gets
+        .unwrap_or_default()
+        .into_iter()
+        .map(|g| match g {
+            FixtureGet::Error { error } => Err(error.into_verify_error()),
+            FixtureGet::Snapshot(s) => Ok(*s),
+        })
+        .collect();
     // Record the POST body to a sibling file so tests can inspect it.
     let record_path = format!("{path}.posted.json");
-    let mock = match (post_resp, get_responses.is_empty()) {
+    let mock = match (post_resp, get_results.is_empty()) {
         (Some(p), true) => aristo_core::canon_verify::MockVerifyClient::with_post_response(p),
         (Some(p), false) => {
-            aristo_core::canon_verify::MockVerifyClient::with_post_and_gets(p, get_responses)
+            aristo_core::canon_verify::MockVerifyClient::with_post_and_get_results(p, get_results)
         }
-        (None, false) => {
-            aristo_core::canon_verify::MockVerifyClient::with_get_responses(get_responses)
-        }
+        (None, false) => aristo_core::canon_verify::MockVerifyClient::with_get_results(get_results),
         (None, true) => return None,
     };
     Some(Box::new(RecordingMock {
@@ -1308,7 +1416,48 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
 #[derive(serde::Deserialize)]
 struct FixtureFile {
     post: Option<FixturePost>,
-    gets: Option<Vec<GetVerifySessionResponse>>,
+    gets: Option<Vec<FixtureGet>>,
+}
+
+/// One canned GET outcome in the fixture file: a session snapshot, or
+/// an `{"error": {...}}` object standing in for a failed poll. Untagged:
+/// a real snapshot has no `error` field, so the variants can't collide.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum FixtureGet {
+    Error { error: FixtureError },
+    Snapshot(Box<GetVerifySessionResponse>),
+}
+
+/// Wire-error stand-in for fixtures: `kind` selects the
+/// [`VerifyError`] variant (`server` | `bad_request` | `network` |
+/// `timeout`), `status`/`message` fill it in where applicable.
+#[derive(serde::Deserialize)]
+struct FixtureError {
+    kind: String,
+    #[serde(default)]
+    status: Option<u16>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+impl FixtureError {
+    fn into_verify_error(self) -> VerifyError {
+        let message = self.message.unwrap_or_default();
+        match self.kind.as_str() {
+            "server" => VerifyError::Server {
+                status: self.status.unwrap_or(500),
+                message,
+            },
+            "bad_request" => VerifyError::BadRequest {
+                status: self.status.unwrap_or(400),
+                message,
+            },
+            "network" => VerifyError::Network(message),
+            "timeout" => VerifyError::Timeout,
+            other => VerifyError::Fixture(format!("unknown fixture error kind: {other}")),
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -1871,6 +2020,153 @@ mod tests {
         assert_eq!(extract_line("fn really::long::path (line 1)"), Some(1));
         assert_eq!(extract_line("fn x"), None);
         assert_eq!(extract_line(""), None);
+    }
+
+    // ─── poll_until_terminal (resilience) ────────────────────────────────
+
+    use aristo_core::canon_verify::{MockVerifyClient, VerifySessionSummary};
+
+    fn snapshot_with_status(status: SessionStatus) -> GetVerifySessionResponse {
+        GetVerifySessionResponse {
+            session_id: "sid".into(),
+            status,
+            user_commit_sha: "abc1234567890".into(),
+            books_commit_sha: None,
+            canon_version: "v0.1.0".into(),
+            started_at: "2026-05-24T00:00:00Z".into(),
+            completed_at: None,
+            annotations: vec![],
+            summary: VerifySessionSummary {
+                total_annotations: 0,
+                verified: 0,
+                failed: 0,
+                build_failed: 0,
+                inconclusive: 0,
+                no_coverage: 0,
+            },
+        }
+    }
+
+    /// Zero-sleep knobs so poll-loop tests run instantly.
+    fn fast_poll_cfg() -> PollConfig {
+        PollConfig {
+            interval: Duration::ZERO,
+            max_transient_retries: 5,
+        }
+    }
+
+    fn other_message(e: CliError) -> String {
+        match e {
+            CliError::Other { message, .. } => message,
+            other => panic!("expected CliError::Other, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn poll_recovers_from_transient_errors_mid_wait() {
+        // One 503, a good running poll, then a network blip and a
+        // transport timeout, then done. The loop must absorb every
+        // transient failure and still return the terminal snapshot.
+        let mock = MockVerifyClient::with_get_results(vec![
+            Err(VerifyError::Server {
+                status: 503,
+                message: "upstream restart".into(),
+            }),
+            Ok(snapshot_with_status(SessionStatus::Running)),
+            Err(VerifyError::Network("connection reset by peer".into())),
+            Err(VerifyError::Timeout),
+            Ok(snapshot_with_status(SessionStatus::Done)),
+        ]);
+        let snap = poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())
+            .expect("transient blips mid-poll must not abort --wait");
+        assert_eq!(snap.status, SessionStatus::Done);
+        assert_eq!(
+            mock.fetched_sessions().len(),
+            5,
+            "every canned result must have been consumed"
+        );
+    }
+
+    #[test]
+    fn poll_4xx_stays_fatal_on_first_hit() {
+        let mock = MockVerifyClient::with_get_results(vec![Err(VerifyError::BadRequest {
+            status: 404,
+            message: "not_found".into(),
+        })]);
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())
+                .expect_err("4xx must abort immediately — retrying re-sends a rejected request"),
+        );
+        assert!(msg.contains("404"), "message must carry the status: {msg}");
+        assert_eq!(mock.fetched_sessions().len(), 1, "no retry after a 4xx");
+    }
+
+    #[test]
+    fn poll_auth_error_stays_fatal_on_first_hit() {
+        let mock = MockVerifyClient::with_get_results(vec![Err(VerifyError::Auth(
+            aristo_core::auth::AuthError::Invalid,
+        ))]);
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())
+                .expect_err("auth errors must abort immediately"),
+        );
+        assert!(
+            msg.contains("aristo auth login"),
+            "auth failure must point at re-login: {msg}"
+        );
+        assert_eq!(mock.fetched_sessions().len(), 1, "no retry after auth");
+    }
+
+    #[test]
+    fn poll_gives_up_after_consecutive_transient_budget() {
+        // Budget of 2 → the 3rd consecutive transient failure aborts.
+        let mock = MockVerifyClient::with_get_results(vec![
+            Err(VerifyError::Server {
+                status: 502,
+                message: "bad gateway".into(),
+            }),
+            Err(VerifyError::Server {
+                status: 502,
+                message: "bad gateway".into(),
+            }),
+            Err(VerifyError::Server {
+                status: 502,
+                message: "bad gateway".into(),
+            }),
+        ]);
+        let cfg = PollConfig {
+            interval: Duration::ZERO,
+            max_transient_retries: 2,
+        };
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &cfg)
+                .expect_err("a sustained outage must eventually abort"),
+        );
+        assert!(
+            msg.contains("transient"),
+            "give-up message must name the failure class: {msg}"
+        );
+        assert!(
+            msg.contains("aristo verify --view sid --wait"),
+            "give-up message must offer the re-attach command: {msg}"
+        );
+        assert_eq!(
+            mock.fetched_sessions().len(),
+            3,
+            "budget 2 = initial call + 2 retries"
+        );
+    }
+
+    #[test]
+    fn retry_backoff_grows_and_caps() {
+        let base = Duration::from_secs(3);
+        assert_eq!(retry_backoff(base, 1), Duration::from_secs(6));
+        assert_eq!(retry_backoff(base, 2), Duration::from_secs(12));
+        assert_eq!(retry_backoff(base, 3), Duration::from_secs(24));
+        // Capped: 3s * 2^4 = 48s → 30s cap.
+        assert_eq!(retry_backoff(base, 4), RETRY_BACKOFF_CAP);
+        // Degenerate test interval never sleeps.
+        assert_eq!(retry_backoff(Duration::ZERO, 5), Duration::ZERO);
     }
 
     // ─── dispatch_session (with mock client) ─────────────────────────────

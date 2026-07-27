@@ -326,6 +326,90 @@ fn write_full_fixture(dir: &Path, body: &str) -> PathBuf {
 }
 
 #[test]
+fn wait_recovers_from_transient_poll_error_and_still_renders_verdict() {
+    // A 503 mid-poll (proxy restart / server redeploy) must NOT abort
+    // the customer's CI wait: the loop retries and the terminal
+    // verdict still lands.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMBLIP", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        { "error": {"kind": "server", "status": 503, "message": "upstream restart"} },
+        {
+          "session_id": "01HMBLIP",
+          "status": "running",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        },
+        { "error": {"kind": "network", "message": "connection reset by peer"} },
+        {
+          "session_id": "01HMBLIP",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stdout(contains("status: done (1/1 verified)"))
+        .stderr(contains("transient error polling verify session"))
+        .stderr(contains("retrying"));
+}
+
+#[test]
+fn wait_4xx_poll_error_stays_fatal() {
+    // A 4xx is deterministic — retrying re-sends the same rejected
+    // request — so the poll loop must abort on first hit.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMGONE", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        { "error": {"kind": "bad_request", "status": 404, "message": "not_found"} }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stderr(contains("404"))
+        .stderr(contains("retrying").not());
+}
+
+#[test]
 fn wait_blocks_until_session_terminal_and_renders_final_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
     let _bare = init_repo_with_pushed_head(tmp.path());
