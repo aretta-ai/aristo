@@ -42,6 +42,15 @@ pub trait VerifyClient: Send + Sync {
         session_id: &str,
         wait_seconds: Option<u32>,
     ) -> Result<GetVerifySessionResponse, VerifyError>;
+
+    /// `POST /verify/sessions/:id/cancel` — request server-side
+    /// cancellation of an in-flight session. Idempotent server-side
+    /// (a session already terminal answers success without effect).
+    /// The CLI fires this best-effort on SIGINT/SIGTERM during
+    /// `--wait`, so a cancelled CI job (`cancel-in-progress`, a
+    /// force-push) doesn't orphan a live fleet run. The success body
+    /// carries no information the CLI needs, so the result is `()`.
+    fn cancel_session(&self, session_id: &str) -> Result<(), VerifyError>;
 }
 
 /// Errors surfaced by [`VerifyClient`] methods.

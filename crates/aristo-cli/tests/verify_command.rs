@@ -567,6 +567,52 @@ grounds = [{{ kind = "composition", reason = "single-step proof" }}]
 }
 
 #[test]
+fn neural_only_workspace_with_fresh_proof_gets_no_zero_dispatch_warning() {
+    // Review round 1, finding 2: a neural-only workspace whose entry
+    // is skipped as clean has NOTHING to dispatch to the canon-verify
+    // server — that is normal, not a vacuous-green hazard. The
+    // zero-dispatch warning must count only canon-bound
+    // `verify="full"` skips, so this run stays quiet.
+    let tmp = tempfile::tempdir().unwrap();
+    let text_h = workspace_with_one_neural_intent(tmp.path(), "my_intent", "the property holds");
+    let zero_hash = format!("sha256:{}", "0".repeat(64));
+    let proof = format!(
+        r#"[verdict]
+type = "verified"
+method = "neural"
+produced_at_text_hash = "{text_h}"
+produced_at_body_hash = "{zero_hash}"
+produced_by = "test@0"
+attempts = 1
+property_kind = "invariant"
+
+[verified.proof]
+conclusion = "the property holds"
+
+[[verified.proof.steps]]
+path = "0"
+claim = "trivially"
+relation_to_parent = "decomposes"
+grounds = [{{ kind = "composition", reason = "single-step proof" }}]
+"#
+    );
+    write_proof(tmp.path(), "my_intent", &proof);
+    aristo_in(tmp.path())
+        .args(["verify", "--apply-verdicts"])
+        .assert()
+        .success();
+
+    // The entry is now skipped as clean. No canon-bound full entries
+    // exist, so no zero-dispatch warning may fire.
+    let assert = aristo_in(tmp.path()).arg("verify").assert().success();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        !stderr.contains("no canon-verify dispatch"),
+        "neural-only fresh-proof workspace must stay quiet, got: {stderr}"
+    );
+}
+
+#[test]
 fn counterexample_status_with_passing_proof_is_skipped() {
     // GAP-2: Counterexample used to be excluded from the terminal-clean
     // set, so it re-ran every verify cycle. The new skip logic should

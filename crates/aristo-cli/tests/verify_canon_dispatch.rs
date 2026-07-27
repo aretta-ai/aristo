@@ -316,6 +316,122 @@ fn missing_cache_entry_for_canon_bound_full_skips_with_refresh_hint() {
         .stdout(contains("aristo canon refresh"));
 }
 
+#[test]
+fn zero_dispatch_prints_unmissable_warning_but_still_exits_zero() {
+    // Default behavior (no --require-dispatch): a zero-dispatch run
+    // keeps exit 0 (operator ruling), but the silence is gone — a
+    // loud stderr warning says nothing reached the server and what
+    // to check.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    fs::write(
+        tmp.path().join(".aristo/canon-matches.toml"),
+        "[__meta__]\nschema_version = 1\n",
+    )
+    .unwrap();
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .arg("verify")
+        .assert()
+        .success()
+        .stderr(contains("warning: no canon-verify dispatch"))
+        .stderr(contains("aristo canon refresh"))
+        .stderr(contains("--require-dispatch"));
+}
+
+#[test]
+fn require_dispatch_fails_when_dispatch_set_is_empty() {
+    // Same empty-cache setup as the refresh-hint test, but with
+    // --require-dispatch the vacuous run must exit NON-ZERO — this is
+    // the CI gate against "green because nothing ran".
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    fs::write(
+        tmp.path().join(".aristo/canon-matches.toml"),
+        "[__meta__]\nschema_version = 1\n",
+    )
+    .unwrap();
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .args(["verify", "--require-dispatch"])
+        .assert()
+        .failure()
+        .stderr(contains("--require-dispatch"))
+        .stderr(contains("aristo canon refresh"));
+}
+
+#[test]
+fn require_dispatch_passes_when_something_dispatches() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let _captured = write_post_fixture(tmp.path(), "01HMREQOK", 1);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env(
+            "ARISTO_CANON_VERIFY_FIXTURE",
+            tmp.path().join("verify-fixture.json"),
+        )
+        .args(["verify", "--require-dispatch"])
+        .assert()
+        .success()
+        .stdout(contains("verify session dispatched"));
+}
+
+#[test]
+fn require_dispatch_conflicts_with_view() {
+    // --view attaches to an already-dispatched session; requiring a
+    // fresh dispatch there is contradictory, so clap rejects it.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path())
+        .args(["verify", "--view", "01HM", "--require-dispatch"])
+        .assert()
+        .failure()
+        .code(2);
+}
+
+#[test]
+fn require_dispatch_conflicts_with_every_non_dispatch_verb() {
+    // Every verify verb that early-returns before the dispatch path
+    // must reject --require-dispatch as a usage error — a silently
+    // ignored CI guard is a misconfigured CI that still looks green.
+    let tmp = tempfile::tempdir().unwrap();
+    for conflicting in [
+        vec!["--audit"],
+        vec!["--pop-next"],
+        vec!["--queue-status"],
+        vec!["--apply-verdicts"],
+        vec!["--submit-verdict", "--id", "x", "--json", "{}"],
+        vec!["--accept", "foo", "--because", "reason"],
+    ] {
+        let mut args = vec!["verify", "--require-dispatch"];
+        args.extend(&conflicting);
+        aristo_in(tmp.path())
+            .args(&args)
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(contains("cannot be used with"));
+    }
+}
+
 /// Fixture builder for `--wait` / `--view` paths: takes a JSON object
 /// describing the post-and-gets sequence and writes it to a file the
 /// SDK reads via ARISTO_CANON_VERIFY_FIXTURE.
@@ -323,6 +439,213 @@ fn write_full_fixture(dir: &Path, body: &str) -> PathBuf {
     let path = dir.join("verify-fixture.json");
     fs::write(&path, body).unwrap();
     path
+}
+
+#[test]
+fn wait_recovers_from_transient_poll_error_and_still_renders_verdict() {
+    // A 503 mid-poll (proxy restart / server redeploy) must NOT abort
+    // the customer's CI wait: the loop retries and the terminal
+    // verdict still lands.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMBLIP", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        { "error": {"kind": "server", "status": 503, "message": "upstream restart"} },
+        {
+          "session_id": "01HMBLIP",
+          "status": "running",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        },
+        { "error": {"kind": "network", "message": "connection reset by peer"} },
+        {
+          "session_id": "01HMBLIP",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stdout(contains("status: done (1/1 verified)"))
+        .stderr(contains("transient error polling verify session"))
+        .stderr(contains("retrying"));
+}
+
+#[test]
+fn wait_4xx_poll_error_stays_fatal() {
+    // A 4xx is deterministic — retrying re-sends the same rejected
+    // request — so the poll loop must abort on first hit.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMGONE", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        { "error": {"kind": "bad_request", "status": 404, "message": "not_found"} }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stderr(contains("404"))
+        .stderr(contains("retrying").not());
+}
+
+#[test]
+fn wait_deadline_expiry_exits_with_distinct_message() {
+    // ARISTO_VERIFY_WAIT_TIMEOUT_SECS=1 against a session that never
+    // goes terminal: the CLI must exit non-zero with the deadline
+    // message + re-attach hint instead of polling forever.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        &fixture_with_running_gets("01HMSTUCK", 8000, true),
+    );
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .env("ARISTO_VERIFY_WAIT_TIMEOUT_SECS", "1")
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stderr(contains("deadline exceeded"))
+        .stderr(contains("aristo verify --view 01HMSTUCK --wait"));
+}
+
+#[test]
+fn wait_timeout_zero_disables_the_deadline() {
+    // ARISTO_VERIFY_WAIT_TIMEOUT_SECS=0 means NO deadline (the
+    // documented escape hatch), not instant expiry: a session that
+    // completes must still render its verdict and exit 0.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMNODEADLINE", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        {
+          "session_id": "01HMNODEADLINE",
+          "status": "running",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        },
+        {
+          "session_id": "01HMNODEADLINE",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .env("ARISTO_VERIFY_WAIT_TIMEOUT_SECS", "0")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stdout(contains("status: done (1/1 verified)"))
+        .stderr(contains("deadline exceeded").not());
+}
+
+#[test]
+fn wait_timeout_unparsable_warns_and_uses_default() {
+    // A bogus ARISTO_VERIFY_WAIT_TIMEOUT_SECS must not be silently
+    // swallowed: the run proceeds on the default deadline with a loud
+    // stderr note naming the rejected value.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    let fixture_body = r#"{
+      "post": {"session_id": "01HMBOGUS", "view_url": "https://x", "plan_size": 1},
+      "gets": [
+        {
+          "session_id": "01HMBOGUS",
+          "status": "done",
+          "user_commit_sha": "abc1234567890",
+          "canon_version": "v0.1.0",
+          "started_at": "2026-05-24T00:00:00Z",
+          "completed_at": "2026-05-24T00:01:00Z",
+          "annotations": [],
+          "summary": {"total_annotations": 1, "verified": 1, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+        }
+      ]
+    }"#;
+    let fixture_path = write_full_fixture(tmp.path(), fixture_body);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "1")
+        .env("ARISTO_VERIFY_WAIT_TIMEOUT_SECS", "ninety")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stderr(contains("ARISTO_VERIFY_WAIT_TIMEOUT_SECS"))
+        .stderr(contains("ninety"));
 }
 
 #[test]
@@ -665,6 +988,146 @@ fn wait_renders_fault_banner_but_not_op_trace_for_enriched_report() {
         // Still no model/Lean identity on the user surface (IP).
         .stdout(contains("lean").not())
         .stdout(contains("Lean").not());
+}
+
+/// A fixture body with `n` identical "running" GET snapshots (and
+/// optionally a POST response) — enough runway that a signal test can
+/// interrupt the poll loop long before the mock queue drains.
+fn fixture_with_running_gets(session_id: &str, n: usize, with_post: bool) -> String {
+    let running = serde_json::json!({
+        "session_id": session_id,
+        "status": "running",
+        "user_commit_sha": "abc1234567890",
+        "canon_version": "v0.1.0",
+        "started_at": "2026-05-24T00:00:00Z",
+        "annotations": [],
+        "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+    });
+    let gets: Vec<serde_json::Value> = std::iter::repeat_with(|| running.clone()).take(n).collect();
+    let mut fx = serde_json::json!({ "gets": gets });
+    if with_post {
+        fx["post"] = serde_json::json!({
+            "session_id": session_id,
+            "view_url": "https://x",
+            "plan_size": 1
+        });
+    }
+    fx.to_string()
+}
+
+/// Spawn the real binary with the given verify args, let it reach the
+/// poll loop, deliver SIGINT, and collect the output.
+#[cfg(unix)]
+fn spawn_and_interrupt(
+    dir: &Path,
+    home: &Path,
+    fixture_path: &Path,
+    args: &[&str],
+) -> std::process::Output {
+    let bin = assert_cmd::cargo::cargo_bin("aristo");
+    let child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .env_remove("ARETTA_TOKEN")
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "50")
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn aristo");
+    // Give the process time to install the interrupt handler and
+    // enter the poll loop, then deliver SIGINT.
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let status = std::process::Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("send SIGINT");
+    assert!(status.success(), "kill -INT failed");
+    child.wait_with_output().expect("collect output")
+}
+
+#[cfg(unix)]
+#[test]
+fn sigint_during_dispatch_wait_cancels_the_owned_session() {
+    // The dispatching invocation OWNS the session: interrupting its
+    // --wait must fire the server-side cancel (proven via the mock's
+    // .cancelled sidecar) and exit 130.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        &fixture_with_running_gets("01HMOWNED", 400, true),
+    );
+
+    let out = spawn_and_interrupt(
+        tmp.path(),
+        home.path(),
+        &fixture_path,
+        &["verify", "--wait"],
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(130),
+        "interrupt must exit 130; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("cancel requested"),
+        "owner interrupt must cancel: {stderr}"
+    );
+    let cancelled = fs::read_to_string(tmp.path().join("verify-fixture.json.cancelled"))
+        .expect("cancel sidecar must exist — the dispatcher owns the session");
+    assert_eq!(cancelled, "01HMOWNED");
+}
+
+#[cfg(unix)]
+#[test]
+fn sigint_during_view_wait_detaches_without_cancelling() {
+    // --view attaches to a session ANOTHER invocation started — a
+    // viewer is an observer, not the owner. Interrupting it must NOT
+    // cancel the session (that would kill the primary CI waiter's
+    // run); it detaches with a re-attach hint and exits 130.
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        &fixture_with_running_gets("01HMOTHERS", 400, false),
+    );
+
+    let out = spawn_and_interrupt(
+        tmp.path(),
+        home.path(),
+        &fixture_path,
+        &["verify", "--view", "01HMOTHERS", "--wait"],
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(130),
+        "viewer interrupt must exit 130; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("detached"),
+        "viewer interrupt must detach, not cancel: {stderr}"
+    );
+    assert!(
+        !stderr.contains("cancel requested"),
+        "viewer must never cancel a session it did not start: {stderr}"
+    );
+    assert!(
+        !tmp.path().join("verify-fixture.json.cancelled").exists(),
+        "no cancel request may leave a viewer process"
+    );
 }
 
 #[test]

@@ -8,6 +8,19 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- **cli: `aristo verify --wait` is now bounded — it gives up after 2 hours by default** (previously it polled forever). The bound sits above the server's own session budget (1-hour box jobs, 90-minute server poll ceiling), so normal runs are unaffected; expiry exits non-zero with a distinct "deadline exceeded" message, a re-attach command, and the override knob: set `ARISTO_VERIFY_WAIT_TIMEOUT_SECS=<seconds>` to raise or lower it, or `0` to disable the deadline entirely. An unparsable value falls back to the default with a loud stderr note, never silently.
+- docs(skills): the `aristo-verify` skill now describes server (`full`) verify sessions honestly for current hosted-org servers: results are summary-level (status + counts + exit code) until the server attaches per-annotation results, at which point the per-failure differential cards documented since 0.2.0 render again — the card documentation stays, marked server-dependent. The skill also stops treating "waiver matched no annotation" notes from a summary-only run as evidence a waiver is stale.
+
+### Added
+- core: the canon-verify client can now request server-side cancellation of an in-flight session (`POST /verify/sessions/:id/cancel`) with a short 5-second timeout so it fits inside a CI runner's SIGINT→SIGKILL grace window; groundwork for cancel-on-interrupt in `aristo verify --wait`.
+- cli: interrupting `aristo verify --wait` (Ctrl-C, or a CI job cancellation / force-push sending SIGINT/SIGTERM) now fires a best-effort server-side cancel of the in-flight session before exiting (code 130), instead of silently orphaning a live fleet run. Cancel-on-interrupt arms only on the invocation that dispatched the session: interrupting a `--view <id> --wait` attach detaches with a re-attach hint and never cancels — a viewer is an observer, not the session's owner. A second Ctrl-C exits immediately (no cancel retry), and once the session reaches a terminal state the handler disarms, so a late interrupt no longer posts a cancel for a finished session.
+- cli: new `aristo verify --require-dispatch` CI guard — exits non-zero when the canon-verify dispatch set is empty (missing/stale canon-matches cache, zero canon-bound `verify="full"` entries, or everything skipped as clean), so CI can no longer read "nothing ran" as "verified". Combining it with a verify verb that cannot dispatch (`--view`, `--audit`, `--pop-next`, `--queue-status`, `--submit-verdict`, `--apply-verdicts`, `--accept`) is a usage error rather than a silent no-op.
+- cli: a zero-dispatch `aristo verify` run now prints an unmissable stderr warning saying nothing reached the server and exactly what to check (`aristo canon refresh` for a dropped cache join, `--rerun` for skipped-clean entries), instead of passing silently. The warning counts only canon-bound `verify="full"` entries — neural-only workspaces with fresh proofs stay quiet.
+
+### Fixed
+- cli: `aristo verify --wait` now survives transient poll failures (server 5xx, network drops, transport timeouts) with bounded exponential-backoff retries instead of aborting the whole CI wait on a single blip; auth and 4xx errors still fail immediately, and a sustained outage exits with a re-attach hint.
+
 ## [0.6.0] — 2026-07-22
 
 ### Added

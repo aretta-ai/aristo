@@ -327,7 +327,14 @@ pub(crate) fn run_canon_dispatch(
                 message: format!("failed to read {}: {e}", expectations_path.display()),
                 exit_code: 1,
             })?;
+        // Share the client with the signal handler: an interrupted
+        // wait cancels the server-side session on the way out.
+        let client: std::sync::Arc<dyn VerifyClient> = std::sync::Arc::from(client);
+        let armed = install_cancel_on_interrupt(client.clone(), &resp.session_id);
         let final_snapshot = poll_until_terminal(&*client, &resp.session_id)?;
+        // Terminal state reached — disarm so a late interrupt (during
+        // rendering) exits without cancelling a finished session.
+        disarm(&armed);
         render_final_snapshot(&final_snapshot, &expectations);
         let verdict = waiver::evaluate(&final_snapshot, &expectations);
         if verdict.is_red() {
@@ -369,6 +376,10 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     };
 
     let snapshot = if wait {
+        // A viewer attaches to a session it did not start, so an
+        // interrupt DETACHES (never cancels — that would kill the
+        // dispatching invocation's run).
+        install_detach_on_interrupt(session_id);
         poll_until_terminal(&*client, session_id)?
     } else {
         client
@@ -397,6 +408,275 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     Ok(())
 }
 
+/// Tuning knobs for [`poll_until_terminal`]. Production reads them
+/// from env/defaults via [`PollConfig::from_env`]; unit tests drive
+/// [`poll_until_terminal_with`] directly (no env mutation — parallel
+/// tests must not race on process-global state).
+struct PollConfig {
+    /// Between-poll sleep (also the base unit for retry backoff).
+    interval: Duration,
+    /// Consecutive transient-failure budget before giving up.
+    max_transient_retries: u32,
+    /// Overall wall-clock ceiling for the whole `--wait`. Without one,
+    /// a wedged-queued session polls until the CI runner's own job
+    /// kill (potentially hours). Generous by design — it's a backstop,
+    /// not a pacing knob.
+    max_wait: Duration,
+}
+
+impl PollConfig {
+    fn from_env() -> Self {
+        Self {
+            interval: poll_interval(),
+            max_transient_retries: MAX_TRANSIENT_POLL_RETRIES,
+            max_wait: wait_deadline(),
+        }
+    }
+}
+
+/// Default overall `--wait` deadline: 2 hours. Sits ABOVE the server
+/// side's own session budget (box jobs run up to 1 hour, with a
+/// 90-minute server poll ceiling), so a run the server considers
+/// normal can never hit the client's give-up point — while a truly
+/// wedged session still surfaces well before the CI runner's own
+/// multi-hour job kill.
+const WAIT_DEADLINE_DEFAULT: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// `ARISTO_VERIFY_WAIT_TIMEOUT_SECS` overrides the overall `--wait`
+/// deadline (whole seconds). `0` disables the deadline entirely (the
+/// documented escape hatch for runs longer than any fixed bound);
+/// unset → the 2-hour default; unparsable → a loud stderr note naming
+/// the rejected value, then the default (never silent).
+fn wait_deadline() -> Duration {
+    let raw = std::env::var("ARISTO_VERIFY_WAIT_TIMEOUT_SECS").ok();
+    wait_deadline_from(raw.as_deref())
+}
+
+/// [`wait_deadline`] on an explicit value (test seam — env reads are
+/// process-global and would race across parallel tests).
+fn wait_deadline_from(raw: Option<&str>) -> Duration {
+    match raw {
+        None => WAIT_DEADLINE_DEFAULT,
+        Some(raw) => match raw.parse::<u64>() {
+            // 0 = no deadline: `elapsed >= Duration::MAX` never holds.
+            Ok(0) => Duration::MAX,
+            Ok(n) => Duration::from_secs(n),
+            Err(_) => {
+                eprintln!(
+                    "warning: ARISTO_VERIFY_WAIT_TIMEOUT_SECS={raw:?} is not a whole number \
+                     of seconds; using the default deadline of {}. (0 disables the deadline.)",
+                    fmt_deadline(WAIT_DEADLINE_DEFAULT)
+                );
+                WAIT_DEADLINE_DEFAULT
+            }
+        },
+    }
+}
+
+/// Render a deadline for the failure message: whole minutes when
+/// exact (`45m`), else seconds (`90s`).
+fn fmt_deadline(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs >= 60 && secs.is_multiple_of(60) {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
+fn wait_deadline_exceeded(session_id: &str, max_wait: Duration) -> CliError {
+    CliError::Other {
+        message: format!(
+            "verify --wait deadline exceeded: the session did not reach a terminal \
+             state within {}.\n  \
+             The session keeps running server-side — re-attach with:\n  \
+             aristo verify --view {session_id} --wait\n  \
+             (Deadline is configurable via ARISTO_VERIFY_WAIT_TIMEOUT_SECS.)",
+            fmt_deadline(max_wait)
+        ),
+        exit_code: 1,
+    }
+}
+
+/// Transient-retry budget for `--wait` polling: how many CONSECUTIVE
+/// failed polls (server 5xx / network / transport timeout) are
+/// absorbed before giving up. A successful poll resets the count, so
+/// a long run tolerates any number of isolated blips — only a
+/// sustained outage aborts the wait.
+const MAX_TRANSIENT_POLL_RETRIES: u32 = 5;
+
+/// Cap on the exponential between-retry backoff, so a deep retry
+/// never sleeps unreasonably long.
+const RETRY_BACKOFF_CAP: Duration = Duration::from_secs(30);
+
+/// Exponential backoff before transient retry `attempt` (1-based):
+/// `interval * 2^attempt`, capped at [`RETRY_BACKOFF_CAP`].
+fn retry_backoff(interval: Duration, attempt: u32) -> Duration {
+    interval
+        .saturating_mul(2u32.saturating_pow(attempt.min(16)))
+        .min(RETRY_BACKOFF_CAP)
+}
+
+/// The vacuous-green guard's voice: when nothing was dispatched, say
+/// so loudly and say why — a silent 0-exit reads as "verified" in CI
+/// even though the server never saw the commit.
+///
+/// `canon_candidates` = canon-bound `verify="full"` entries that
+/// reached the dispatcher; `skipped_clean_canon_full` = canon-bound
+/// `verify="full"` entries skipped up-front as already verified and
+/// fresh — ONLY those, because neural/test/doc-only skips can never
+/// explain an empty canon dispatch set. Returns `None` when something
+/// dispatched, and — deliberately — when nothing canon-bound-full
+/// exists at all (a neural-only workspace legitimately dispatches
+/// nothing; CI opts into loudness there via `--require-dispatch`).
+pub(crate) fn zero_dispatch_warning(
+    dispatched: usize,
+    canon_candidates: usize,
+    skipped_clean_canon_full: usize,
+) -> Option<String> {
+    if dispatched > 0 {
+        return None;
+    }
+    if canon_candidates > 0 {
+        return Some(format!(
+            "warning: no canon-verify dispatch happened this run — the server never saw \
+             this commit.\n  \
+             All {canon_candidates} canon-bound entr{} dropped at the canon-matches cache \
+             join: .aristo/canon-matches.toml is missing, stale, or carries no accepted \
+             matches.\n  \
+             Fix: run `aristo canon refresh` and commit the refreshed cache. CI can gate \
+             on this with `aristo verify --require-dispatch`.",
+            if canon_candidates == 1 {
+                "y was"
+            } else {
+                "ies were"
+            }
+        ));
+    }
+    if skipped_clean_canon_full > 0 {
+        return Some(format!(
+            "warning: no canon-verify dispatch happened this run — the server never saw \
+             this commit.\n  \
+             {skipped_clean_canon_full} canon-bound annotation(s) were skipped as already \
+             verified and fresh, so nothing was re-checked against this commit.\n  \
+             Pass --rerun to force re-verification. CI can gate on this with \
+             `aristo verify --require-dispatch`.",
+        ));
+    }
+    None
+}
+
+/// Best-effort server-side cancel; returns whether the server took
+/// it. Never propagates — cancel runs on the way OUT (the interrupt
+/// path), so a failed cancel must not mask the interrupt exit.
+fn cancel_best_effort(client: &dyn VerifyClient, session_id: &str) -> bool {
+    match client.cancel_session(session_id) {
+        Ok(()) => {
+            eprintln!("  cancel requested — session {session_id} will stop server-side.");
+            true
+        }
+        Err(e) => {
+            eprintln!(
+                "  note: could not cancel session {session_id} ({e}); \
+                 it may keep running server-side."
+            );
+            false
+        }
+    }
+}
+
+/// Exit code for an interrupted `--wait` (128 + SIGINT, the shell
+/// convention for death-by-interrupt).
+const INTERRUPT_EXIT_CODE: i32 = 130;
+
+/// SIGINT/SIGTERM during a `--view … --wait` attach: the viewer is an
+/// observer, NOT the session's owner — another invocation (often the
+/// primary CI waiter) dispatched it, and cancelling from here would
+/// kill that invocation's run. Interrupting a viewer therefore never
+/// touches the server: print where the session keeps running and how
+/// to re-attach, then exit 130. Only the dispatch path
+/// ([`install_cancel_on_interrupt`]) cancels on interrupt.
+fn install_detach_on_interrupt(session_id: &str) {
+    let sid = session_id.to_string();
+    let installed = ctrlc::set_handler(move || {
+        eprintln!();
+        eprintln!(
+            "interrupt received — detached; session {sid} keeps running server-side.\n  \
+             Re-attach with: aristo verify --view {sid} --wait"
+        );
+        std::process::exit(INTERRUPT_EXIT_CODE);
+    });
+    // Best-effort: without a handler slot the default signal death
+    // still detaches without cancelling, which is the invariant that
+    // matters here.
+    let _ = installed;
+}
+
+/// On SIGINT/SIGTERM during `--wait`, fire a best-effort server-side
+/// cancel before exiting: a cancelled CI job (`cancel-in-progress`,
+/// a force-push) kills only the polling CLI — without this, the
+/// dispatched fleet run keeps burning server-side. Installed ONLY on
+/// the dispatch path — the invocation that POSTed the session owns
+/// it; a `--view` attach gets [`install_detach_on_interrupt`]
+/// instead. Installation is itself best-effort: if no handler slot
+/// is available the wait simply proceeds without cancel-on-interrupt.
+fn install_cancel_on_interrupt(
+    client: std::sync::Arc<dyn VerifyClient>,
+    session_id: &str,
+) -> std::sync::Arc<std::sync::Mutex<Option<String>>> {
+    let armed = std::sync::Arc::new(std::sync::Mutex::new(Some(session_id.to_string())));
+    let interrupting = std::sync::atomic::AtomicBool::new(false);
+    let armed_in_handler = std::sync::Arc::clone(&armed);
+    let installed = ctrlc::set_handler(move || {
+        std::process::exit(interrupt_action(&interrupting, &armed_in_handler, &*client));
+    });
+    if installed.is_err() {
+        eprintln!(
+            "  note: interrupt handler unavailable; Ctrl-C will NOT cancel \
+             the server-side session."
+        );
+    }
+    armed
+}
+
+/// Everything the interrupt handler does except the process exit (the
+/// test seam). First signal with an armed session → best-effort
+/// server-side cancel. A REPEAT signal (the user really wants out,
+/// e.g. the cancel POST is stuck in its 5-second window) exits
+/// immediately without touching the network; so does a disarmed slot
+/// (the session already reached a terminal state — see [`disarm`]).
+fn interrupt_action(
+    interrupting: &std::sync::atomic::AtomicBool,
+    armed: &std::sync::Mutex<Option<String>>,
+    client: &dyn VerifyClient,
+) -> i32 {
+    if interrupting.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // Second signal: straight out, no cleanup attempts.
+        return INTERRUPT_EXIT_CODE;
+    }
+    match armed.lock().ok().and_then(|mut slot| slot.take()) {
+        Some(sid) => {
+            eprintln!();
+            eprintln!("interrupt received — requesting cancel of verify session {sid}…");
+            cancel_best_effort(client, &sid);
+        }
+        None => {
+            eprintln!();
+            eprintln!("interrupt received — session already settled; exiting.");
+        }
+    }
+    INTERRUPT_EXIT_CODE
+}
+
+/// Disarm cancel-on-interrupt once the session is terminal: a late
+/// interrupt (during rendering / waiver evaluation) then exits
+/// without POSTing a spurious cancel for a finished session.
+fn disarm(armed: &std::sync::Mutex<Option<String>>) {
+    if let Ok(mut slot) = armed.lock() {
+        slot.take();
+    }
+}
+
 /// Long-poll loop until the session reaches a terminal state. Renders
 /// an intermediate snapshot at first non-terminal response so the user
 /// sees the in-flight state; emits a heartbeat every 60s.
@@ -404,14 +684,81 @@ fn poll_until_terminal<C: VerifyClient + ?Sized>(
     client: &C,
     session_id: &str,
 ) -> CliResult<GetVerifySessionResponse> {
+    poll_until_terminal_with(client, session_id, &PollConfig::from_env())
+}
+
+/// Is this error worth retrying? Server 5xx, network transport
+/// failures, and transport timeouts are transient — a proxy restart
+/// or server redeploy mid-run must not kill a CI wait with the
+/// verdict almost in hand. Auth and 4xx are deterministic (a retry
+/// re-sends the same rejected request) and decode errors indicate a
+/// client↔server contract mismatch; all of those stay fatal.
+fn is_transient(e: &VerifyError) -> bool {
+    matches!(
+        e,
+        VerifyError::Server { .. } | VerifyError::Network(_) | VerifyError::Timeout
+    )
+}
+
+fn transient_retries_exhausted(last: &VerifyError, session_id: &str, budget: u32) -> CliError {
+    CliError::Other {
+        message: format!(
+            "verify --wait gave up after {budget} consecutive transient poll failures \
+             (last error: {last}).\n  \
+             The session may still be running server-side — re-attach with:\n  \
+             aristo verify --view {session_id} --wait"
+        ),
+        exit_code: 1,
+    }
+}
+
+/// [`poll_until_terminal`] with explicit knobs (test seam).
+///
+/// Failure policy: a transient poll error ([`is_transient`]) is
+/// retried with exponential backoff for up to
+/// `cfg.max_transient_retries` CONSECUTIVE failures; a successful
+/// poll resets the budget. Non-transient errors abort immediately.
+/// Independent of either, `cfg.max_wait` bounds the whole wait —
+/// checked before every poll so a wedged session can't outlive the
+/// deadline by more than one long-poll round-trip.
+fn poll_until_terminal_with<C: VerifyClient + ?Sized>(
+    client: &C,
+    session_id: &str,
+    cfg: &PollConfig,
+) -> CliResult<GetVerifySessionResponse> {
     let started = Instant::now();
     let mut last_heartbeat = started;
     let mut intermediate_rendered = false;
+    let mut consecutive_transient: u32 = 0;
 
     loop {
-        let snapshot = client
-            .get_session(session_id, Some(LONGPOLL_WAIT_SECS))
-            .map_err(verify_error_to_cli)?;
+        if started.elapsed() >= cfg.max_wait {
+            return Err(wait_deadline_exceeded(session_id, cfg.max_wait));
+        }
+        let snapshot = match client.get_session(session_id, Some(LONGPOLL_WAIT_SECS)) {
+            Ok(s) => {
+                consecutive_transient = 0;
+                s
+            }
+            Err(e) if is_transient(&e) => {
+                consecutive_transient += 1;
+                if consecutive_transient > cfg.max_transient_retries {
+                    return Err(transient_retries_exhausted(
+                        &e,
+                        session_id,
+                        cfg.max_transient_retries,
+                    ));
+                }
+                eprintln!(
+                    "  note: transient error polling verify session ({e}); \
+                     retrying ({consecutive_transient}/{})…",
+                    cfg.max_transient_retries
+                );
+                std::thread::sleep(retry_backoff(cfg.interval, consecutive_transient));
+                continue;
+            }
+            Err(e) => return Err(verify_error_to_cli(e)),
+        };
         if snapshot.status.is_terminal() {
             return Ok(snapshot);
         }
@@ -434,7 +781,7 @@ fn poll_until_terminal<C: VerifyClient + ?Sized>(
         // Back off briefly so we don't hammer when the server returns
         // immediately (i.e., when ?wait= is ignored — current proxy
         // state).
-        std::thread::sleep(poll_interval());
+        std::thread::sleep(cfg.interval);
     }
 }
 
@@ -1285,30 +1632,83 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
         view_url: p.view_url,
         plan_size: p.plan_size,
     });
-    // Pre-canned GET response sequence (for --view + --wait paths).
-    let get_responses: Vec<GetVerifySessionResponse> = parsed.gets.unwrap_or_default();
-    // Record the POST body to a sibling file so tests can inspect it.
+    // Pre-canned GET result sequence (for --view + --wait paths).
+    // Entries are either session snapshots or `{"error": {...}}`
+    // objects simulating failed polls (poll-resilience tests).
+    let get_results: Vec<Result<GetVerifySessionResponse, VerifyError>> = parsed
+        .gets
+        .unwrap_or_default()
+        .into_iter()
+        .map(|g| match g {
+            FixtureGet::Error { error } => Err(error.into_verify_error()),
+            FixtureGet::Snapshot(s) => Ok(*s),
+        })
+        .collect();
+    // Record the POST body (and any cancel request) to sibling files
+    // so tests can inspect them — the cancel sidecar is how signal
+    // tests prove whether a cancel left the process at all.
     let record_path = format!("{path}.posted.json");
-    let mock = match (post_resp, get_responses.is_empty()) {
+    let cancel_record_path = format!("{path}.cancelled");
+    let mock = match (post_resp, get_results.is_empty()) {
         (Some(p), true) => aristo_core::canon_verify::MockVerifyClient::with_post_response(p),
         (Some(p), false) => {
-            aristo_core::canon_verify::MockVerifyClient::with_post_and_gets(p, get_responses)
+            aristo_core::canon_verify::MockVerifyClient::with_post_and_get_results(p, get_results)
         }
-        (None, false) => {
-            aristo_core::canon_verify::MockVerifyClient::with_get_responses(get_responses)
-        }
+        (None, false) => aristo_core::canon_verify::MockVerifyClient::with_get_results(get_results),
         (None, true) => return None,
     };
     Some(Box::new(RecordingMock {
         inner: mock,
         record_path,
+        cancel_record_path,
     }))
 }
 
 #[derive(serde::Deserialize)]
 struct FixtureFile {
     post: Option<FixturePost>,
-    gets: Option<Vec<GetVerifySessionResponse>>,
+    gets: Option<Vec<FixtureGet>>,
+}
+
+/// One canned GET outcome in the fixture file: a session snapshot, or
+/// an `{"error": {...}}` object standing in for a failed poll. Untagged:
+/// a real snapshot has no `error` field, so the variants can't collide.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum FixtureGet {
+    Error { error: FixtureError },
+    Snapshot(Box<GetVerifySessionResponse>),
+}
+
+/// Wire-error stand-in for fixtures: `kind` selects the
+/// [`VerifyError`] variant (`server` | `bad_request` | `network` |
+/// `timeout`), `status`/`message` fill it in where applicable.
+#[derive(serde::Deserialize)]
+struct FixtureError {
+    kind: String,
+    #[serde(default)]
+    status: Option<u16>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+impl FixtureError {
+    fn into_verify_error(self) -> VerifyError {
+        let message = self.message.unwrap_or_default();
+        match self.kind.as_str() {
+            "server" => VerifyError::Server {
+                status: self.status.unwrap_or(500),
+                message,
+            },
+            "bad_request" => VerifyError::BadRequest {
+                status: self.status.unwrap_or(400),
+                message,
+            },
+            "network" => VerifyError::Network(message),
+            "timeout" => VerifyError::Timeout,
+            other => VerifyError::Fixture(format!("unknown fixture error kind: {other}")),
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -1318,11 +1718,13 @@ struct FixturePost {
     plan_size: u32,
 }
 
-/// Wraps [`MockVerifyClient`] to write the POSTed request body to a
-/// sidecar file so the CLI integration test can assert wire-shape.
+/// Wraps [`MockVerifyClient`] to write the POSTed request body (and
+/// any cancel request) to sidecar files so the CLI integration tests
+/// can assert wire-shape and cancel emission from outside the process.
 struct RecordingMock {
     inner: aristo_core::canon_verify::MockVerifyClient,
     record_path: String,
+    cancel_record_path: String,
 }
 
 impl VerifyClient for RecordingMock {
@@ -1342,6 +1744,11 @@ impl VerifyClient for RecordingMock {
         wait_seconds: Option<u32>,
     ) -> Result<aristo_core::canon_verify::GetVerifySessionResponse, VerifyError> {
         self.inner.get_session(session_id, wait_seconds)
+    }
+
+    fn cancel_session(&self, session_id: &str) -> Result<(), VerifyError> {
+        let _ = std::fs::write(&self.cancel_record_path, session_id);
+        self.inner.cancel_session(session_id)
     }
 }
 
@@ -1871,6 +2278,297 @@ mod tests {
         assert_eq!(extract_line("fn really::long::path (line 1)"), Some(1));
         assert_eq!(extract_line("fn x"), None);
         assert_eq!(extract_line(""), None);
+    }
+
+    // ─── poll_until_terminal (resilience) ────────────────────────────────
+
+    use aristo_core::canon_verify::{MockVerifyClient, VerifySessionSummary};
+
+    fn snapshot_with_status(status: SessionStatus) -> GetVerifySessionResponse {
+        GetVerifySessionResponse {
+            session_id: "sid".into(),
+            status,
+            user_commit_sha: "abc1234567890".into(),
+            books_commit_sha: None,
+            canon_version: "v0.1.0".into(),
+            started_at: "2026-05-24T00:00:00Z".into(),
+            completed_at: None,
+            annotations: vec![],
+            summary: VerifySessionSummary {
+                total_annotations: 0,
+                verified: 0,
+                failed: 0,
+                build_failed: 0,
+                inconclusive: 0,
+                no_coverage: 0,
+            },
+        }
+    }
+
+    /// Zero-sleep knobs so poll-loop tests run instantly.
+    fn fast_poll_cfg() -> PollConfig {
+        PollConfig {
+            interval: Duration::ZERO,
+            max_transient_retries: 5,
+            max_wait: Duration::from_secs(3600),
+        }
+    }
+
+    fn other_message(e: CliError) -> String {
+        match e {
+            CliError::Other { message, .. } => message,
+            other => panic!("expected CliError::Other, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn poll_recovers_from_transient_errors_mid_wait() {
+        // One 503, a good running poll, then a network blip and a
+        // transport timeout, then done. The loop must absorb every
+        // transient failure and still return the terminal snapshot.
+        let mock = MockVerifyClient::with_get_results(vec![
+            Err(VerifyError::Server {
+                status: 503,
+                message: "upstream restart".into(),
+            }),
+            Ok(snapshot_with_status(SessionStatus::Running)),
+            Err(VerifyError::Network("connection reset by peer".into())),
+            Err(VerifyError::Timeout),
+            Ok(snapshot_with_status(SessionStatus::Done)),
+        ]);
+        let snap = poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())
+            .expect("transient blips mid-poll must not abort --wait");
+        assert_eq!(snap.status, SessionStatus::Done);
+        assert_eq!(
+            mock.fetched_sessions().len(),
+            5,
+            "every canned result must have been consumed"
+        );
+    }
+
+    #[test]
+    fn poll_4xx_stays_fatal_on_first_hit() {
+        let mock = MockVerifyClient::with_get_results(vec![Err(VerifyError::BadRequest {
+            status: 404,
+            message: "not_found".into(),
+        })]);
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())
+                .expect_err("4xx must abort immediately — retrying re-sends a rejected request"),
+        );
+        assert!(msg.contains("404"), "message must carry the status: {msg}");
+        assert_eq!(mock.fetched_sessions().len(), 1, "no retry after a 4xx");
+    }
+
+    #[test]
+    fn poll_auth_error_stays_fatal_on_first_hit() {
+        let mock = MockVerifyClient::with_get_results(vec![Err(VerifyError::Auth(
+            aristo_core::auth::AuthError::Invalid,
+        ))]);
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())
+                .expect_err("auth errors must abort immediately"),
+        );
+        assert!(
+            msg.contains("aristo auth login"),
+            "auth failure must point at re-login: {msg}"
+        );
+        assert_eq!(mock.fetched_sessions().len(), 1, "no retry after auth");
+    }
+
+    #[test]
+    fn poll_gives_up_after_consecutive_transient_budget() {
+        // Budget of 2 → the 3rd consecutive transient failure aborts.
+        let mock = MockVerifyClient::with_get_results(vec![
+            Err(VerifyError::Server {
+                status: 502,
+                message: "bad gateway".into(),
+            }),
+            Err(VerifyError::Server {
+                status: 502,
+                message: "bad gateway".into(),
+            }),
+            Err(VerifyError::Server {
+                status: 502,
+                message: "bad gateway".into(),
+            }),
+        ]);
+        let cfg = PollConfig {
+            interval: Duration::ZERO,
+            max_transient_retries: 2,
+            max_wait: Duration::from_secs(3600),
+        };
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &cfg)
+                .expect_err("a sustained outage must eventually abort"),
+        );
+        assert!(
+            msg.contains("transient"),
+            "give-up message must name the failure class: {msg}"
+        );
+        assert!(
+            msg.contains("aristo verify --view sid --wait"),
+            "give-up message must offer the re-attach command: {msg}"
+        );
+        assert_eq!(
+            mock.fetched_sessions().len(),
+            3,
+            "budget 2 = initial call + 2 retries"
+        );
+    }
+
+    #[test]
+    fn poll_deadline_expiry_exits_with_distinct_message() {
+        // Zero deadline → the loop must give up BEFORE any poll (an
+        // empty mock panics if polled) with a message that names the
+        // deadline, the re-attach command, and the env knob.
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        let cfg = PollConfig {
+            interval: Duration::ZERO,
+            max_transient_retries: 5,
+            max_wait: Duration::ZERO,
+        };
+        let msg = other_message(
+            poll_until_terminal_with(&mock, "sid", &cfg)
+                .expect_err("an expired deadline must abort the wait"),
+        );
+        assert!(
+            msg.contains("deadline exceeded"),
+            "deadline expiry needs its own distinct message: {msg}"
+        );
+        assert!(
+            msg.contains("aristo verify --view sid --wait"),
+            "deadline message must offer the re-attach command: {msg}"
+        );
+        assert!(
+            msg.contains("ARISTO_VERIFY_WAIT_TIMEOUT_SECS"),
+            "deadline message must name the env override: {msg}"
+        );
+    }
+
+    #[test]
+    fn fmt_deadline_prefers_whole_minutes() {
+        assert_eq!(fmt_deadline(Duration::from_secs(45 * 60)), "45m");
+        assert_eq!(fmt_deadline(Duration::from_secs(90)), "90s");
+        assert_eq!(fmt_deadline(Duration::ZERO), "0s");
+    }
+
+    #[test]
+    fn wait_deadline_from_env_edge_values() {
+        // Unset → default.
+        assert_eq!(wait_deadline_from(None), WAIT_DEADLINE_DEFAULT);
+        // A plain number of seconds.
+        assert_eq!(wait_deadline_from(Some("90")), Duration::from_secs(90));
+        // 0 = no deadline (documented escape hatch), NOT instant expiry.
+        assert_eq!(wait_deadline_from(Some("0")), Duration::MAX);
+        // Unparsable → default (with a loud stderr note, not silence).
+        assert_eq!(wait_deadline_from(Some("bogus")), WAIT_DEADLINE_DEFAULT);
+        assert_eq!(wait_deadline_from(Some("-5")), WAIT_DEADLINE_DEFAULT);
+    }
+
+    #[test]
+    fn wait_deadline_default_clears_the_server_side_session_budget() {
+        // The server side budgets box jobs at 1h with a 90-minute poll
+        // ceiling; the client's give-up point must sit ABOVE that, or
+        // runs the server considers normal become client exit-1s.
+        // Pinned at 2 hours (review round 1, finding 4).
+        assert_eq!(WAIT_DEADLINE_DEFAULT, Duration::from_secs(2 * 60 * 60));
+    }
+
+    // ─── zero_dispatch_warning ───────────────────────────────────────────
+
+    #[test]
+    fn zero_dispatch_warning_silent_when_something_dispatched() {
+        assert_eq!(zero_dispatch_warning(3, 3, 0), None);
+        assert_eq!(zero_dispatch_warning(1, 5, 2), None);
+    }
+
+    #[test]
+    fn zero_dispatch_warning_names_cache_join_when_candidates_evaporated() {
+        let w = zero_dispatch_warning(0, 2, 0).expect("candidates dropped at cache join → warn");
+        assert!(w.contains("warning: no canon-verify dispatch"), "{w}");
+        assert!(w.contains("canon-matches"), "{w}");
+        assert!(w.contains("aristo canon refresh"), "{w}");
+        assert!(w.contains("--require-dispatch"), "{w}");
+    }
+
+    #[test]
+    fn zero_dispatch_warning_points_at_rerun_when_everything_skipped_clean() {
+        let w = zero_dispatch_warning(0, 0, 4).expect("all skipped clean → warn");
+        assert!(w.contains("warning: no canon-verify dispatch"), "{w}");
+        assert!(w.contains("--rerun"), "{w}");
+        assert!(w.contains("--require-dispatch"), "{w}");
+    }
+
+    #[test]
+    fn zero_dispatch_warning_silent_when_nothing_canon_bound_exists() {
+        // A neural-only workspace legitimately dispatches nothing —
+        // no scare-warning on every local run. CI opts into loudness
+        // via --require-dispatch.
+        assert_eq!(zero_dispatch_warning(0, 0, 0), None);
+    }
+
+    #[test]
+    fn interrupt_action_cancels_once_then_exits_immediately_on_repeat() {
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        let interrupting = std::sync::atomic::AtomicBool::new(false);
+        let armed = std::sync::Mutex::new(Some("sid".to_string()));
+        // First signal: cancel the owned session, exit 130.
+        assert_eq!(interrupt_action(&interrupting, &armed, &mock), 130);
+        assert_eq!(mock.cancelled_sessions(), vec!["sid".to_string()]);
+        // Second signal: the user really wants out — immediate exit,
+        // no network, no second cancel.
+        assert_eq!(interrupt_action(&interrupting, &armed, &mock), 130);
+        assert_eq!(
+            mock.cancelled_sessions().len(),
+            1,
+            "a repeat signal must not retry the cancel"
+        );
+    }
+
+    #[test]
+    fn interrupt_action_after_disarm_skips_cancel() {
+        // Once the session reached a terminal state the caller
+        // disarms; a late interrupt (during rendering) must exit
+        // without POSTing a cancel for a finished session.
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        let interrupting = std::sync::atomic::AtomicBool::new(false);
+        let armed = std::sync::Mutex::new(Some("sid".to_string()));
+        disarm(&armed);
+        assert_eq!(interrupt_action(&interrupting, &armed, &mock), 130);
+        assert!(
+            mock.cancelled_sessions().is_empty(),
+            "a settled session must not receive a late cancel"
+        );
+    }
+
+    #[test]
+    fn cancel_best_effort_requests_cancel_and_reports_success() {
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        assert!(cancel_best_effort(&mock, "01HMINT"));
+        assert_eq!(mock.cancelled_sessions(), vec!["01HMINT".to_string()]);
+    }
+
+    #[test]
+    fn cancel_best_effort_swallows_failure() {
+        // Cancel runs on the way OUT (interrupt path) — a failed
+        // cancel must never panic or mask the interrupt exit.
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        mock.set_cancel_error(VerifyError::Network("connection refused".into()));
+        assert!(!cancel_best_effort(&mock, "01HMINT"));
+        assert_eq!(mock.cancelled_sessions().len(), 1);
+    }
+
+    #[test]
+    fn retry_backoff_grows_and_caps() {
+        let base = Duration::from_secs(3);
+        assert_eq!(retry_backoff(base, 1), Duration::from_secs(6));
+        assert_eq!(retry_backoff(base, 2), Duration::from_secs(12));
+        assert_eq!(retry_backoff(base, 3), Duration::from_secs(24));
+        // Capped: 3s * 2^4 = 48s → 30s cap.
+        assert_eq!(retry_backoff(base, 4), RETRY_BACKOFF_CAP);
+        // Degenerate test interval never sleeps.
+        assert_eq!(retry_backoff(Duration::ZERO, 5), Duration::ZERO);
     }
 
     // ─── dispatch_session (with mock client) ─────────────────────────────

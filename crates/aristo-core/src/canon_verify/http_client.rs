@@ -26,6 +26,13 @@ pub const DEFAULT_BASE_URL: &str = crate::auth::ServerUrl::PROD;
 /// network round-trip jitter.
 pub const REQUEST_TIMEOUT_SECS: u64 = 60;
 
+/// Per-request timeout for cancel, in seconds. Deliberately short:
+/// cancel fires from a signal handler, and CI runners grant only a
+/// few seconds between SIGINT and SIGKILL (GitHub Actions: ~7.5 s on
+/// `cancel-in-progress`), so waiting out the 60-second poll budget
+/// would guarantee the request never leaves the process.
+pub const CANCEL_TIMEOUT_SECS: u64 = 5;
+
 /// HTTP-backed [`VerifyClient`].
 pub struct HttpVerifyClient {
     base_url: String,
@@ -116,6 +123,40 @@ impl VerifyClient for HttpVerifyClient {
         };
         self.get_json(&path)
     }
+
+    fn cancel_session(&self, session_id: &str) -> Result<(), VerifyError> {
+        let url = self.url(&cancel_path(session_id));
+        // Same agent (keeps the connection pool), but a short
+        // per-request timeout override — see [`CANCEL_TIMEOUT_SECS`].
+        let result = self
+            .agent
+            .post(&url)
+            .config()
+            .timeout_global(Some(Duration::from_secs(CANCEL_TIMEOUT_SECS)))
+            .build()
+            .header("Authorization", &self.bearer_header)
+            .send_empty();
+        match result {
+            Ok(mut resp) => {
+                let status = resp.status().as_u16();
+                if (200..300).contains(&status) {
+                    // 202 carries a session snapshot; the caller only
+                    // needs "the server took the cancel", so the body
+                    // is deliberately not decoded.
+                    return Ok(());
+                }
+                let body = resp.body_mut().read_to_string().unwrap_or_default();
+                Err(error_for_status(status, &body))
+            }
+            Err(e) => Err(transport_error_to_verify_error(e)),
+        }
+    }
+}
+
+/// Path for `POST /verify/sessions/:id/cancel` (relative to the
+/// data-plane base URL).
+fn cancel_path(session_id: &str) -> String {
+    format!("/verify/sessions/{}/cancel", url_encode(session_id))
 }
 
 // ─── Pure response mapping (mirror of canon http_client) ──────────────────
@@ -146,19 +187,28 @@ where
     match status {
         200..=299 => serde_json::from_str(body)
             .map_err(|e| VerifyError::Decode(format!("parse 2xx body: {e}"))),
-        401 => Err(VerifyError::Auth(AuthError::Invalid)),
-        400..=499 => Err(VerifyError::BadRequest {
+        _ => Err(error_for_status(status, body)),
+    }
+}
+
+/// The [`VerifyError`] for a non-2xx response. Shared between
+/// [`map_response`] (body-decoding endpoints) and `cancel_session`
+/// (which ignores its success body).
+pub(crate) fn error_for_status(status: u16, body: &str) -> VerifyError {
+    match status {
+        401 => VerifyError::Auth(AuthError::Invalid),
+        400..=499 => VerifyError::BadRequest {
             status,
             message: extract_message_or_body(body),
-        }),
-        500..=599 => Err(VerifyError::Server {
+        },
+        500..=599 => VerifyError::Server {
             status,
             message: extract_message_or_body(body),
-        }),
-        other => Err(VerifyError::Server {
+        },
+        other => VerifyError::Server {
             status: other,
             message: format!("unexpected status code {other}"),
-        }),
+        },
     }
 }
 
@@ -321,6 +371,32 @@ mod tests {
         let tok = Token::new("t");
         let _: Box<dyn VerifyClient> =
             Box::new(HttpVerifyClient::new("https://example.test", &tok));
+    }
+
+    #[test]
+    fn cancel_path_targets_the_cancel_endpoint_with_encoding() {
+        assert_eq!(
+            cancel_path("01HN1234567890"),
+            "/verify/sessions/01HN1234567890/cancel"
+        );
+        // Defensive: a hostile session id can't smuggle path segments.
+        assert_eq!(cancel_path("a/b"), "/verify/sessions/a%2Fb/cancel");
+    }
+
+    #[test]
+    fn error_for_status_mirrors_map_response_classes() {
+        assert!(matches!(
+            error_for_status(401, "{}"),
+            VerifyError::Auth(AuthError::Invalid)
+        ));
+        assert!(matches!(
+            error_for_status(409, r#"{"error": "conflict"}"#),
+            VerifyError::BadRequest { status: 409, .. }
+        ));
+        assert!(matches!(
+            error_for_status(503, "{}"),
+            VerifyError::Server { status: 503, .. }
+        ));
     }
 
     #[test]

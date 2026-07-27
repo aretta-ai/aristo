@@ -326,12 +326,33 @@ enum Commands {
         /// state, rendering a snapshot at each long-poll return and
         /// emitting a `still running…` heartbeat every 60s. Exit code
         /// is derived from the final summary: `0` iff every
-        /// annotation is `verified` or `no_coverage`. Without
+        /// annotation is `verified` or `no_coverage`. Transient poll
+        /// failures (server 5xx, network, timeout) are retried with
+        /// backoff; the whole wait is bounded by a 2-hour deadline
+        /// (override via `ARISTO_VERIFY_WAIT_TIMEOUT_SECS`; `0`
+        /// disables the deadline). Without
         /// `--wait` the SDK detaches after dispatch (prints session
         /// id and exits 0). Combine with `--view <id>` to attach to
         /// a session another invocation started.
         #[arg(long = "wait")]
         wait: bool,
+        /// CI guard against vacuous green: exit non-zero when the
+        /// canon-verify dispatch set is empty (no annotations were
+        /// sent to the server — e.g. a missing/stale canon-matches
+        /// cache, zero canon-bound `verify="full"` entries, or
+        /// everything skipped as already clean). Without this flag a
+        /// zero-dispatch run exits 0, which CI reads as "verified"
+        /// even though nothing ran. Usable only on the dispatch path:
+        /// combining it with a verb that cannot dispatch is a usage
+        /// error, never a silent no-op.
+        #[arg(
+            long = "require-dispatch",
+            conflicts_with_all = [
+                "view", "audit", "pop_next", "queue_status",
+                "submit_verdict", "apply_verdicts", "accept"
+            ]
+        )]
+        require_dispatch: bool,
         /// Re-attach to a previously-dispatched canon-verify session
         /// by id. Skips the source eligibility scan, push-first
         /// precheck, and POST — just GETs the session state and
@@ -1082,6 +1103,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             pop_next,
             queue_status,
             wait,
+            require_dispatch,
             view,
             tags,
             accept,
@@ -1101,6 +1123,7 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
             id,
             json,
             wait,
+            require_dispatch,
             view,
             &tags,
             accept,
