@@ -53,6 +53,7 @@ pub(crate) fn run(
     id: Option<String>,
     json: Option<String>,
     wait: bool,
+    require_dispatch: bool,
     view: Option<String>,
     tags: &[String],
     accept: Option<String>,
@@ -206,7 +207,22 @@ pub(crate) fn run(
         tags_filter,
         wait,
     )?;
-    let _ = dispatched;
+
+    // CI guard against vacuous green (--require-dispatch): an empty
+    // dispatch set means the server never saw this commit, so a 0 exit
+    // would read as "verified" with nothing run.
+    if require_dispatch && dispatched == 0 {
+        return Err(CliError::Other {
+            message: "--require-dispatch: the canon-verify dispatch set is empty — nothing \
+                      was sent to the server.\n  \
+                      Likely causes: no canon-bound `verify=\"full\"` entries matched; every \
+                      matching entry was skipped as already verified and fresh (pass --rerun \
+                      to force); or the canon-matches cache is missing/stale (run \
+                      `aristo canon refresh` and commit .aristo/canon-matches.toml)."
+                .into(),
+            exit_code: 1,
+        });
+    }
 
     // Slice 23 ships neural via the in-agent skill route. test +
     // non-canon-bound full were originally milestone E slices 24/26

@@ -316,6 +316,68 @@ fn missing_cache_entry_for_canon_bound_full_skips_with_refresh_hint() {
         .stdout(contains("aristo canon refresh"));
 }
 
+#[test]
+fn require_dispatch_fails_when_dispatch_set_is_empty() {
+    // Same empty-cache setup as the refresh-hint test, but with
+    // --require-dispatch the vacuous run must exit NON-ZERO — this is
+    // the CI gate against "green because nothing ran".
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    fs::write(
+        tmp.path().join(".aristo/canon-matches.toml"),
+        "[__meta__]\nschema_version = 1\n",
+    )
+    .unwrap();
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .args(["verify", "--require-dispatch"])
+        .assert()
+        .failure()
+        .stderr(contains("--require-dispatch"))
+        .stderr(contains("aristo canon refresh"));
+}
+
+#[test]
+fn require_dispatch_passes_when_something_dispatches() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let _captured = write_post_fixture(tmp.path(), "01HMREQOK", 1);
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env(
+            "ARISTO_CANON_VERIFY_FIXTURE",
+            tmp.path().join("verify-fixture.json"),
+        )
+        .args(["verify", "--require-dispatch"])
+        .assert()
+        .success()
+        .stdout(contains("verify session dispatched"));
+}
+
+#[test]
+fn require_dispatch_conflicts_with_view() {
+    // --view attaches to an already-dispatched session; requiring a
+    // fresh dispatch there is contradictory, so clap rejects it.
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path())
+        .args(["verify", "--view", "01HM", "--require-dispatch"])
+        .assert()
+        .failure()
+        .code(2);
+}
+
 /// Fixture builder for `--wait` / `--view` paths: takes a JSON object
 /// describing the post-and-gets sequence and writes it to a file the
 /// SDK reads via ARISTO_CANON_VERIFY_FIXTURE.

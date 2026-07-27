@@ -11,6 +11,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ### Added
 - core: the canon-verify client can now request server-side cancellation of an in-flight session (`POST /verify/sessions/:id/cancel`) with a short 5-second timeout so it fits inside a CI runner's SIGINT→SIGKILL grace window; groundwork for cancel-on-interrupt in `aristo verify --wait`.
 - cli: interrupting `aristo verify --wait` (Ctrl-C, or a CI job cancellation / force-push sending SIGINT/SIGTERM) now fires a best-effort server-side cancel of the in-flight session before exiting (code 130), instead of silently orphaning a live fleet run.
+- cli: new `aristo verify --require-dispatch` CI guard — exits non-zero when the canon-verify dispatch set is empty (missing/stale canon-matches cache, zero canon-bound `verify="full"` entries, or everything skipped as clean), so CI can no longer read "nothing ran" as "verified".
 
 ### Fixed
 - cli: `aristo verify --wait` now survives transient poll failures (server 5xx, network drops, transport timeouts) with bounded exponential-backoff retries instead of aborting the whole CI wait on a single blip; auth and 4xx errors still fail immediately, and a sustained outage exits with a re-attach hint.
