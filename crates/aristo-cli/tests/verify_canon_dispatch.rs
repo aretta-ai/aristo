@@ -317,6 +317,35 @@ fn missing_cache_entry_for_canon_bound_full_skips_with_refresh_hint() {
 }
 
 #[test]
+fn zero_dispatch_prints_unmissable_warning_but_still_exits_zero() {
+    // Default behavior (no --require-dispatch): a zero-dispatch run
+    // keeps exit 0 (operator ruling), but the silence is gone — a
+    // loud stderr warning says nothing reached the server and what
+    // to check.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    fs::write(
+        tmp.path().join(".aristo/canon-matches.toml"),
+        "[__meta__]\nschema_version = 1\n",
+    )
+    .unwrap();
+
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .arg("verify")
+        .assert()
+        .success()
+        .stderr(contains("warning: no canon-verify dispatch"))
+        .stderr(contains("aristo canon refresh"))
+        .stderr(contains("--require-dispatch"));
+}
+
+#[test]
 fn require_dispatch_fails_when_dispatch_set_is_empty() {
     // Same empty-cache setup as the refresh-hint test, but with
     // --require-dispatch the vacuous run must exit NON-ZERO — this is

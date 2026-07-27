@@ -224,6 +224,14 @@ pub(crate) fn run(
         });
     }
 
+    // Even without the guard, a zero-dispatch run must not pass
+    // silently: say why nothing reached the server and what to check.
+    if let Some(warning) =
+        canon_dispatch::zero_dispatch_warning(dispatched, canon_full.len(), stats.skipped_clean)
+    {
+        eprintln!("{warning}");
+    }
+
     // Slice 23 ships neural via the in-agent skill route. test +
     // non-canon-bound full were originally milestone E slices 24/26
     // but are deferred to post-MVP pending the spec-schema +

@@ -493,6 +493,53 @@ fn retry_backoff(interval: Duration, attempt: u32) -> Duration {
         .min(RETRY_BACKOFF_CAP)
 }
 
+/// The vacuous-green guard's voice: when nothing was dispatched, say
+/// so loudly and say why — a silent 0-exit reads as "verified" in CI
+/// even though the server never saw the commit.
+///
+/// `canon_candidates` = canon-bound `verify="full"` entries that
+/// reached the dispatcher; `skipped_clean` = entries skipped up-front
+/// as already verified and fresh. Returns `None` when something
+/// dispatched, and — deliberately — when nothing canon-bound exists
+/// at all (a neural-only workspace legitimately dispatches nothing;
+/// CI opts into loudness there via `--require-dispatch`).
+pub(crate) fn zero_dispatch_warning(
+    dispatched: usize,
+    canon_candidates: usize,
+    skipped_clean: usize,
+) -> Option<String> {
+    if dispatched > 0 {
+        return None;
+    }
+    if canon_candidates > 0 {
+        return Some(format!(
+            "warning: no canon-verify dispatch happened this run — the server never saw \
+             this commit.\n  \
+             All {canon_candidates} canon-bound entr{} dropped at the canon-matches cache \
+             join: .aristo/canon-matches.toml is missing, stale, or carries no accepted \
+             matches.\n  \
+             Fix: run `aristo canon refresh` and commit the refreshed cache. CI can gate \
+             on this with `aristo verify --require-dispatch`.",
+            if canon_candidates == 1 {
+                "y was"
+            } else {
+                "ies were"
+            }
+        ));
+    }
+    if skipped_clean > 0 {
+        return Some(format!(
+            "warning: no canon-verify dispatch happened this run — the server never saw \
+             this commit.\n  \
+             {skipped_clean} annotation(s) were skipped as already verified and fresh, so \
+             nothing was re-checked against this commit.\n  \
+             Pass --rerun to force re-verification. CI can gate on this with \
+             `aristo verify --require-dispatch`.",
+        ));
+    }
+    None
+}
+
 /// Best-effort server-side cancel; returns whether the server took
 /// it. Never propagates — cancel runs on the way OUT (the interrupt
 /// path), so a failed cancel must not mask the interrupt exit.
@@ -2305,6 +2352,39 @@ mod tests {
         assert_eq!(fmt_deadline(Duration::from_secs(45 * 60)), "45m");
         assert_eq!(fmt_deadline(Duration::from_secs(90)), "90s");
         assert_eq!(fmt_deadline(Duration::ZERO), "0s");
+    }
+
+    // ─── zero_dispatch_warning ───────────────────────────────────────────
+
+    #[test]
+    fn zero_dispatch_warning_silent_when_something_dispatched() {
+        assert_eq!(zero_dispatch_warning(3, 3, 0), None);
+        assert_eq!(zero_dispatch_warning(1, 5, 2), None);
+    }
+
+    #[test]
+    fn zero_dispatch_warning_names_cache_join_when_candidates_evaporated() {
+        let w = zero_dispatch_warning(0, 2, 0).expect("candidates dropped at cache join → warn");
+        assert!(w.contains("warning: no canon-verify dispatch"), "{w}");
+        assert!(w.contains("canon-matches"), "{w}");
+        assert!(w.contains("aristo canon refresh"), "{w}");
+        assert!(w.contains("--require-dispatch"), "{w}");
+    }
+
+    #[test]
+    fn zero_dispatch_warning_points_at_rerun_when_everything_skipped_clean() {
+        let w = zero_dispatch_warning(0, 0, 4).expect("all skipped clean → warn");
+        assert!(w.contains("warning: no canon-verify dispatch"), "{w}");
+        assert!(w.contains("--rerun"), "{w}");
+        assert!(w.contains("--require-dispatch"), "{w}");
+    }
+
+    #[test]
+    fn zero_dispatch_warning_silent_when_nothing_canon_bound_exists() {
+        // A neural-only workspace legitimately dispatches nothing —
+        // no scare-warning on every local run. CI opts into loudness
+        // via --require-dispatch.
+        assert_eq!(zero_dispatch_warning(0, 0, 0), None);
     }
 
     #[test]
