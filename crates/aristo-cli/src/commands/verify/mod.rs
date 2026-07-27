@@ -251,14 +251,16 @@ pub(crate) fn run(
     if pending_test > 0 {
         return Err(CliError::NotImplemented {
             what: "aristo verify (verify=\"test\")",
-            hint: "post-MVP — see docs/deferred/verify-test-design.md",
+            hint: "test-pipeline execution is planned post-MVP; the annotation \
+                   stays recorded and will run once it ships",
         });
     }
     if !other_full.is_empty() {
         return Err(CliError::NotImplemented {
             what: "aristo verify (verify=\"full\") for non-canon-bound entries",
-            hint: "post-MVP — see docs/deferred/verify-test-design.md. \
-                   Canon-bound (`kanon:` / `aristos:`) entries dispatch via §14.",
+            hint: "non-canon full verification is planned post-MVP. Canon-bound \
+                   (`kanon:` / `aristos:`) entries already dispatch to the \
+                   verification server today",
         });
     }
     Ok(())
