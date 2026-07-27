@@ -498,15 +498,17 @@ fn retry_backoff(interval: Duration, attempt: u32) -> Duration {
 /// even though the server never saw the commit.
 ///
 /// `canon_candidates` = canon-bound `verify="full"` entries that
-/// reached the dispatcher; `skipped_clean` = entries skipped up-front
-/// as already verified and fresh. Returns `None` when something
-/// dispatched, and — deliberately — when nothing canon-bound exists
-/// at all (a neural-only workspace legitimately dispatches nothing;
-/// CI opts into loudness there via `--require-dispatch`).
+/// reached the dispatcher; `skipped_clean_canon_full` = canon-bound
+/// `verify="full"` entries skipped up-front as already verified and
+/// fresh — ONLY those, because neural/test/doc-only skips can never
+/// explain an empty canon dispatch set. Returns `None` when something
+/// dispatched, and — deliberately — when nothing canon-bound-full
+/// exists at all (a neural-only workspace legitimately dispatches
+/// nothing; CI opts into loudness there via `--require-dispatch`).
 pub(crate) fn zero_dispatch_warning(
     dispatched: usize,
     canon_candidates: usize,
-    skipped_clean: usize,
+    skipped_clean_canon_full: usize,
 ) -> Option<String> {
     if dispatched > 0 {
         return None;
@@ -527,12 +529,12 @@ pub(crate) fn zero_dispatch_warning(
             }
         ));
     }
-    if skipped_clean > 0 {
+    if skipped_clean_canon_full > 0 {
         return Some(format!(
             "warning: no canon-verify dispatch happened this run — the server never saw \
              this commit.\n  \
-             {skipped_clean} annotation(s) were skipped as already verified and fresh, so \
-             nothing was re-checked against this commit.\n  \
+             {skipped_clean_canon_full} canon-bound annotation(s) were skipped as already \
+             verified and fresh, so nothing was re-checked against this commit.\n  \
              Pass --rerun to force re-verification. CI can gate on this with \
              `aristo verify --require-dispatch`.",
         ));

@@ -141,6 +141,10 @@ pub(crate) fn run(
     let mut pending_neural: Vec<&AnnotationId> = Vec::new();
     let mut pending_test: usize = 0;
     let mut pending_full: Vec<&AnnotationId> = Vec::new();
+    // Canon-bound `verify="full"` entries skipped as clean — the only
+    // skips that can explain an empty canon-verify dispatch set (the
+    // zero-dispatch warning must not fire off neural/test skips).
+    let mut skipped_clean_canon_full: usize = 0;
 
     for (id, entry) in index.entries.iter() {
         if !matches_all(id, entry, &filters) {
@@ -148,6 +152,9 @@ pub(crate) fn run(
         }
         if !rerun && skip_because_proof_still_holds(id, entry, &ws, &index) {
             stats.skipped_clean += 1;
+            if counts_toward_canon_dispatch(id, entry, &cfg) {
+                skipped_clean_canon_full += 1;
+            }
             continue;
         }
         match resolve_verify_level(entry, &cfg) {
@@ -226,9 +233,13 @@ pub(crate) fn run(
 
     // Even without the guard, a zero-dispatch run must not pass
     // silently: say why nothing reached the server and what to check.
-    if let Some(warning) =
-        canon_dispatch::zero_dispatch_warning(dispatched, canon_full.len(), stats.skipped_clean)
-    {
+    // Only canon-bound full skips count — neural/test skips can't
+    // explain an empty canon dispatch set.
+    if let Some(warning) = canon_dispatch::zero_dispatch_warning(
+        dispatched,
+        canon_full.len(),
+        skipped_clean_canon_full,
+    ) {
         eprintln!("{warning}");
     }
 
@@ -537,6 +548,21 @@ fn resolve_verify_level(entry: &IndexEntry, cfg: &ConfigFile) -> VerifyLevel {
     }
 }
 
+/// Would this entry reach the canon-verify dispatcher if it weren't
+/// being skipped? True only for canon-bound (`aristos:` / `kanon:`)
+/// entries resolving to `verify="full"` — the same predicate pair the
+/// dispatcher itself applies (`partition_full` + the Full arm). Used
+/// to scope the zero-dispatch warning: neural/test/doc-only skips can
+/// never explain an empty canon dispatch set, so counting them would
+/// fire the warning in workspaces that legitimately dispatch nothing.
+fn counts_toward_canon_dispatch(id: &AnnotationId, entry: &IndexEntry, cfg: &ConfigFile) -> bool {
+    id.is_canon_bound()
+        && matches!(
+            resolve_verify_level(entry, cfg),
+            VerifyLevel::Method(VerifyMethod::Full)
+        )
+}
+
 #[aristo::intent(
     "An entry is skipped iff (1) its status is in the terminal set \
      {Verified, Tested, Neural, Counterexample, Inconclusive} AND \
@@ -614,6 +640,46 @@ mod tests {
                 last_critique_finding_count: None,
             }),
         )
+    }
+
+    #[test]
+    fn counts_toward_canon_dispatch_only_for_canon_bound_full() {
+        let cfg = ConfigFile::default();
+        // Neural — never counts, even canon-bound.
+        let (id, entry) = intent(
+            "aristos:foo",
+            VerifyLevel::Method(VerifyMethod::Neural),
+            Status::Neural,
+        );
+        assert!(!counts_toward_canon_dispatch(&id, &entry, &cfg));
+        // Full but local (non-canon) id — the dispatcher would route it
+        // to the deferred non-canon path, not canon-verify.
+        let (id, entry) = intent(
+            "local_full",
+            VerifyLevel::Method(VerifyMethod::Full),
+            Status::Unknown,
+        );
+        assert!(!counts_toward_canon_dispatch(&id, &entry, &cfg));
+        // Canon-bound + full — counts.
+        let (id, entry) = intent(
+            "aristos:foo",
+            VerifyLevel::Method(VerifyMethod::Full),
+            Status::Unknown,
+        );
+        assert!(counts_toward_canon_dispatch(&id, &entry, &cfg));
+    }
+
+    #[test]
+    fn counts_toward_canon_dispatch_resolves_bool_true_through_project_default() {
+        // verify=true defers to the project default — a default of
+        // "full" makes a canon-bound entry count; the free-tier "test"
+        // fallback does not.
+        let (id, entry) = intent("kanon:bar", VerifyLevel::Bool(true), Status::Unknown);
+        let mut cfg = ConfigFile::default();
+        cfg.verify.default_method = Some(VerifyMethod::Full);
+        assert!(counts_toward_canon_dispatch(&id, &entry, &cfg));
+        let cfg = ConfigFile::default();
+        assert!(!counts_toward_canon_dispatch(&id, &entry, &cfg));
     }
 
     #[test]
