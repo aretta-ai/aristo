@@ -102,14 +102,14 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "aristo"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aristo-macros",
 ]
 
 [[package]]
 name = "aristo-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anstream 0.6.21",
  "anstyle",
@@ -136,7 +136,7 @@ dependencies = [
 
 [[package]]
 name = "aristo-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aristo",
  "globset",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "aristo-macros"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aristo",
  "proc-macro2",
