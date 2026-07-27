@@ -434,14 +434,16 @@ impl PollConfig {
     }
 }
 
-/// Default overall `--wait` deadline: 45 minutes. Comfortably above a
-/// normal full-verify fleet run; small enough that a wedged session
-/// surfaces within the same working session instead of eating a
-/// multi-hour CI job.
-const WAIT_DEADLINE_DEFAULT: Duration = Duration::from_secs(45 * 60);
+/// Default overall `--wait` deadline: 2 hours. Sits ABOVE the server
+/// side's own session budget (box jobs run up to 1 hour, with a
+/// 90-minute server poll ceiling), so a run the server considers
+/// normal can never hit the client's give-up point — while a truly
+/// wedged session still surfaces well before the CI runner's own
+/// multi-hour job kill.
+const WAIT_DEADLINE_DEFAULT: Duration = Duration::from_secs(2 * 60 * 60);
 
 /// `ARISTO_VERIFY_WAIT_TIMEOUT_SECS` overrides the overall `--wait`
-/// deadline (whole seconds). Unset or unparsable → the 45-minute
+/// deadline (whole seconds). Unset or unparsable → the 2-hour
 /// default.
 fn wait_deadline() -> Duration {
     if let Ok(raw) = std::env::var("ARISTO_VERIFY_WAIT_TIMEOUT_SECS") {
@@ -2430,6 +2432,15 @@ mod tests {
         assert_eq!(fmt_deadline(Duration::from_secs(45 * 60)), "45m");
         assert_eq!(fmt_deadline(Duration::from_secs(90)), "90s");
         assert_eq!(fmt_deadline(Duration::ZERO), "0s");
+    }
+
+    #[test]
+    fn wait_deadline_default_clears_the_server_side_session_budget() {
+        // The server side budgets box jobs at 1h with a 90-minute poll
+        // ceiling; the client's give-up point must sit ABOVE that, or
+        // runs the server considers normal become client exit-1s.
+        // Pinned at 2 hours (review round 1, finding 4).
+        assert_eq!(WAIT_DEADLINE_DEFAULT, Duration::from_secs(2 * 60 * 60));
     }
 
     // ─── zero_dispatch_warning ───────────────────────────────────────────
