@@ -327,6 +327,10 @@ pub(crate) fn run_canon_dispatch(
                 message: format!("failed to read {}: {e}", expectations_path.display()),
                 exit_code: 1,
             })?;
+        // Share the client with the signal handler: an interrupted
+        // wait cancels the server-side session on the way out.
+        let client: std::sync::Arc<dyn VerifyClient> = std::sync::Arc::from(client);
+        install_cancel_on_interrupt(client.clone(), &resp.session_id);
         let final_snapshot = poll_until_terminal(&*client, &resp.session_id)?;
         render_final_snapshot(&final_snapshot, &expectations);
         let verdict = waiver::evaluate(&final_snapshot, &expectations);
@@ -369,6 +373,10 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     };
 
     let snapshot = if wait {
+        // Share the client with the signal handler: an interrupted
+        // wait cancels the server-side session on the way out.
+        let client: std::sync::Arc<dyn VerifyClient> = std::sync::Arc::from(client);
+        install_cancel_on_interrupt(client.clone(), session_id);
         poll_until_terminal(&*client, session_id)?
     } else {
         client
@@ -483,6 +491,51 @@ fn retry_backoff(interval: Duration, attempt: u32) -> Duration {
     interval
         .saturating_mul(2u32.saturating_pow(attempt.min(16)))
         .min(RETRY_BACKOFF_CAP)
+}
+
+/// Best-effort server-side cancel; returns whether the server took
+/// it. Never propagates — cancel runs on the way OUT (the interrupt
+/// path), so a failed cancel must not mask the interrupt exit.
+fn cancel_best_effort(client: &dyn VerifyClient, session_id: &str) -> bool {
+    match client.cancel_session(session_id) {
+        Ok(()) => {
+            eprintln!("  cancel requested — session {session_id} will stop server-side.");
+            true
+        }
+        Err(e) => {
+            eprintln!(
+                "  note: could not cancel session {session_id} ({e}); \
+                 it may keep running server-side."
+            );
+            false
+        }
+    }
+}
+
+/// Exit code for an interrupted `--wait` (128 + SIGINT, the shell
+/// convention for death-by-interrupt).
+const INTERRUPT_EXIT_CODE: i32 = 130;
+
+/// On SIGINT/SIGTERM during `--wait`, fire a best-effort server-side
+/// cancel before exiting: a cancelled CI job (`cancel-in-progress`,
+/// a force-push) kills only the polling CLI — without this, the
+/// dispatched fleet run keeps burning server-side. Installation is
+/// itself best-effort: if no handler slot is available the wait
+/// simply proceeds without cancel-on-interrupt.
+fn install_cancel_on_interrupt(client: std::sync::Arc<dyn VerifyClient>, session_id: &str) {
+    let sid = session_id.to_string();
+    let installed = ctrlc::set_handler(move || {
+        eprintln!();
+        eprintln!("interrupt received — requesting cancel of verify session {sid}…");
+        cancel_best_effort(&*client, &sid);
+        std::process::exit(INTERRUPT_EXIT_CODE);
+    });
+    if installed.is_err() {
+        eprintln!(
+            "  note: interrupt handler unavailable; Ctrl-C will NOT cancel \
+             the server-side session."
+        );
+    }
 }
 
 /// Long-poll loop until the session reaches a terminal state. Renders
@@ -2252,6 +2305,23 @@ mod tests {
         assert_eq!(fmt_deadline(Duration::from_secs(45 * 60)), "45m");
         assert_eq!(fmt_deadline(Duration::from_secs(90)), "90s");
         assert_eq!(fmt_deadline(Duration::ZERO), "0s");
+    }
+
+    #[test]
+    fn cancel_best_effort_requests_cancel_and_reports_success() {
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        assert!(cancel_best_effort(&mock, "01HMINT"));
+        assert_eq!(mock.cancelled_sessions(), vec!["01HMINT".to_string()]);
+    }
+
+    #[test]
+    fn cancel_best_effort_swallows_failure() {
+        // Cancel runs on the way OUT (interrupt path) — a failed
+        // cancel must never panic or mask the interrupt exit.
+        let mock = MockVerifyClient::with_get_results(vec![]);
+        mock.set_cancel_error(VerifyError::Network("connection refused".into()));
+        assert!(!cancel_best_effort(&mock, "01HMINT"));
+        assert_eq!(mock.cancelled_sessions().len(), 1);
     }
 
     #[test]
