@@ -373,10 +373,10 @@ pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     };
 
     let snapshot = if wait {
-        // Share the client with the signal handler: an interrupted
-        // wait cancels the server-side session on the way out.
-        let client: std::sync::Arc<dyn VerifyClient> = std::sync::Arc::from(client);
-        install_cancel_on_interrupt(client.clone(), session_id);
+        // A viewer attaches to a session it did not start, so an
+        // interrupt DETACHES (never cancels — that would kill the
+        // dispatching invocation's run).
+        install_detach_on_interrupt(session_id);
         poll_until_terminal(&*client, session_id)?
     } else {
         client
@@ -563,12 +563,37 @@ fn cancel_best_effort(client: &dyn VerifyClient, session_id: &str) -> bool {
 /// convention for death-by-interrupt).
 const INTERRUPT_EXIT_CODE: i32 = 130;
 
+/// SIGINT/SIGTERM during a `--view … --wait` attach: the viewer is an
+/// observer, NOT the session's owner — another invocation (often the
+/// primary CI waiter) dispatched it, and cancelling from here would
+/// kill that invocation's run. Interrupting a viewer therefore never
+/// touches the server: print where the session keeps running and how
+/// to re-attach, then exit 130. Only the dispatch path
+/// ([`install_cancel_on_interrupt`]) cancels on interrupt.
+fn install_detach_on_interrupt(session_id: &str) {
+    let sid = session_id.to_string();
+    let installed = ctrlc::set_handler(move || {
+        eprintln!();
+        eprintln!(
+            "interrupt received — detached; session {sid} keeps running server-side.\n  \
+             Re-attach with: aristo verify --view {sid} --wait"
+        );
+        std::process::exit(INTERRUPT_EXIT_CODE);
+    });
+    // Best-effort: without a handler slot the default signal death
+    // still detaches without cancelling, which is the invariant that
+    // matters here.
+    let _ = installed;
+}
+
 /// On SIGINT/SIGTERM during `--wait`, fire a best-effort server-side
 /// cancel before exiting: a cancelled CI job (`cancel-in-progress`,
 /// a force-push) kills only the polling CLI — without this, the
-/// dispatched fleet run keeps burning server-side. Installation is
-/// itself best-effort: if no handler slot is available the wait
-/// simply proceeds without cancel-on-interrupt.
+/// dispatched fleet run keeps burning server-side. Installed ONLY on
+/// the dispatch path — the invocation that POSTed the session owns
+/// it; a `--view` attach gets [`install_detach_on_interrupt`]
+/// instead. Installation is itself best-effort: if no handler slot
+/// is available the wait simply proceeds without cancel-on-interrupt.
 fn install_cancel_on_interrupt(client: std::sync::Arc<dyn VerifyClient>, session_id: &str) {
     let sid = session_id.to_string();
     let installed = ctrlc::set_handler(move || {
@@ -1552,8 +1577,11 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
             FixtureGet::Snapshot(s) => Ok(*s),
         })
         .collect();
-    // Record the POST body to a sibling file so tests can inspect it.
+    // Record the POST body (and any cancel request) to sibling files
+    // so tests can inspect them — the cancel sidecar is how signal
+    // tests prove whether a cancel left the process at all.
     let record_path = format!("{path}.posted.json");
+    let cancel_record_path = format!("{path}.cancelled");
     let mock = match (post_resp, get_results.is_empty()) {
         (Some(p), true) => aristo_core::canon_verify::MockVerifyClient::with_post_response(p),
         (Some(p), false) => {
@@ -1565,6 +1593,7 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
     Some(Box::new(RecordingMock {
         inner: mock,
         record_path,
+        cancel_record_path,
     }))
 }
 
@@ -1622,11 +1651,13 @@ struct FixturePost {
     plan_size: u32,
 }
 
-/// Wraps [`MockVerifyClient`] to write the POSTed request body to a
-/// sidecar file so the CLI integration test can assert wire-shape.
+/// Wraps [`MockVerifyClient`] to write the POSTed request body (and
+/// any cancel request) to sidecar files so the CLI integration tests
+/// can assert wire-shape and cancel emission from outside the process.
 struct RecordingMock {
     inner: aristo_core::canon_verify::MockVerifyClient,
     record_path: String,
+    cancel_record_path: String,
 }
 
 impl VerifyClient for RecordingMock {
@@ -1649,6 +1680,7 @@ impl VerifyClient for RecordingMock {
     }
 
     fn cancel_session(&self, session_id: &str) -> Result<(), VerifyError> {
+        let _ = std::fs::write(&self.cancel_record_path, session_id);
         self.inner.cancel_session(session_id)
     }
 }

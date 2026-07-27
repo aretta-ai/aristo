@@ -872,6 +872,146 @@ fn wait_renders_fault_banner_but_not_op_trace_for_enriched_report() {
         .stdout(contains("Lean").not());
 }
 
+/// A fixture body with `n` identical "running" GET snapshots (and
+/// optionally a POST response) — enough runway that a signal test can
+/// interrupt the poll loop long before the mock queue drains.
+fn fixture_with_running_gets(session_id: &str, n: usize, with_post: bool) -> String {
+    let running = serde_json::json!({
+        "session_id": session_id,
+        "status": "running",
+        "user_commit_sha": "abc1234567890",
+        "canon_version": "v0.1.0",
+        "started_at": "2026-05-24T00:00:00Z",
+        "annotations": [],
+        "summary": {"total_annotations": 1, "verified": 0, "failed": 0, "build_failed": 0, "inconclusive": 0, "no_coverage": 0}
+    });
+    let gets: Vec<serde_json::Value> = std::iter::repeat_with(|| running.clone()).take(n).collect();
+    let mut fx = serde_json::json!({ "gets": gets });
+    if with_post {
+        fx["post"] = serde_json::json!({
+            "session_id": session_id,
+            "view_url": "https://x",
+            "plan_size": 1
+        });
+    }
+    fx.to_string()
+}
+
+/// Spawn the real binary with the given verify args, let it reach the
+/// poll loop, deliver SIGINT, and collect the output.
+#[cfg(unix)]
+fn spawn_and_interrupt(
+    dir: &Path,
+    home: &Path,
+    fixture_path: &Path,
+    args: &[&str],
+) -> std::process::Output {
+    let bin = assert_cmd::cargo::cargo_bin("aristo");
+    let child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .env_remove("ARETTA_TOKEN")
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", fixture_path)
+        .env("ARISTO_VERIFY_POLL_MS", "50")
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn aristo");
+    // Give the process time to install the interrupt handler and
+    // enter the poll loop, then deliver SIGINT.
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let status = std::process::Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("send SIGINT");
+    assert!(status.success(), "kill -INT failed");
+    child.wait_with_output().expect("collect output")
+}
+
+#[cfg(unix)]
+#[test]
+fn sigint_during_dispatch_wait_cancels_the_owned_session() {
+    // The dispatching invocation OWNS the session: interrupting its
+    // --wait must fire the server-side cancel (proven via the mock's
+    // .cancelled sidecar) and exit 130.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        &fixture_with_running_gets("01HMOWNED", 400, true),
+    );
+
+    let out = spawn_and_interrupt(
+        tmp.path(),
+        home.path(),
+        &fixture_path,
+        &["verify", "--wait"],
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(130),
+        "interrupt must exit 130; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("cancel requested"),
+        "owner interrupt must cancel: {stderr}"
+    );
+    let cancelled = fs::read_to_string(tmp.path().join("verify-fixture.json.cancelled"))
+        .expect("cancel sidecar must exist — the dispatcher owns the session");
+    assert_eq!(cancelled, "01HMOWNED");
+}
+
+#[cfg(unix)]
+#[test]
+fn sigint_during_view_wait_detaches_without_cancelling() {
+    // --view attaches to a session ANOTHER invocation started — a
+    // viewer is an observer, not the owner. Interrupting it must NOT
+    // cancel the session (that would kill the primary CI waiter's
+    // run); it detaches with a re-attach hint and exits 130.
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        &fixture_with_running_gets("01HMOTHERS", 400, false),
+    );
+
+    let out = spawn_and_interrupt(
+        tmp.path(),
+        home.path(),
+        &fixture_path,
+        &["verify", "--view", "01HMOTHERS", "--wait"],
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(130),
+        "viewer interrupt must exit 130; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("detached"),
+        "viewer interrupt must detach, not cancel: {stderr}"
+    );
+    assert!(
+        !stderr.contains("cancel requested"),
+        "viewer must never cancel a session it did not start: {stderr}"
+    );
+    assert!(
+        !tmp.path().join("verify-fixture.json.cancelled").exists(),
+        "no cancel request may leave a viewer process"
+    );
+}
+
 #[test]
 fn view_attaches_to_existing_session_without_post() {
     // --view <id> skips POST entirely — no workspace, no git, no auth-
