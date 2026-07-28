@@ -6,6 +6,7 @@
 //! slice pointer.
 
 use assert_cmd::Command;
+use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::fs;
 use std::path::Path;
@@ -100,7 +101,7 @@ fn verify_neural_intent_writes_pending_request_file() {
 }
 
 #[test]
-fn verify_test_intent_returns_not_implemented_pointing_to_deferred_design() {
+fn verify_test_intent_returns_not_implemented_with_plain_hint() {
     let tmp = tempfile::tempdir().unwrap();
     workspace_with_one_intent_at(tmp.path(), "verify = \"test\"");
 
@@ -110,12 +111,14 @@ fn verify_test_intent_returns_not_implemented_pointing_to_deferred_design() {
         .failure()
         .code(64)
         .stderr(contains("is not implemented yet"))
-        .stderr(contains("post-MVP"))
-        .stderr(contains("verify-test-design.md"));
+        .stderr(contains("planned post-MVP"))
+        // The hint must describe the limitation plainly — a repo-tree
+        // doc path is un-followable for cargo-installed users.
+        .stderr(contains("docs/deferred").not());
 }
 
 #[test]
-fn verify_full_intent_returns_not_implemented_pointing_to_deferred_design() {
+fn verify_full_intent_returns_not_implemented_with_plain_hint() {
     let tmp = tempfile::tempdir().unwrap();
     workspace_with_one_intent_at(tmp.path(), "verify = \"full\"");
 
@@ -125,7 +128,8 @@ fn verify_full_intent_returns_not_implemented_pointing_to_deferred_design() {
         .failure()
         .code(64)
         .stderr(contains("is not implemented yet"))
-        .stderr(contains("post-MVP"));
+        .stderr(contains("planned post-MVP"))
+        .stderr(contains("docs/deferred").not());
 }
 
 #[test]

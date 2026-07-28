@@ -286,7 +286,10 @@ fn local_only_commit_rejected_by_push_first_precheck() {
         .assert()
         .failure()
         .stderr(contains("not pushed to origin"))
-        .stderr(contains("Push your branch first"));
+        .stderr(contains("Push your branch first"))
+        // Truth in affordances: the error must not advertise flags
+        // that do not exist (`--watch` was never shipped).
+        .stderr(contains("--watch").not());
 }
 
 #[test]

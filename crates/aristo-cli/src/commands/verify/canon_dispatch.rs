@@ -289,9 +289,9 @@ pub(crate) fn run_canon_dispatch(
     if !pushed {
         return Err(CliError::Other {
             message: format!(
-                "HEAD ({}) is not pushed to origin. Push your branch first; \
-                 `aristo verify --watch` for local-edit sync is planned but \
-                 not yet shipped.",
+                "HEAD ({}) is not pushed to origin. Push your branch first — \
+                 the server verifies the commit it fetches from your remote, \
+                 so a local-only commit cannot be verified.",
                 short_sha(&commit_sha)
             ),
             exit_code: 1,
@@ -1597,8 +1597,10 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
             message,
         } => CliError::Other {
             message: format!(
-                "no canon coverage applies for your scopes — \
-                 contact Aretta for DP onboarding to enable verification.\n  \
+                "no canon coverage applies for your scopes — verification \
+                 requires Aretta DP onboarding.\n  \
+                 Contact Aretta at hello@aretta.ai (https://aretta.ai) to \
+                 enable it.\n  \
                  (server message: {message})"
             ),
             exit_code: 1,
@@ -2539,6 +2541,29 @@ mod tests {
         assert!(
             mock.cancelled_sessions().is_empty(),
             "a settled session must not receive a late cancel"
+        );
+    }
+
+    #[test]
+    fn verify_402_names_a_concrete_contact_channel() {
+        // "contact Aretta" with no channel is a dead end for a paying
+        // prospect. Pin the concrete pointers (the repo's canonical
+        // contact address + site).
+        let msg = other_message(verify_error_to_cli(VerifyError::BadRequest {
+            status: 402,
+            message: "no_canon_coverage".into(),
+        }));
+        assert!(
+            msg.contains("hello@aretta.ai"),
+            "402 must name the contact address: {msg}"
+        );
+        assert!(
+            msg.contains("https://aretta.ai"),
+            "402 must name the site: {msg}"
+        );
+        assert!(
+            msg.contains("no_canon_coverage"),
+            "server message must still be surfaced: {msg}"
         );
     }
 
