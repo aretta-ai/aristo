@@ -47,6 +47,27 @@ pub(crate) fn write_file(path: &Path, content: &str) -> CliResult<WriteOutcome> 
     Ok(WriteOutcome::Created)
 }
 
+#[aristo::intent(
+    "Returns the names (from `expected`) whose on-disk bytes under `out` differ \
+     from the freshly-rendered content — the regenerate-and-compare core of \
+     every `--check` drift guard. A MISSING file counts as drifted: an absent \
+     artifact is never 'up to date' (read errors map to an empty string, which \
+     differs from any non-empty rendered content). Shared by `gen-c --check` \
+     (renders from the SUT's directives) and `vendor-c --check` (renders from \
+     the CLI templates) — the render source differs, this comparison does not.",
+    verify = "test",
+    id = "drifted_files_reports_missing_as_drift"
+)]
+pub(crate) fn drifted_files(expected: &[(&str, String)], out: &Path) -> Vec<String> {
+    expected
+        .iter()
+        .filter_map(|(name, content)| {
+            let current = fs::read_to_string(out.join(name)).unwrap_or_default();
+            (current != *content).then(|| (*name).to_string())
+        })
+        .collect()
+}
+
 /// ABI version of the vendored C runtime + generated-code contract, and the
 /// single source of truth for it: it is substituted into `runtime/aristo.h.in`
 /// (the `#define ARISTO_ABI` and its `_Static_assert`) at vendor time, so the
@@ -55,3 +76,31 @@ pub(crate) fn write_file(path: &Path, content: &str) -> CliResult<WriteOutcome> 
 /// `aristo_decision` layout mismatch in the fault path, the hardest place to
 /// notice corruption.
 pub(crate) const ARISTO_ABI: u32 = 1;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drifted_files_detects_match_drift_and_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path();
+        fs::write(out.join("a.txt"), "alpha").unwrap();
+        fs::write(out.join("b.txt"), "beta").unwrap();
+        let expected = [
+            ("a.txt", "alpha".to_string()),
+            ("b.txt", "beta".to_string()),
+        ];
+        // All on-disk bytes match the expected content -> nothing drifted.
+        assert!(drifted_files(&expected, out).is_empty());
+        // One file's bytes differ -> reported by name.
+        fs::write(out.join("b.txt"), "BETA-changed").unwrap();
+        assert_eq!(drifted_files(&expected, out), vec!["b.txt".to_string()]);
+        // A file that does not exist counts as drifted (never "up to date").
+        let expected_missing = [("c.txt", "gamma".to_string())];
+        assert_eq!(
+            drifted_files(&expected_missing, out),
+            vec!["c.txt".to_string()]
+        );
+    }
+}
