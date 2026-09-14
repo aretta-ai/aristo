@@ -115,3 +115,59 @@ fn catalogue_without_auth_refuses() {
         "expected auth diagnostic; got: {stderr}"
     );
 }
+
+#[test]
+fn catalogue_with_credentials_for_other_repos_names_the_checkout() {
+    let ws = setup_workspace();
+    // Two stored credentials, neither for the repo this checkout derives
+    // to: the refusal must say which checkout and what is on file, not
+    // "no token".
+    let dir = ws.path().join("home/xdg/aristo");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("credentials"),
+        r#"version = 2
+
+[[entries]]
+server = "https://acme.aretta.ai"
+repo = "acme/widgets"
+token = "arta_secret_acme"
+minted_at = "2026-09-14T11:07:00Z"
+user_login = "alice"
+
+[[entries]]
+server = "https://code.aretta.ai"
+repo = "other/project"
+token = "arta_secret_other"
+minted_at = "2026-09-14T11:08:00Z"
+"#,
+    )
+    .unwrap();
+    let git = ws.path().join(".git");
+    std::fs::create_dir_all(&git).unwrap();
+    std::fs::write(
+        git.join("config"),
+        "[remote \"origin\"]\n    url = https://github.com/alice/widgets.git\n",
+    )
+    .unwrap();
+
+    let out = aristo_in(ws.path())
+        .args(["canon", "catalogue"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("this checkout: alice/widgets"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("server: https://acme.aretta.ai   repo: acme/widgets   user: alice"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("`aristo auth login --repo alice/widgets` from this checkout"),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("arta_secret"), "token leaked: {stderr}");
+}
