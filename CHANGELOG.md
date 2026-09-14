@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- cli: `aristo auth login` now reports what it did to the credentials store and whether the directory you ran it from will actually use the new entry: `entry added` / `entry replaced (dropped N older entries for this repo)` with its `(server, repo)` key, the number of entries on file, and `this checkout (owner/repo) resolves to this entry.` — or `will NOT resolve to this entry` with the one-line fix (run from a checkout of that repo, or `ARETTA_TOKEN=$(aristo auth token --repo …)`). Outside a GitHub checkout it says so and whether the single-entry fallback still applies (#77).
+- cli: `aristo auth status` ends with the same verdict for the current directory — which stored entry it resolves to, or `no stored credential` with the `aristo auth login --repo <owner/repo>` / `ARETTA_TOKEN` fix; when `ARETTA_TOKEN` is set it says that takes precedence (#77).
+
 ### Changed
 - core: a login for a repo now replaces every older stored entry for that repo, whatever server it was minted against — retrying `aristo auth login` with a different `--server` no longer accumulates entries (the resolver only ever used the newest one for a repo, and the extra entries defeated the single-credential fallback). Unscoped entries are still keyed by server. `CredentialStore::upsert` reports `Added` / `Replaced { dropped }`, and the persisting `save_full` / `upsert_entry` return that outcome with the store as saved (#77).
 

@@ -26,10 +26,12 @@
 //! poll for token); not needed for v0.1.
 
 use std::io::Read;
+use std::path::Path;
 
 use aristo_core::auth::{
     self, derive_repo_full_name, login_server, login_server_discovering, AuthError,
-    LoginServerSource, ServerUrl, Token,
+    CredentialEntry, CredentialStore, LoginServerSource, ServerUrl, Token, UpsertOutcome,
+    UpsertReport,
 };
 
 use crate::{AuthAction, CliError, CliResult};
@@ -153,7 +155,7 @@ fn login_via_oauth(
         user_id: Some(resp.user.id),
         repo: Some(resp.repo_full_name.clone()),
     };
-    aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
+    let report = aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
 
     let path = auth::credentials_path().map_err(auth_error_to_cli)?;
     println!(
@@ -161,6 +163,7 @@ fn login_via_oauth(
         resp.user.login, resp.repo_full_name
     );
     println!("    token saved to {}", path.display());
+    print_login_report(&report, &creds.token)?;
     println!("    `aristo auth status` to verify; `aristo auth logout` to remove.");
     Ok(())
 }
@@ -198,12 +201,136 @@ fn login_with_raw_token(
         user_id: None,
         repo,
     };
-    aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
+    let report = aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
 
     let path = auth::credentials_path().map_err(auth_error_to_cli)?;
     println!("ok: authenticated. token saved to {}", path.display());
-    println!("   `aristo auth status` to verify; `aristo auth logout` to remove.");
+    print_login_report(&report, &creds.token)?;
+    println!("    `aristo auth status` to verify; `aristo auth logout` to remove.");
     Ok(())
+}
+
+// ─── what the store now holds, and what THIS directory resolves to ─────────
+
+/// After a login: what happened to the store and whether the directory
+/// the user is standing in will actually use the new entry. Both are
+/// answered from the store as saved — no second read — and the
+/// resolution verdict goes through the resolver's own selection rule.
+fn print_login_report(report: &UpsertReport, saved_token: &Token) -> CliResult<()> {
+    let saved = report
+        .store
+        .entries
+        .iter()
+        .find(|e| e.token.as_str() == saved_token.as_str())
+        .ok_or_else(|| CliError::Other {
+            message: "internal: the saved credential is not in the store just written".into(),
+            exit_code: 1,
+        })?;
+    println!(
+        "    {}",
+        store_change_line(report.outcome, saved, report.store.len())
+    );
+    let cwd = std::env::current_dir().map_err(CliError::Io)?;
+    println!("    {}", login_verdict(&report.store, saved, &cwd));
+    if std::env::var(auth::ENV_VAR).is_ok_and(|v| !v.trim().is_empty()) {
+        println!(
+            "    note: {} is set in the environment; it takes precedence over the saved entry.",
+            auth::ENV_VAR
+        );
+    }
+    Ok(())
+}
+
+/// `entry added: server …, repo … — N entries on file.` (or `replaced`,
+/// naming how many older entries for the repo were dropped).
+fn store_change_line(outcome: UpsertOutcome, saved: &CredentialEntry, total: usize) -> String {
+    let what = match outcome {
+        UpsertOutcome::Added => "entry added".to_string(),
+        UpsertOutcome::Replaced { dropped } => format!(
+            "entry replaced (dropped {dropped} older {} for this repo)",
+            plural(dropped, "entry", "entries")
+        ),
+    };
+    format!(
+        "{what}: {} — {total} {} on file.",
+        entry_key(saved),
+        plural(total, "entry", "entries")
+    )
+}
+
+/// The `(server, repo)` key of an entry, as shown to the user.
+fn entry_key(e: &CredentialEntry) -> String {
+    format!(
+        "server {}, repo {}",
+        e.server,
+        e.repo.as_deref().unwrap_or("(unscoped)")
+    )
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    if n == 1 { one } else { many }.to_string()
+}
+
+/// The entry the resolver will pick when run from `dir`, alongside the
+/// derived checkout (or why none could be derived). One call site for
+/// the rule, so login, status and the resolver agree.
+fn resolution_at<'s>(
+    store: &'s CredentialStore,
+    dir: &Path,
+) -> (Result<String, String>, Option<&'s CredentialEntry>) {
+    let checkout = auth::checkout_at(dir);
+    let picked = store.resolve_for(checkout.as_deref().ok());
+    (checkout, picked)
+}
+
+/// Will running aristo from `dir` use `saved`? One line, with the
+/// remedy when the answer is no.
+fn login_verdict(store: &CredentialStore, saved: &CredentialEntry, dir: &Path) -> String {
+    let (checkout, picked) = resolution_at(store, dir);
+    let uses_saved = picked.is_some_and(|e| e.token.as_str() == saved.token.as_str());
+    let remedy = match saved.repo.as_deref() {
+        Some(repo) => format!(
+            "run aristo from a {repo} checkout, or set ARETTA_TOKEN=$(aristo auth token --repo {repo})."
+        ),
+        None => "set ARETTA_TOKEN to use it.".to_string(),
+    };
+    match (checkout, uses_saved) {
+        (Ok(repo), true) => format!("this checkout ({repo}) resolves to this entry."),
+        (Ok(repo), false) => {
+            format!("this checkout ({repo}) will NOT resolve to this entry — {remedy}")
+        }
+        (Err(why), true) => format!(
+            "this directory is not a GitHub checkout ({why}); as the sole entry on file, \
+             this entry still resolves here."
+        ),
+        (Err(why), false) => format!(
+            "this directory is not a GitHub checkout ({why}); with {} entries on file \
+             nothing resolves here — {remedy}",
+            store.len()
+        ),
+    }
+}
+
+/// `aristo auth status`' view of the same question: which stored entry
+/// a run from `dir` will use, or the one-line fix if none.
+fn status_verdict(store: &CredentialStore, dir: &Path) -> String {
+    let (checkout, picked) = resolution_at(store, dir);
+    match (checkout, picked) {
+        (Ok(repo), Some(e)) => format!("this checkout ({repo}) resolves to: {}", entry_key(e)),
+        (Ok(repo), None) => format!(
+            "this checkout ({repo}) resolves to: no stored credential — \
+             run `aristo auth login --repo {repo}` here, or set ARETTA_TOKEN."
+        ),
+        (Err(why), Some(e)) => format!(
+            "this directory is not a GitHub checkout ({why}) — resolves to: {} (the sole entry)",
+            entry_key(e)
+        ),
+        (Err(why), None) => format!(
+            "this directory is not a GitHub checkout ({why}) — resolves to: no stored \
+             credential ({} on file; run from a checkout of one of them, or set ARETTA_TOKEN).",
+            store.len()
+        ),
+    }
 }
 
 /// Determine where the raw token comes from in bypass modes.
@@ -374,6 +501,17 @@ fn status() -> CliResult<()> {
             None => println!("    • server: {}   repo: {repo}", e.server),
         }
     }
+    // The verdict for THIS directory — the question a user standing in
+    // the wrong checkout actually has.
+    if env_set {
+        println!(
+            "    this checkout: {} takes precedence over every stored entry.",
+            auth::ENV_VAR
+        );
+    } else {
+        let cwd = std::env::current_dir().map_err(CliError::Io)?;
+        println!("    {}", status_verdict(&store, &cwd));
+    }
     Ok(())
 }
 
@@ -519,4 +657,129 @@ fn logout(all: bool, repo_flag: Option<String>) -> CliResult<()> {
     println!("ok: logged out {removed_label}. updated {}", path.display());
     note_env_still_set();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn entry(server: &str, repo: Option<&str>, token: &str) -> CredentialEntry {
+        CredentialEntry::bare(
+            Token::new(token),
+            ServerUrl::parse(server),
+            repo.map(str::to_string),
+        )
+    }
+
+    fn store(entries: Vec<CredentialEntry>) -> CredentialStore {
+        CredentialStore { entries }
+    }
+
+    fn checkout(parent: &Path, name: &str, owner_repo: &str) -> std::path::PathBuf {
+        let dir = parent.join(name);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(
+            dir.join(".git/config"),
+            format!("[remote \"origin\"]\n    url = git@github.com:{owner_repo}.git\n"),
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn store_change_line_names_outcome_key_and_count() {
+        let e = entry("https://acme.aretta.ai", Some("acme/widgets"), "t");
+        assert_eq!(
+            store_change_line(UpsertOutcome::Added, &e, 1),
+            "entry added: server https://acme.aretta.ai, repo acme/widgets — 1 entry on file."
+        );
+        assert_eq!(
+            store_change_line(UpsertOutcome::Replaced { dropped: 2 }, &e, 3),
+            "entry replaced (dropped 2 older entries for this repo): server https://acme.aretta.ai, repo acme/widgets — 3 entries on file."
+        );
+        let unscoped = entry("prod", None, "t");
+        assert!(store_change_line(UpsertOutcome::Added, &unscoped, 1).contains("repo (unscoped)"));
+    }
+
+    #[test]
+    fn login_verdict_matching_checkout_resolves() {
+        let tmp = TempDir::new().unwrap();
+        let dir = checkout(tmp.path(), "w", "acme/widgets");
+        let saved = entry("prod", Some("acme/widgets"), "t1");
+        let st = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
+        assert_eq!(
+            login_verdict(&st, &saved, &dir),
+            "this checkout (acme/widgets) resolves to this entry."
+        );
+    }
+
+    #[test]
+    fn login_verdict_mismatched_checkout_names_the_repo_and_both_remedies() {
+        let tmp = TempDir::new().unwrap();
+        let dir = checkout(tmp.path(), "fork", "alice/widgets");
+        let saved = entry("prod", Some("acme/widgets"), "t1");
+        let st = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
+        let v = login_verdict(&st, &saved, &dir);
+        assert!(
+            v.starts_with("this checkout (alice/widgets) will NOT resolve to this entry"),
+            "{v}"
+        );
+        assert!(v.contains("run aristo from a acme/widgets checkout"), "{v}");
+        assert!(
+            v.contains("ARETTA_TOKEN=$(aristo auth token --repo acme/widgets)"),
+            "{v}"
+        );
+    }
+
+    #[test]
+    fn login_verdict_outside_a_checkout_depends_on_the_sole_entry_grace() {
+        let tmp = TempDir::new().unwrap();
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        let saved = entry("prod", Some("acme/widgets"), "t1");
+        // Sole entry: still resolves.
+        let one = store(vec![saved.clone()]);
+        let v = login_verdict(&one, &saved, &plain);
+        assert!(v.contains("not a GitHub checkout (no .git/config"), "{v}");
+        assert!(v.contains("this entry still resolves here"), "{v}");
+        // Several entries: nothing resolves; remedy given.
+        let two = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
+        let v = login_verdict(&two, &saved, &plain);
+        assert!(
+            v.contains("with 2 entries on file nothing resolves here"),
+            "{v}"
+        );
+        assert!(v.contains("ARETTA_TOKEN"), "{v}");
+    }
+
+    #[test]
+    fn status_verdict_covers_all_four_branches() {
+        let tmp = TempDir::new().unwrap();
+        let acme = checkout(tmp.path(), "acme", "acme/widgets");
+        let fork = checkout(tmp.path(), "fork", "alice/widgets");
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        let a = entry("https://acme.aretta.ai", Some("acme/widgets"), "t1");
+        let two = store(vec![entry("prod", Some("other/x"), "t0"), a.clone()]);
+        assert_eq!(
+            status_verdict(&two, &acme),
+            "this checkout (acme/widgets) resolves to: server https://acme.aretta.ai, repo acme/widgets"
+        );
+        let v = status_verdict(&two, &fork);
+        assert!(
+            v.starts_with("this checkout (alice/widgets) resolves to: no stored credential"),
+            "{v}"
+        );
+        assert!(
+            v.contains("`aristo auth login --repo alice/widgets` here"),
+            "{v}"
+        );
+        let v = status_verdict(&two, &plain);
+        assert!(v.contains("not a GitHub checkout"), "{v}");
+        assert!(v.contains("no stored credential (2 on file"), "{v}");
+        let one = store(vec![a]);
+        let v = status_verdict(&one, &plain);
+        assert!(v.ends_with("repo acme/widgets (the sole entry)"), "{v}");
+    }
 }

@@ -48,7 +48,7 @@ pub use error::{AuthError, EntrySummary};
 pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
 pub use resolve::{
-    cwd_checkout, resolve, resolve_full, resolve_full_for_checkout, resolve_full_with,
+    checkout_at, cwd_checkout, resolve, resolve_full, resolve_full_for_checkout, resolve_full_with,
     resolve_with, ResolvedCreds, ENV_VAR,
 };
 pub use server::{
