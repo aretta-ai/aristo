@@ -10,6 +10,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ### Fixed
 - core: the auth resolver now distinguishes "no credentials on file" from "credentials on file, but none is for this checkout" (several entries stored, none scoped to the cwd's `owner/repo`): the latter is a new `AuthError::NoEntryForCheckout` whose message names the checkout's derived `owner/repo` (or why it could not be derived), lists the stored entries token-free (server, repo, user), and gives both remedies (`aristo auth login --repo <owner/repo>` from this checkout, or `ARETTA_TOKEN`). Resolver precedence is unchanged (`ARETTA_TOKEN` > repo match > sole entry) — only what the user is told (#76).
+- cli: `aristo stamp` / `aristo canon refresh` / `aristo critique` no longer print the "Pro feature, start a trial" nudge when credentials exist but none matches the current checkout — the nudge is reserved for "nothing on file". Instead the canon step prints the resolver's diagnosis: the checkout's derived `owner/repo` (or why it could not be derived), the stored entries (server, repo, user — never the token), and the two fixes. A malformed credentials file is reported the same way instead of as free tier. The step stays non-fatal (#76).
 
 ## [0.6.1] — 2026-07-27
 
