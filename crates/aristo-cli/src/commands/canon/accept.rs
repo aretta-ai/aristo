@@ -248,7 +248,7 @@ pub(crate) fn apply_acceptance(
         .insert(prefixed_id.clone(), IndexEntry::Intent(new_intent));
 
     // Refresh sibling annotations' sites in the same file.
-    for (_id, entry) in index.entries.iter_mut() {
+    for entry in index.entries.values_mut() {
         let same_file = entry_file(entry) == intent.file;
         if !same_file {
             continue;

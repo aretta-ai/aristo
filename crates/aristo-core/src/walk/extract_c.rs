@@ -194,13 +194,13 @@ fn parse_directive(comment_text: &str) -> Option<CDirective> {
 
     // The kind keyword must be followed by `(` (after optional whitespace),
     // so `intentional(...)` does not masquerade as an `intent` directive.
-    let (kind, rest) = if let Some(r) = rest.strip_prefix("intent") {
-        (AnnotationKind::Intent, r)
-    } else if let Some(r) = rest.strip_prefix("assume") {
-        (AnnotationKind::Assume, r)
-    } else {
-        return None;
-    };
+    let (kind, rest) = rest
+        .strip_prefix("intent")
+        .map(|r| (AnnotationKind::Intent, r))
+        .or_else(|| {
+            rest.strip_prefix("assume")
+                .map(|r| (AnnotationKind::Assume, r))
+        })?;
 
     let rest = rest.trim();
     let inner = rest.strip_prefix('(')?.strip_suffix(')')?;
