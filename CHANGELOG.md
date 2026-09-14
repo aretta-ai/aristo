@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- core: a login for a repo now replaces every older stored entry for that repo, whatever server it was minted against — retrying `aristo auth login` with a different `--server` no longer accumulates entries (the resolver only ever used the newest one for a repo, and the extra entries defeated the single-credential fallback). Unscoped entries are still keyed by server. `CredentialStore::upsert` reports `Added` / `Replaced { dropped }`, and the persisting `save_full` / `upsert_entry` return that outcome with the store as saved (#77).
+
 ### Fixed
 - build: the workspace is warning-free again on current stable — clippy 1.98's `question_mark` and `for_kv_map` lints (C directive parser, canon accept, probe generator) and rustdoc's stricter intra-doc-link check (canon cache reader) fire under CI's `-D warnings`; four mechanical rewrites, no behavior change.
 - docs: the dogfood `.aristo/doc/` artifact for the canon client-selection intent is regenerated after the intent's text was reworded, so `aristo doc --check` passes again.

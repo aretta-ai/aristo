@@ -62,6 +62,7 @@ pub fn save_with(
         xdg_config_home,
         home_override,
     )
+    .map(|_| ())
 }
 
 /// Remove the credentials file, if it exists. Idempotent — missing
@@ -204,11 +205,13 @@ pub struct CredentialsRecord {
 }
 
 /// Persist a full credentials record (token + server + user + repo).
-/// Upserts the entry keyed `(server, repo)` into the multi-repo store,
-/// migrating any older single-slot file and preserving other entries.
-/// Reads env vars for path resolution; see [`save_full_with`] for the
-/// explicit-overrides variant used by tests.
-pub fn save_full(creds: &CredentialsRecord) -> io::Result<()> {
+/// Upserts the entry into the multi-repo store (see
+/// [`CredentialStore::upsert`] for the key), migrating any older
+/// single-slot file and preserving other repos' entries. Reads env vars
+/// for path resolution; see [`save_full_with`] for the
+/// explicit-overrides variant used by tests. Returns what happened and
+/// the store as saved, so a caller can tell the user.
+pub fn save_full(creds: &CredentialsRecord) -> io::Result<UpsertReport> {
     upsert_entry(creds.into())
 }
 
@@ -217,17 +220,17 @@ pub fn save_full_with(
     creds: &CredentialsRecord,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
-) -> io::Result<()> {
+) -> io::Result<UpsertReport> {
     upsert_entry_with(creds.into(), xdg_config_home, home_override)
 }
 
 // ─── v2 multi-repo store ─────────────────────────────────────────────────────
 //
 // The single-slot `[aretta]` file (v1, above) holds one token. The v2
-// store is a keyed, versioned list: entries keyed by `(server, repo)`,
-// so a user can be logged in to several repos (and several servers) at
-// once. v1 files still read transparently and migrate to v2 on the next
-// write.
+// store is a keyed, versioned list: one entry per repo (an unscoped
+// entry is keyed by its server instead), so a user can be logged in to
+// several repos at once. v1 files still read transparently and migrate
+// to v2 on the next write.
 
 /// Current on-disk format version. v1 was the single-slot `[aretta]`
 /// table; v2 is a keyed, multi-repo `[[entries]]` list.
@@ -238,8 +241,9 @@ const STORE_VERSION: u32 = 2;
 const STORE_HEADER: &str = "\
 # Aristo credentials store (v2, multi-repo).
 #
-# Managed by `aristo auth`; entries are keyed by (server, repo). Tokens
-# are secrets — on Unix this file is created 0600 (owner-only).
+# Managed by `aristo auth`; one entry per repo (a login for a repo
+# replaces its older entry). Tokens are secrets — on Unix this file is
+# created 0600 (owner-only).
 #
 # DOWNGRADE CAVEAT: aristo < 0.6 understands only the older single-slot
 # format and will not read these entries (it treats this file as
@@ -247,7 +251,7 @@ const STORE_HEADER: &str = "\
 # `aristo auth login` again, or `aristo auth logout --all` to reset.
 ";
 
-/// One credential entry, keyed by `(server, repo)`.
+/// One credential entry. Keyed by `repo` when scoped, else by `server`.
 #[derive(Debug, Clone)]
 pub struct CredentialEntry {
     /// Aretta server this token was minted against.
@@ -310,10 +314,29 @@ impl From<&CredentialsRecord> for CredentialEntry {
 /// The whole keyed credential store: zero or more entries.
 #[derive(Debug, Clone, Default)]
 pub struct CredentialStore {
-    /// Entries in file order. Keyed by `(server, repo)` via [`upsert`].
+    /// Entries in file order. Keyed via [`upsert`].
     ///
     /// [`upsert`]: CredentialStore::upsert
     pub entries: Vec<CredentialEntry>,
+}
+
+/// What [`CredentialStore::upsert`] did with the entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpsertOutcome {
+    /// No entry shared the key; the entry was appended.
+    Added,
+    /// `dropped` older entries with the same key were removed and the
+    /// entry took their place.
+    Replaced { dropped: usize },
+}
+
+/// What a persisting upsert did, plus the store exactly as saved — so
+/// a caller can report the entry count and the resolution verdict
+/// without a second read.
+#[derive(Debug, Clone)]
+pub struct UpsertReport {
+    pub outcome: UpsertOutcome,
+    pub store: CredentialStore,
 }
 
 impl CredentialStore {
@@ -357,17 +380,27 @@ impl CredentialStore {
             .max_by(|a, b| a.minted_at.cmp(&b.minted_at))
     }
 
-    /// Insert `entry`, or replace the existing one with the same
-    /// `(server, repo)` key.
-    pub fn upsert(&mut self, entry: CredentialEntry) {
-        if let Some(slot) = self
-            .entries
-            .iter_mut()
-            .find(|e| e.keyed_as(&entry.server, entry.repo.as_deref()))
-        {
-            *slot = entry;
+    /// Insert `entry`, replacing what it supersedes. A repo-scoped entry
+    /// replaces EVERY older entry for that repo, whatever their server:
+    /// the resolver only ever picks the newest entry for a repo, so an
+    /// older one is unreachable — and, worse, it defeats the sole-entry
+    /// grace. A retry of `aristo auth login` therefore never
+    /// accumulates entries. An unscoped entry (no repo) replaces only
+    /// the unscoped entry on the same server.
+    pub fn upsert(&mut self, entry: CredentialEntry) -> UpsertOutcome {
+        let dropped = match entry.repo.as_deref() {
+            Some(repo) => self.remove_by_repo(repo),
+            None => {
+                let before = self.entries.len();
+                self.entries.retain(|e| !e.keyed_as(&entry.server, None));
+                before - self.entries.len()
+            }
+        };
+        self.entries.push(entry);
+        if dropped == 0 {
+            UpsertOutcome::Added
         } else {
-            self.entries.push(entry);
+            UpsertOutcome::Replaced { dropped }
         }
     }
 
@@ -555,7 +588,7 @@ pub fn save_store_with(
 
 /// Insert-or-replace one entry, migrating any existing v1 file to v2 and
 /// preserving every other entry. Reads env vars for the path.
-pub fn upsert_entry(entry: CredentialEntry) -> io::Result<()> {
+pub fn upsert_entry(entry: CredentialEntry) -> io::Result<UpsertReport> {
     upsert_entry_with(
         entry,
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
@@ -568,12 +601,13 @@ pub fn upsert_entry_with(
     entry: CredentialEntry,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
-) -> io::Result<()> {
+) -> io::Result<UpsertReport> {
     // Load first so we migrate (not clobber) an existing file; a corrupt
     // file surfaces as an error rather than silent data loss.
     let mut store = load_store_with(xdg_config_home, home_override).map_err(io_from_auth_error)?;
-    store.upsert(entry);
-    save_store_with(&store, xdg_config_home, home_override)
+    let outcome = store.upsert(entry);
+    save_store_with(&store, xdg_config_home, home_override)?;
+    Ok(UpsertReport { outcome, store })
 }
 
 impl CredentialEntry {
@@ -816,9 +850,8 @@ repo = "owner/legacy"
     }
 
     #[test]
-    fn upsert_keeps_distinct_keys() {
-        // Same repo on different servers are distinct keys; so are
-        // different repos on the same server.
+    fn upsert_keeps_distinct_repos() {
+        // Different repos are distinct entries, whatever the server.
         let mut store = CredentialStore::default();
         store.upsert(entry(
             ServerUrl::Prod,
@@ -828,39 +861,152 @@ repo = "owner/legacy"
         ));
         store.upsert(entry(
             ServerUrl::Custom("https://staging.example.com".into()),
-            "owner/repo",
-            "dev-tok",
-            "2026-07-22T00:00:00Z",
-        ));
-        store.upsert(entry(
-            ServerUrl::Prod,
             "owner/other",
             "other-tok",
             "2026-07-22T00:00:00Z",
         ));
-        assert_eq!(store.len(), 3);
+        assert_eq!(store.len(), 2);
     }
 
     #[test]
-    fn find_by_repo_prefers_most_recent_when_repo_is_shared() {
+    fn upsert_same_repo_on_another_server_replaces_the_older_entry() {
+        // A repo has one usable credential: the resolver only ever picks
+        // the newest entry for a repo, so an older one on another server
+        // is dead weight that also breaks the sole-entry grace. A login
+        // for the same repo replaces it, whatever the server.
         let mut store = CredentialStore::default();
         store.upsert(entry(
             ServerUrl::Prod,
             "owner/repo",
-            "older",
+            "prod-tok",
             "2026-07-22T00:00:00Z",
         ));
-        store.upsert(entry(
+        let outcome = store.upsert(entry(
             ServerUrl::Custom("https://staging.example.com".into()),
             "owner/repo",
-            "newer",
-            "2026-07-22T05:00:00Z",
+            "dev-tok",
+            "2026-07-22T01:00:00Z",
         ));
+        assert_eq!(outcome, UpsertOutcome::Replaced { dropped: 1 });
+        assert_eq!(store.len(), 1);
+        assert_eq!(
+            store.find_by_repo("owner/repo").unwrap().token.as_str(),
+            "dev-tok"
+        );
+        assert_eq!(
+            store.entries[0].server,
+            ServerUrl::Custom("https://staging.example.com".into())
+        );
+    }
+
+    #[test]
+    fn upsert_reports_added_then_replaced_with_the_drop_count() {
+        let mut store = CredentialStore::default();
+        assert_eq!(
+            store.upsert(entry(
+                ServerUrl::Prod,
+                "owner/repo",
+                "t1",
+                "2026-07-22T00:00:00Z"
+            )),
+            UpsertOutcome::Added
+        );
+        // Two stale same-repo entries (as an older CLI may have written)
+        // are both dropped by one login.
+        store.entries.push(entry(
+            ServerUrl::Custom("https://a.example.com".into()),
+            "owner/repo",
+            "t2",
+            "2026-07-22T01:00:00Z",
+        ));
+        assert_eq!(
+            store.upsert(entry(
+                ServerUrl::Prod,
+                "owner/repo",
+                "t3",
+                "2026-07-22T02:00:00Z"
+            )),
+            UpsertOutcome::Replaced { dropped: 2 }
+        );
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.entries[0].token.as_str(), "t3");
+    }
+
+    #[test]
+    fn upsert_unscoped_entries_key_by_server() {
+        // With no repo there is nothing to key on but the server: same
+        // server replaces, another server adds.
+        let mut store = CredentialStore::default();
+        let unscoped =
+            |server: ServerUrl, tok: &str| CredentialEntry::bare(Token::new(tok), server, None);
+        assert_eq!(
+            store.upsert(unscoped(ServerUrl::Prod, "p1")),
+            UpsertOutcome::Added
+        );
+        assert_eq!(
+            store.upsert(unscoped(ServerUrl::Prod, "p2")),
+            UpsertOutcome::Replaced { dropped: 1 }
+        );
+        assert_eq!(
+            store.upsert(unscoped(
+                ServerUrl::Custom("https://a.example.com".into()),
+                "a1"
+            )),
+            UpsertOutcome::Added
+        );
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn find_by_repo_prefers_most_recent_when_a_file_shares_a_repo() {
+        // A file written by an older CLI may still hold two entries for
+        // one repo; on read, the newest wins.
+        let store = CredentialStore {
+            entries: vec![
+                entry(
+                    ServerUrl::Prod,
+                    "owner/repo",
+                    "older",
+                    "2026-07-22T00:00:00Z",
+                ),
+                entry(
+                    ServerUrl::Custom("https://staging.example.com".into()),
+                    "owner/repo",
+                    "newer",
+                    "2026-07-22T05:00:00Z",
+                ),
+            ],
+        };
         assert_eq!(
             store.find_by_repo("owner/repo").unwrap().token.as_str(),
             "newer"
         );
         assert!(store.find_by_repo("nope/nope").is_none());
+    }
+
+    #[test]
+    fn upsert_entry_with_reports_outcome_and_the_saved_store() {
+        let env = TestEnv::new();
+        let first = upsert_entry_with(
+            entry(ServerUrl::Prod, "owner/repo", "t1", "2026-07-22T00:00:00Z"),
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
+        assert_eq!(first.outcome, UpsertOutcome::Added);
+        assert_eq!(first.store.len(), 1);
+        let second = upsert_entry_with(
+            entry(ServerUrl::Prod, "owner/repo", "t2", "2026-07-22T01:00:00Z"),
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
+        assert_eq!(second.outcome, UpsertOutcome::Replaced { dropped: 1 });
+        assert_eq!(second.store.len(), 1);
+        // What was reported is what is on disk.
+        let on_disk = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
+        assert_eq!(on_disk.len(), 1);
+        assert_eq!(on_disk.entries[0].token.as_str(), "t2");
     }
 
     #[test]
