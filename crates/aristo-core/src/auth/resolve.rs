@@ -69,32 +69,57 @@ pub fn resolve_with(
 /// current repo (derived best-effort from the cwd's `.git/config`),
 /// falling back to the sole stored entry.
 pub fn resolve_full() -> Result<ResolvedCreds, AuthError> {
-    let repo_hint = cwd_repo_hint();
-    resolve_full_with(
+    let checkout = cwd_checkout();
+    resolve_full_for_checkout(
         std::env::var(ENV_VAR).ok().as_deref(),
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
         home_dir().as_deref(),
-        repo_hint.as_deref(),
+        checkout.as_deref().map_err(String::as_str),
     )
 }
 
-/// Best-effort `owner/repo` for the current directory, or `None` when
-/// the cwd isn't a GitHub-remote git repo. Used to pick the right entry
-/// from a multi-repo store.
-fn cwd_repo_hint() -> Option<String> {
-    std::env::current_dir()
-        .ok()
-        .and_then(|cwd| super::git::derive_repo_full_name(&cwd).ok())
+/// `owner/repo` derived from the current directory's git remote, or
+/// the reason it could not be (not a git checkout, no `origin`,
+/// non-GitHub URL). The reason travels into
+/// [`AuthError::NoEntryForCheckout`] so the user sees why no entry was
+/// matched rather than a bare "no token".
+pub fn cwd_checkout() -> Result<String, String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {e}"))?;
+    super::git::derive_repo_full_name(&cwd).map_err(|e| match e {
+        AuthError::Malformed(why) => why,
+        other => other.to_string(),
+    })
 }
 
 /// Resolve a full credentials record with explicit overrides and a repo
 /// hint. Precedence: `ARETTA_TOKEN` env > the entry scoped to
-/// `repo_hint` > the sole stored entry (single-repo grace).
+/// `repo_hint` > the sole stored entry (single-repo grace). `None` is
+/// "no checkout given" — see [`resolve_full_for_checkout`] to carry the
+/// reason a repo could not be derived.
 pub fn resolve_full_with(
     env_token: Option<&str>,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
     repo_hint: Option<&str>,
+) -> Result<ResolvedCreds, AuthError> {
+    resolve_full_for_checkout(
+        env_token,
+        xdg_config_home,
+        home_override,
+        repo_hint.ok_or("no checkout given"),
+    )
+}
+
+/// Resolve for a checkout that is either `Ok(owner/repo)` or `Err(why
+/// it could not be derived)`. Same precedence as [`resolve_full_with`];
+/// the derivation error only ever surfaces inside
+/// [`AuthError::NoEntryForCheckout`], when several entries are stored
+/// and none can be picked for this directory.
+pub fn resolve_full_for_checkout(
+    env_token: Option<&str>,
+    xdg_config_home: Option<&str>,
+    home_override: Option<&Path>,
+    checkout: Result<&str, &str>,
 ) -> Result<ResolvedCreds, AuthError> {
     // 1. Env var first — CI-friendly precedence. No metadata
     //    available; default to Prod server, no user/repo.
@@ -117,11 +142,18 @@ pub fn resolve_full_with(
     }
     // 3. Prefer the entry scoped to the current repo; else fall back to
     //    the sole entry so a one-credential user always resolves even
-    //    without (or with a non-matching) repo hint.
-    let entry = repo_hint
-        .and_then(|r| store.find_by_repo(r))
-        .or_else(|| store.sole())
-        .ok_or(AuthError::NoToken)?;
+    //    without (or with a non-matching) repo hint. Several entries and
+    //    no match is NOT "no token": the user is signed in, just not
+    //    for this directory — say so, token-free.
+    let entry = store
+        .resolve_for(checkout.ok())
+        .ok_or_else(|| AuthError::NoEntryForCheckout {
+            checkout: checkout.map(str::to_string).map_err(str::to_string),
+            path: super::store::credentials_path_with(xdg_config_home, home_override)
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+            entries: store.entries.iter().map(|e| e.summary()).collect(),
+        })?;
     Ok(ResolvedCreds {
         token: entry.token.clone(),
         server: entry.server.clone(),
@@ -336,9 +368,11 @@ issued_at = "2026-05-20T00:00:00Z"
     }
 
     #[test]
-    fn multi_entry_no_match_is_no_token() {
+    fn multi_entry_no_match_reports_what_is_on_file_for_the_checkout() {
         // Several credentials, none matching the repo hint, no sole
-        // fallback → not authenticated for this repo.
+        // fallback → not "no token" (the user IS signed in) but "none of
+        // these is for this checkout", carrying the derived repo and the
+        // token-free entries so the CLI can say exactly that.
         let env = TestEnv::new();
         write_v2(
             &env,
@@ -347,6 +381,61 @@ issued_at = "2026-05-20T00:00:00Z"
                 v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
             ],
         );
+        let err = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some("owner/c"))
+            .unwrap_err();
+        match err {
+            AuthError::NoEntryForCheckout {
+                checkout,
+                path,
+                entries,
+            } => {
+                assert_eq!(checkout.as_deref().map_err(String::as_str), Ok("owner/c"));
+                assert_eq!(path, env.creds.display().to_string());
+                let repos: Vec<_> = entries.iter().map(|e| e.repo.as_deref()).collect();
+                assert_eq!(repos, vec![Some("owner/a"), Some("owner/b")]);
+                let rendered = format!("{entries:?}");
+                assert!(!rendered.contains("tok-a"), "token leaked: {rendered}");
+            }
+            other => panic!("expected NoEntryForCheckout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn multi_entry_with_underivable_checkout_carries_the_derivation_error() {
+        // The cwd is not a GitHub checkout: the resolver still cannot
+        // pick among several entries, and the error says WHY no repo was
+        // derived instead of silently reporting "no token".
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![
+                v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z"),
+                v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
+            ],
+        );
+        let err = resolve_full_for_checkout(
+            None,
+            Some(env.xdg_str()),
+            dummy_home(),
+            Err("no .git/config at /tmp/x/.git/config"),
+        )
+        .unwrap_err();
+        match err {
+            AuthError::NoEntryForCheckout { checkout, .. } => {
+                assert_eq!(
+                    checkout.as_deref().map_err(String::as_str),
+                    Err("no .git/config at /tmp/x/.git/config")
+                );
+            }
+            other => panic!("expected NoEntryForCheckout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_store_is_still_no_token() {
+        // Nothing on file at all → the plain NoToken (the free-tier
+        // nudge stays correct for this case).
+        let env = TestEnv::new();
         let err = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some("owner/c"))
             .unwrap_err();
         assert_eq!(err, AuthError::NoToken);

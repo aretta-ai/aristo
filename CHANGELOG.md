@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- core: the auth resolver now distinguishes "no credentials on file" from "credentials on file, but none is for this checkout" (several entries stored, none scoped to the cwd's `owner/repo`): the latter is a new `AuthError::NoEntryForCheckout` whose message names the checkout's derived `owner/repo` (or why it could not be derived), lists the stored entries token-free (server, repo, user), and gives both remedies (`aristo auth login --repo <owner/repo>` from this checkout, or `ARETTA_TOKEN`). Resolver precedence is unchanged (`ARETTA_TOKEN` > repo match > sole entry) — only what the user is told (#76).
+
 ## [0.6.1] — 2026-07-27
 
 The `verify --wait` robustness release. `aristo verify --wait` is the loop customer CI runs against the verification server; 0.6.1 makes that loop survive infrastructure blips instead of failing the build, bounds how long it can hang, stops a cancelled CI job from orphaning its server-side run (and stops a viewer from cancelling someone else's), and refuses to let "nothing was verified" pass in silence.

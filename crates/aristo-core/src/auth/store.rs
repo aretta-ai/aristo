@@ -283,6 +283,15 @@ impl CredentialEntry {
     fn keyed_as(&self, server: &super::server::ServerUrl, repo: Option<&str>) -> bool {
         &self.server == server && self.repo.as_deref() == repo
     }
+
+    /// The printable, token-free view of this entry.
+    pub fn summary(&self) -> super::error::EntrySummary {
+        super::error::EntrySummary {
+            server: self.server.as_str().to_string(),
+            repo: self.repo.clone(),
+            user_login: self.user_login.clone(),
+        }
+    }
 }
 
 impl From<&CredentialsRecord> for CredentialEntry {
@@ -326,6 +335,17 @@ impl CredentialStore {
             [only] => Some(only),
             _ => None,
         }
+    }
+
+    /// The entry a resolver picks for a checkout: the one scoped to
+    /// `repo_hint` when there is a hint and a match, else the sole entry
+    /// (single-repo grace), else nothing. This is THE selection rule —
+    /// `resolve_full` and every "which entry will this directory use?"
+    /// verdict go through it, so they cannot disagree.
+    pub fn resolve_for(&self, repo_hint: Option<&str>) -> Option<&CredentialEntry> {
+        repo_hint
+            .and_then(|r| self.find_by_repo(r))
+            .or_else(|| self.sole())
     }
 
     /// The entry scoped to `repo`. When several share a repo (different
