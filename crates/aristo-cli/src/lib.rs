@@ -740,26 +740,6 @@ pub(crate) enum CanonAction {
         canon_id: String,
     },
 
-    /// Reject a pending canon match: move the entry from
-    /// `pending_matches` to `rejected_matches`, pinned to the
-    /// current annotation `text_hash`. The rejection keeps the same
-    /// `(canon_id, text_hash)` pair from re-surfacing on future
-    /// `aristo stamp` runs; once the annotation text changes, the
-    /// rejection no longer applies and the match is re-evaluated.
-    /// Source and index are not touched — rejection is a cache-only
-    /// operation.
-    Reject {
-        /// Annotation id whose pending match you're rejecting.
-        annotation_id: String,
-        /// Canon id from the pending match.
-        canon_id: String,
-        /// Optional note recorded with the rejection. Useful for
-        /// capturing the *why* (e.g. "this canon entry is too broad",
-        /// "wrong category") for whoever revisits it later.
-        #[arg(long = "reason")]
-        reason: Option<String>,
-    },
-
     /// List the current canon match state: one line per annotation
     /// with pending / accepted / rejected counts, plus per-bucket
     /// detail lines for each match. Reads `.aristo/canon-matches.toml`;
@@ -784,6 +764,7 @@ pub(crate) enum CanonAction {
         prefixed_id: String,
     },
 
+    #[command(hide = true)]
     /// Report per-binding version drift between the local cache and
     /// the canon API. Reports three classes: `current` (no change),
     /// `patch-bump` (same canon_id, newer version — recommended
@@ -1139,11 +1120,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 annotation_id,
                 canon_id,
             } => commands::canon::accept::run(&annotation_id, &canon_id),
-            CanonAction::Reject {
-                annotation_id,
-                canon_id,
-                reason,
-            } => commands::canon::reject::run(&annotation_id, &canon_id, reason),
             CanonAction::List => commands::canon::list::run(),
             CanonAction::Unbind { prefixed_id } => commands::canon::unbind::run(&prefixed_id),
             CanonAction::Migrate => commands::canon::migrate::run(),

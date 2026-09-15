@@ -1,4 +1,5 @@
-//! End-to-end scenario tests for `aristo canon reject` — pending →
+//! End-to-end scenario tests for rejecting a pending canon match through
+//! the intent-review session (`session decide --bucket rejected`) — pending →
 //! rejected with text_hash pin per cli-sessions.md Flow 7.
 //!
 //! Pattern mirrors `canon_accept_command.rs`. The key invariant under
@@ -87,6 +88,34 @@ fn stamp(ws: &Path, fixture: &Path) {
     );
 }
 
+/// Reject `canon_id` for `annotation_id` the way the review flow does:
+/// an intent-review session, one `rejected` decision, session closed.
+/// Returns the decision's output (the rejection is its side effect).
+fn reject_via_session(
+    ws: &Path,
+    annotation_id: &str,
+    canon_id: &str,
+    note: Option<&str>,
+) -> std::process::Output {
+    assert!(aristo_in(ws)
+        .args(["session", "start", "intent-review", "--subject", "x"])
+        .status()
+        .unwrap()
+        .success());
+    let item = format!("match:{annotation_id}#{canon_id}");
+    let mut args = vec!["session", "decide", "--item", &item, "--bucket", "rejected"];
+    if let Some(n) = note {
+        args.extend(["--note", n]);
+    }
+    let out = aristo_in(ws).args(&args).output().unwrap();
+    assert!(aristo_in(ws)
+        .args(["session", "exit", "--defer-undecided"])
+        .status()
+        .unwrap()
+        .success());
+    out
+}
+
 // ─── happy paths ─────────────────────────────────────────────────────────
 
 #[test]
@@ -96,17 +125,12 @@ fn reject_moves_pending_to_rejected_with_text_hash_pin() {
     write_fixture(&fixture);
     stamp(ws.path(), &fixture);
 
-    let out = aristo_in(ws.path())
-        .args([
-            "canon",
-            "reject",
-            "my_local_invariant",
-            "some_unrelated_entry",
-            "--reason",
-            "intentionally narrower than canon entry",
-        ])
-        .output()
-        .unwrap();
+    let out = reject_via_session(
+        ws.path(),
+        "my_local_invariant",
+        "some_unrelated_entry",
+        Some("intentionally narrower than canon entry"),
+    );
     assert!(
         out.status.success(),
         "reject failed: stdout={} stderr={}",
@@ -144,15 +168,12 @@ fn reject_without_reason_still_succeeds_and_omits_reason() {
     write_fixture(&fixture);
     stamp(ws.path(), &fixture);
 
-    let out = aristo_in(ws.path())
-        .args([
-            "canon",
-            "reject",
-            "my_local_invariant",
-            "some_unrelated_entry",
-        ])
-        .output()
-        .unwrap();
+    let out = reject_via_session(
+        ws.path(),
+        "my_local_invariant",
+        "some_unrelated_entry",
+        None,
+    );
     assert!(out.status.success(), "reject (no reason) failed");
 
     let cache = std::fs::read_to_string(ws.path().join(".aristo/canon-matches.toml")).unwrap();
@@ -160,7 +181,7 @@ fn reject_without_reason_still_succeeds_and_omits_reason() {
         cache.contains("[[my_local_invariant.rejected_matches]]"),
         "got: {cache}"
     );
-    // No `reason =` line should appear when the user omitted --reason.
+    // No `reason =` line should appear when the user gave no --note.
     let rejected_section_idx = cache
         .find("[[my_local_invariant.rejected_matches]]")
         .unwrap();
@@ -194,15 +215,12 @@ fn reject_pin_uses_index_text_hash() {
     let end = after.find('"').unwrap();
     let expected_text_hash = &after[..end];
 
-    aristo_in(ws.path())
-        .args([
-            "canon",
-            "reject",
-            "my_local_invariant",
-            "some_unrelated_entry",
-        ])
-        .status()
-        .unwrap();
+    reject_via_session(
+        ws.path(),
+        "my_local_invariant",
+        "some_unrelated_entry",
+        None,
+    );
 
     let cache = std::fs::read_to_string(ws.path().join(".aristo/canon-matches.toml")).unwrap();
     let pin_line = format!(r#"text_hash = "{expected_text_hash}""#);
@@ -221,17 +239,12 @@ fn reject_then_restamp_suppresses_the_same_match() {
     write_fixture(&fixture);
     stamp(ws.path(), &fixture);
 
-    aristo_in(ws.path())
-        .args([
-            "canon",
-            "reject",
-            "my_local_invariant",
-            "some_unrelated_entry",
-            "--reason",
-            "too broad",
-        ])
-        .status()
-        .unwrap();
+    reject_via_session(
+        ws.path(),
+        "my_local_invariant",
+        "some_unrelated_entry",
+        Some("too broad"),
+    );
 
     // Re-stamp with the same fixture; the canon API would return the
     // same match, but it should be suppressed because the (canon_id,
@@ -268,10 +281,7 @@ fn reject_with_unknown_canon_id_errors() {
     write_fixture(&fixture);
     stamp(ws.path(), &fixture);
 
-    let out = aristo_in(ws.path())
-        .args(["canon", "reject", "my_local_invariant", "wrong_canon_id"])
-        .output()
-        .unwrap();
+    let out = reject_via_session(ws.path(), "my_local_invariant", "wrong_canon_id", None);
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -287,15 +297,12 @@ fn reject_with_unknown_annotation_id_errors() {
     write_fixture(&fixture);
     stamp(ws.path(), &fixture);
 
-    let out = aristo_in(ws.path())
-        .args([
-            "canon",
-            "reject",
-            "no_such_annotation",
-            "some_unrelated_entry",
-        ])
-        .output()
-        .unwrap();
+    let out = reject_via_session(
+        ws.path(),
+        "no_such_annotation",
+        "some_unrelated_entry",
+        None,
+    );
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
