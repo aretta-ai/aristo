@@ -26,7 +26,7 @@ use super::token::Token;
 
 /// Full resolved-credentials record. Returned by [`resolve_full`] for
 /// callers that need the server URL + user identity alongside the
-/// token. Plain [`resolve`] returns only the [`Token`] for callers
+/// token. Plain [`resolve_full`] returns only the [`Token`] for callers
 /// that don't.
 #[derive(Debug, Clone)]
 pub struct ResolvedCreds {

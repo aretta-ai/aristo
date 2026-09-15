@@ -30,7 +30,7 @@ pub const CREDENTIALS_FILENAME: &str = "credentials";
 
 /// Persist a token to the credentials file. Reads `$XDG_CONFIG_HOME`
 /// and `$HOME` from the process env to determine the destination
-/// path — same precedence as [`super::resolve::resolve`] so that
+/// path — same precedence as [`super::resolve::resolve_full`] so that
 /// `aristo auth login` and the next API call agree on which file to
 /// touch.
 pub fn save(token: &Token) -> io::Result<()> {
