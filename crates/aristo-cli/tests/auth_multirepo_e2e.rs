@@ -258,9 +258,63 @@ fn status_outside_a_github_checkout_says_so_and_resolves_nothing() {
 
     let st = stdout(&run(&home, &plain, &["auth", "status"]));
     assert!(st.contains("not a GitHub checkout"), "status: {st}");
-    assert!(st.contains("no .git/config"), "status: {st}");
+    assert!(st.contains("no git repository"), "status: {st}");
     assert!(
         st.contains("resolves to: no stored credential (1 on file"),
         "no single-entry fallback: {st}"
+    );
+}
+
+// ─── the checkout is found the way git finds it ───────────────────────────
+
+#[test]
+fn status_resolves_from_a_subdirectory_of_the_checkout() {
+    let tmp = TempDir::new().unwrap();
+    let home = fresh_home(&tmp);
+    let ws = git_workspace(tmp.path(), "a", "org/repoA");
+    let deep = ws.join("crates/core/src");
+    std::fs::create_dir_all(&deep).unwrap();
+    seed(&home, &[("https://code.aretta.ai", "org/repoA", "tok_A")]);
+
+    let out = run(&home, &deep, &["auth", "status"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains(
+            "this checkout (org/repoA) resolves to: server https://code.aretta.ai, repo org/repoA"
+        ),
+        "{}",
+        stdout(&out)
+    );
+    assert_eq!(
+        stdout(&run(&home, &deep, &["auth", "token"])).trim(),
+        "tok_A"
+    );
+}
+
+#[test]
+fn status_resolves_from_a_git_worktree() {
+    // `.git` is a file naming the worktree's gitdir; the config lives in
+    // the main repo's common `.git`.
+    let tmp = TempDir::new().unwrap();
+    let home = fresh_home(&tmp);
+    let main = git_workspace(tmp.path(), "main", "org/repoA");
+    let wt_gitdir = main.join(".git/worktrees/wt-linked");
+    std::fs::create_dir_all(&wt_gitdir).unwrap();
+    std::fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
+    let wt = tmp.path().join("wt-linked");
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(
+        wt.join(".git"),
+        format!("gitdir: {}\n", wt_gitdir.display()),
+    )
+    .unwrap();
+    seed(&home, &[("https://code.aretta.ai", "org/repoA", "tok_A")]);
+
+    let out = run(&home, &wt, &["auth", "status"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("this checkout (org/repoA) resolves to"),
+        "{}",
+        stdout(&out)
     );
 }

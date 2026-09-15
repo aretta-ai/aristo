@@ -8,6 +8,11 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- cli: the checkout's repo is now found the way git finds it — walking up from the current directory to the nearest `.git`, and following a `.git` *file* (linked worktree, submodule) to the config it names. Running aristo from a subdirectory or from a `git worktree` no longer fails to derive `owner/repo`, which in 0.6.1 surfaced as "canon-match: skipped (Pro feature)" with a valid token on file, and in 0.7.0 as "could not derive owner/repo — no .git/config at …". One derivation serves the credential resolver, the login default, `auth token` / `auth logout` and verify dispatch, so the CLI cannot disagree with `git config --get remote.origin.url`.
+- tests: the auth suites assert the derivation's own wording ("no git repository at or above …") rather than the old file path.
+- tests: the worktree fixtures use a neutral name.
+
 ## [0.7.0] — 2026-09-15
 
 The canonical-auth release. `aristo auth` had four ways to name a server, two login paths, a credential that applied from any directory by accident, and a "Pro feature, start a trial" message for a product with no tiers. 0.7.0 leaves one way to say each thing. Every change below that alters behavior is breaking for a 0.x line and is marked in bold; the migration is one login and, for CI, one repository Variable.
