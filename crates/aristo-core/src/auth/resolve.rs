@@ -24,10 +24,9 @@ use super::server::ServerUrl;
 use super::store::{home_dir, load_store_with};
 use super::token::Token;
 
-/// Full resolved-credentials record. Returned by [`resolve_full`] for
-/// callers that need the server URL + user identity alongside the
-/// token. Plain [`resolve_full`] returns only the [`Token`] for callers
-/// that don't.
+/// Full resolved-credentials record: the token plus the server it was
+/// minted against and, for a stored entry, the user and repo. Returned
+/// by [`resolve_full`].
 #[derive(Debug, Clone)]
 pub struct ResolvedCreds {
     pub token: Token,

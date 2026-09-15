@@ -13,7 +13,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - cli: `aristo auth status` ends with the same verdict for the current directory — which stored entry it resolves to, or `no stored credential` with the `aristo auth login --repo <owner/repo>` / `ARETTA_TOKEN` fix; when `ARETTA_TOKEN` is set it says that takes precedence (#77).
 
 ### Removed
-- docs: two rustdoc links to the removed `auth::resolve` now point at `resolve_full`, and the dogfood doc artifact for the reworded data-plane precedence intent is regenerated, so `cargo doc -D warnings` and `aristo doc --check` pass again.
+- docs: the `ResolvedCreds` doc no longer describes the removed hint-less `resolve`; two rustdoc links to it now point at `resolve_full`, and the dogfood doc artifact for the reworded data-plane precedence intent is regenerated, so `cargo doc -D warnings` and `aristo doc --check` pass again.
 - docs(skills): the `aristo-catalogue` skill and the canon catalogue docs no longer point at `[instance] url` or a "per-repo conductor"; they name the server the checkout's credential was minted against.
 - **config: `aristo.toml` `[instance] url` no longer steers the data plane.** Verify and canon-match requests go to the credential's own server (the host the token was minted against), with `ARETTA_API_URL` as the one override; `[instance]` was a second way to say the same thing. The section is still parsed so an existing config keeps loading, but it is ignored and the CLI warns to remove it. `aristo init --ci-verify` now wires `ARETTA_API_URL` from a repository Variable on the verify job instead of recommending the config pin.
 
