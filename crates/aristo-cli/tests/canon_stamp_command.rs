@@ -181,10 +181,10 @@ fn stamp_surfaces_high_confidence_match() {
     assert!(cache_body.contains("disposition = \"open\""));
 }
 
-// ─── Flow 2: free-tier nudge ───────────────────────────────────────────────
+// ─── Flow 2: not signed in ───────────────────────────────────────────────
 
 #[test]
-fn stamp_free_tier_skips_canon_with_nudge() {
+fn stamp_not_signed_in_skips_canon_with_the_login_hint() {
     let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
     // NO ARISTO_CANON_FIXTURE → MockCanonClient::from_env returns None.
     // NO ARETTA_TOKEN, no credentials file → auth::resolve returns NoToken.
@@ -201,10 +201,17 @@ fn stamp_free_tier_skips_canon_with_nudge() {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("canon-match: skipped (Pro feature)"),
-        "expected free-tier nudge, got: {stdout}"
+        stdout.contains("canon-match: skipped — not signed in"),
+        "expected the sign-in hint, got: {stdout}"
     );
-    assert!(stdout.contains("aristo auth login"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("tier") && !stdout.contains("trial"),
+        "stdout: {stdout}"
+    );
 
     // No canon-matches.toml written (free tier never writes it).
     assert!(!ws.path().join(".aristo/canon-matches.toml").exists());

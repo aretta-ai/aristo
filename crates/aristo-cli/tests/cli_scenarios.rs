@@ -41,7 +41,7 @@ fn cli_scenarios() {
     // `$HOME/Library/Application Support/aristo/credentials` (macOS) or
     // `$XDG_CONFIG_HOME/aristo/credentials` leak into trycmd's spawned
     // `aristo` process via inherited HOME, flipping `aristo status`'s
-    // canon-binding block from "no token (free-tier mode)" (the spec)
+    // canon-binding block from "not signed in" (the spec)
     // to "authenticated (token present)". The token never reaches the
     // wire — it just changes the local rendering — but the byte-exact
     // trycmd assertion sees the difference.

@@ -7,12 +7,12 @@ Walks the paid-tier binding flow: `aristo auth login` → `aristo sync` (server 
 The interactive bits of `auth login` (browser flow, etc.) are stubbed in `[..]` here; the activated form will use a fixture credential for non-interactive testing.
 
 ```console
-$ aristo auth login
+$ aristo auth login --server https://acme.aretta.ai --repo acme/widgets
 [..]
-ok: authenticated as [..] (Pro tier).
+ok: authenticated as [..] for acme/widgets
 
 $ aristo sync
-→ Authenticating with aretta.dev … ok (Pro tier)
+→ Authenticating against https://acme.aretta.ai … ok
 → Uploading 1 unbound annotation for template matching …
 → Server matched 1 annotation against property template `bt_balance_invariant_v1`
 → Applying `aristos:` namespace prefix in source (atomic) … src/btree.rs:[..]

@@ -13,6 +13,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - cli: `aristo auth status` ends with the same verdict for the current directory — which stored entry it resolves to, or `no stored credential` with the `aristo auth login --repo <owner/repo>` / `ARETTA_TOKEN` fix; when `ARETTA_TOKEN` is set it says that takes precedence (#77).
 
 ### Changed
+- cli: with no credentials on file, `aristo stamp` / `canon refresh` / `critique` print `canon-match: skipped — not signed in: run aristo auth login --server … --repo …` and `aristo status` shows `Auth: not signed in`; nothing about a plan, a tier or a trial, because none exists.
 - cli: every sign-in hint prints the one form that works, `aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>` (repo filled in when known), rendered by a single `login_command` helper in the library. The `not signed in` message says the org host is your Aretta dashboard's hostname, and `auth status` / `auth token` with nothing on file print that message instead of their own. The `aristo-help`, `aristo-verify` and `aristo-catalogue` skills instruct the same form.
 
 ### Removed
