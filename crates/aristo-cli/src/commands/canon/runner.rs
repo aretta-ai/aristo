@@ -75,7 +75,7 @@ pub(crate) enum CanonStepOutcome {
     /// Credentials exist but the resolver could not use them for this
     /// invocation — several entries, none for this checkout
     /// ([`AuthError::NoEntryForCheckout`]), or a malformed file. The
-    /// user is signed in, so the trial nudge would be wrong; the runner
+    /// user is signed in, so the sign-in hint would be wrong; the runner
     /// prints the resolver's own diagnosis and remedies instead. Same
     /// non-fatal treatment as [`CanonStepOutcome::NotSignedIn`].
     Unresolved {
@@ -237,9 +237,9 @@ fn select_client(_config: &CanonConfig) -> ClientSelection {
     }
 
     // Production / staging: resolve auth token. Nothing on file at all
-    // → free tier (the nudge). Anything else the resolver reports —
+    // → not signed in (the sign-in hint). Anything else the resolver reports —
     // credentials on file but none for this checkout, a malformed file
-    // — is a signed-in user's problem to fix, not a trial to start.
+    // — is a signed-in user's problem to fix, not a sign-in to repeat.
     match aristo_core::auth::resolve_full() {
         Ok(creds) => {
             let base_url = crate::data_plane::resolve_base(&creds.server);
@@ -507,7 +507,7 @@ pub(crate) fn print_stamp_summary(
         } => {
             // First line of the resolver's message is the headline; the
             // rest (derived repo, entries on file, remedies) indents
-            // under it. Nothing here is the trial nudge — the user is
+            // under it. Nothing here is the sign-in hint — the user is
             // signed in.
             let text = error.to_string();
             let mut lines = text.lines();
