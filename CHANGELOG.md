@@ -11,6 +11,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ### Fixed
 - cli: the checkout's repo is now found the way git finds it — walking up from the current directory to the nearest `.git`, and following a `.git` *file* (linked worktree, submodule) to the config it names. Running aristo from a subdirectory or from a `git worktree` no longer fails to derive `owner/repo`, which in 0.6.1 surfaced as "canon-match: skipped (Pro feature)" with a valid token on file, and in 0.7.0 as "could not derive owner/repo — no .git/config at …". One derivation serves the credential resolver, the login default, `auth token` / `auth logout` and verify dispatch, so the CLI cannot disagree with `git config --get remote.origin.url`.
 - tests: the auth suites assert the derivation's own wording ("no git repository at or above …") rather than the old file path.
+- tests: the worktree fixtures use a neutral name.
 
 ## [0.7.0] — 2026-09-15
 

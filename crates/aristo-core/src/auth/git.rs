@@ -292,10 +292,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let main_git = tmp.path().join("main/.git");
         write_config(&main_git, "git@github.com:owner/repo.git");
-        let wt_gitdir = main_git.join("worktrees/workspace-13");
+        let wt_gitdir = main_git.join("worktrees/wt-linked");
         std::fs::create_dir_all(&wt_gitdir).unwrap();
         std::fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
-        let wt = tmp.path().join("workspace-13");
+        let wt = tmp.path().join("wt-linked");
         std::fs::create_dir_all(wt.join("src")).unwrap();
         std::fs::write(
             wt.join(".git"),

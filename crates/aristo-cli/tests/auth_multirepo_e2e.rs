@@ -298,10 +298,10 @@ fn status_resolves_from_a_git_worktree() {
     let tmp = TempDir::new().unwrap();
     let home = fresh_home(&tmp);
     let main = git_workspace(tmp.path(), "main", "org/repoA");
-    let wt_gitdir = main.join(".git/worktrees/workspace-13");
+    let wt_gitdir = main.join(".git/worktrees/wt-linked");
     std::fs::create_dir_all(&wt_gitdir).unwrap();
     std::fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
-    let wt = tmp.path().join("workspace-13");
+    let wt = tmp.path().join("wt-linked");
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(
         wt.join(".git"),
