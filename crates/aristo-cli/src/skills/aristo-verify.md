@@ -41,7 +41,7 @@ Options:
 - **full** = the server canon-verify session (step 2B) — paid; needs an `arta_*` token + the GitHub App + canon coverage.
 - **both** = run the neural arm locally AND kick the full arm in the background.
 
-**Mode gating (sign-in):** `full` / `both` require a live `arta_*` token. Check with `aristo auth status` (or proceed and let the SDK report). If not signed in, say so and offer: run `aristo auth login` first, or fall back to **neural** for now. Never block — neural always works offline.
+**Mode gating (sign-in):** `full` / `both` require a live `arta_*` token. Check with `aristo auth status` (or proceed and let the SDK report). If not signed in, say so and offer: run `aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>` first (the org host is your Aretta dashboard's hostname), or fall back to **neural** for now. Never block — neural always works offline.
 
 ## Step 2 — dispatch
 

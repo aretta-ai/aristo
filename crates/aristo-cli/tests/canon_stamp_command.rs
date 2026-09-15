@@ -281,7 +281,7 @@ fn stamp_with_credentials_for_other_repos_explains_instead_of_nudging() {
     );
     assert!(!stdout.contains("arta_secret"), "token leaked: {stdout}");
     assert!(
-        stdout.contains("`aristo auth login --repo alice/widgets` from this checkout"),
+        stdout.contains("`aristo auth login --server https://<org>.aretta.ai --repo alice/widgets` from this checkout"),
         "stdout: {stdout}"
     );
     assert!(stdout.contains("ARETTA_TOKEN"), "stdout: {stdout}");

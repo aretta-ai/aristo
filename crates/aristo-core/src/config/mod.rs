@@ -70,12 +70,11 @@ pub struct ConfigFile {
 
 // ─── [instance] ────────────────────────────────────────────────────────────
 
-/// `[instance]` — **deprecated and ignored.** It used to pin the
-/// data-plane requests to a host; the data plane is now the
-/// credential's own server (the host the token was minted against),
-/// with `ARETTA_API_URL` as the one override. The section is still
-/// parsed so an existing `aristo.toml` keeps loading; the CLI warns
-/// when `url` is set and asks for the section to be removed.
+/// `[instance]` — ignored. The data plane is the credential's own
+/// server (the host the token was minted against), with
+/// `ARETTA_API_URL` as the one override. The section is parsed so an
+/// `aristo.toml` that carries it keeps loading; the CLI warns when
+/// `url` is set and asks for the section to be removed.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InstanceConfig {
@@ -713,8 +712,8 @@ threshold = 200
     }
 
     #[test]
-    fn deprecated_instance_section_still_parses() {
-        // Ignored, but tolerated: an existing aristo.toml must keep loading.
+    fn ignored_instance_section_still_parses() {
+        // Ignored, but tolerated: an aristo.toml that carries it must keep loading.
         let config: ConfigFile =
             toml::from_str("[instance]\nurl = \"https://turso.aretta.ai\"\n").unwrap();
         assert_eq!(

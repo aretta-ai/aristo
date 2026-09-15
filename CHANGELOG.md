@@ -12,6 +12,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - cli: `aristo auth login` now reports what it did to the credentials store and whether the directory you ran it from will actually use the new entry: `entry added` / `entry replaced (dropped N older entries for this repo)` with its `(server, repo)` key, the number of entries on file, and `this checkout (owner/repo) resolves to this entry.` — or `will NOT resolve to this entry` with the one-line fix (run from a checkout of that repo, or `ARETTA_TOKEN=$(aristo auth token --repo …)`). Outside a GitHub checkout it says so and whether the single-entry fallback still applies (#77).
 - cli: `aristo auth status` ends with the same verdict for the current directory — which stored entry it resolves to, or `no stored credential` with the `aristo auth login --repo <owner/repo>` / `ARETTA_TOKEN` fix; when `ARETTA_TOKEN` is set it says that takes precedence (#77).
 
+### Changed
+- cli: every sign-in hint prints the one form that works, `aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>` (repo filled in when known), rendered by a single `login_command` helper in the library. The `not signed in` message says the org host is your Aretta dashboard's hostname, and `auth status` / `auth token` with nothing on file print that message instead of their own. The `aristo-help`, `aristo-verify` and `aristo-catalogue` skills instruct the same form.
+
 ### Removed
 - docs: the `ResolvedCreds` doc no longer describes the removed hint-less `resolve`; two rustdoc links to it now point at `resolve_full`, and the dogfood doc artifact for the reworded data-plane precedence intent is regenerated, so `cargo doc -D warnings` and `aristo doc --check` pass again.
 - docs(skills): the `aristo-catalogue` skill and the canon catalogue docs no longer point at `[instance] url` or a "per-repo conductor"; they name the server the checkout's credential was minted against.

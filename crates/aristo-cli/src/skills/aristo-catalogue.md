@@ -16,7 +16,7 @@ The catalogue is the corpus of **canon entries** — the reusable, curated invar
 aristo canon catalogue
 ```
 
-This requires sign-in — if it reports "requires authentication", tell the user to run `aristo auth login` and stop. It fetches the catalogue from the server this checkout's credential was minted against (`aristo auth status` shows it; `ARETTA_API_URL` overrides) and writes it to:
+This requires sign-in — if it reports "requires authentication", tell the user to run `aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>` (the org host is your Aretta dashboard's hostname) and stop. It fetches the catalogue from the server this checkout's credential was minted against (`aristo auth status` shows it; `ARETTA_API_URL` overrides) and writes it to:
 
 ```
 .aristo/catalogue.json

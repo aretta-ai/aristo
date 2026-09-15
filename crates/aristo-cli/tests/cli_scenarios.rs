@@ -36,7 +36,7 @@
 fn cli_scenarios() {
     // Isolate spawned binaries from developer-machine credentials.
     // Without this, a developer who has logged in to dev.aretta.ai
-    // via `aristo auth login --server dev` sees `lifecycle_ci_gates.md`
+    // via `aristo auth login` sees `lifecycle_ci_gates.md`
     // fail: their real credentials at
     // `$HOME/Library/Application Support/aristo/credentials` (macOS) or
     // `$XDG_CONFIG_HOME/aristo/credentials` leak into trycmd's spawned

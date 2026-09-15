@@ -10,18 +10,18 @@ use crate::workspace::Workspace;
 
 /// Base URL for verify/canon data-plane requests, given the signed-in
 /// credential's `server`. Reads `ARETTA_API_URL` and, best-effort, the
-/// nearest `aristo.toml` — only to warn about a deprecated
-/// `[instance] url`, which is ignored.
+/// nearest `aristo.toml` — only to warn about an ignored
+/// `[instance] url`.
 pub(crate) fn resolve_base(server: &ServerUrl) -> String {
-    warn_if_deprecated_instance_url_set();
+    warn_if_instance_url_set();
     let env_override = std::env::var(SERVER_ENV_VAR).ok();
     data_plane_base(env_override.as_deref(), server)
 }
 
-/// `[instance] url` stopped steering the data plane; a repo that still
-/// carries it would otherwise silently get a different server than the
-/// one its owner believes is pinned.
-fn warn_if_deprecated_instance_url_set() {
+/// `[instance] url` does not steer the data plane; a repo that carries
+/// it would otherwise silently get a different server than the one its
+/// owner believes is pinned.
+fn warn_if_instance_url_set() {
     let Some(url) = Workspace::find(None)
         .ok()
         .and_then(|ws| ws.load_config().instance.url)

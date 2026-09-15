@@ -13,7 +13,7 @@
 //!    `owner/repo`. No other entry applies — a credential is used
 //!    exactly where its repo is checked out.
 //!
-//! Nothing on file → [`AuthError::NoToken`] ("run `aristo auth login`");
+//! Nothing on file → [`AuthError::NoToken`] (its message is the sign-in hint);
 //! entries on file but none for this checkout →
 //! [`AuthError::NoEntryForCheckout`] (says which, and how to fix).
 

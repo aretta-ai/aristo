@@ -85,7 +85,7 @@ fn status_when_not_authenticated() {
     // The exit code mirrors the verdict, like `gh auth status`.
     assert_eq!(out.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("not authenticated"), "stdout: {stdout}");
+    assert!(stdout.contains("not signed in"), "stdout: {stdout}");
     assert!(stdout.contains("aristo auth login"), "stdout: {stdout}");
     assert!(stdout.contains("ARETTA_TOKEN"), "stdout: {stdout}");
 }
@@ -280,7 +280,7 @@ fn full_auth_lifecycle() {
         .args(["auth", "status"])
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&out.stdout).contains("not authenticated"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("not signed in"));
 
     // 2. login
     seed_store(tmp.path(), "owner/repo", "lifecycle-tok");
@@ -306,7 +306,7 @@ fn full_auth_lifecycle() {
         .args(["auth", "status"])
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&out.stdout).contains("not authenticated"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("not signed in"));
 }
 
 // ─── auth token ────────────────────────────────────────────────────────────
@@ -361,6 +361,6 @@ fn token_errors_when_not_authenticated() {
         "expected non-zero exit when no token is available"
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("not authenticated"), "stderr: {stderr}");
+    assert!(stderr.contains("not signed in"), "stderr: {stderr}");
     assert!(stderr.contains("aristo auth login"), "stderr: {stderr}");
 }

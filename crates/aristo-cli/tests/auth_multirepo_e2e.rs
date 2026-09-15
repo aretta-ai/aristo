@@ -212,7 +212,7 @@ fn logout_all_clears_every_entry() {
     assert!(stdout(&out).contains("logged out"), "{}", stdout(&out));
 
     let st = stdout(&run(&home, &cwd, &["auth", "status"]));
-    assert!(st.contains("not authenticated"), "status: {st}");
+    assert!(st.contains("not signed in"), "status: {st}");
 }
 
 // ─── status says which entry this checkout resolves to (#77) ──────────────
@@ -244,7 +244,7 @@ fn status_verdict_follows_the_checkout() {
         "status: {st}"
     );
     assert!(
-        st.contains("aristo auth login --repo alice/repoB"),
+        st.contains("aristo auth login --server https://<org>.aretta.ai --repo alice/repoB"),
         "status: {st}"
     );
 }

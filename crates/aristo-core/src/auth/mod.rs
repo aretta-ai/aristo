@@ -41,7 +41,7 @@ pub mod server;
 pub mod store;
 pub mod token;
 
-pub use error::{AuthError, EntrySummary};
+pub use error::{login_command, AuthError, EntrySummary};
 pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
 pub use resolve::{

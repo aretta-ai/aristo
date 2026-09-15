@@ -257,7 +257,7 @@
       "additionalProperties": false
     },
     "InstanceConfig": {
-      "description": "`[instance]` — **deprecated and ignored.** It used to pin the data-plane requests to a host; the data plane is now the credential's own server (the host the token was minted against), with `ARETTA_API_URL` as the one override. The section is still parsed so an existing `aristo.toml` keeps loading; the CLI warns when `url` is set and asks for the section to be removed.",
+      "description": "`[instance]` — ignored. The data plane is the credential's own server (the host the token was minted against), with `ARETTA_API_URL` as the one override. The section is parsed so an `aristo.toml` that carries it keeps loading; the CLI warns when `url` is set and asks for the section to be removed.",
       "type": "object",
       "properties": {
         "url": {

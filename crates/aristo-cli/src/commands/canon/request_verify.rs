@@ -3,8 +3,7 @@
 //!
 //! Coming soon. Demand-signal submission is being reworked to resolve
 //! against the org's data plane; until that lands the command reports the deferral
-//! instead of calling a canon endpoint. Prior behavior: `POST
-//! /canon/request-verify` recorded an idempotent demand signal.
+//! instead of calling a canon endpoint.
 
 use crate::{CliError, CliResult};
 

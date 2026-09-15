@@ -345,7 +345,10 @@ fn print_verify_token_help(cwd: &Path) {
     println!(
         "  2. Token value:    `aristo auth token` prints yours — pipe to your clipboard, e.g. `aristo auth token | pbcopy`"
     );
-    println!("                     ...or `aristo auth login` to mint a new one.");
+    println!(
+        "                     ...or `{}` to mint a new one.",
+        aristo_core::auth::login_command(None)
+    );
     println!(
         "  3. Server:         add a repository Variable ARETTA_API_URL = https://<org>.aretta.ai\n\
         \x20                    (the server your token was minted against; `aristo auth status` shows it).\n\

@@ -247,8 +247,9 @@ const STORE_HEADER: &str = "\
 #
 # DOWNGRADE CAVEAT: aristo < 0.6 understands only the older single-slot
 # format and will not read these entries (it treats this file as
-# unauthenticated, or errors as malformed). After upgrading run
-# `aristo auth login` again, or `aristo auth logout --all` to reset.
+# unauthenticated, or errors as malformed). After upgrading, sign in
+# again (`aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>`)
+# or run `aristo auth logout --all` to reset.
 ";
 
 /// One credential entry. Keyed by `repo` when scoped, else by `server`.
@@ -494,8 +495,7 @@ fn parse_store(raw: &str, path: &Path) -> Result<CredentialStore, AuthError> {
             entries: vec![entry],
         });
     }
-    // Legacy bare token (a single non-TOML line) — same back-compat the
-    // pre-v2 resolver honored.
+    // Bare token (a single non-TOML line).
     let token = raw.trim();
     if !token.is_empty() && !token.contains('=') && !token.contains('[') {
         return Ok(CredentialStore {

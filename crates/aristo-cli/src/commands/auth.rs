@@ -8,18 +8,18 @@
 //!
 //! ## Login flow
 //!
-//! `aristo auth login` is the GitHub OAuth flow and nothing else: the
-//! CLI fetches the authorize URL from the server, the user pastes the
-//! code shown on the callback page, the server mints an `arta_*` token
-//! scoped to `(user, repo)`, and the CLI stores it keyed by server and
-//! repo. There is no raw-token paste mode — CI and scripts read
-//! `ARETTA_TOKEN` from the environment and never touch the store.
+//! `aristo auth login --server <url> --repo <owner/repo>` is the GitHub
+//! OAuth flow: the CLI fetches the authorize URL from the server, the
+//! user pastes the code shown on the callback page, the server mints an
+//! `arta_*` token scoped to `(user, repo)`, and the CLI stores it keyed
+//! by server and repo. CI and scripts read `ARETTA_TOKEN` +
+//! `ARETTA_API_URL` from the environment and never touch the store.
 
 use std::path::Path;
 
 use aristo_core::auth::{
-    self, derive_repo_full_name, login_server, AuthError, CredentialEntry, CredentialStore,
-    LoginServerSource, ServerUrl, Token, UpsertOutcome, UpsertReport,
+    self, derive_repo_full_name, login_command, login_server, AuthError, CredentialEntry,
+    CredentialStore, LoginServerSource, ServerUrl, Token, UpsertOutcome, UpsertReport,
 };
 
 use crate::{AuthAction, CliError, CliResult};
@@ -39,13 +39,13 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
 fn login(server_flag: Option<String>, repo_flag: Option<String>) -> CliResult<()> {
     // The two things a token is scoped by, both required: the server
     // it is minted against (`--server`, else `ARETTA_API_URL`) and the
-    // repo (`--repo`, else the checkout's origin). There is no default
-    // server — the platform apex cannot mint an org token.
+    // repo (`--repo`, else the checkout's origin). The platform apex
+    // cannot mint an org token, so the server is never guessed.
     let env_override = std::env::var("ARETTA_API_URL").ok();
     let (server, source) = login_server(server_flag.as_deref(), env_override.as_deref())
         .ok_or_else(|| CliError::Other {
             message: "no server given.\n  \
-                      Pass `--server https://<org>.aretta.ai` (your org's Aretta host), \
+                      Pass `--server https://<org>.aretta.ai` (your Aretta dashboard's hostname), \
                       or set ARETTA_API_URL."
                 .into(),
             exit_code: 2,
@@ -218,7 +218,8 @@ fn status_verdict(store: &CredentialStore, dir: &Path) -> String {
         (Ok(repo), Some(e)) => format!("this checkout ({repo}) resolves to: {}", entry_key(e)),
         (Ok(repo), None) => format!(
             "this checkout ({repo}) resolves to: no stored credential — \
-             run `aristo auth login --repo {repo}` here, or set ARETTA_TOKEN."
+             run `{}` here, or set ARETTA_TOKEN + ARETTA_API_URL.",
+            login_command(Some(&repo))
         ),
         (Err(why), _) => format!(
             "this directory is not a GitHub checkout ({why}) — resolves to: no stored \
@@ -307,7 +308,8 @@ fn store_error_to_cli(e: AuthError) -> CliError {
         AuthError::Malformed(msg) => CliError::Other {
             message: format!(
                 "credentials file is malformed: {msg}\n  \
-                 Run `aristo auth logout --all` then `aristo auth login` to re-create it."
+                 Run `aristo auth logout --all`, then `{}` to re-create it.",
+                login_command(None)
             ),
             exit_code: 1,
         },
@@ -358,12 +360,7 @@ fn status() -> CliResult<()> {
             }
         }
     } else if store.is_empty() {
-        println!("not authenticated.");
-        println!(
-            "    Run `aristo auth login` to log in, or set {} + {} for CI.",
-            auth::ENV_VAR,
-            auth::SERVER_ENV_VAR
-        );
+        println!("{}", AuthError::NoToken);
         false
     } else {
         let (checkout, picked) = resolution_at(&store, &cwd);
@@ -419,11 +416,7 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
     let store = auth::load_store().map_err(store_error_to_cli)?;
     if store.is_empty() {
         return Err(CliError::Other {
-            message: format!(
-                "not authenticated — no token found.\n  \
-                 Run `aristo auth login` to mint one, or set the {} env var.",
-                auth::ENV_VAR
-            ),
+            message: AuthError::NoToken.to_string(),
             exit_code: 1,
         });
     }
@@ -437,8 +430,9 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
             None => {
                 return Err(CliError::Other {
                     message: format!(
-                        "no credential for {repo}; run `aristo auth login --repo {repo}` \
-                         (or `aristo auth status` to list what's stored)."
+                        "no credential for {repo}; run `{}` \
+                         (or `aristo auth status` to list what's stored).",
+                        login_command(Some(&repo))
                     ),
                     exit_code: 1,
                 })
@@ -646,7 +640,9 @@ mod tests {
             "{v}"
         );
         assert!(
-            v.contains("`aristo auth login --repo alice/widgets` here"),
+            v.contains(
+                "`aristo auth login --server https://<org>.aretta.ai --repo alice/widgets` here"
+            ),
             "{v}"
         );
         let v = status_verdict(&two, &plain);

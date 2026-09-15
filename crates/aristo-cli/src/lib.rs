@@ -643,10 +643,9 @@ pub(crate) enum AuthAction {
     /// CI and scripts do not log in: set `ARETTA_TOKEN` (and
     /// `ARETTA_API_URL`) in the environment instead.
     Login {
-        /// Your org's Aretta host, e.g. `https://<org>.aretta.ai` (a bare
-        /// host gets `https://`). Required: this flag, else the
-        /// `ARETTA_API_URL` env var. There is no default — the platform
-        /// apex cannot mint an org-scoped token.
+        /// Your org's Aretta host — your dashboard's hostname, e.g.
+        /// `https://<org>.aretta.ai` (a bare host gets `https://`).
+        /// Required: this flag, else the `ARETTA_API_URL` env var.
         #[arg(long, value_name = "URL")]
         server: Option<String>,
         /// Repo to scope the minted token to (`owner/repo`). Defaults to

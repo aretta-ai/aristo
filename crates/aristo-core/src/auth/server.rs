@@ -15,9 +15,9 @@
 //! - any other string → [`ServerUrl::Custom`] with `https://` prefix
 //!   added (so users can type `localhost:8443`).
 //!
-//! There is no alias for the platform default: a server is named by
-//! its URL, one way. The empty string maps to [`ServerUrl::Prod`] only
-//! so a legacy credentials entry without a `server` field still reads.
+//! A server is named by its URL, one way. The empty string maps to
+//! [`ServerUrl::Prod`] so a credentials entry without a `server` field
+//! still reads.
 
 /// The Aretta proxy this credential is for.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -140,10 +140,9 @@ impl LoginServerSource {
 ///    the minted token's server matches the data plane
 ///    ([`data_plane_base`]).
 ///
-/// `None` when neither is given: there is no default. The platform
-/// apex cannot mint an org-scoped token, so guessing one would only
-/// produce a confusing 404 later; the caller asks the user for the
-/// server instead.
+/// `None` when neither is given. The platform apex cannot mint an
+/// org-scoped token, so the caller asks the user for the server
+/// instead of guessing one.
 ///
 /// Kept pure — env is passed in, not read here — so it is unit-testable
 /// under the workspace's `unsafe_code` ban on `std::env::set_var`.
@@ -169,8 +168,8 @@ mod tests {
 
     #[test]
     fn parse_has_no_alias() {
-        // A server is named by URL. Only the legacy empty field maps to
-        // the platform default.
+        // A server is named by URL. Only the empty field maps to the
+        // platform default.
         assert_eq!(ServerUrl::parse(""), ServerUrl::Prod);
         assert_eq!(ServerUrl::parse("   "), ServerUrl::Prod);
         assert_eq!(
@@ -323,7 +322,7 @@ mod tests {
     #[test]
     fn login_server_blank_env_is_unset() {
         // A blank/whitespace ARETTA_API_URL is treated as unset, not as an
-        // empty custom server — and there is no default to fall to.
+        // empty custom server; nothing else fills in.
         assert_eq!(login_server(None, Some("   ")), None);
     }
 

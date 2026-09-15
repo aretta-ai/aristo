@@ -12,7 +12,7 @@
 //! Auth is required: the §14 design predicates canon-verify on having
 //! an `arta_*` token (we re-derive scopes server-side and authorize
 //! against `repository_flavors`). If no token is resolved, the SDK
-//! surfaces an actionable "run `aristo auth login`" hint and skips —
+//! surfaces the sign-in hint and skips —
 //! it does NOT graceful-degrade (the user explicitly asked to verify;
 //! we shouldn't silently no-op).
 //!
@@ -1575,7 +1575,6 @@ fn no_auth_to_cli_error(e: aristo_core::auth::AuthError) -> CliError {
     CliError::Other {
         message: format!(
             "verify requires authentication: {e}\n  \
-             Run `aristo auth login` to sign in.\n  \
              (Without a token, the SDK skips canon-bound `verify=\"full\"` \
              entries — they'd be rejected server-side anyway.)"
         ),
@@ -1588,7 +1587,8 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
         VerifyError::Auth(inner) => CliError::Other {
             message: format!(
                 "verify auth error: {inner}\n  \
-                 Your token may be expired — re-run `aristo auth login`."
+                 Your token may be expired — re-run `{}`.",
+                aristo_core::auth::login_command(None)
             ),
             exit_code: 1,
         },
