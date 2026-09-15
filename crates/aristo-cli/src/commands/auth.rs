@@ -329,66 +329,75 @@ fn note_env_still_set() {
 // ─── status ────────────────────────────────────────────────────────────────
 
 fn status() -> CliResult<()> {
-    let env_set = std::env::var(auth::ENV_VAR)
+    // Exit code mirrors the verdict: 0 iff a run from this directory
+    // would authenticate (env token with its server, or a stored entry
+    // for this checkout). Everything printed is token-free.
+    let env_token_set = std::env::var(auth::ENV_VAR).is_ok_and(|v| !v.trim().is_empty());
+    let env_server = std::env::var(auth::SERVER_ENV_VAR)
         .ok()
-        .is_some_and(|v| !v.trim().is_empty());
-    if env_set {
-        println!(
-            "ok: authenticated via {} environment variable.",
-            auth::ENV_VAR
-        );
-        println!("    (env var takes precedence over the on-disk credentials file.)");
-    }
+        .filter(|v| !v.trim().is_empty());
 
-    // List every stored credential — never the token itself.
     let store = auth::load_store().map_err(store_error_to_cli)?;
-    if store.is_empty() {
-        if !env_set {
-            println!("not authenticated.");
-            println!(
-                "    Run `aristo auth login` to log in, or set the {} env var for CI.",
-                auth::ENV_VAR
-            );
-            // Not an error — CI gates on the stdout text, not the exit
-            // code (unauthenticated must not fail the process).
-        }
-        return Ok(());
-    }
-
     let path = auth::credentials_path().map_err(auth_error_to_cli)?;
-    if env_set {
+    let cwd = std::env::current_dir().map_err(CliError::Io)?;
+
+    let resolves = if env_token_set {
+        match env_server {
+            Some(server) => {
+                println!(
+                    "ok: authenticated via {} for {} ({} takes precedence over every stored entry).",
+                    auth::ENV_VAR,
+                    ServerUrl::parse(&server),
+                    auth::ENV_VAR
+                );
+                true
+            }
+            None => {
+                println!("not authenticated: {}", AuthError::EnvTokenWithoutServer);
+                false
+            }
+        }
+    } else if store.is_empty() {
+        println!("not authenticated.");
+        println!(
+            "    Run `aristo auth login` to log in, or set {} + {} for CI.",
+            auth::ENV_VAR,
+            auth::SERVER_ENV_VAR
+        );
+        false
+    } else {
+        let (checkout, picked) = resolution_at(&store, &cwd);
+        println!(
+            "{}: {} credential(s) in {}",
+            if picked.is_some() {
+                "ok: authenticated"
+            } else {
+                "not authenticated for this checkout"
+            },
+            store.len(),
+            path.display()
+        );
+        for e in &store.entries {
+            println!("    • {}", e.summary());
+        }
+        println!("    {}", status_verdict(&store, &cwd));
+        let _ = checkout;
+        picked.is_some()
+    };
+
+    if env_token_set && !store.is_empty() {
         println!(
             "    also stored (shadowed by {}): {} credential(s) in {}",
             auth::ENV_VAR,
             store.len(),
             path.display()
         );
+    }
+    if resolves {
+        Ok(())
     } else {
-        println!(
-            "ok: authenticated — {} credential(s) in {}",
-            store.len(),
-            path.display()
-        );
+        Err(CliError::Silent { exit_code: 1 })
     }
-    for e in &store.entries {
-        let repo = e.repo.as_deref().unwrap_or("(unscoped)");
-        match &e.user_login {
-            Some(user) => println!("    • server: {}   repo: {repo}   user: {user}", e.server),
-            None => println!("    • server: {}   repo: {repo}", e.server),
-        }
-    }
-    // The verdict for THIS directory — the question a user standing in
-    // the wrong checkout actually has.
-    if env_set {
-        println!(
-            "    this checkout: {} takes precedence over every stored entry.",
-            auth::ENV_VAR
-        );
-    } else {
-        let cwd = std::env::current_dir().map_err(CliError::Io)?;
-        println!("    {}", status_verdict(&store, &cwd));
-    }
-    Ok(())
 }
 
 // ─── token ─────────────────────────────────────────────────────────────────

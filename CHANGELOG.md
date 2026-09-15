@@ -16,6 +16,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - **config: `aristo.toml` `[instance] url` no longer steers the data plane.** Verify and canon-match requests go to the credential's own server (the host the token was minted against), with `ARETTA_API_URL` as the one override; `[instance]` was a second way to say the same thing. The section is still parsed so an existing config keeps loading, but it is ignored and the CLI warns to remove it. `aristo init --ci-verify` now wires `ARETTA_API_URL` from a repository Variable on the verify job instead of recommending the config pin.
 
 ### Changed
+- **cli: `aristo auth status` exits 1 when a run from the current directory would not authenticate** — nothing on file, no entry for this checkout, or `ARETTA_TOKEN` without `ARETTA_API_URL` — and 0 otherwise, the way `gh auth status` behaves. It used to exit 0 unconditionally. The output is unchanged in shape and still never prints a token.
 - **auth: `ARETTA_TOKEN` now requires `ARETTA_API_URL`.** An environment token carries no server, and the platform default cannot serve an org's data plane, so the resolver reports `ARETTA_TOKEN is set but ARETTA_API_URL is not` instead of silently routing to `code.aretta.ai`. `ARETTA_API_URL` is normalized like every server spec (bare host gets `https://`, trailing `/` stripped) on both the login and the data plane. Library: `resolve_full_with` / `resolve_full_for_checkout` take the env server; `data_plane_base` loses its `[instance]` tier.
 
 ### Removed

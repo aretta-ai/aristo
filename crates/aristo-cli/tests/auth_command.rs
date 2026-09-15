@@ -44,6 +44,19 @@ fn creds_path(home: &std::path::Path) -> std::path::PathBuf {
     home.join("xdg/aristo/credentials")
 }
 
+/// A directory whose `.git/config` names `owner/repo` as the GitHub
+/// origin, so `aristo` treats it as a checkout of that repo.
+fn checkout_of_owner_repo(home: &std::path::Path) -> std::path::PathBuf {
+    let ws = home.join("checkout");
+    std::fs::create_dir_all(ws.join(".git")).unwrap();
+    std::fs::write(
+        ws.join(".git/config"),
+        "[remote \"origin\"]\n    url = https://github.com/owner/repo.git\n",
+    )
+    .unwrap();
+    ws
+}
+
 /// Seed the store with one repo-scoped credential, the way a completed
 /// `aristo auth login` leaves it. Tests never paste tokens: OAuth is the
 /// only login, and CI reads `ARETTA_TOKEN` instead of the store.
@@ -69,15 +82,26 @@ fn status_when_not_authenticated() {
         .args(["auth", "status"])
         .output()
         .expect("run aristo");
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    // The exit code mirrors the verdict, like `gh auth status`.
+    assert_eq!(out.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("not authenticated"), "stdout: {stdout}");
     assert!(stdout.contains("aristo auth login"), "stdout: {stdout}");
     assert!(stdout.contains("ARETTA_TOKEN"), "stdout: {stdout}");
+}
+
+#[test]
+fn status_env_token_without_server_is_not_authenticated() {
+    let tmp = TempDir::new().unwrap();
+    let out = isolated(tmp.path())
+        .args(["auth", "status"])
+        .env("ARETTA_TOKEN", "env-test-tok")
+        .output()
+        .expect("run aristo");
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("ARETTA_API_URL is not"), "stdout: {stdout}");
+    assert!(!stdout.contains("env-test-tok"), "stdout: {stdout}");
 }
 
 #[test]
@@ -86,6 +110,7 @@ fn status_reads_env_var_when_set() {
     let out = isolated(tmp.path())
         .args(["auth", "status"])
         .env("ARETTA_TOKEN", "env-test-tok")
+        .env("ARETTA_API_URL", "https://acme.aretta.ai")
         .output()
         .expect("run aristo");
     assert!(out.status.success());
@@ -112,11 +137,13 @@ fn status_reads_credentials_file() {
 [aretta]
 token = "file-tok"
 issued_at = "2026-05-20T00:00:00Z"
+repo = "owner/repo"
 "#,
     )
     .unwrap();
 
     let out = isolated(tmp.path())
+        .current_dir(checkout_of_owner_repo(tmp.path()))
         .args(["auth", "status"])
         .output()
         .unwrap();
@@ -162,6 +189,7 @@ fn login_then_status_round_trip() {
     let tmp = TempDir::new().unwrap();
     seed_store(tmp.path(), "owner/repo", "round-trip-tok");
     let out = isolated(tmp.path())
+        .current_dir(checkout_of_owner_repo(tmp.path()))
         .args(["auth", "status"])
         .output()
         .unwrap();
