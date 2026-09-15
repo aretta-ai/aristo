@@ -13,6 +13,12 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - cli: `aristo auth status` ends with the same verdict for the current directory — which stored entry it resolves to, or `no stored credential` with the `aristo auth login --repo <owner/repo>` / `ARETTA_TOKEN` fix; when `ARETTA_TOKEN` is set it says that takes precedence (#77).
 
 ### Removed
+- **config: `aristo.toml` `[instance] url` no longer steers the data plane.** Verify and canon-match requests go to the credential's own server (the host the token was minted against), with `ARETTA_API_URL` as the one override; `[instance]` was a second way to say the same thing. The section is still parsed so an existing config keeps loading, but it is ignored and the CLI warns to remove it. `aristo init --ci-verify` now wires `ARETTA_API_URL` from a repository Variable on the verify job instead of recommending the config pin.
+
+### Changed
+- **auth: `ARETTA_TOKEN` now requires `ARETTA_API_URL`.** An environment token carries no server, and the platform default cannot serve an org's data plane, so the resolver reports `ARETTA_TOKEN is set but ARETTA_API_URL is not` instead of silently routing to `code.aretta.ai`. `ARETTA_API_URL` is normalized like every server spec (bare host gets `https://`, trailing `/` stripped) on both the login and the data plane. Library: `resolve_full_with` / `resolve_full_for_checkout` take the env server; `data_plane_base` loses its `[instance]` tier.
+
+### Removed
 - **auth: zero-config org discovery is gone, and `aristo auth login` requires a server.** The CLI no longer asks the platform which host serves a repo: pass `--server https://<org>.aretta.ai` or set `ARETTA_API_URL`; with neither, login exits 2 and says so instead of minting against the platform default (which cannot serve an org). `ARETTA_DISCOVERY_URL` is removed, as are the `prod` / `production` server aliases — a server is named by its URL, one way. Library: `auth::discover_org`, `DiscoveredOrg` and `login_server_discovering` are removed; `login_server` returns `None` when no server was given.
 - **cli: `aristo auth login --token` and `--stdin` are gone.** GitHub OAuth is the only login; the CLI has one login path. Nothing needed a pasted token: CI and scripts read `ARETTA_TOKEN` from the environment and never touch the credentials store, a headless machine can still complete the OAuth paste flow, and only `aristo auth login` mints tokens. Passing either flag is now a usage error.
 

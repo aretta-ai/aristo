@@ -4,7 +4,10 @@
 //!
 //! 1. `ARETTA_TOKEN` env var — CI-friendly; takes precedence over
 //!    the on-disk credentials file so `ARETTA_TOKEN=… cargo test`
-//!    works without touching `~/.config/aristo/credentials`.
+//!    works without touching `~/.config/aristo/credentials`. It must
+//!    come with `ARETTA_API_URL`, the server the token was minted
+//!    against: an env token without a server is
+//!    [`AuthError::EnvTokenWithoutServer`], never a guess.
 //! 2. The entry in the per-user credentials file (under
 //!    [`super::store::config_dir`]) scoped to the current checkout's
 //!    `owner/repo`. No other entry applies — a credential is used
@@ -44,6 +47,10 @@ pub struct ResolvedCreds {
 /// Environment variable that overrides the on-disk credentials.
 pub const ENV_VAR: &str = "ARETTA_TOKEN";
 
+/// Environment variable naming the server an [`ENV_VAR`] token was
+/// minted against; also the data-plane override for stored credentials.
+pub const SERVER_ENV_VAR: &str = "ARETTA_API_URL";
+
 /// Resolve the full credentials record (token, server, user, repo) for
 /// the current directory: `ARETTA_TOKEN`, else the stored entry scoped
 /// to the cwd's `owner/repo` (derived from `.git/config`). Callers
@@ -53,6 +60,7 @@ pub fn resolve_full() -> Result<ResolvedCreds, AuthError> {
     let checkout = cwd_checkout();
     resolve_full_for_checkout(
         std::env::var(ENV_VAR).ok().as_deref(),
+        std::env::var(SERVER_ENV_VAR).ok().as_deref(),
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
         home_dir().as_deref(),
         checkout.as_deref().map_err(String::as_str),
@@ -88,12 +96,14 @@ pub fn checkout_at(dir: &Path) -> Result<String, String> {
 /// `std::env::set_var` requires).
 pub fn resolve_full_with(
     env_token: Option<&str>,
+    env_server: Option<&str>,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
     repo_hint: Option<&str>,
 ) -> Result<ResolvedCreds, AuthError> {
     resolve_full_for_checkout(
         env_token,
+        env_server,
         xdg_config_home,
         home_override,
         repo_hint.ok_or("no checkout given"),
@@ -107,23 +117,27 @@ pub fn resolve_full_with(
 /// and none can be picked for this directory.
 pub fn resolve_full_for_checkout(
     env_token: Option<&str>,
+    env_server: Option<&str>,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
     checkout: Result<&str, &str>,
 ) -> Result<ResolvedCreds, AuthError> {
-    // 1. Env var first — CI-friendly precedence. No metadata
-    //    available; default to Prod server, no user/repo.
-    if let Some(t) = env_token {
-        let t = t.trim();
-        if !t.is_empty() {
-            return Ok(ResolvedCreds {
-                token: Token::new(t),
-                server: ServerUrl::Prod,
-                user_login: None,
-                user_id: None,
-                repo: None,
-            });
-        }
+    // 1. Env var first — CI-friendly precedence. The token carries no
+    //    metadata, so its server must be named too (ARETTA_API_URL);
+    //    no user/repo.
+    if let Some(t) = env_token.map(str::trim).filter(|t| !t.is_empty()) {
+        let server = env_server
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ServerUrl::parse)
+            .ok_or(AuthError::EnvTokenWithoutServer)?;
+        return Ok(ResolvedCreds {
+            token: Token::new(t),
+            server,
+            user_login: None,
+            user_id: None,
+            repo: None,
+        });
     }
     // 2. On-disk store (reads v2, migrates v1 + bare-token transparently).
     let store = load_store_with(xdg_config_home, home_override)?;
@@ -213,8 +227,10 @@ mod tests {
 
     /// Resolve for `repo` with no env token.
     fn resolve_for(env: &TestEnv, repo: &str) -> Result<ResolvedCreds, AuthError> {
-        resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some(repo))
+        resolve_full_with(None, None, Some(env.xdg_str()), dummy_home(), Some(repo))
     }
+
+    const ORG: &str = "https://acme.aretta.ai";
 
     // ─── precedence ──────────────────────────────────────────────────────────
 
@@ -227,14 +243,35 @@ mod tests {
         );
         let creds = resolve_full_with(
             Some("env-token"),
+            Some(ORG),
             Some(env.xdg_str()),
             dummy_home(),
             Some("owner/a"),
         )
         .unwrap();
         assert_eq!(creds.token.as_str(), "env-token");
-        assert_eq!(creds.server, ServerUrl::Prod);
+        assert_eq!(creds.server, ServerUrl::Custom(ORG.into()));
         assert_eq!(creds.repo, None);
+    }
+
+    #[test]
+    fn env_token_without_a_server_is_an_error_not_a_guess() {
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![v2_entry("owner/a", "file-token", "2026-07-22T00:00:00Z")],
+        );
+        for server in [None, Some(""), Some("   ")] {
+            let err = resolve_full_with(
+                Some("env-token"),
+                server,
+                Some(env.xdg_str()),
+                dummy_home(),
+                Some("owner/a"),
+            )
+            .unwrap_err();
+            assert_eq!(err, AuthError::EnvTokenWithoutServer, "server={server:?}");
+        }
     }
 
     #[test]
@@ -246,6 +283,7 @@ mod tests {
         );
         let creds = resolve_full_with(
             Some("   "),
+            None,
             Some(env.xdg_str()),
             dummy_home(),
             Some("owner/a"),
@@ -362,7 +400,8 @@ issued_at = "2026-05-20T00:00:00Z"
             &env,
             vec![v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z")],
         );
-        let err = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), None).unwrap_err();
+        let err =
+            resolve_full_with(None, None, Some(env.xdg_str()), dummy_home(), None).unwrap_err();
         match err {
             AuthError::NoEntryForCheckout { checkout, .. } => {
                 assert_eq!(
@@ -411,6 +450,7 @@ issued_at = "2026-05-20T00:00:00Z"
         );
         let err = resolve_full_for_checkout(
             None,
+            None,
             Some(env.xdg_str()),
             dummy_home(),
             Err("no .git/config at /tmp/x/.git/config"),
@@ -439,12 +479,14 @@ issued_at = "2026-05-20T00:00:00Z"
         );
         let creds = resolve_full_with(
             Some("env-tok"),
+            Some("acme.aretta.ai/"),
             Some(env.xdg_str()),
             dummy_home(),
             Some("owner/a"),
         )
         .unwrap();
         assert_eq!(creds.token.as_str(), "env-tok");
-        assert_eq!(creds.server, ServerUrl::Prod);
+        // The env server is normalized like every other server spec.
+        assert_eq!(creds.server, ServerUrl::Custom(ORG.into()));
     }
 }

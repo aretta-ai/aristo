@@ -35,6 +35,10 @@ pub enum AuthError {
         /// The stored entries, token-free.
         entries: Vec<EntrySummary>,
     },
+    /// `ARETTA_TOKEN` is set but `ARETTA_API_URL` is not. An env token
+    /// carries no server, and there is no default to guess: the
+    /// platform apex cannot serve an org's data plane.
+    EnvTokenWithoutServer,
 }
 
 /// A stored credential minus its secret — what the CLI may print when
@@ -74,6 +78,11 @@ impl fmt::Display for AuthError {
             ),
             AuthError::Invalid => write!(f, "auth token rejected by server (expired or revoked)"),
             AuthError::Malformed(msg) => write!(f, "credentials malformed: {msg}"),
+            AuthError::EnvTokenWithoutServer => write!(
+                f,
+                "ARETTA_TOKEN is set but ARETTA_API_URL is not — set \
+                 ARETTA_API_URL=https://<org>.aretta.ai (the server the token was minted against)"
+            ),
             AuthError::NoEntryForCheckout {
                 checkout,
                 path,
@@ -203,6 +212,15 @@ mod tests {
             "got: {s}"
         );
         assert!(s.contains("ARETTA_TOKEN"), "got: {s}");
+    }
+
+    #[test]
+    fn display_env_token_without_server_names_both_variables() {
+        let s = AuthError::EnvTokenWithoutServer.to_string();
+        assert!(
+            s.contains("ARETTA_TOKEN") && s.contains("ARETTA_API_URL"),
+            "got: {s}"
+        );
     }
 
     #[test]

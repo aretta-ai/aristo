@@ -175,6 +175,9 @@ fn print_canon_health(ws: &crate::Workspace) {
         Err(aristo_core::canon::AuthError::Invalid) => {
             "invalid token (server rejected)".to_string()
         }
+        Err(aristo_core::canon::AuthError::EnvTokenWithoutServer) => {
+            "ARETTA_TOKEN is set without ARETTA_API_URL".to_string()
+        }
         Err(aristo_core::canon::AuthError::NoEntryForCheckout { .. }) => {
             "signed in, but no stored credential is for this checkout (`aristo auth status`)"
                 .to_string()

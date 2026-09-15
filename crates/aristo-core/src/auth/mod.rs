@@ -46,7 +46,7 @@ pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
 pub use resolve::{
     checkout_at, cwd_checkout, resolve_full, resolve_full_for_checkout, resolve_full_with,
-    ResolvedCreds, ENV_VAR,
+    ResolvedCreds, ENV_VAR, SERVER_ENV_VAR,
 };
 pub use server::{data_plane_base, login_server, LoginServerSource, ServerUrl};
 pub use store::{

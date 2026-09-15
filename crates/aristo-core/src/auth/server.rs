@@ -72,58 +72,38 @@ impl std::fmt::Display for ServerUrl {
 }
 
 /// Resolve the base URL for **data-plane** requests — verify-session
-/// dispatch and canon match. Precedence, highest first:
+/// dispatch and canon match. Two tiers, highest first:
 ///
 /// 1. `env_override` — the `ARETTA_API_URL` env var (CI / test /
 ///    staging redirect). A blank/whitespace value is treated as unset
-///    (matching [`login_server`]), so it falls through instead of
-///    routing to an empty base; a present value is returned verbatim
-///    (trimmed, not normalized), preserving CI/test redirects.
-/// 2. `instance` — the project's `[instance] url` from `aristo.toml`,
-///    normalized through [`ServerUrl::parse`] (a bare host gets
-///    `https://`, a trailing `/` is stripped). Blank/whitespace is
-///    ignored.
-/// 3. `server` — the signed-in account's server; its default already
-///    resolves to `https://code.aretta.ai`, so it is also the final
-///    fallback.
-///
-/// This is the **data plane**, distinct from the auth/control plane:
-/// the `arta_*` token is minted against `server`, but verified-data
-/// requests are addressed here. Env and config take precedence so a
-/// repo can pin its data plane to a per-repo conductor
-/// (`https://<slug>.aretta.ai`) without re-authenticating.
+///    (matching [`login_server`]); a present value is normalized via
+///    [`ServerUrl::parse`], the one way a server spec is read.
+/// 2. `server` — the credential's own server: the host the `arta_*`
+///    token was minted against, or `ARETTA_API_URL` itself for an env
+///    token.
 ///
 /// Kept pure — env is passed in, not read here — so it is
 /// unit-testable under the workspace's `unsafe_code` ban on
 /// `std::env::set_var`.
 #[aristo::intent(
     "Data-plane base-URL precedence is exactly ARETTA_API_URL (env) > \
-     aristo.toml [instance] url > the account server, in that order and \
-     no other. A blank/whitespace env override is treated as unset \
-     (matching the login resolver, login_server) so it falls through to \
-     [instance] then server instead of routing to an empty base. A \
-     present env override is returned verbatim (trimmed, not \
-     normalized), preserving CI/test redirects; the [instance] url is \
-     normalized via ServerUrl::parse; server.as_str() is the final \
-     fallback (its default is code.aretta.ai). Reordering these tiers, \
-     dropping the blank-as-unset guard, or normalizing or dropping a \
-     present verbatim env override, would silently misroute verify and \
-     canon-match requests to the wrong Aretta deployment.",
+     the credential's server, and no other tier. A blank/whitespace env \
+     override is treated as unset (matching the login resolver, \
+     login_server) so it falls through to the credential's server \
+     instead of routing to an empty base; a present env override is \
+     normalized via ServerUrl::parse, the same reading every server \
+     spec gets. Adding a tier, dropping the blank-as-unset guard, or \
+     reading the env override differently from the login server would \
+     silently misroute verify and canon-match requests to the wrong \
+     Aretta deployment.",
     verify = "neural",
     id = "data_plane_base_precedence"
 )]
-pub fn data_plane_base(
-    env_override: Option<&str>,
-    instance: Option<&str>,
-    server: &ServerUrl,
-) -> String {
-    if let Some(v) = env_override.map(str::trim).filter(|s| !s.is_empty()) {
-        return v.to_string();
+pub fn data_plane_base(env_override: Option<&str>, server: &ServerUrl) -> String {
+    match env_override.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(v) => ServerUrl::parse(v).as_str().to_string(),
+        None => server.as_str().to_string(),
     }
-    if let Some(inst) = instance.map(str::trim).filter(|s| !s.is_empty()) {
-        return ServerUrl::parse(inst).as_str().to_string();
-    }
-    server.as_str().to_string()
 }
 
 /// Where the login (auth-plane) server URL came from. Carried alongside
@@ -279,57 +259,34 @@ mod tests {
     }
 
     #[test]
-    fn data_plane_base_env_override_wins_verbatim() {
-        // ARETTA_API_URL (passed in) beats both instance and server, and
-        // is returned verbatim — no normalization — so CI/test redirects
-        // behave exactly as before.
-        let s = data_plane_base(
-            Some("https://ci.example.com"),
-            Some("https://turso.aretta.ai"),
-            &ServerUrl::Prod,
-        );
+    fn data_plane_base_env_override_wins_and_is_normalized() {
+        // ARETTA_API_URL beats the credential's server and is read the
+        // same way as every server spec.
+        let s = data_plane_base(Some("ci.example.com/"), &ServerUrl::Prod);
         assert_eq!(s, "https://ci.example.com");
     }
 
     #[test]
-    fn data_plane_base_empty_env_falls_through_to_instance() {
-        // An empty ARETTA_API_URL (e.g. an unset CI Variable expands to
-        // "") is treated as unset — matching login_server — so it falls
-        // through to [instance] rather than routing to an empty base.
-        let s = data_plane_base(Some(""), Some("https://turso.aretta.ai"), &ServerUrl::Prod);
-        assert_eq!(s, "https://turso.aretta.ai");
-    }
-
-    #[test]
-    fn data_plane_base_whitespace_env_falls_through_to_server() {
-        // Whitespace-only is likewise unset; with no [instance] it falls
-        // all the way through to the account server.
-        let s = data_plane_base(Some("   "), None, &ServerUrl::Prod);
-        assert_eq!(s, "https://code.aretta.ai");
-    }
-
-    #[test]
-    fn data_plane_base_instance_beats_server_and_is_normalized() {
-        // No env override: the [instance] url wins over the account
-        // server, and a bare host + trailing slash is normalized.
-        let s = data_plane_base(None, Some("turso.aretta.ai/"), &ServerUrl::Prod);
-        assert_eq!(s, "https://turso.aretta.ai");
-    }
-
-    #[test]
-    fn data_plane_base_blank_instance_is_ignored() {
-        let s = data_plane_base(
-            None,
-            Some("   "),
-            &ServerUrl::Custom("https://staging.example.com".into()),
+    fn data_plane_base_blank_env_falls_through_to_server() {
+        // An empty or whitespace ARETTA_API_URL (an unset CI Variable
+        // expands to "") is unset — matching login_server.
+        let custom = ServerUrl::Custom("https://staging.example.com".into());
+        assert_eq!(
+            data_plane_base(Some(""), &custom),
+            "https://staging.example.com"
         );
-        assert_eq!(s, "https://staging.example.com");
+        assert_eq!(
+            data_plane_base(Some("   "), &custom),
+            "https://staging.example.com"
+        );
     }
 
     #[test]
     fn data_plane_base_falls_back_to_server() {
-        let s = data_plane_base(None, None, &ServerUrl::Prod);
-        assert_eq!(s, "https://code.aretta.ai");
+        assert_eq!(
+            data_plane_base(None, &ServerUrl::Prod),
+            "https://code.aretta.ai"
+        );
     }
 
     // ─── login_server precedence ────────────────────────────────────────────

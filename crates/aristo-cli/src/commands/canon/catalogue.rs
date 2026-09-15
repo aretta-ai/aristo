@@ -5,7 +5,7 @@
 //!
 //! Logged-in only: it presents the account's Bearer token to the
 //! per-repo conductor's `GET /catalogue` (Read-gated), addressed via
-//! the resolved data-plane base (`[instance] url` when set). The
+//! the resolved data-plane base. The
 //! download is a regenerable local cache — `aristo init` gitignores it
 //! (see `ARISTO_GITIGNORE_ENTRIES`) — so agents can browse/search the
 //! corpus offline without re-fetching, and it is never committed.
@@ -61,8 +61,8 @@ fn print_summary(catalogue: &CanonCatalogue) {
     );
     if total == 0 {
         println!(
-            "   note: the catalogue is empty — the instance has no canon corpus configured, \
-             or `[instance] url` isn't set to a conductor."
+            "   note: the catalogue is empty — this server has no canon corpus configured \
+             (check `aristo auth status` for which server this checkout resolves to)."
         );
         return;
     }

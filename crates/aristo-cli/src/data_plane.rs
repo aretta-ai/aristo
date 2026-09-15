@@ -1,28 +1,35 @@
 //! Resolve the base URL for **data-plane** requests — verify session
-//! dispatch and canon match — from `ARETTA_API_URL` (env) > the
-//! project's `aristo.toml` `[instance] url` > the signed-in account
-//! server. The precedence itself lives in
+//! dispatch and canon match: `ARETTA_API_URL` (env) if set, else the
+//! credential's own server. The precedence itself lives in
 //! [`aristo_core::auth::data_plane_base`]; this wrapper only gathers
-//! the impure inputs (the real env var + the nearest workspace's
-//! config) and delegates.
+//! the impure inputs and delegates.
 
-use aristo_core::auth::{data_plane_base, ServerUrl};
+use aristo_core::auth::{data_plane_base, ServerUrl, SERVER_ENV_VAR};
 
 use crate::workspace::Workspace;
 
 /// Base URL for verify/canon data-plane requests, given the signed-in
-/// account `server` (from resolved credentials).
-///
-/// Reads `ARETTA_API_URL` and the nearest `aristo.toml`'s
-/// `[instance] url` best-effort: a command run outside a workspace (or
-/// with a malformed config) still resolves via env + `server`, so this
-/// never fails. `ARETTA_API_URL` and `[instance] url` take precedence
-/// over `server`, so a repo (or CI) can target a per-repo conductor
-/// without re-authenticating.
+/// credential's `server`. Reads `ARETTA_API_URL` and, best-effort, the
+/// nearest `aristo.toml` — only to warn about a deprecated
+/// `[instance] url`, which is ignored.
 pub(crate) fn resolve_base(server: &ServerUrl) -> String {
-    let env_override = std::env::var("ARETTA_API_URL").ok();
-    let instance = Workspace::find(None)
+    warn_if_deprecated_instance_url_set();
+    let env_override = std::env::var(SERVER_ENV_VAR).ok();
+    data_plane_base(env_override.as_deref(), server)
+}
+
+/// `[instance] url` stopped steering the data plane; a repo that still
+/// carries it would otherwise silently get a different server than the
+/// one its owner believes is pinned.
+fn warn_if_deprecated_instance_url_set() {
+    let Some(url) = Workspace::find(None)
         .ok()
-        .and_then(|ws| ws.load_config().instance.url);
-    data_plane_base(env_override.as_deref(), instance.as_deref(), server)
+        .and_then(|ws| ws.load_config().instance.url)
+    else {
+        return;
+    };
+    eprintln!(
+        "warning: aristo.toml `[instance] url = \"{url}\"` is ignored — the data plane is \
+         the credential's server, and {SERVER_ENV_VAR} overrides it. Remove the section."
+    );
 }

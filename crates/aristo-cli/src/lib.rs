@@ -840,7 +840,7 @@ pub(crate) enum CanonAction {
     /// Download the canon catalogue (the full list of available canon
     /// entries) to `.aristo/catalogue.json` — a gitignored local
     /// snapshot — and print a summary. Requires authentication; served
-    /// by the per-repo conductor addressed via `[instance] url`.
+    /// by the org's server.
     Catalogue,
 
     /// Run the S2 presence probe against a local SUT checkout: union

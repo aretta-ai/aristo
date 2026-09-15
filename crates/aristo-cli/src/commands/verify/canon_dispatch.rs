@@ -299,7 +299,7 @@ pub(crate) fn run_canon_dispatch(
     }
 
     // 5. Build the HTTP client. Data-plane base: ARETTA_API_URL >
-    //    aristo.toml [instance] url > the signed-in server.
+    //    the credential's server.
     let base_url = crate::data_plane::resolve_base(&creds.server);
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
