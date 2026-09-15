@@ -1,5 +1,9 @@
-//! Auto-derive `repo_full_name` (`owner/repo`) from a workspace's
-//! `.git/config`.
+//! Auto-derive `repo_full_name` (`owner/repo`) from the checkout's git
+//! config, found the way git finds it: walk up from the starting
+//! directory to the nearest `.git`; a directory holds `config` itself,
+//! a file (linked worktree, submodule) names a `gitdir` whose own
+//! `config` or `commondir` leads to it. So a subdirectory, a worktree
+//! and a plain clone all derive the same repo `git config` reports.
 //!
 //! Parses the INI-shaped git config to find the `remote.origin.url`
 //! field, then extracts the `owner/repo` slug from either form:
@@ -8,31 +12,31 @@
 //! - `git@github.com:owner/repo(.git)?`
 //! - `ssh://git@github.com/owner/repo(.git)?`
 //!
-//! The `aristo auth login` CLI calls this with the workspace root as
-//! its starting point; if it can't resolve a repo, it surfaces a
+//! Every place that needs the checkout's repo — the credential
+//! resolver, the login default, `auth token` / `auth logout`, verify
+//! dispatch — calls this; if it can't resolve a repo, it surfaces a
 //! clear "pass `--repo <owner/repo>` explicitly" diagnostic.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::error::AuthError;
 
-/// Derive `owner/repo` from `<workspace_root>/.git/config`'s
-/// `[remote "origin"]` URL.
+/// Derive `owner/repo` from the `[remote "origin"]` URL of the git
+/// config that governs `start` (see the module doc for how it is found).
 ///
 /// Returns `AuthError::Malformed` with a clear message when:
-/// - the workspace has no `.git/` directory,
+/// - no git repository is found at or above `start`,
 /// - the config file has no `[remote "origin"]` section,
 /// - the section has no `url =` field,
 /// - the URL doesn't match a known GitHub form.
-pub fn derive_repo_full_name(workspace_root: &Path) -> Result<String, AuthError> {
-    let config_path = workspace_root.join(".git").join("config");
-    if !config_path.is_file() {
-        return Err(AuthError::Malformed(format!(
-            "no .git/config at {} — pass `--repo <owner/repo>` to scope the token explicitly",
-            config_path.display()
-        )));
-    }
+pub fn derive_repo_full_name(start: &Path) -> Result<String, AuthError> {
+    let config_path = git_config_path(start).ok_or_else(|| {
+        AuthError::Malformed(format!(
+            "no git repository at or above {} — pass `--repo <owner/repo>` to scope the token explicitly",
+            start.display()
+        ))
+    })?;
     let raw = fs::read_to_string(&config_path)
         .map_err(|e| AuthError::Malformed(format!("read {}: {e}", config_path.display())))?;
     let url = extract_origin_url(&raw).ok_or_else(|| {
@@ -46,6 +50,34 @@ pub fn derive_repo_full_name(workspace_root: &Path) -> Result<String, AuthError>
             "remote.origin.url `{url}` doesn't look like a GitHub URL — pass `--repo <owner/repo>`"
         ))
     })
+}
+
+/// The `config` file governing `start`: walk up to the nearest `.git`.
+/// A directory is the repository itself. A file names a `gitdir:`
+/// (absolute, or relative to the file's directory); that gitdir holds
+/// its own `config` (a submodule) or a `commondir` pointing at the
+/// common repository that does (a linked worktree). `None` when no
+/// `.git` exists at or above `start`, or the pointer chain is broken.
+fn git_config_path(start: &Path) -> Option<PathBuf> {
+    let dot_git = start
+        .ancestors()
+        .map(|dir| dir.join(".git"))
+        .find(|p| p.exists())?;
+    let gitdir = if dot_git.is_dir() {
+        dot_git
+    } else {
+        let pointer = fs::read_to_string(&dot_git).ok()?;
+        let target = pointer.strip_prefix("gitdir:")?.trim();
+        let base = dot_git.parent()?;
+        base.join(target)
+    };
+    let own = gitdir.join("config");
+    if own.is_file() {
+        return Some(own);
+    }
+    let common = fs::read_to_string(gitdir.join("commondir")).ok()?;
+    let common_config = gitdir.join(common.trim()).join("config");
+    common_config.is_file().then_some(common_config)
 }
 
 /// Pure: scan the INI-shaped git config text for the value of the
@@ -231,6 +263,67 @@ mod tests {
         assert_eq!(r, "owner/repo");
     }
 
+    fn write_config(dir: &std::path::Path, url: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("config"),
+            format!("[remote \"origin\"]\n    url = {url}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn derive_walks_up_from_a_subdirectory_to_the_repo_root() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            &tmp.path().join(".git"),
+            "https://github.com/owner/repo.git",
+        );
+        let deep = tmp.path().join("crates/core/src");
+        std::fs::create_dir_all(&deep).unwrap();
+        assert_eq!(derive_repo_full_name(&deep).unwrap(), "owner/repo");
+    }
+
+    #[test]
+    fn derive_follows_a_worktree_dot_git_file_to_the_common_config() {
+        // A linked worktree: `.git` is a FILE naming its gitdir under the
+        // main repo's `.git/worktrees/<name>`, whose `commondir` points
+        // back at the common `.git` that holds `config`.
+        let tmp = TempDir::new().unwrap();
+        let main_git = tmp.path().join("main/.git");
+        write_config(&main_git, "git@github.com:owner/repo.git");
+        let wt_gitdir = main_git.join("worktrees/workspace-13");
+        std::fs::create_dir_all(&wt_gitdir).unwrap();
+        std::fs::write(wt_gitdir.join("commondir"), "../..\n").unwrap();
+        let wt = tmp.path().join("workspace-13");
+        std::fs::create_dir_all(wt.join("src")).unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", wt_gitdir.display()),
+        )
+        .unwrap();
+        assert_eq!(derive_repo_full_name(&wt).unwrap(), "owner/repo");
+        // From a subdirectory of the worktree too.
+        assert_eq!(
+            derive_repo_full_name(&wt.join("src")).unwrap(),
+            "owner/repo"
+        );
+    }
+
+    #[test]
+    fn derive_follows_a_dot_git_file_whose_gitdir_has_its_own_config() {
+        // A submodule checkout: `.git` is a file, and the gitdir it names
+        // carries its own `config` (no `commondir`).
+        let tmp = TempDir::new().unwrap();
+        let modules_git = tmp.path().join("super/.git/modules/sub");
+        write_config(&modules_git, "https://github.com/owner/sub.git");
+        let sub = tmp.path().join("super/sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        // Relative gitdir, resolved against the directory holding `.git`.
+        std::fs::write(sub.join(".git"), "gitdir: ../.git/modules/sub\n").unwrap();
+        assert_eq!(derive_repo_full_name(&sub).unwrap(), "owner/sub");
+    }
+
     #[test]
     fn derive_repo_full_name_without_dot_git_yields_helpful_error() {
         let tmp = TempDir::new().unwrap();
@@ -238,7 +331,7 @@ mod tests {
         let err = derive_repo_full_name(tmp.path()).expect_err("should fail");
         match err {
             AuthError::Malformed(m) => {
-                assert!(m.contains("no .git/config"), "got: {m}");
+                assert!(m.contains("no git repository"), "got: {m}");
                 assert!(m.contains("--repo"), "got: {m}");
             }
             other => panic!("expected Malformed, got {other:?}"),
