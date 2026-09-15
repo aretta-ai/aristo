@@ -1,5 +1,5 @@
-//! End-to-end scenario tests for the `aristo canon {list, refresh}`
-//! subcommands (PR #8). Pattern mirrors the other canon_*
+//! End-to-end scenario tests for `aristo canon list` and
+//! `aristo stamp --refresh-canon` (PR #8). Pattern mirrors the other canon_*
 //! command e2e tests.
 
 use std::path::Path;
@@ -159,7 +159,7 @@ fn list_after_accept_shows_accepted_match() {
 }
 
 #[test]
-fn refresh_re_runs_the_match_call_against_index() {
+fn refresh_canon_re_runs_the_match_call_against_index() {
     let ws = setup_workspace(SOURCE);
     let fixture = ws.path().join("fixtures/canon");
     write_match_fixture(&fixture);
@@ -183,7 +183,7 @@ results = [[]]
 
     let out = aristo_in(ws.path())
         .env("ARISTO_CANON_FIXTURE", &fixture)
-        .args(["canon", "refresh"])
+        .args(["stamp", "--refresh-canon"])
         .output()
         .unwrap();
     assert!(

@@ -9,7 +9,7 @@
 //! Flags follow J2 (mockup 11): `--filter` reuses the unified J2
 //! grammar from `aristo list` / `graph` / `review`; `--rerun` is the
 //! orthogonal force-flag that re-processes entries already in a clean
-//! verified state; `--check` is the CI no-write mode; `--strict` is
+//! verified state; `--strict` is
 //! reserved for warn-severity outcomes (no warnings yet — slice 22 has
 //! only skip / not-implemented arms).
 
@@ -42,7 +42,6 @@ pub(crate) mod waiver;
 pub(crate) fn run(
     filter_strings: &[String],
     rerun: bool,
-    check: bool,
     strict: bool,
     audit: bool,
     apply_verdicts: bool,
@@ -60,8 +59,6 @@ pub(crate) fn run(
     because: Option<String>,
     tracking: Option<String>,
 ) -> CliResult<()> {
-    let _ = check; // wired for forward-compat; no behavior yet (see module doc)
-
     // E3: `--view <session_id>` attaches to an existing session.
     // Read-only — no session guard, no workspace mutation. Runs
     // before workspace resolution since the operation only needs
@@ -225,7 +222,7 @@ pub(crate) fn run(
                       Likely causes: no canon-bound `verify=\"full\"` entries matched; every \
                       matching entry was skipped as already verified and fresh (pass --rerun \
                       to force); or the canon-matches cache is missing/stale (run \
-                      `aristo canon refresh` and commit .aristo/canon-matches.toml)."
+                      `aristo stamp --refresh-canon` and commit .aristo/canon-matches.toml)."
                 .into(),
             exit_code: 1,
         });

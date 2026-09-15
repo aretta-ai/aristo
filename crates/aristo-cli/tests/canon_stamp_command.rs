@@ -280,7 +280,7 @@ fn stamp_with_several_servers_and_none_selected_says_so_instead_of_nudging() {
 }
 
 #[test]
-fn canon_refresh_with_a_named_server_selects_that_entry() {
+fn refresh_canon_with_a_named_server_selects_that_entry() {
     let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
     write_two_servers(ws.path());
     assert!(aristo_in(ws.path())
@@ -293,7 +293,7 @@ fn canon_refresh_with_a_named_server_selects_that_entry() {
     // attempted against that server.
     let out = aristo_in(ws.path())
         .env("ARETTA_API_URL", "http://127.0.0.1:9")
-        .args(["canon", "refresh"])
+        .args(["stamp", "--refresh-canon"])
         .output()
         .unwrap();
     assert!(

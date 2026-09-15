@@ -124,13 +124,6 @@ enum Commands {
         force: bool,
     },
 
-    /// Scan source for annotations and write the index (`.aristo/index.toml`).
-    Index {
-        /// Force a full re-walk, ignoring the per-file mtime cache.
-        #[arg(long)]
-        all: bool,
-    },
-
     /// Refresh the annotation index — pick up new annotations, detect
     /// drift, and (when signed in) match against the Aretta canon.
     Stamp {
@@ -148,7 +141,7 @@ enum Commands {
         skip_canon: bool,
         /// Invalidate the local canon-match cache and re-query every
         /// annotation on this run. Equivalent to
-        /// `aristo canon refresh && aristo stamp`.
+        /// `aristo stamp --refresh-canon`.
         #[arg(long = "refresh-canon", conflicts_with = "skip_canon")]
         refresh_canon: bool,
         /// Garbage-collect archived orphan proofs after stamping. Removed
@@ -255,10 +248,6 @@ enum Commands {
         /// a re-check.
         #[arg(long)]
         rerun: bool,
-        /// CI mode: report whether any status would change, without
-        /// writing the index. Exits non-zero if any change is needed.
-        #[arg(long)]
-        check: bool,
         /// Treat warn-severity verification outcomes as failure too.
         #[arg(long)]
         strict: bool,
@@ -380,7 +369,7 @@ enum Commands {
             value_name = "CANON_ID",
             requires = "because",
             conflicts_with_all = [
-                "view", "wait", "tags", "rerun", "check", "strict", "filters",
+                "view", "wait", "tags", "rerun", "strict", "filters",
                 "apply_verdicts", "rewrite_hashes", "submit_verdict", "id",
                 "json", "pop_next", "queue_status"
             ]
@@ -763,14 +752,6 @@ pub(crate) enum CanonAction {
     /// does not call the canon API.
     List,
 
-    /// Re-query the canon API for every annotation in the index,
-    /// bypassing the local match cache. Equivalent to
-    /// `aristo stamp --refresh-canon` without the rest of the stamp
-    /// pipeline — no source walk, no drift check, no index rewrite.
-    /// Useful when you know a new catalog version has shipped and
-    /// want fresh matches without a full stamp.
-    Refresh,
-
     /// Reverse of `aristo canon accept`: strip the `aristos:` /
     /// `kanon:` prefix from a canon-bound annotation, revert its
     /// binding to `Local`, and drop the accepted_matches cache
@@ -791,7 +772,7 @@ pub(crate) enum CanonAction {
     /// Report per-binding version drift between the local cache and
     /// the canon API. Reports three classes: `current` (no change),
     /// `patch-bump` (same canon_id, newer version — recommended
-    /// action: `aristo canon refresh`), and `minor-bump` (canon_id
+    /// action: `aristo stamp --refresh-canon`), and `minor-bump` (canon_id
     /// retired — recommended action: `aristo canon unbind <id>` then
     /// re-stamp). Currently diagnostic-only; automatic patch-bump
     /// application is planned.
@@ -1008,7 +989,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::UninstallSkills { agent, user, force } => {
             commands::install_skills::uninstall(agent, user, force)
         }
-        Commands::Index { all } => commands::index::run(all),
         Commands::Stamp {
             check,
             skip_canon,
@@ -1030,7 +1010,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::Verify {
             filters,
             rerun,
-            check,
             strict,
             audit,
             apply_verdicts,
@@ -1050,7 +1029,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         } => commands::verify::run(
             &filters,
             rerun,
-            check,
             strict,
             audit,
             apply_verdicts,
@@ -1149,7 +1127,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 reason,
             } => commands::canon::reject::run(&annotation_id, &canon_id, reason),
             CanonAction::List => commands::canon::list::run(),
-            CanonAction::Refresh => commands::canon::refresh::run(),
             CanonAction::Unbind { prefixed_id } => commands::canon::unbind::run(&prefixed_id),
             CanonAction::Migrate => commands::canon::migrate::run(),
             CanonAction::Catalogue => commands::canon::catalogue::run(),

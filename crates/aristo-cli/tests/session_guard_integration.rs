@@ -48,17 +48,6 @@ fn stamp_check_allowed_during_active_session() {
 }
 
 #[test]
-fn index_refuses_during_active_session() {
-    let tmp = tempfile::tempdir().unwrap();
-    workspace_with_active_session(tmp.path());
-    aristo_in(tmp.path())
-        .arg("index")
-        .assert()
-        .failure()
-        .stderr(contains("active review session blocks `aristo index`"));
-}
-
-#[test]
 fn verify_refuses_during_active_session() {
     let tmp = tempfile::tempdir().unwrap();
     workspace_with_active_session(tmp.path());

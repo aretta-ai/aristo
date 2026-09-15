@@ -18,7 +18,7 @@
 //!
 //! - **`current`** — cache version matches API version.
 //! - **`patch-bump`** — same `canon_id`, newer `version`. Recommended
-//!   action: `aristo canon refresh` to update the cache, optionally
+//!   action: `aristo stamp --refresh-canon` to update the cache, optionally
 //!   re-run `aristo canon accept` if the canonical text has changed.
 //! - **`minor-bump`** — the previously-bound `canon_id` is no longer
 //!   matched by the canon API. Recommended action:
@@ -154,7 +154,7 @@ pub(crate) fn run() -> CliResult<()> {
             Some(c) => {
                 patch_bump += 1;
                 println!(
-                    "  {prefixed_id}: patch-bump ({} {} → {}). Run `aristo canon refresh` to update the cache.",
+                    "  {prefixed_id}: patch-bump ({} {} → {}). Run `aristo stamp --refresh-canon` to update the cache.",
                     cached_match.canon_id, cached_match.version, c.version,
                 );
             }

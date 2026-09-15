@@ -1,27 +1,17 @@
-//! `aristo index` — walk source, parse annotations, write `.aristo/index.toml`.
-//!
-//! Slice 16 ships the full-walk path: every invocation re-scans every
-//! `.rs` file under the workspace, regenerates the index from scratch,
-//! detects cycles, and writes atomically. The mtime cache (incremental
-//! re-walk) is a slice-17+ optimization — `--all` is accepted as a no-op
-//! flag in this slice so users / CI scripts that already pass it don't
-//! break when the cache lands.
-//!
-//! Per `docs/TOOLS.md`, `aristo index` is the lower-level building block:
-//! `aristo stamp` runs `aristo index` and additionally classifies B5b
-//! binding state and offers id-promotion. Slice 17 layers stamp on top.
+//! The indexer: walk source, parse annotations, build `.aristo/index.toml`
+//! entries, detect cycles, write atomically. `aristo stamp` drives it;
+//! the helpers here are shared by every command that reads the index.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
-use aristo_core::cycle::detect_cycles;
 use aristo_core::id;
 use aristo_core::index::{
-    AnnotationId, AnnotationKind, AssumeEntry, BindingState, IndexEntry, IndexFile, IntentEntry,
-    Meta, ParentLink, Status, VerifyLevel, VerifyMethod,
+    AnnotationId, AnnotationKind, AssumeEntry, BindingState, IndexEntry, IntentEntry, ParentLink,
+    Status, VerifyLevel, VerifyMethod,
 };
-use aristo_core::walk::{walk_directory_with, DiscoveredAnnotation, ParentRaw, WalkOptions};
+use aristo_core::walk::{DiscoveredAnnotation, ParentRaw, WalkOptions};
 
 use crate::{CliError, CliResult, Workspace};
 
@@ -32,62 +22,6 @@ pub(crate) type BuiltEntries = (
     BTreeMap<AnnotationId, IndexEntry>,
     HashMap<AnnotationId, Vec<AnnotationId>>,
 );
-
-pub(crate) fn run(_all: bool) -> CliResult<()> {
-    // _all is a slice-17+ flag (mtime cache); accepted as no-op for now.
-    let ws = workspace_or_error()?;
-    crate::session::guard::ensure_no_active_session(&ws, "aristo index")?;
-
-    println!("→ Walking source from {} …", ws.root.display());
-    let walk_opts = walk_options_from_workspace(&ws)?;
-    let discovered = walk_directory_with(&ws.root, &walk_opts).map_err(|e| CliError::Other {
-        message: format!("walk failed: {e}"),
-        exit_code: 1,
-    })?;
-    println!("→ Found {} annotations", discovered.len());
-
-    let (entries, parents_map) = build_entries(&discovered, &ws.root)?;
-
-    println!("→ Checking for parent-link cycles");
-    detect_cycles(&parents_map).map_err(|e| CliError::Other {
-        message: format!("{e}\n\nNo files modified. Fix the cycle and re-run `aristo index`."),
-        exit_code: 2,
-    })?;
-
-    let index = IndexFile {
-        meta: Meta {
-            schema_version: 1,
-            generated_by: Some(format!("aristo index {}", env!("CARGO_PKG_VERSION"))),
-            generated_at: Some(now_rfc3339()),
-            source_root: Some(".".to_string()),
-        },
-        entries,
-    };
-
-    let toml_text = toml::to_string_pretty(&index).map_err(|e| CliError::Other {
-        message: format!("serializing index.toml: {e}"),
-        exit_code: 1,
-    })?;
-
-    let index_path = ws.index_path();
-    let bytes_written = toml_text.len();
-    atomic_write(&index_path, &toml_text)?;
-
-    let entry_count = index.entries.len();
-    let rel_path = index_path
-        .strip_prefix(&ws.root)
-        .unwrap_or(&index_path)
-        .display();
-    println!("→ Writing {rel_path} … ok ({entry_count} entries, {bytes_written} bytes)");
-    println!();
-    let noun = if entry_count == 1 {
-        "annotation"
-    } else {
-        "annotations"
-    };
-    println!("ok: index regenerated ({entry_count} {noun}).");
-    Ok(())
-}
 
 pub(crate) fn workspace_or_error() -> CliResult<Workspace> {
     Workspace::find(None).map_err(|e| match e {

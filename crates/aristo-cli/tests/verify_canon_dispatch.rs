@@ -330,7 +330,7 @@ fn missing_cache_entry_for_canon_bound_full_skips_with_refresh_hint() {
         .arg("verify")
         .assert()
         .success()
-        .stdout(contains("aristo canon refresh"));
+        .stdout(contains("aristo stamp --refresh-canon"));
 }
 
 #[test]
@@ -358,7 +358,7 @@ fn zero_dispatch_prints_unmissable_warning_but_still_exits_zero() {
         .assert()
         .success()
         .stderr(contains("warning: no canon-verify dispatch"))
-        .stderr(contains("aristo canon refresh"))
+        .stderr(contains("aristo stamp --refresh-canon"))
         .stderr(contains("--require-dispatch"));
 }
 
@@ -386,7 +386,7 @@ fn require_dispatch_fails_when_dispatch_set_is_empty() {
         .assert()
         .failure()
         .stderr(contains("--require-dispatch"))
-        .stderr(contains("aristo canon refresh"));
+        .stderr(contains("aristo stamp --refresh-canon"));
 }
 
 #[test]

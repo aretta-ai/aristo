@@ -117,7 +117,7 @@ pub(crate) fn partition_full<'a>(
 /// handled), whose canon-matches entry is absent, or whose accepted-
 /// match list is empty are silently dropped from the dispatch.
 /// They'd fail the server-side eligibility check anyway and surface
-/// a clearer error on the next `aristo canon refresh`.
+/// a clearer error on the next `aristo stamp --refresh-canon`.
 pub(crate) fn build_tags(
     entries: &[CanonDispatchEntry<'_>],
     matches: &CanonMatchesFile,
@@ -253,7 +253,7 @@ pub(crate) fn run_canon_dispatch(
             canon_entries.len()
         );
         println!(
-            "  .aristo/canon-matches.toml. Run `aristo canon refresh` to repopulate the cache."
+            "  .aristo/canon-matches.toml. Run `aristo stamp --refresh-canon` to repopulate the cache."
         );
         return Ok(0);
     }
@@ -538,7 +538,7 @@ pub(crate) fn zero_dispatch_warning(
              All {canon_candidates} canon-bound entr{} dropped at the canon-matches cache \
              join: .aristo/canon-matches.toml is missing, stale, or carries no accepted \
              matches.\n  \
-             Fix: run `aristo canon refresh` and commit the refreshed cache. CI can gate \
+             Fix: run `aristo stamp --refresh-canon` and commit the refreshed cache. CI can gate \
              on this with `aristo verify --require-dispatch`.",
             if canon_candidates == 1 {
                 "y was"
@@ -2471,7 +2471,7 @@ mod tests {
         let w = zero_dispatch_warning(0, 2, 0).expect("candidates dropped at cache join → warn");
         assert!(w.contains("warning: no canon-verify dispatch"), "{w}");
         assert!(w.contains("canon-matches"), "{w}");
-        assert!(w.contains("aristo canon refresh"), "{w}");
+        assert!(w.contains("aristo stamp --refresh-canon"), "{w}");
         assert!(w.contains("--require-dispatch"), "{w}");
     }
 

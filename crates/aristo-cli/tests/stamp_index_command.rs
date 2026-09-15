@@ -1,5 +1,5 @@
-//! `aristo index` — imperative integration tests for the surfaces trycmd
-//! can't easily exercise:
+//! The indexer through `aristo stamp --skip-canon` — imperative
+//! integration tests for the surfaces trycmd can't easily exercise:
 //!
 //! - the no-workspace error path (can't share a sandbox with the success
 //!   path because the success path creates the workspace)
@@ -22,7 +22,7 @@ fn aristo_in(dir: &Path) -> Command {
 fn errors_outside_a_workspace() {
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path())
-        .arg("index")
+        .args(["stamp", "--skip-canon"])
         .assert()
         .failure()
         .code(2)
@@ -35,15 +35,15 @@ fn writes_meta_only_index_for_zero_annotations() {
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
     aristo_in(tmp.path())
-        .arg("index")
+        .args(["stamp", "--skip-canon"])
         .assert()
         .success()
-        .stdout(contains("ok: index regenerated (0 annotations)"));
+        .stdout(contains("ok: stamped 0 annotations"));
 
     let index = fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap();
     let parsed: aristo_core::index::IndexFile = toml::from_str(&index).expect("index round-trips");
     assert_eq!(parsed.entries.len(), 0);
-    assert!(parsed.meta.generated_by.unwrap().contains("aristo index"));
+    assert!(parsed.meta.generated_by.unwrap().contains("aristo stamp"));
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn indexes_intent_attribute_on_a_function() {
     .unwrap();
 
     aristo_in(tmp.path())
-        .arg("index")
+        .args(["stamp", "--skip-canon"])
         .assert()
         .success()
         .stdout(contains("Found 1 annotations"));
@@ -96,7 +96,7 @@ fn indexes_c_intent_directive_on_a_function() {
     .unwrap();
 
     aristo_in(tmp.path())
-        .arg("index")
+        .args(["stamp", "--skip-canon"])
         .assert()
         .success()
         .stdout(contains("Found 1 annotations"));
@@ -128,7 +128,10 @@ fn assigns_opaque_id_when_user_omits_id() {
     )
     .unwrap();
 
-    aristo_in(tmp.path()).arg("index").assert().success();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
 
     let index = fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap();
     let parsed: aristo_core::index::IndexFile = toml::from_str(&index).unwrap();
@@ -159,12 +162,12 @@ fn permissive_mode_skips_invalid_annotations_with_warning() {
     .unwrap();
 
     aristo_in(tmp.path())
-        .arg("index")
+        .args(["stamp", "--skip-canon"])
         .assert()
         .success() // exit 0 — invalid annotations are warnings, not errors
         .stderr(contains("warning: skipping"))
         .stderr(contains("FooBar"))
-        .stdout(contains("ok: index regenerated (1 annotation)"));
+        .stdout(contains("ok: stamped 1 annotation"));
 
     let index = fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap();
     let parsed: aristo_core::index::IndexFile = toml::from_str(&index).unwrap();
@@ -190,7 +193,7 @@ fn errors_on_cycle_in_parent_graph() {
     .unwrap();
 
     aristo_in(tmp.path())
-        .arg("index")
+        .args(["stamp", "--skip-canon"])
         .assert()
         .failure()
         .code(2)
@@ -215,14 +218,20 @@ fn rerun_overwrites_atomically_no_partial_file() {
         r#"#[aristo::intent("v1", verify = "test", id = "first")] fn v1() {}"#,
     )
     .unwrap();
-    aristo_in(tmp.path()).arg("index").assert().success();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
 
     fs::write(
         tmp.path().join("src/lib.rs"),
         r#"#[aristo::intent("v2", verify = "test", id = "first")] fn v2() {}"#,
     )
     .unwrap();
-    aristo_in(tmp.path()).arg("index").assert().success();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
 
     let index = fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap();
     let parsed: aristo_core::index::IndexFile = toml::from_str(&index).unwrap();
@@ -231,37 +240,4 @@ fn rerun_overwrites_atomically_no_partial_file() {
     if let aristo_core::index::IndexEntry::Intent(e) = parsed.entries.get(&id).unwrap() {
         assert_eq!(e.text, "v2", "second index call must overwrite, not append");
     }
-}
-
-#[test]
-fn all_flag_is_no_op_in_slice_16() {
-    let tmp = tempfile::tempdir().unwrap();
-    aristo_in(tmp.path()).arg("init").assert().success();
-
-    fs::create_dir_all(tmp.path().join("src")).unwrap();
-    fs::write(
-        tmp.path().join("src/lib.rs"),
-        r#"#[aristo::intent("x", verify = "test", id = "first")] fn x() {}"#,
-    )
-    .unwrap();
-
-    let with = aristo_in(tmp.path())
-        .args(["index", "--all"])
-        .output()
-        .unwrap();
-    let without = aristo_in(tmp.path()).arg("index").output().unwrap();
-    assert!(with.status.success());
-    assert!(without.status.success());
-    // Compare the resulting index ENTRIES (not stdout): stdout includes
-    // a byte-count line that varies with the generated_at timestamp's
-    // subsecond precision, and we genuinely don't care about that — what
-    // we care about is that --all and no-flag produce the same index.
-    let index_text = fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap();
-    let parsed: aristo_core::index::IndexFile = toml::from_str(&index_text).unwrap();
-    assert_eq!(parsed.entries.len(), 1);
-    let id = aristo_core::index::AnnotationId::parse("first").unwrap();
-    assert!(
-        parsed.entries.contains_key(&id),
-        "--all must produce the same index entries as no-flag"
-    );
 }

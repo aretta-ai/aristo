@@ -174,7 +174,7 @@ fn migrate_with_newer_version_reports_patch_bump() {
         "expected version transition; got: {stdout}"
     );
     assert!(
-        stdout.contains("aristo canon refresh"),
+        stdout.contains("aristo stamp --refresh-canon"),
         "expected refresh hint; got: {stdout}"
     );
 }
