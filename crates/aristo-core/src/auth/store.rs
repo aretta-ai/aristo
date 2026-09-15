@@ -28,42 +28,6 @@ use super::token::Token;
 /// Filename inside the per-user config directory.
 pub const CREDENTIALS_FILENAME: &str = "credentials";
 
-/// Persist a token to the credentials file. Reads `$XDG_CONFIG_HOME`
-/// and `$HOME` from the process env to determine the destination
-/// path — same precedence as [`super::resolve::resolve_full`] so that
-/// `aristo auth login` and the next API call agree on which file to
-/// touch.
-pub fn save(token: &Token) -> io::Result<()> {
-    save_with(
-        token,
-        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
-        home_dir().as_deref(),
-    )
-}
-
-/// Persist with explicit home-dir override (no XDG override). Used by
-/// tests that pin behavior to a particular `$HOME` without touching
-/// `$XDG_CONFIG_HOME`.
-pub fn save_with_home(token: &Token, home_override: Option<&Path>) -> io::Result<()> {
-    save_with(token, None, home_override)
-}
-
-/// Persist a bare token with full env-var + home-dir overrides. Upserts
-/// a single entry keyed by the platform server — callers that know the
-/// server persist a full record via [`save_full_with`] instead.
-pub fn save_with(
-    token: &Token,
-    xdg_config_home: Option<&str>,
-    home_override: Option<&Path>,
-) -> io::Result<()> {
-    upsert_entry_with(
-        CredentialEntry::bare(token.clone(), super::server::ServerUrl::Prod),
-        xdg_config_home,
-        home_override,
-    )
-    .map(|_| ())
-}
-
 /// Remove the credentials file, if it exists. Idempotent — missing
 /// file is not an error.
 pub fn clear() -> io::Result<()> {
@@ -71,11 +35,6 @@ pub fn clear() -> io::Result<()> {
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
         home_dir().as_deref(),
     )
-}
-
-/// Clear with an explicit home-dir override (no XDG override).
-pub fn clear_with_home(home_override: Option<&Path>) -> io::Result<()> {
-    clear_with(None, home_override)
 }
 
 /// Clear with explicit env-var + home-dir overrides.
@@ -192,7 +151,7 @@ pub(super) struct AretaCredentials {
 }
 
 /// Full credentials record carried by the OAuth login flow into
-/// [`save_full_with`]. Mirrors the fields persisted on disk.
+/// [`save_full`]. Mirrors the fields persisted on disk.
 #[derive(Debug, Clone)]
 pub struct CredentialsRecord {
     pub token: Token,
@@ -204,20 +163,10 @@ pub struct CredentialsRecord {
 /// Persist a full credentials record (token + server + user). Upserts
 /// the entry for its server (see [`CredentialStore::upsert`]),
 /// migrating any older file and preserving other servers' entries. Reads env vars
-/// for path resolution; see [`save_full_with`] for the
-/// explicit-overrides variant used by tests. Returns what happened and
+/// for path resolution (tests use [`upsert_entry_with`]). Returns what happened and
 /// the store as saved, so a caller can tell the user.
 pub fn save_full(creds: &CredentialsRecord) -> io::Result<UpsertReport> {
     upsert_entry(creds.into())
-}
-
-/// Persist a full credentials record with explicit path overrides.
-pub fn save_full_with(
-    creds: &CredentialsRecord,
-    xdg_config_home: Option<&str>,
-    home_override: Option<&Path>,
-) -> io::Result<UpsertReport> {
-    upsert_entry_with(creds.into(), xdg_config_home, home_override)
 }
 
 // ─── the keyed store ─────────────────────────────────────────────────────────
@@ -644,7 +593,12 @@ mod tests {
     fn save_creates_parent_directory() {
         let env = TestEnv::new();
         assert!(!env.xdg.join("aristo").exists());
-        save_with(&Token::new("tok"), Some(env.xdg_str()), dummy_home()).unwrap();
+        upsert_entry_with(
+            entry(ACME, "tok", "2026-09-15T00:00:00Z"),
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
         assert!(env.creds.exists());
     }
 
@@ -653,7 +607,12 @@ mod tests {
     fn save_sets_owner_only_unix_perms() {
         use std::os::unix::fs::PermissionsExt;
         let env = TestEnv::new();
-        save_with(&Token::new("tok"), Some(env.xdg_str()), dummy_home()).unwrap();
+        upsert_entry_with(
+            entry(ACME, "tok", "2026-09-15T00:00:00Z"),
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
         let mode = fs::metadata(&env.creds).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "expected 0600, got {mode:o}");
     }
@@ -661,7 +620,12 @@ mod tests {
     #[test]
     fn clear_removes_file_and_is_idempotent() {
         let env = TestEnv::new();
-        save_with(&Token::new("tok"), Some(env.xdg_str()), dummy_home()).unwrap();
+        upsert_entry_with(
+            entry(ACME, "tok", "2026-09-15T00:00:00Z"),
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
         clear_with(Some(env.xdg_str()), dummy_home()).unwrap();
         assert!(!env.creds.exists());
         clear_with(Some(env.xdg_str()), dummy_home()).unwrap();
