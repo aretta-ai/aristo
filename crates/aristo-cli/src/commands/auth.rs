@@ -612,7 +612,7 @@ mod tests {
         let saved = entry("https://code.aretta.ai", Some("acme/widgets"), "t1");
         let one = store(vec![saved.clone()]);
         let v = login_verdict(&one, &saved, &plain);
-        assert!(v.contains("not a GitHub checkout (no .git/config"), "{v}");
+        assert!(v.contains("not a GitHub checkout (no git repository"), "{v}");
         assert!(v.contains("nothing resolves here"), "{v}");
         assert!(v.contains("run aristo from a acme/widgets checkout"), "{v}");
         assert!(v.contains("ARETTA_TOKEN"), "{v}");

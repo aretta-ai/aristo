@@ -258,7 +258,7 @@ fn status_outside_a_github_checkout_says_so_and_resolves_nothing() {
 
     let st = stdout(&run(&home, &plain, &["auth", "status"]));
     assert!(st.contains("not a GitHub checkout"), "status: {st}");
-    assert!(st.contains("no .git/config"), "status: {st}");
+    assert!(st.contains("no git repository"), "status: {st}");
     assert!(
         st.contains("resolves to: no stored credential (1 on file"),
         "no single-entry fallback: {st}"
