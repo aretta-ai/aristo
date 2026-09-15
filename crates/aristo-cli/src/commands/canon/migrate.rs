@@ -100,7 +100,7 @@ pub(crate) fn run() -> CliResult<()> {
 
     // Fixture (tests) wins, then the resolved credential; a resolver
     // failure is the command's error with the resolver's diagnosis.
-    let client = super::required_client("canon migrate")?;
+    let client = super::required_client("canon migrate", &ws.root)?;
 
     // Build the batched match request from canon-bound annotations.
     let request = CanonMatchRequest {

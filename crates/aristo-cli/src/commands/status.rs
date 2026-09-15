@@ -178,6 +178,10 @@ fn print_canon_health(ws: &crate::Workspace) {
         Err(aristo_core::canon::AuthError::EnvTokenWithoutServer) => {
             "ARETTA_TOKEN is set without ARETTA_API_URL".to_string()
         }
+        Err(
+            aristo_core::canon::AuthError::Unreachable { .. }
+            | aristo_core::canon::AuthError::RepoNotInOrg { .. },
+        ) => "signed in".to_string(),
         Err(aristo_core::canon::AuthError::SeveralServers { .. }) => {
             "signed in to several servers; pass --server or set ARETTA_API_URL (`aristo auth status`)"
                 .to_string()

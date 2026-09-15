@@ -53,15 +53,19 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 8;
 /// owned by the client.
 pub struct HttpCanonClient {
     base_url: String,
+    /// The org's repo name — the path segment every route is under.
+    repo: String,
     bearer_header: String,
     agent: ureq::Agent,
 }
 
 impl HttpCanonClient {
-    /// Construct a client. `base_url` should NOT end with `/` —
-    /// the client appends absolute paths (`/canon/match` etc.).
-    pub fn new(base_url: impl Into<String>, token: &Token) -> Self {
+    /// Construct a client. `base_url` should NOT end with `/`; `repo`
+    /// is the org's repo name (see [`crate::auth::repo_segment_for`]) —
+    /// the client builds `/<repo>/api/canon/...` paths under it.
+    pub fn new(base_url: impl Into<String>, token: &Token, repo: impl Into<String>) -> Self {
         let base_url = base_url.into();
+        let repo = repo.into();
         // Pre-compute the Bearer header so we don't reformat per
         // call. The token string is also embedded here; the original
         // Token's redacted Debug impl prevents leaks via the client's
@@ -82,18 +86,20 @@ impl HttpCanonClient {
 
         Self {
             base_url,
+            repo,
             bearer_header,
             agent,
         }
     }
 
     /// Construct with the production base URL.
-    pub fn production(token: &Token) -> Self {
-        Self::new(DEFAULT_BASE_URL, token)
+    pub fn production(token: &Token, repo: impl Into<String>) -> Self {
+        Self::new(DEFAULT_BASE_URL, token, repo)
     }
 
+    /// `<base>/<repo>/api<path>`.
     fn url(&self, path: &str) -> String {
-        format!("{}{}", self.base_url, path)
+        format!("{}/{}/api{}", self.base_url, self.repo, path)
     }
 
     fn post_json<Req, Resp>(&self, path: &str, body: &Req) -> Result<Resp, CanonError>
@@ -130,6 +136,7 @@ impl std::fmt::Debug for HttpCanonClient {
         // Redact bearer_header so Debug never prints the token.
         f.debug_struct("HttpCanonClient")
             .field("base_url", &self.base_url)
+            .field("repo", &self.repo)
             .field("bearer_header", &"Bearer <redacted>")
             .finish()
     }
@@ -157,7 +164,6 @@ impl CanonClient for HttpCanonClient {
     }
 
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
-        // Top-level conductor route (NOT under `/canon/`).
         self.get_json("/catalogue")
     }
 }
@@ -460,7 +466,7 @@ mod tests {
         // calls. Real request-path coverage lives in
         // tests/canon_http_e2e.rs against a localhost listener.
         let tok = Token::new("test-token");
-        let c = HttpCanonClient::new("https://example.test", &tok);
+        let c = HttpCanonClient::new("https://example.test", &tok, "widgets");
         assert_eq!(c.base_url, "https://example.test");
         // Bearer header is pre-computed.
         assert_eq!(c.bearer_header, "Bearer test-token");
@@ -469,7 +475,7 @@ mod tests {
     #[test]
     fn http_client_debug_redacts_token() {
         let tok = Token::new("super-secret-do-not-log");
-        let c = HttpCanonClient::new("https://example.test", &tok);
+        let c = HttpCanonClient::new("https://example.test", &tok, "widgets");
         let s = format!("{c:?}");
         assert!(
             !s.contains("super-secret-do-not-log"),
@@ -481,21 +487,25 @@ mod tests {
     #[test]
     fn http_client_url_construction() {
         let tok = Token::new("t");
-        let c = HttpCanonClient::new("https://api.example.test", &tok);
+        let c = HttpCanonClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
             c.url("/canon/match"),
-            "https://api.example.test/canon/match"
+            "https://api.example.test/widgets/api/canon/match"
         );
         assert_eq!(
             c.url("/canon/entry/foo"),
-            "https://api.example.test/canon/entry/foo"
+            "https://api.example.test/widgets/api/canon/entry/foo"
+        );
+        assert_eq!(
+            c.url("/catalogue"),
+            "https://api.example.test/widgets/api/catalogue"
         );
     }
 
     #[test]
     fn http_client_production_constructor_uses_default_base_url() {
         let tok = Token::new("t");
-        let c = HttpCanonClient::production(&tok);
+        let c = HttpCanonClient::production(&tok, "widgets");
         assert_eq!(c.base_url, DEFAULT_BASE_URL);
     }
 
@@ -505,8 +515,11 @@ mod tests {
         // Box<dyn CanonClient>. The trait requires Send + Sync;
         // ureq::Agent is Send + Sync as of 2.x / 3.x.
         let tok = Token::new("t");
-        let _boxed: Box<dyn CanonClient> =
-            Box::new(HttpCanonClient::new("https://example.test", &tok));
+        let _boxed: Box<dyn CanonClient> = Box::new(HttpCanonClient::new(
+            "https://example.test",
+            &tok,
+            "widgets",
+        ));
     }
 
     // ─── Sanity: real types round-trip through map_response ───────────────

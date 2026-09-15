@@ -27,7 +27,7 @@ pub(crate) fn run() -> CliResult<()> {
 
     // Fixture (tests) wins, then the resolved credential; a resolver
     // failure is the command's error with the resolver's diagnosis.
-    let client = super::required_client("canon catalogue")?;
+    let client = super::required_client("canon catalogue", &ws.root)?;
 
     let catalogue = client.catalogue().map_err(canon_error_to_cli)?;
 

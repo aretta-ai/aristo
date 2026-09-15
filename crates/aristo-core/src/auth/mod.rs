@@ -36,6 +36,7 @@
 pub mod error;
 pub mod git;
 pub mod oauth;
+pub mod org_repos;
 pub mod resolve;
 pub mod server;
 pub mod store;
@@ -44,6 +45,7 @@ pub mod token;
 pub use error::{login_command, AuthError, EntrySummary};
 pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
+pub use org_repos::{fetch_org_repos, repo_segment_for, OrgRepo, ORG_REPOS_PATH};
 pub use resolve::{resolve_full, resolve_full_with, ResolvedCreds, ENV_VAR, SERVER_ENV_VAR};
 pub use server::{data_plane_base, login_server, LoginServerSource, ServerUrl};
 pub use store::{

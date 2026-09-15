@@ -34,6 +34,21 @@ pub enum AuthError {
         /// The stored entries, token-free.
         entries: Vec<EntrySummary>,
     },
+    /// The org's server could not be reached (DNS, connect, timeout).
+    Unreachable {
+        /// The server (data-plane base) that was addressed.
+        server: String,
+        /// The transport's reason.
+        reason: String,
+    },
+    /// The checkout's GitHub repo is not one of the org's repos at this
+    /// server — the org's directory has no entry for it.
+    RepoNotInOrg {
+        /// The checkout's `owner/repo`.
+        github_repo: String,
+        /// The org's server.
+        server: String,
+    },
     /// `ARETTA_TOKEN` is set but `ARETTA_API_URL` is not. An env token
     /// carries no server, and the platform apex cannot serve an org's
     /// data plane, so the server must be named.
@@ -71,6 +86,17 @@ impl fmt::Display for AuthError {
             ),
             AuthError::Invalid => write!(f, "auth token rejected by server (expired or revoked)"),
             AuthError::Malformed(msg) => write!(f, "credentials malformed: {msg}"),
+            AuthError::Unreachable { server, reason } => {
+                write!(f, "could not reach {server}: {reason}")
+            }
+            AuthError::RepoNotInOrg {
+                github_repo,
+                server,
+            } => write!(
+                f,
+                "{github_repo} is not a repo of {server} — run from a checkout of one of the org's \
+                 repos, or set ARETTA_API_URL to the org that has it"
+            ),
             AuthError::EnvTokenWithoutServer => write!(
                 f,
                 "ARETTA_TOKEN is set but ARETTA_API_URL is not — set \

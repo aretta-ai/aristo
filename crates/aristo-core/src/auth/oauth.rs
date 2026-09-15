@@ -170,7 +170,7 @@ pub fn oauth_exchange(
 
 // ─── transport ─────────────────────────────────────────────────────────────
 
-fn build_agent() -> ureq::Agent {
+pub(crate) fn build_agent() -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
         .user_agent(format!("aristo/{}", env!("CARGO_PKG_VERSION")))
@@ -184,7 +184,7 @@ fn build_agent() -> ureq::Agent {
 
 /// Drive a ureq result through a JSON-body decode + status-code
 /// dispatch into an [`AuthError`].
-fn consume_response<T>(
+pub(crate) fn consume_response<T>(
     result: Result<HttpResponse<ureq::Body>, ureq::Error>,
 ) -> Result<T, AuthError>
 where
@@ -256,7 +256,7 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-fn read_body_capped(response: HttpResponse<ureq::Body>, cap: usize) -> String {
+pub(crate) fn read_body_capped(response: HttpResponse<ureq::Body>, cap: usize) -> String {
     use std::io::Read;
     let mut reader = response.into_body().into_reader();
     let mut buf = Vec::with_capacity(8 * 1024);

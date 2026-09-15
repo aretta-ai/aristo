@@ -36,13 +36,18 @@ pub const CANCEL_TIMEOUT_SECS: u64 = 5;
 /// HTTP-backed [`VerifyClient`].
 pub struct HttpVerifyClient {
     base_url: String,
+    /// The org's repo name — the path segment every route is under.
+    repo: String,
     bearer_header: String,
     agent: ureq::Agent,
 }
 
 impl HttpVerifyClient {
-    pub fn new(base_url: impl Into<String>, token: &Token) -> Self {
+    /// `repo` is the org's repo name (see
+    /// [`crate::auth::repo_segment_for`]); routes are `/<repo>/verify/...`.
+    pub fn new(base_url: impl Into<String>, token: &Token, repo: impl Into<String>) -> Self {
         let base_url = base_url.into();
+        let repo = repo.into();
         let bearer_header = format!("Bearer {}", token.as_str());
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
@@ -52,17 +57,19 @@ impl HttpVerifyClient {
         let agent: ureq::Agent = config.into();
         Self {
             base_url,
+            repo,
             bearer_header,
             agent,
         }
     }
 
-    pub fn production(token: &Token) -> Self {
-        Self::new(DEFAULT_BASE_URL, token)
+    pub fn production(token: &Token, repo: impl Into<String>) -> Self {
+        Self::new(DEFAULT_BASE_URL, token, repo)
     }
 
+    /// `<base>/<repo><path>`.
     fn url(&self, path: &str) -> String {
-        format!("{}{}", self.base_url, path)
+        format!("{}/{}{}", self.base_url, self.repo, path)
     }
 
     fn post_json<Req, Resp>(&self, path: &str, body: &Req) -> Result<Resp, VerifyError>
@@ -98,6 +105,7 @@ impl std::fmt::Debug for HttpVerifyClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HttpVerifyClient")
             .field("base_url", &self.base_url)
+            .field("repo", &self.repo)
             .field("bearer_header", &"Bearer <redacted>")
             .finish()
     }
@@ -153,8 +161,8 @@ impl VerifyClient for HttpVerifyClient {
     }
 }
 
-/// Path for `POST /verify/sessions/:id/cancel` (relative to the
-/// data-plane base URL).
+/// Path for `POST /<repo>/verify/sessions/:id/cancel` (relative to the
+/// client's `<base>/<repo>`).
 fn cancel_path(session_id: &str) -> String {
     format!("/verify/sessions/{}/cancel", url_encode(session_id))
 }
@@ -349,7 +357,7 @@ mod tests {
     #[test]
     fn http_client_construction_does_not_panic() {
         let tok = Token::new("test-token");
-        let c = HttpVerifyClient::new("https://example.test", &tok);
+        let c = HttpVerifyClient::new("https://example.test", &tok, "widgets");
         assert_eq!(c.base_url, "https://example.test");
         assert_eq!(c.bearer_header, "Bearer test-token");
     }
@@ -357,7 +365,7 @@ mod tests {
     #[test]
     fn http_client_debug_redacts_token() {
         let tok = Token::new("super-secret-do-not-log");
-        let c = HttpVerifyClient::new("https://example.test", &tok);
+        let c = HttpVerifyClient::new("https://example.test", &tok, "widgets");
         let s = format!("{c:?}");
         assert!(
             !s.contains("super-secret-do-not-log"),
@@ -369,8 +377,11 @@ mod tests {
     #[test]
     fn http_client_is_send_and_object_safe() {
         let tok = Token::new("t");
-        let _: Box<dyn VerifyClient> =
-            Box::new(HttpVerifyClient::new("https://example.test", &tok));
+        let _: Box<dyn VerifyClient> = Box::new(HttpVerifyClient::new(
+            "https://example.test",
+            &tok,
+            "widgets",
+        ));
     }
 
     #[test]
@@ -381,6 +392,20 @@ mod tests {
         );
         // Defensive: a hostile session id can't smuggle path segments.
         assert_eq!(cancel_path("a/b"), "/verify/sessions/a%2Fb/cancel");
+    }
+
+    #[test]
+    fn urls_are_under_the_repo_segment() {
+        let tok = Token::new("t");
+        let c = HttpVerifyClient::new("https://api.example.test", &tok, "widgets");
+        assert_eq!(
+            c.url("/verify/sessions"),
+            "https://api.example.test/widgets/verify/sessions"
+        );
+        assert_eq!(
+            c.url(&cancel_path("s1")),
+            "https://api.example.test/widgets/verify/sessions/s1/cancel"
+        );
     }
 
     #[test]

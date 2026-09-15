@@ -258,20 +258,12 @@ pub(crate) fn run_canon_dispatch(
         return Ok(0);
     }
 
-    // 3. Resolve repo + commit_sha via git.
-    let repo_full_name = match aristo_core::auth::derive_repo_full_name(workspace_root) {
-        Ok(r) => r,
-        Err(e) => {
-            // ARISTO_REPO env override as a CI escape hatch.
-            std::env::var("ARISTO_REPO").map_err(|_| CliError::Other {
-                message: format!(
-                    "could not determine repo for verify: {e}\n  \
-                     Set ARISTO_REPO=<owner/repo> to override (CI use)."
-                ),
-                exit_code: 1,
-            })?
-        }
-    };
+    // 3. Resolve repo + commit_sha via git (ARISTO_REPO overrides the repo).
+    let repo_full_name =
+        crate::data_plane::github_repo_for(workspace_root).map_err(|e| CliError::Other {
+            message: format!("could not determine repo for verify: {e}"),
+            exit_code: 1,
+        })?;
     let commit_sha =
         aristo_core::git::rev_parse_head(workspace_root).map_err(|e| CliError::Other {
             message: format!("git rev-parse HEAD failed: {e}"),
@@ -298,13 +290,14 @@ pub(crate) fn run_canon_dispatch(
         });
     }
 
-    // 5. Build the HTTP client. Data-plane base: ARETTA_API_URL >
-    //    the credential's server.
-    let base_url = crate::data_plane::resolve_base(&creds.server);
+    // 5. Build the HTTP client at `<base>/<repo>/...` (the org's repo
+    //    name for this checkout, from the org's directory).
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {
-        Box::new(HttpVerifyClient::new(base_url, &creds.token))
+        let t = crate::data_plane::resolve_target(&creds, workspace_root)
+            .map_err(no_auth_to_cli_error)?;
+        Box::new(HttpVerifyClient::new(t.base_url, &creds.token, t.repo))
     };
 
     // 6. POST.
@@ -368,11 +361,12 @@ fn exit_error_for(verdict: &waiver::WaiverVerdict) -> CliError {
 /// Skips POST + push-first precheck entirely.
 pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     let creds = aristo_core::auth::resolve_full().map_err(no_auth_to_cli_error)?;
-    let base_url = crate::data_plane::resolve_base(&creds.server);
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {
-        Box::new(HttpVerifyClient::new(base_url, &creds.token))
+        let start = crate::data_plane::checkout_start();
+        let t = crate::data_plane::resolve_target(&creds, &start).map_err(no_auth_to_cli_error)?;
+        Box::new(HttpVerifyClient::new(t.base_url, &creds.token, t.repo))
     };
 
     let snapshot = if wait {

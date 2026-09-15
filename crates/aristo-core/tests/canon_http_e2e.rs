@@ -151,7 +151,7 @@ fn match_annotations_happy_path_round_trips() {
     });
 
     let token = Token::new("e2e-test-token");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let req = CanonMatchRequest {
         annotations: vec![AnnotationMatchInput {
             annotation_text: "each cell should be written exactly once per page edit".into(),
@@ -175,7 +175,7 @@ fn match_annotations_happy_path_round_trips() {
     // Server-side assertions: confirm the SDK actually sent the right shape.
     let record = server.join().expect("server thread");
     assert_eq!(record.method, "POST");
-    assert_eq!(record.path, "/canon/match");
+    assert_eq!(record.path, "/widgets/api/canon/match");
     assert_eq!(
         record.authorization.as_deref(),
         Some("Bearer e2e-test-token")
@@ -262,13 +262,13 @@ fn get_entry_with_version_sends_query_param() {
     });
 
     let token = Token::new("e2e-test-token");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let entry = client.get_entry("foo", Some("v0.2.1")).expect("get_entry");
     assert_eq!(entry, canned_entry);
 
     let record = server.join().unwrap();
     assert_eq!(record.method, "GET");
-    assert_eq!(record.path, "/canon/entry/foo?version=v0.2.1");
+    assert_eq!(record.path, "/widgets/api/canon/entry/foo?version=v0.2.1");
 }
 
 #[test]
@@ -281,11 +281,11 @@ fn get_entry_without_version_omits_query_param() {
     });
 
     let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let _entry = client.get_entry("bar", None).expect("get_entry");
 
     let record = server.join().unwrap();
-    assert_eq!(record.path, "/canon/entry/bar");
+    assert_eq!(record.path, "/widgets/api/canon/entry/bar");
 }
 
 // ─── End-to-end: POST /canon/request-verify ───────────────────────────────
@@ -305,7 +305,7 @@ fn request_verify_round_trips_with_optional_note() {
     });
 
     let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let resp = client
         .request_verify(&RequestVerifyBody {
             canon_id: "foo".into(),
@@ -316,7 +316,7 @@ fn request_verify_round_trips_with_optional_note() {
 
     let record = server.join().unwrap();
     assert_eq!(record.method, "POST");
-    assert_eq!(record.path, "/canon/request-verify");
+    assert_eq!(record.path, "/widgets/api/canon/request-verify");
     let sent: RequestVerifyBody = serde_json::from_str(&record.body).unwrap();
     assert_eq!(sent.canon_id, "foo");
     assert_eq!(sent.notes.as_deref(), Some("important for our audit"));
@@ -332,7 +332,7 @@ fn server_401_maps_to_auth_invalid() {
     });
 
     let token = Token::new("expired-token");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let err = client
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
@@ -355,7 +355,7 @@ fn server_400_carries_message_body() {
     });
 
     let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let err = client
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
@@ -386,7 +386,7 @@ fn server_500_maps_to_server_error() {
     });
 
     let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let err = client
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
@@ -422,7 +422,7 @@ fn unreachable_server_maps_to_network_error() {
     let base = format!("http://{addr}");
 
     let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let err = client
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
@@ -446,7 +446,7 @@ fn malformed_response_body_maps_to_decode_error() {
     });
 
     let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token);
+    let client = HttpCanonClient::new(base, &token, "widgets");
     let err = client
         .match_annotations(&CanonMatchRequest {
             annotations: vec![],
