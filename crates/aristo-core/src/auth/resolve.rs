@@ -85,7 +85,14 @@ pub fn resolve_full() -> Result<ResolvedCreds, AuthError> {
 /// matched rather than a bare "no token".
 pub fn cwd_checkout() -> Result<String, String> {
     let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {e}"))?;
-    super::git::derive_repo_full_name(&cwd).map_err(|e| match e {
+    checkout_at(&cwd)
+}
+
+/// [`cwd_checkout`] for an explicit directory — the same derivation
+/// and the same failure text, so a CLI verdict about "this checkout"
+/// cannot disagree with what the resolver did.
+pub fn checkout_at(dir: &Path) -> Result<String, String> {
+    super::git::derive_repo_full_name(dir).map_err(|e| match e {
         AuthError::Malformed(why) => why,
         other => other.to_string(),
     })

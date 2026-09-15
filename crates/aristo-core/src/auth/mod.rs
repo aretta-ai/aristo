@@ -48,7 +48,7 @@ pub use error::{AuthError, EntrySummary};
 pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
 pub use resolve::{
-    cwd_checkout, resolve, resolve_full, resolve_full_for_checkout, resolve_full_with,
+    checkout_at, cwd_checkout, resolve, resolve_full, resolve_full_for_checkout, resolve_full_with,
     resolve_with, ResolvedCreds, ENV_VAR,
 };
 pub use server::{
@@ -58,6 +58,6 @@ pub use store::{
     clear, clear_with, clear_with_home, config_dir, credentials_path, load_store, load_store_with,
     save, save_full, save_full_with, save_store, save_store_with, save_with, save_with_home,
     upsert_entry, upsert_entry_with, CredentialEntry, CredentialStore, CredentialsRecord,
-    CREDENTIALS_FILENAME,
+    UpsertOutcome, UpsertReport, CREDENTIALS_FILENAME,
 };
 pub use token::Token;
