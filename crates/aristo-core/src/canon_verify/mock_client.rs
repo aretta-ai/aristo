@@ -331,8 +331,8 @@ mod tests {
     #[test]
     fn post_error_propagates() {
         let mock = MockVerifyClient::with_post_error(VerifyError::BadRequest {
-            status: 402,
-            message: "no_canon_coverage".into(),
+            status: 409,
+            message: "conflict".into(),
         });
         let req = VerifySessionRequest {
             repo_full_name: "o/r".into(),
@@ -340,8 +340,8 @@ mod tests {
             tags: vec![one_tag()],
         };
         match mock.post_session(&req).unwrap_err() {
-            VerifyError::BadRequest { status: 402, .. } => {}
-            other => panic!("expected BadRequest 402, got {other:?}"),
+            VerifyError::BadRequest { status: 409, .. } => {}
+            other => panic!("expected BadRequest 409, got {other:?}"),
         }
         // Even on error, the request is recorded.
         assert_eq!(mock.posted_requests().len(), 1);

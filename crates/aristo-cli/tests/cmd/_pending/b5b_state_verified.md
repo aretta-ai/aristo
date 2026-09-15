@@ -2,14 +2,14 @@
 
 Source: `../aretta-sdk/docs/mockups/09-signature-scheme/cli-sessions.md` § "State 1: verified — the happy path".
 
-The happy path: `aristo verify` runs HQ verification on the paid tier, receives an Ed25519-signed `verified_outcome` from the server, writes it into the index. Subsequent `aristo stamp` runs offline-revalidate every signature each invocation. `aristo show` exposes the certificate block.
+The happy path: `aristo verify` runs HQ verification on the server, receives an Ed25519-signed `verified_outcome` from the server, writes it into the index. Subsequent `aristo stamp` runs offline-revalidate every signature each invocation. `aristo show` exposes the certificate block.
 
 ## Initial sync + verify (server issues `verified_outcome`)
 
 ```console
 $ aristo verify --filter id=aristos:balance_no_duplicate_cells
 
-→ Authenticating with aretta.dev … ok (Pro tier, [..] credits remaining)
+→ Authenticating with aretta.dev … ok
 → Uploading annotation + covered region (core/storage/btree.rs::balance_non_root) … [..] KB
 → Running HQ full-verification … [..]s
   method:     refinement proof against btree model

@@ -527,7 +527,7 @@ fn parent_ids(entry: &IndexEntry) -> Option<&aristo_core::index::ParentLink> {
 )]
 #[aristo::intent(
     "Bool(true) resolves through the project's [verify].default_method \
-     and falls back to the free-tier default (\"test\") when absent. \
+     and falls back to the default (\"test\") when absent. \
      A refactor that hard-codes either side would silently change \
      verification depth for every annotation that opted into the \
      project default — those are precisely the entries where the \
@@ -544,7 +544,7 @@ fn resolve_verify_level(entry: &IndexEntry, cfg: &ConfigFile) -> VerifyLevel {
     match raw {
         VerifyLevel::Bool(true) => match cfg.verify.default_method {
             Some(m) => VerifyLevel::Method(m),
-            None => VerifyLevel::Method(VerifyMethod::Test), // free-tier default
+            None => VerifyLevel::Method(VerifyMethod::Test), // the default
         },
         other => other,
     }
@@ -674,7 +674,7 @@ mod tests {
     #[test]
     fn counts_toward_canon_dispatch_resolves_bool_true_through_project_default() {
         // verify=true defers to the project default — a default of
-        // "full" makes a canon-bound entry count; the free-tier "test"
+        // "full" makes a canon-bound entry count; the "test"
         // fallback does not.
         let (id, entry) = intent("kanon:bar", VerifyLevel::Bool(true), Status::Unknown);
         let mut cfg = ConfigFile::default();

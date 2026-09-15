@@ -39,7 +39,7 @@ const RUST_CHEAT_SHEET: &str = "\
   false      | documentation only; no check ever runs
   \"neural\"   | AI-reasoned property check
   \"test\"     | mined assertions + existing test suite
-  \"full\"     | server formal proof attempt (paid tier)
+  \"full\"     | server formal proof attempt
   true       | resolves to project default in aristo.toml [verify] default_method
 
 ## Namespace prefix
@@ -80,7 +80,7 @@ from its directive by a doc-comment block. Resolves by name anywhere in the file
   false      | documentation only; no check ever runs
   \"neural\"   | AI-reasoned property check
   \"test\"     | mined assertions + existing test suite
-  \"full\"     | server formal proof attempt (paid tier)
+  \"full\"     | server formal proof attempt
   true       | resolves to project default in aristo.toml [verify] default_method
 
 ## Namespace prefix

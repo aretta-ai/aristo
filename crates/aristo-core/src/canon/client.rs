@@ -4,9 +4,9 @@
 //!
 //! - [`HttpCanonClient`](super::http_client) — real HTTP via
 //!   `reqwest`. Lands in PR #3.
-//! - [`NoopCanonClient`](super::noop_client) — free-tier path; every
+//! - [`NoopCanonClient`](super::noop_client) — opt-out path; every
 //!   method returns [`CanonError::NotEnabled`] so the caller can
-//!   surface a tier-appropriate upgrade nudge without branching on
+//!   skip silently without branching on
 //!   `Option<dyn CanonClient>`.
 //! - [`MockCanonClient`](super::mock_client) — TOML-fixture-driven
 //!   for tests. Reads canned responses from a directory pointed to

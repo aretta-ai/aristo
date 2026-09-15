@@ -11,7 +11,7 @@ Source: `../aretta-sdk/docs/diagrams/03-verify-execution.mmd` § `rr=yes → kee
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 → Mining assertions via aristo-mine-assertions skill ([..]) … 3 generated
 [..]
 ok: 3 annotations verified (method: test).
@@ -23,7 +23,7 @@ ok: 3 annotations verified (method: test).
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 note: 3 annotations are already in a clean verified/tested state; skipping
       (use `--rerun` to force re-verification).
 
@@ -36,7 +36,7 @@ ok: 0 annotations verified, 3 skipped (already clean).
 ```console
 $ aristo verify --rerun
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 note: --rerun set — re-verifying 3 entries already in a clean state.
 
 → Mining assertions via aristo-mine-assertions skill ([..]) … 3 generated
@@ -59,7 +59,7 @@ ok: 3 annotations verified (method: test).
 ```console
 $ aristo verify --rerun --filter status=verified
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 note: --rerun set — re-verifying 3 entries already in a clean state.
 
 → Mining assertions via aristo-mine-assertions skill ([..]) … 3 generated

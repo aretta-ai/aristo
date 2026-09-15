@@ -1586,19 +1586,6 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
             ),
             exit_code: 1,
         },
-        VerifyError::BadRequest {
-            status: 402,
-            message,
-        } => CliError::Other {
-            message: format!(
-                "no canon coverage applies for your scopes — verification \
-                 requires Aretta DP onboarding.\n  \
-                 Contact Aretta at hello@aretta.ai (https://aretta.ai) to \
-                 enable it.\n  \
-                 (server message: {message})"
-            ),
-            exit_code: 1,
-        },
         VerifyError::BadRequest { status, message } => CliError::Other {
             message: format!("verify server rejected request (HTTP {status}): {message}"),
             exit_code: 1,
@@ -2539,29 +2526,6 @@ mod tests {
     }
 
     #[test]
-    fn verify_402_names_a_concrete_contact_channel() {
-        // "contact Aretta" with no channel is a dead end for a paying
-        // prospect. Pin the concrete pointers (the repo's canonical
-        // contact address + site).
-        let msg = other_message(verify_error_to_cli(VerifyError::BadRequest {
-            status: 402,
-            message: "no_canon_coverage".into(),
-        }));
-        assert!(
-            msg.contains("hello@aretta.ai"),
-            "402 must name the contact address: {msg}"
-        );
-        assert!(
-            msg.contains("https://aretta.ai"),
-            "402 must name the site: {msg}"
-        );
-        assert!(
-            msg.contains("no_canon_coverage"),
-            "server message must still be surfaced: {msg}"
-        );
-    }
-
-    #[test]
     fn cancel_best_effort_requests_cancel_and_reports_success() {
         let mock = MockVerifyClient::with_get_results(vec![]);
         assert!(cancel_best_effort(&mock, "01HMINT"));
@@ -2622,8 +2586,8 @@ mod tests {
     fn dispatch_session_propagates_server_error() {
         let mock =
             aristo_core::canon_verify::MockVerifyClient::with_post_error(VerifyError::BadRequest {
-                status: 402,
-                message: "no_canon_coverage".into(),
+                status: 409,
+                message: "conflict".into(),
             });
         let req = VerifySessionRequest {
             repo_full_name: "o/r".into(),
@@ -2632,8 +2596,8 @@ mod tests {
         };
         let err = dispatch_session(&mock, &req).unwrap_err();
         match err {
-            VerifyError::BadRequest { status: 402, .. } => {}
-            other => panic!("expected BadRequest 402, got {other:?}"),
+            VerifyError::BadRequest { status: 409, .. } => {}
+            other => panic!("expected BadRequest 409, got {other:?}"),
         }
     }
 }

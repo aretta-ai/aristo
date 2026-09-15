@@ -30,7 +30,7 @@ Detected language: Rust (from Cargo.toml at [..]/Cargo.toml)
   false      | documentation only; no check ever runs
   "neural"   | AI-reasoned property check
   "test"     | mined assertions + existing test suite
-  "full"     | server formal proof attempt (paid tier)
+  "full"     | server formal proof attempt
   true       | resolves to project default in aristo.toml [verify] default_method
 
 ## Namespace prefix

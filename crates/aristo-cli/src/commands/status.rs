@@ -305,7 +305,7 @@ fn default_verify_for_display(ws: &crate::Workspace) -> String {
         Some(VerifyMethod::Neural) => "\"neural\"".to_string(),
         Some(VerifyMethod::Test) => "\"test\"".to_string(),
         Some(VerifyMethod::Full) => "\"full\"".to_string(),
-        None => "(per-tier default)".to_string(),
+        None => "\"test\" (default)".to_string(),
     }
 }
 

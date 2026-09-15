@@ -65,7 +65,7 @@ enum Commands {
 
         /// Also write the nightly/manual verify workflow
         /// (`.github/workflows/aristo-verify.yml`). Needs an `ARETTA_TOKEN` repo
-        /// secret (paid tier). Implies `--ci`.
+        /// secret. Implies `--ci`.
         #[arg(long)]
         ci_verify: bool,
 
@@ -603,9 +603,9 @@ enum Commands {
         action: SessionAction,
     },
 
-    /// Sign in to the Aretta canon API. Required for `aristo stamp`
-    /// and `aristo critique` to see canon matches on the Pro /
-    /// Enterprise tiers.
+    /// Sign in to your org's Aretta server. Required for `aristo stamp`
+    /// and `aristo critique` to see canon matches, and for `aristo verify`
+    /// to dispatch server sessions.
     Auth {
         #[command(subcommand)]
         action: AuthAction,

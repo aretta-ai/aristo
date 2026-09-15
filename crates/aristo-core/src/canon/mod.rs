@@ -12,7 +12,7 @@
 //!   (fixtures + on-disk cache).
 //! - [`client`]: the [`CanonClient`] trait + [`CanonError`] +
 //!   [`AuthError`].
-//! - [`noop_client`]: [`NoopCanonClient`] — free-tier / opt-out
+//! - [`noop_client`]: [`NoopCanonClient`] — the opt-out
 //!   path; every method returns [`CanonError::NotEnabled`].
 //! - [`mock_client`]: [`MockCanonClient`] — fixture-driven for
 //!   tests; reads canned TOML from `ARISTO_CANON_FIXTURE` or an

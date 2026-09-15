@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Removed
+- **The tier vocabulary, end to end.** No plan, trial, quota or credit exists on either side, so nothing names one any more: `aristo lang` no longer labels `"full"` as "(paid tier)", `aristo status` prints `Default verify: "test" (default)` instead of "(per-tier default)", the `aristo init --ci-verify` help and the `aristo auth` help drop "paid tier" / "Pro / Enterprise", library docs stop describing a free tier, and the special-cased HTTP 402 "no canon coverage — DP onboarding" message in `aristo verify` is gone (the server emits no 402; any 4xx renders with its own message).
+
 ### Changed
 - docs(skills): the `aristo-help`, `aristo-verify` and `aristo-catalogue` skills instruct `aristo auth login --server https://<org>.aretta.ai` (no repo).
 - **canon and verify address the org's repo by name: `<server>/<repo>/verify/sessions…` and `<server>/<repo>/api/canon/…` / `<repo>/api/catalogue`.** The CLI reads the org's repo directory (`GET /_org/api/repos`) once per server-touching command and matches the checkout's GitHub `owner/repo` (git derivation, or `ARISTO_REPO`) to the conductor's repo name. A checkout the org does not have is reported as `<owner/repo> is not a repo of <server>`; an unreachable server as `could not reach <server>: …`. The bare `/verify/*`, `/canon/match` and `/catalogue` paths are no longer called. Library: `HttpCanonClient::new` / `HttpVerifyClient::new` take the repo name; `auth::{fetch_org_repos, repo_segment_for, OrgRepo}`; `AuthError::{RepoNotInOrg, Unreachable}`.

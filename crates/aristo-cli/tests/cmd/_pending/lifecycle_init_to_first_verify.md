@@ -1,8 +1,8 @@
-# Workflow: bootstrap a fresh project + first verify (free tier)
+# Workflow: bootstrap a fresh project + first verify (local skills)
 
 Source: `../aretta-sdk/docs/diagrams/01-lifecycle.mmd` § "1 · Setup" + "2 · Daily authoring loop".
 
-Walks the canonical first-time path: `aristo init` → install skills for the user's agent → developer adds an annotation → pre-commit-hook-equivalent `aristo stamp` runs → `aristo verify` runs free-tier locally.
+Walks the canonical first-time path: `aristo init` → install skills for the user's agent → developer adds an annotation → pre-commit-hook-equivalent `aristo stamp` runs → `aristo verify` runs local locally.
 
 This scenario is a multi-step trycmd that establishes the integration contract between the four commands. Each step's standalone behavior is captured in the per-command scenarios; this file asserts they compose end-to-end.
 

@@ -12,7 +12,7 @@
 //! | `ARISTO_CANON_FIXTURE` set | [`MockCanonClient`] | reads canned TOML fixtures (test mode) |
 //! | `[canon] enabled = false` | [`NoopCanonClient`] | silent skip — opt-out for regulated buyers |
 //! | `--skip-canon` flag | [`NoopCanonClient`] | silent skip — per-invocation opt-out |
-//! | Auth token resolves | [`HttpCanonClient`] | real API call (Pro / Enterprise) |
+//! | Auth token resolves | [`HttpCanonClient`] | real API call |
 //! | Nothing on file (`NoToken`) | none | not signed in; runner prints the sign-in hint |
 //! | Credentials on file, none usable | none | signed-in path; runner prints the resolver's diagnosis + remedies, never the nudge |
 //!

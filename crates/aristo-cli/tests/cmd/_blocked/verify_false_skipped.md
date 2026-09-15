@@ -11,7 +11,7 @@ The contrast with `verify = "neural"` / `"test"` / `"full"` is the test below: `
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 
 note: 4 annotations are marked verify = false (documentation only); skipped.
       • module_intent              (src/lib.rs:[..])
@@ -28,7 +28,7 @@ ok: 0 annotations verified, 4 skipped (documentation only).
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 
 note: 1 annotation is marked verify = false (documentation only); skipped.
       • module_layout_assume       (src/lib.rs:[..])

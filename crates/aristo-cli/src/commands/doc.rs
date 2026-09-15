@@ -624,7 +624,7 @@ mod tests {
         assert_eq!(c.verify_false, 1);
         assert_eq!(c.verify_neural, 1);
         // `true` resolves to the project default at run time, but the
-        // static summary counts it under "test" (the free-tier default).
+        // static summary counts it under "test" (the default).
         assert_eq!(c.verify_test, 2);
         assert_eq!(c.verify_full, 1);
     }

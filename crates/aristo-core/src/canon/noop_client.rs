@@ -1,10 +1,9 @@
-//! [`NoopCanonClient`] — free-tier and opt-out path.
+//! [`NoopCanonClient`] — the opt-out path.
 //!
 //! Returns [`CanonError::NotEnabled`] for every method. Callers
 //! constructing a [`CanonClient`] at startup
 //! pick this impl when:
 //!
-//! - The user is on the free tier (no auth token, no upgrade).
 //! - `aristo.toml [canon] enabled = false` (regulated buyers,
 //!   air-gapped CI).
 //! - Build configuration explicitly disables canon (uncommon; the
@@ -14,8 +13,7 @@
 //! always-`?`-up the error, without branching on
 //! `Option<dyn CanonClient>`. The `NotEnabled` variant carries no
 //! payload; the calling command (`stamp`, `critique`, `canon show`)
-//! decides whether to surface a one-line nudge ("canon is a Pro
-//! feature; …") or skip silently.
+//! decides whether to say why it skipped, or skip silently.
 
 use super::client::{CanonClient, CanonError};
 use super::types::{

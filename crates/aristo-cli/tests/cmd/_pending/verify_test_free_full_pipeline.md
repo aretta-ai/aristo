@@ -1,8 +1,8 @@
-# `aristo verify` — `verify = "test"` on free tier (full mining pipeline)
+# `aristo verify` — `verify = "test"` with local skills (full mining pipeline)
 
 Source: `../aretta-sdk/docs/diagrams/03-verify-execution.mmd` § `t_tier=Free → t_free → t_spec → t_feat → t_ct → out_status`.
 
-The free-tier `verify = "test"` path is the full local mining pipeline:
+The local `verify = "test"` path is the full local mining pipeline:
 
 1. `t_free` — invoke `aristo-mine-assertions` skill via the host coding agent
 2. `t_spec` — write the mined assertion to `.aristo/specs/<id>.spec`
@@ -10,7 +10,7 @@ The free-tier `verify = "test"` path is the full local mining pipeline:
 4. `t_ct` — run `cargo test` (existing test suite) with assertions injected via the macro
 5. `out_status` — record the per-annotation verdict in the index entry's `status`
 
-This scenario is the **clean baseline** for the path. The J4 free-tier `"full"`-downgrade scenario (`verify_free_tier_downgrade.md`) shows the same pipeline reached via a downgrade *note*; this scenario shows it as the developer's primary observable on annotations they explicitly tagged `verify = "test"`.
+This scenario is the **clean baseline** for the path. The J4 local `"full"`-downgrade scenario (`verify_free_tier_downgrade.md`) shows the same pipeline reached via a downgrade *note*; this scenario shows it as the developer's primary observable on annotations they explicitly tagged `verify = "test"`.
 
 The spec file is the load-bearing intermediate artifact: present after the run, used by `cargo test --features aristo_verify` to inject assertions, and re-used on subsequent runs (per the diagram's `spcs ... include via fv` edge in `02-state-map.mmd`).
 
@@ -19,7 +19,7 @@ The spec file is the load-bearing intermediate artifact: present after the run, 
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 
 → Mining assertions via aristo-mine-assertions skill ([..]) … 3 generated
   • rebalance_postcondition   → .aristo/specs/[..].spec
@@ -59,7 +59,7 @@ rebalance_postcondition (intent)
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 note: 3 annotations are already in a clean verified/tested state; skipping
       (use `--rerun` to force re-verification).
 

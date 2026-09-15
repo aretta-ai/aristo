@@ -72,7 +72,6 @@ pub enum VerifyError {
     /// bodies for the documented cases:
     ///
     /// - 400 `no_eligible_tags` (every tag filtered out server-side)
-    /// - 402 `no_canon_coverage` (plan-empty per §7b)
     /// - 404 `not_found` (GET on a session_id the proxy doesn't know)
     /// - 422 unsupported test_kind
     BadRequest { status: u16, message: String },
@@ -125,10 +124,10 @@ mod tests {
             .contains("aristo auth login"));
         assert!(VerifyError::Timeout.to_string().contains("timed out"));
         assert!(VerifyError::BadRequest {
-            status: 402,
-            message: "no_canon_coverage".into()
+            status: 409,
+            message: "conflict".into()
         }
         .to_string()
-        .contains("402"));
+        .contains("409"));
     }
 }
