@@ -299,14 +299,8 @@ fn login_verdict(store: &CredentialStore, saved: &CredentialEntry, dir: &Path) -
         (Ok(repo), false) => {
             format!("this checkout ({repo}) will NOT resolve to this entry — {remedy}")
         }
-        (Err(why), true) => format!(
-            "this directory is not a GitHub checkout ({why}); as the sole entry on file, \
-             this entry still resolves here."
-        ),
-        (Err(why), false) => format!(
-            "this directory is not a GitHub checkout ({why}); with {} entries on file \
-             nothing resolves here — {remedy}",
-            store.len()
+        (Err(why), _) => format!(
+            "this directory is not a GitHub checkout ({why}); nothing resolves here — {remedy}"
         ),
     }
 }
@@ -321,11 +315,7 @@ fn status_verdict(store: &CredentialStore, dir: &Path) -> String {
             "this checkout ({repo}) resolves to: no stored credential — \
              run `aristo auth login --repo {repo}` here, or set ARETTA_TOKEN."
         ),
-        (Err(why), Some(e)) => format!(
-            "this directory is not a GitHub checkout ({why}) — resolves to: {} (the sole entry)",
-            entry_key(e)
-        ),
-        (Err(why), None) => format!(
+        (Err(why), _) => format!(
             "this directory is not a GitHub checkout ({why}) — resolves to: no stored \
              credential ({} on file; run from a checkout of one of them, or set ARETTA_TOKEN).",
             store.len()
@@ -521,8 +511,7 @@ fn status() -> CliResult<()> {
 /// cleanly into a clipboard tool (`aristo auth token | pbcopy`) or a CI
 /// secret. Unlike `status`, this deliberately prints the secret value, so
 /// it's only ever written to stdout on explicit request. Resolves the
-/// entry for `--repo` (or the cwd's repo), falling back to the sole
-/// stored entry.
+/// entry for `--repo` (or the cwd's repo); nothing else.
 fn token(repo_flag: Option<String>) -> CliResult<()> {
     // Env var wins outright (CI precedence), like `resolve`.
     if let Ok(v) = std::env::var(auth::ENV_VAR) {
@@ -543,10 +532,9 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
             exit_code: 1,
         });
     }
-    // An explicit `--repo` must match strictly — no single-entry
-    // fallback, so asking for a repo you're not logged in to errors
-    // rather than silently handing back a different repo's token. With
-    // no `--repo`, prefer the cwd's repo, else the sole stored entry.
+    // `--repo` or the cwd's repo, matched strictly — asking for a repo
+    // you're not logged in to errors rather than silently handing back
+    // a different repo's token.
     let entry = if let Some(raw) = repo_flag {
         let repo = validate_repo_flag(&raw)?;
         match store.find_by_repo(&repo) {
@@ -565,10 +553,7 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
         let cwd_repo = std::env::current_dir()
             .ok()
             .and_then(|cwd| derive_repo_full_name(&cwd).ok());
-        cwd_repo
-            .as_deref()
-            .and_then(|r| store.find_by_repo(r))
-            .or_else(|| store.sole())
+        cwd_repo.as_deref().and_then(|r| store.find_by_repo(r))
     };
     match entry {
         Some(e) => {
@@ -576,8 +561,8 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
             Ok(())
         }
         None => Err(CliError::Other {
-            message: "several credentials stored — pass `--repo <owner/repo>` to pick one \
-                      (or `aristo auth status` to list)."
+            message: "no credential for this checkout — pass `--repo <owner/repo>` to pick one \
+                      (or `aristo auth status` to list what's stored)."
                 .into(),
             exit_code: 1,
         }),
@@ -621,32 +606,22 @@ fn logout(all: bool, repo_flag: Option<String>) -> CliResult<()> {
         return Ok(());
     }
 
-    // Which entry? `--repo` / the cwd repo; or the sole entry when that
-    // is unambiguous (single-repo convenience).
-    let repo_hint = resolve_repo_best_effort(repo_flag)?;
-    let removed_label = match &repo_hint {
-        Some(r) => {
-            if store.remove_by_repo(r) == 0 {
-                println!("ok: no credential for {r} to remove (nothing changed).");
-                note_env_still_set();
-                return Ok(());
-            }
-            format!("of {r}")
-        }
-        None => {
-            if store.len() == 1 {
-                store.entries.clear();
-                "the stored credential".to_string()
-            } else {
-                return Err(CliError::Other {
-                    message: "several credentials stored — pass `--repo <owner/repo>` to log out \
-                              of one, or `--all` to clear everything."
-                        .into(),
-                    exit_code: 2,
-                });
-            }
-        }
+    // Which entry? `--repo`, else the cwd's repo. Nothing else — the
+    // same rule the resolver uses to pick an entry.
+    let Some(repo) = resolve_repo_best_effort(repo_flag)? else {
+        return Err(CliError::Other {
+            message: "not a GitHub checkout — pass `--repo <owner/repo>` to log out of one \
+                      credential, or `--all` to clear everything."
+                .into(),
+            exit_code: 2,
+        });
     };
+    if store.remove_by_repo(&repo) == 0 {
+        println!("ok: no credential for {repo} to remove (nothing changed).");
+        note_env_still_set();
+        return Ok(());
+    }
+    let removed_label = format!("of {repo}");
 
     // Persist: drop the file when the store is now empty, else rewrite it.
     if store.is_empty() {
@@ -733,23 +708,18 @@ mod tests {
     }
 
     #[test]
-    fn login_verdict_outside_a_checkout_depends_on_the_sole_entry_grace() {
+    fn login_verdict_outside_a_checkout_never_resolves() {
+        // No single-entry fallback: even the only credential on file does
+        // not apply in a directory that is not its checkout.
         let tmp = TempDir::new().unwrap();
         let plain = tmp.path().join("plain");
         std::fs::create_dir_all(&plain).unwrap();
         let saved = entry("prod", Some("acme/widgets"), "t1");
-        // Sole entry: still resolves.
         let one = store(vec![saved.clone()]);
         let v = login_verdict(&one, &saved, &plain);
         assert!(v.contains("not a GitHub checkout (no .git/config"), "{v}");
-        assert!(v.contains("this entry still resolves here"), "{v}");
-        // Several entries: nothing resolves; remedy given.
-        let two = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
-        let v = login_verdict(&two, &saved, &plain);
-        assert!(
-            v.contains("with 2 entries on file nothing resolves here"),
-            "{v}"
-        );
+        assert!(v.contains("nothing resolves here"), "{v}");
+        assert!(v.contains("run aristo from a acme/widgets checkout"), "{v}");
         assert!(v.contains("ARETTA_TOKEN"), "{v}");
     }
 
@@ -778,8 +748,9 @@ mod tests {
         let v = status_verdict(&two, &plain);
         assert!(v.contains("not a GitHub checkout"), "{v}");
         assert!(v.contains("no stored credential (2 on file"), "{v}");
+        // The only entry on file does not apply outside its checkout either.
         let one = store(vec![a]);
         let v = status_verdict(&one, &plain);
-        assert!(v.ends_with("repo acme/widgets (the sole entry)"), "{v}");
+        assert!(v.contains("no stored credential (1 on file"), "{v}");
     }
 }

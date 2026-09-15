@@ -14,8 +14,8 @@
 //! - [`token`] — the [`Token`] newtype with `Debug` redaction.
 //! - [`store`] — credentials-file atomic I/O. Honors `$XDG_CONFIG_HOME`;
 //!   `0600` perms on Unix.
-//! - [`mod@resolve`] — env-var → file precedence. Returns [`Token`] or
-//!   [`AuthError`].
+//! - [`mod@resolve`] — env-var → the checkout's stored entry. Returns
+//!   [`ResolvedCreds`] or [`AuthError`].
 //! - [`error`] — [`AuthError`] variants (`NoToken`, `Invalid`,
 //!   `Malformed`).
 //!
@@ -48,8 +48,8 @@ pub use error::{AuthError, EntrySummary};
 pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
 pub use resolve::{
-    checkout_at, cwd_checkout, resolve, resolve_full, resolve_full_for_checkout, resolve_full_with,
-    resolve_with, ResolvedCreds, ENV_VAR,
+    checkout_at, cwd_checkout, resolve_full, resolve_full_for_checkout, resolve_full_with,
+    ResolvedCreds, ENV_VAR,
 };
 pub use server::{
     data_plane_base, login_server, login_server_discovering, LoginServerSource, ServerUrl,

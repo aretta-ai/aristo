@@ -275,13 +275,13 @@ fn logout_when_not_logged_in_is_noop_and_zero_exit() {
 fn logout_after_login_removes_file() {
     let tmp = TempDir::new().unwrap();
     let _ = isolated(tmp.path())
-        .args(["auth", "login", "--token", "tok"])
+        .args(["auth", "login", "--token", "tok", "--repo", "owner/repo"])
         .output()
         .unwrap();
     assert!(creds_path(tmp.path()).exists());
 
     let out = isolated(tmp.path())
-        .args(["auth", "logout"])
+        .args(["auth", "logout", "--repo", "owner/repo"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -297,11 +297,11 @@ fn logout_after_login_removes_file() {
 fn logout_warns_when_env_var_still_set() {
     let tmp = TempDir::new().unwrap();
     let _ = isolated(tmp.path())
-        .args(["auth", "login", "--token", "tok"])
+        .args(["auth", "login", "--token", "tok", "--repo", "owner/repo"])
         .output()
         .unwrap();
     let out = isolated(tmp.path())
-        .args(["auth", "logout"])
+        .args(["auth", "logout", "--repo", "owner/repo"])
         .env("ARETTA_TOKEN", "still-set")
         .output()
         .unwrap();
@@ -328,7 +328,14 @@ fn full_auth_lifecycle() {
 
     // 2. login
     let out = isolated(tmp.path())
-        .args(["auth", "login", "--token", "lifecycle-tok"])
+        .args([
+            "auth",
+            "login",
+            "--token",
+            "lifecycle-tok",
+            "--repo",
+            "owner/repo",
+        ])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -344,7 +351,7 @@ fn full_auth_lifecycle() {
 
     // 4. logout
     let out = isolated(tmp.path())
-        .args(["auth", "logout"])
+        .args(["auth", "logout", "--repo", "owner/repo"])
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("logged out"));
@@ -384,12 +391,12 @@ fn token_prints_value_from_credentials_file() {
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(
         &p,
-        "[aretta]\ntoken = \"arta_file_tok_456\"\nissued_at = \"2026-05-20T00:00:00Z\"\n",
+        "[aretta]\ntoken = \"arta_file_tok_456\"\nissued_at = \"2026-05-20T00:00:00Z\"\nrepo = \"owner/repo\"\n",
     )
     .unwrap();
 
     let out = isolated(tmp.path())
-        .args(["auth", "token"])
+        .args(["auth", "token", "--repo", "owner/repo"])
         .output()
         .unwrap();
     assert!(out.status.success());

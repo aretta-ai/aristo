@@ -329,7 +329,7 @@ fn login_retry_for_the_same_repo_replaces_instead_of_accumulating() {
 }
 
 #[test]
-fn status_outside_a_github_checkout_says_so_and_names_the_sole_fallback() {
+fn status_outside_a_github_checkout_says_so_and_resolves_nothing() {
     let tmp = TempDir::new().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -344,7 +344,7 @@ fn status_outside_a_github_checkout_says_so_and_names_the_sole_fallback() {
     assert!(st.contains("not a GitHub checkout"), "status: {st}");
     assert!(st.contains("no .git/config"), "status: {st}");
     assert!(
-        st.contains("resolves to: server https://code.aretta.ai, repo org/repoA"),
-        "the sole entry still applies: {st}"
+        st.contains("resolves to: no stored credential (1 on file"),
+        "no single-entry fallback: {st}"
     );
 }

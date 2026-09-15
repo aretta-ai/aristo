@@ -56,6 +56,20 @@ fn run_git(repo: &Path, args: &[&str]) {
 /// bare repo, and commit the current contents so HEAD is on
 /// `origin/main`. Returns the bare-upstream tempdir (so the caller
 /// keeps it alive — dropping it would invalidate the remote URL).
+/// A `.git/config` naming the GitHub origin, with no repository behind it:
+/// enough for the stored `owner/repo` credential to apply here (a credential
+/// applies only in a checkout of its repo), while `git rev-parse` would still
+/// fail — so a test using this proves the push-first precheck is skipped.
+fn fake_github_origin(dir: &Path) {
+    let git = dir.join(".git");
+    fs::create_dir_all(&git).unwrap();
+    fs::write(
+        git.join("config"),
+        "[remote \"origin\"]\n    url = https://github.com/owner/repo.git\n",
+    )
+    .unwrap();
+}
+
 fn init_repo_with_pushed_head(dir: &Path) -> tempfile::TempDir {
     let bare = tempfile::tempdir().unwrap();
     run_git(bare.path(), &["init", "--bare", "-q"]);
@@ -1100,6 +1114,7 @@ fn sigint_during_view_wait_detaches_without_cancelling() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     write_aretta_token(home.path(), "https://example.test");
+    fake_github_origin(tmp.path());
     let fixture_path = write_full_fixture(
         tmp.path(),
         &fixture_with_running_gets("01HMOTHERS", 400, false),
@@ -1141,6 +1156,7 @@ fn view_attaches_to_existing_session_without_post() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     write_aretta_token(home.path(), "https://example.test");
+    fake_github_origin(tmp.path());
 
     // No `post` block — the SDK should never POST under --view.
     let fixture_body = r#"{
@@ -1181,6 +1197,7 @@ fn view_with_wait_blocks_until_terminal() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     write_aretta_token(home.path(), "https://example.test");
+    fake_github_origin(tmp.path());
 
     let fixture_body = r#"{
       "gets": [

@@ -1,13 +1,18 @@
-//! Auth-token resolution — env var → file → [`AuthError::NoToken`].
+//! Auth-token resolution — env var → the checkout's entry → an error.
 //!
-//! Three sources, checked in order:
+//! Two sources, checked in order:
 //!
 //! 1. `ARETTA_TOKEN` env var — CI-friendly; takes precedence over
 //!    the on-disk credentials file so `ARETTA_TOKEN=… cargo test`
 //!    works without touching `~/.config/aristo/credentials`.
-//! 2. Per-user credentials file under [`super::store::config_dir`].
-//! 3. No token → [`AuthError::NoToken`]. The SDK surfaces "run
-//!    `aristo auth login`" as the recovery hint.
+//! 2. The entry in the per-user credentials file (under
+//!    [`super::store::config_dir`]) scoped to the current checkout's
+//!    `owner/repo`. No other entry applies — a credential is used
+//!    exactly where its repo is checked out.
+//!
+//! Nothing on file → [`AuthError::NoToken`] ("run `aristo auth login`");
+//! entries on file but none for this checkout →
+//! [`AuthError::NoEntryForCheckout`] (says which, and how to fix).
 
 use std::path::Path;
 
@@ -39,35 +44,11 @@ pub struct ResolvedCreds {
 /// Environment variable that overrides the on-disk credentials.
 pub const ENV_VAR: &str = "ARETTA_TOKEN";
 
-/// Resolve the auth token via the documented precedence.
-///
-/// Callers typically wrap the resolved token in an HTTP client across
-/// calls; no need to re-resolve per call.
-pub fn resolve() -> Result<Token, AuthError> {
-    resolve_with(
-        std::env::var(ENV_VAR).ok().as_deref(),
-        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
-        home_dir().as_deref(),
-    )
-}
-
-/// Resolve with explicit env-var and home-dir overrides. Tests use
-/// this to avoid mutating process state (the workspace forbids
-/// `unsafe_code`, which `std::env::set_var` requires). No repo hint —
-/// resolves the env token, else the sole stored entry.
-pub fn resolve_with(
-    env_token: Option<&str>,
-    xdg_config_home: Option<&str>,
-    home_override: Option<&Path>,
-) -> Result<Token, AuthError> {
-    Ok(resolve_full_with(env_token, xdg_config_home, home_override, None)?.token)
-}
-
-/// Like [`resolve`] but returns the full credentials record (server,
-/// user, repo). Use this from canon / verify call sites that need the
-/// server URL paired with the token. Prefers the entry scoped to the
-/// current repo (derived best-effort from the cwd's `.git/config`),
-/// falling back to the sole stored entry.
+/// Resolve the full credentials record (token, server, user, repo) for
+/// the current directory: `ARETTA_TOKEN`, else the stored entry scoped
+/// to the cwd's `owner/repo` (derived from `.git/config`). Callers
+/// typically wrap the token in an HTTP client across calls; no need to
+/// re-resolve per call.
 pub fn resolve_full() -> Result<ResolvedCreds, AuthError> {
     let checkout = cwd_checkout();
     resolve_full_for_checkout(
@@ -100,9 +81,11 @@ pub fn checkout_at(dir: &Path) -> Result<String, String> {
 
 /// Resolve a full credentials record with explicit overrides and a repo
 /// hint. Precedence: `ARETTA_TOKEN` env > the entry scoped to
-/// `repo_hint` > the sole stored entry (single-repo grace). `None` is
-/// "no checkout given" — see [`resolve_full_for_checkout`] to carry the
-/// reason a repo could not be derived.
+/// `repo_hint`. `None` is "no checkout given" — see
+/// [`resolve_full_for_checkout`] to carry the reason a repo could not
+/// be derived. Tests use the explicit overrides to avoid mutating
+/// process state (the workspace forbids `unsafe_code`, which
+/// `std::env::set_var` requires).
 pub fn resolve_full_with(
     env_token: Option<&str>,
     xdg_config_home: Option<&str>,
@@ -147,11 +130,9 @@ pub fn resolve_full_for_checkout(
     if store.is_empty() {
         return Err(AuthError::NoToken);
     }
-    // 3. Prefer the entry scoped to the current repo; else fall back to
-    //    the sole entry so a one-credential user always resolves even
-    //    without (or with a non-matching) repo hint. Several entries and
-    //    no match is NOT "no token": the user is signed in, just not
-    //    for this directory — say so, token-free.
+    // 3. The entry scoped to the current repo, and nothing else. Entries
+    //    on file but no match is NOT "no token": the user is signed in,
+    //    just not for this directory — say so, token-free.
     let entry = store
         .resolve_for(checkout.ok())
         .ok_or_else(|| AuthError::NoEntryForCheckout {
@@ -172,8 +153,8 @@ pub fn resolve_full_for_checkout(
 
 #[cfg(test)]
 mod tests {
-    use super::super::store::save_with;
     use super::*;
+    use crate::auth::store::{save_store_with, CredentialEntry, CredentialStore};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -210,104 +191,6 @@ mod tests {
         Some(Path::new("/nonexistent-test-home"))
     }
 
-    #[test]
-    fn env_var_takes_precedence_over_file() {
-        let env = TestEnv::new();
-        env.write_creds(
-            r#"
-[aretta]
-token = "file-token"
-issued_at = "2026-05-20T00:00:00Z"
-"#,
-        );
-        let tok = resolve_with(Some("env-token"), Some(env.xdg_str()), dummy_home()).unwrap();
-        assert_eq!(tok.as_str(), "env-token");
-    }
-
-    #[test]
-    fn falls_back_to_credentials_file() {
-        let env = TestEnv::new();
-        env.write_creds(
-            r#"
-[aretta]
-token = "file-token"
-issued_at = "2026-05-20T00:00:00Z"
-"#,
-        );
-        let tok = resolve_with(None, Some(env.xdg_str()), dummy_home()).unwrap();
-        assert_eq!(tok.as_str(), "file-token");
-    }
-
-    #[test]
-    fn no_token_when_nothing_configured() {
-        let env = TestEnv::new();
-        let err = resolve_with(None, Some(env.xdg_str()), dummy_home()).unwrap_err();
-        assert_eq!(err, AuthError::NoToken);
-    }
-
-    #[test]
-    fn empty_env_var_falls_through_to_file() {
-        let env = TestEnv::new();
-        env.write_creds(
-            r#"
-[aretta]
-token = "file-token"
-issued_at = "2026-05-20T00:00:00Z"
-"#,
-        );
-        let tok = resolve_with(Some("   "), Some(env.xdg_str()), dummy_home()).unwrap();
-        assert_eq!(tok.as_str(), "file-token");
-    }
-
-    #[test]
-    fn malformed_credentials_surfaces_useful_error() {
-        let env = TestEnv::new();
-        env.write_creds("this is not TOML at all = = =");
-        let err = resolve_with(None, Some(env.xdg_str()), dummy_home()).unwrap_err();
-        assert!(matches!(err, AuthError::Malformed(_)));
-    }
-
-    #[test]
-    fn empty_token_in_file_rejects_with_malformed() {
-        let env = TestEnv::new();
-        env.write_creds(
-            r#"
-[aretta]
-token = ""
-issued_at = "2026-05-20T00:00:00Z"
-"#,
-        );
-        let err = resolve_with(None, Some(env.xdg_str()), dummy_home()).unwrap_err();
-        assert!(matches!(err, AuthError::Malformed(_)));
-    }
-
-    #[test]
-    fn save_then_resolve_round_trip() {
-        let env = TestEnv::new();
-        save_with(
-            &Token::new("round-trip-tok"),
-            Some(env.xdg_str()),
-            dummy_home(),
-        )
-        .unwrap();
-        let tok = resolve_with(None, Some(env.xdg_str()), dummy_home()).unwrap();
-        assert_eq!(tok.as_str(), "round-trip-tok");
-    }
-
-    #[test]
-    fn xdg_config_home_used_by_resolve() {
-        // Mirror of the save test — resolve should look in the XDG
-        // path too when that override is supplied.
-        let env = TestEnv::new();
-        save_with(&Token::new("xdg-tok"), Some(env.xdg_str()), dummy_home()).unwrap();
-        let tok = resolve_with(None, Some(env.xdg_str()), dummy_home()).unwrap();
-        assert_eq!(tok.as_str(), "xdg-tok");
-    }
-
-    // ─── multi-repo resolution (repo hint) ───────────────────────────────────
-
-    use crate::auth::store::{save_store_with, CredentialEntry, CredentialStore};
-
     fn v2_entry(repo: &str, token: &str, minted_at: &str) -> CredentialEntry {
         CredentialEntry {
             server: ServerUrl::Prod,
@@ -328,6 +211,98 @@ issued_at = "2026-05-20T00:00:00Z"
         .unwrap();
     }
 
+    /// Resolve for `repo` with no env token.
+    fn resolve_for(env: &TestEnv, repo: &str) -> Result<ResolvedCreds, AuthError> {
+        resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some(repo))
+    }
+
+    // ─── precedence ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn env_var_takes_precedence_over_file() {
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![v2_entry("owner/a", "file-token", "2026-07-22T00:00:00Z")],
+        );
+        let creds = resolve_full_with(
+            Some("env-token"),
+            Some(env.xdg_str()),
+            dummy_home(),
+            Some("owner/a"),
+        )
+        .unwrap();
+        assert_eq!(creds.token.as_str(), "env-token");
+        assert_eq!(creds.server, ServerUrl::Prod);
+        assert_eq!(creds.repo, None);
+    }
+
+    #[test]
+    fn empty_env_var_falls_through_to_file() {
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![v2_entry("owner/a", "file-token", "2026-07-22T00:00:00Z")],
+        );
+        let creds = resolve_full_with(
+            Some("   "),
+            Some(env.xdg_str()),
+            dummy_home(),
+            Some("owner/a"),
+        )
+        .unwrap();
+        assert_eq!(creds.token.as_str(), "file-token");
+    }
+
+    #[test]
+    fn no_token_when_nothing_configured() {
+        let env = TestEnv::new();
+        let err = resolve_for(&env, "owner/a").unwrap_err();
+        assert_eq!(err, AuthError::NoToken);
+    }
+
+    // ─── file formats ────────────────────────────────────────────────────────
+
+    #[test]
+    fn v1_file_with_a_repo_resolves_for_that_repo() {
+        let env = TestEnv::new();
+        env.write_creds(
+            r#"
+[aretta]
+token = "file-token"
+issued_at = "2026-05-20T00:00:00Z"
+repo = "owner/legacy"
+"#,
+        );
+        let creds = resolve_for(&env, "owner/legacy").unwrap();
+        assert_eq!(creds.token.as_str(), "file-token");
+        assert_eq!(creds.repo.as_deref(), Some("owner/legacy"));
+    }
+
+    #[test]
+    fn malformed_credentials_surfaces_useful_error() {
+        let env = TestEnv::new();
+        env.write_creds("this is not TOML at all = = =");
+        let err = resolve_for(&env, "owner/a").unwrap_err();
+        assert!(matches!(err, AuthError::Malformed(_)));
+    }
+
+    #[test]
+    fn empty_token_in_file_rejects_with_malformed() {
+        let env = TestEnv::new();
+        env.write_creds(
+            r#"
+[aretta]
+token = ""
+issued_at = "2026-05-20T00:00:00Z"
+"#,
+        );
+        let err = resolve_for(&env, "owner/a").unwrap_err();
+        assert!(matches!(err, AuthError::Malformed(_)));
+    }
+
+    // ─── selection: the checkout's repo, and nothing else ────────────────────
+
     #[test]
     fn repo_hint_selects_the_matching_entry() {
         let env = TestEnv::new();
@@ -338,48 +313,69 @@ issued_at = "2026-05-20T00:00:00Z"
                 v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
             ],
         );
-        let creds =
-            resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some("owner/b")).unwrap();
+        let creds = resolve_for(&env, "owner/b").unwrap();
         assert_eq!(creds.token.as_str(), "tok-b");
         assert_eq!(creds.repo.as_deref(), Some("owner/b"));
     }
 
     #[test]
-    fn sole_entry_resolves_without_a_hint() {
-        let env = TestEnv::new();
-        write_v2(
-            &env,
-            vec![v2_entry("owner/only", "tok", "2026-07-22T00:00:00Z")],
-        );
-        let creds = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), None).unwrap();
-        assert_eq!(creds.token.as_str(), "tok");
-    }
-
-    #[test]
-    fn sole_entry_grace_covers_a_mismatched_hint() {
-        // One credential, but the cwd repo doesn't match it — the single
-        // entry still resolves (backward-compatible single-repo grace).
+    fn a_single_entry_does_not_apply_to_another_checkout() {
+        // No single-entry fallback: one credential on file, a checkout of
+        // a different repo → not for this checkout, with the diagnosis.
         let env = TestEnv::new();
         write_v2(
             &env,
             vec![v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z")],
         );
-        let creds = resolve_full_with(
-            None,
-            Some(env.xdg_str()),
-            dummy_home(),
-            Some("owner/elsewhere"),
-        )
-        .unwrap();
-        assert_eq!(creds.token.as_str(), "tok-a");
+        let err = resolve_for(&env, "owner/elsewhere").unwrap_err();
+        match err {
+            AuthError::NoEntryForCheckout {
+                checkout, entries, ..
+            } => {
+                assert_eq!(
+                    checkout.as_deref().map_err(String::as_str),
+                    Ok("owner/elsewhere")
+                );
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].repo.as_deref(), Some("owner/a"));
+            }
+            other => panic!("expected NoEntryForCheckout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unscoped_entry_never_resolves() {
+        // A legacy entry with no repo cannot match any checkout.
+        let env = TestEnv::new();
+        env.write_creds("[aretta]\ntoken = \"bare\"\nissued_at = \"2026-05-20T00:00:00Z\"\n");
+        let err = resolve_for(&env, "owner/a").unwrap_err();
+        assert!(
+            matches!(err, AuthError::NoEntryForCheckout { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn no_checkout_hint_resolves_nothing_from_the_file() {
+        let env = TestEnv::new();
+        write_v2(
+            &env,
+            vec![v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z")],
+        );
+        let err = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), None).unwrap_err();
+        match err {
+            AuthError::NoEntryForCheckout { checkout, .. } => {
+                assert_eq!(
+                    checkout.as_deref().map_err(String::as_str),
+                    Err("no checkout given")
+                );
+            }
+            other => panic!("expected NoEntryForCheckout, got {other:?}"),
+        }
     }
 
     #[test]
     fn multi_entry_no_match_reports_what_is_on_file_for_the_checkout() {
-        // Several credentials, none matching the repo hint, no sole
-        // fallback → not "no token" (the user IS signed in) but "none of
-        // these is for this checkout", carrying the derived repo and the
-        // token-free entries so the CLI can say exactly that.
         let env = TestEnv::new();
         write_v2(
             &env,
@@ -388,8 +384,7 @@ issued_at = "2026-05-20T00:00:00Z"
                 v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
             ],
         );
-        let err = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some("owner/c"))
-            .unwrap_err();
+        let err = resolve_for(&env, "owner/c").unwrap_err();
         match err {
             AuthError::NoEntryForCheckout {
                 checkout,
@@ -408,17 +403,11 @@ issued_at = "2026-05-20T00:00:00Z"
     }
 
     #[test]
-    fn multi_entry_with_underivable_checkout_carries_the_derivation_error() {
-        // The cwd is not a GitHub checkout: the resolver still cannot
-        // pick among several entries, and the error says WHY no repo was
-        // derived instead of silently reporting "no token".
+    fn underivable_checkout_carries_the_derivation_error() {
         let env = TestEnv::new();
         write_v2(
             &env,
-            vec![
-                v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z"),
-                v2_entry("owner/b", "tok-b", "2026-07-22T01:00:00Z"),
-            ],
+            vec![v2_entry("owner/a", "tok-a", "2026-07-22T00:00:00Z")],
         );
         let err = resolve_full_for_checkout(
             None,
@@ -436,16 +425,6 @@ issued_at = "2026-05-20T00:00:00Z"
             }
             other => panic!("expected NoEntryForCheckout, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn empty_store_is_still_no_token() {
-        // Nothing on file at all → the plain NoToken (the free-tier
-        // nudge stays correct for this case).
-        let env = TestEnv::new();
-        let err = resolve_full_with(None, Some(env.xdg_str()), dummy_home(), Some("owner/c"))
-            .unwrap_err();
-        assert_eq!(err, AuthError::NoToken);
     }
 
     #[test]
