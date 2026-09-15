@@ -399,6 +399,24 @@ fn auth_login_oauth_requires_repo_or_git_remote() {
     );
 }
 
+#[test]
+fn auth_login_requires_a_server() {
+    // No --server, no ARETTA_API_URL: there is no default to guess.
+    let sandbox = TempDir::new().unwrap();
+    let ws = git_workspace(sandbox.path(), "a", "org/repoA");
+    let out = isolated_at(sandbox.path(), &ws)
+        .args(["auth", "login"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("--server") && err.contains("ARETTA_API_URL"),
+        "{err}"
+    );
+    assert!(!sandbox.path().join("home/xdg/aristo/credentials").exists());
+}
+
 // ─── what login reports: the store change + this checkout's verdict (#77) ──
 
 #[test]

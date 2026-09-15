@@ -13,6 +13,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - cli: `aristo auth status` ends with the same verdict for the current directory — which stored entry it resolves to, or `no stored credential` with the `aristo auth login --repo <owner/repo>` / `ARETTA_TOKEN` fix; when `ARETTA_TOKEN` is set it says that takes precedence (#77).
 
 ### Removed
+- **auth: zero-config org discovery is gone, and `aristo auth login` requires a server.** The CLI no longer asks the platform which host serves a repo: pass `--server https://<org>.aretta.ai` or set `ARETTA_API_URL`; with neither, login exits 2 and says so instead of minting against the platform default (which cannot serve an org). `ARETTA_DISCOVERY_URL` is removed, as are the `prod` / `production` server aliases — a server is named by its URL, one way. Library: `auth::discover_org`, `DiscoveredOrg` and `login_server_discovering` are removed; `login_server` returns `None` when no server was given.
 - **cli: `aristo auth login --token` and `--stdin` are gone.** GitHub OAuth is the only login; the CLI has one login path. Nothing needed a pasted token: CI and scripts read `ARETTA_TOKEN` from the environment and never touch the credentials store, a headless machine can still complete the OAuth paste flow, and only `aristo auth login` mints tokens. Passing either flag is now a usage error.
 
 ### Changed

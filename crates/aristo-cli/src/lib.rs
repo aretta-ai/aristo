@@ -643,19 +643,11 @@ pub(crate) enum AuthAction {
     /// CI and scripts do not log in: set `ARETTA_TOKEN` (and
     /// `ARETTA_API_URL`) in the environment instead.
     Login {
-        /// Aretta server to authenticate against. Accepts:
-        /// `prod` / `production` (= https://code.aretta.ai),
-        /// or a full URL for a self-hosted deployment or per-org
-        /// conductor (`https://aretta.example.com`).
-        ///
-        /// Precedence when unset: this flag > the `ARETTA_API_URL` env
-        /// var (parsed the same way, full URLs included) > zero-config
-        /// org discovery for the repo > the `prod` default. Discovery
-        /// runs only when neither this flag nor `ARETTA_API_URL` is set,
-        /// so an explicit choice always wins and skips the lookup.
-        /// Honoring `ARETTA_API_URL` keeps the login (auth) plane pointed
-        /// at the same deployment as the data plane.
-        #[arg(long)]
+        /// Your org's Aretta host, e.g. `https://<org>.aretta.ai` (a bare
+        /// host gets `https://`). Required: this flag, else the
+        /// `ARETTA_API_URL` env var. There is no default — the platform
+        /// apex cannot mint an org-scoped token.
+        #[arg(long, value_name = "URL")]
         server: Option<String>,
         /// Repo to scope the minted token to (`owner/repo`). Defaults to
         /// auto-deriving from `<cwd>/.git/config`'s `remote.origin.url`.

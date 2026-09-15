@@ -18,8 +18,8 @@
 use std::path::Path;
 
 use aristo_core::auth::{
-    self, derive_repo_full_name, login_server_discovering, AuthError, CredentialEntry,
-    CredentialStore, LoginServerSource, ServerUrl, Token, UpsertOutcome, UpsertReport,
+    self, derive_repo_full_name, login_server, AuthError, CredentialEntry, CredentialStore,
+    LoginServerSource, ServerUrl, Token, UpsertOutcome, UpsertReport,
 };
 
 use crate::{AuthAction, CliError, CliResult};
@@ -37,41 +37,21 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
 // ─── login ─────────────────────────────────────────────────────────────────
 
 fn login(server_flag: Option<String>, repo_flag: Option<String>) -> CliResult<()> {
-    // Resolve the repo first — both zero-config discovery and token
-    // scoping need it.
-    let repo_full_name = resolve_repo_full_name(repo_flag)?;
-
-    // Resolve the server the token is minted against. Precedence:
-    // --server flag > ARETTA_API_URL env > zero-config org discovery
-    // (queried at the platform) > the platform default. Discovery runs
-    // only when neither flag nor env is supplied, so an explicit choice
-    // always wins and skips the network lookup. Honoring the env keeps
-    // the auth plane aligned with the data plane, which already treats
-    // ARETTA_API_URL as its highest-precedence override (see
-    // `crate::data_plane`).
+    // The two things a token is scoped by, both required: the server
+    // it is minted against (`--server`, else `ARETTA_API_URL`) and the
+    // repo (`--repo`, else the checkout's origin). There is no default
+    // server — the platform apex cannot mint an org token.
     let env_override = std::env::var("ARETTA_API_URL").ok();
-    let platform = discovery_platform();
-    let (server, source) = login_server_discovering(
-        server_flag.as_deref(),
-        env_override.as_deref(),
-        &platform,
-        |p| auth::discover_org(p, &repo_full_name),
-    );
-
+    let (server, source) = login_server(server_flag.as_deref(), env_override.as_deref())
+        .ok_or_else(|| CliError::Other {
+            message: "no server given.\n  \
+                      Pass `--server https://<org>.aretta.ai` (your org's Aretta host), \
+                      or set ARETTA_API_URL."
+                .into(),
+            exit_code: 2,
+        })?;
+    let repo_full_name = resolve_repo_full_name(repo_flag)?;
     login_via_oauth(&server, source, repo_full_name)
-}
-
-/// The platform where zero-config org discovery is queried — and the
-/// server login falls back to when discovery misses. Defaults to the
-/// prod platform (`code.aretta.ai`); `ARETTA_DISCOVERY_URL` relocates it
-/// for self-hosted deployments (and offline tests). Distinct from
-/// `ARETTA_API_URL`, which pins the login server outright and skips
-/// discovery entirely.
-fn discovery_platform() -> ServerUrl {
-    match std::env::var("ARETTA_DISCOVERY_URL").ok() {
-        Some(v) if !v.trim().is_empty() => ServerUrl::parse(&v),
-        _ => ServerUrl::Prod,
-    }
 }
 
 fn login_via_oauth(
@@ -83,13 +63,10 @@ fn login_via_oauth(
     let init = auth::oauth_start(server).map_err(auth_error_to_cli)?;
 
     // 2. Show the URL + try to open the browser. Name where the server
-    //    came from when it wasn't the default, so a stale ARETTA_API_URL
-    //    export is visible before the user authorizes.
+    //    came from, so a stale ARETTA_API_URL export is visible before
+    //    the user authorizes.
     eprintln!();
-    match source.provenance(&repo_full_name) {
-        Some(prov) => eprintln!("Authenticating against {server} ({prov})"),
-        None => eprintln!("Authenticating against {server}"),
-    }
+    eprintln!("Authenticating against {server} ({})", source.provenance());
     eprintln!("Scoping token to repo: {repo_full_name}");
     eprintln!();
     eprintln!("Open this URL to authorize with GitHub:");
@@ -582,7 +559,7 @@ mod tests {
             store_change_line(UpsertOutcome::Replaced { dropped: 2 }, &e, 3),
             "entry replaced (dropped 2 older entries for this repo): server https://acme.aretta.ai, repo acme/widgets — 3 entries on file."
         );
-        let unscoped = entry("prod", None, "t");
+        let unscoped = entry("https://code.aretta.ai", None, "t");
         assert!(store_change_line(UpsertOutcome::Added, &unscoped, 1).contains("repo (unscoped)"));
     }
 
@@ -590,8 +567,11 @@ mod tests {
     fn login_verdict_matching_checkout_resolves() {
         let tmp = TempDir::new().unwrap();
         let dir = checkout(tmp.path(), "w", "acme/widgets");
-        let saved = entry("prod", Some("acme/widgets"), "t1");
-        let st = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
+        let saved = entry("https://code.aretta.ai", Some("acme/widgets"), "t1");
+        let st = store(vec![
+            entry("https://code.aretta.ai", Some("other/x"), "t0"),
+            saved.clone(),
+        ]);
         assert_eq!(
             login_verdict(&st, &saved, &dir),
             "this checkout (acme/widgets) resolves to this entry."
@@ -602,8 +582,11 @@ mod tests {
     fn login_verdict_mismatched_checkout_names_the_repo_and_both_remedies() {
         let tmp = TempDir::new().unwrap();
         let dir = checkout(tmp.path(), "fork", "alice/widgets");
-        let saved = entry("prod", Some("acme/widgets"), "t1");
-        let st = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
+        let saved = entry("https://code.aretta.ai", Some("acme/widgets"), "t1");
+        let st = store(vec![
+            entry("https://code.aretta.ai", Some("other/x"), "t0"),
+            saved.clone(),
+        ]);
         let v = login_verdict(&st, &saved, &dir);
         assert!(
             v.starts_with("this checkout (alice/widgets) will NOT resolve to this entry"),
@@ -623,7 +606,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let plain = tmp.path().join("plain");
         std::fs::create_dir_all(&plain).unwrap();
-        let saved = entry("prod", Some("acme/widgets"), "t1");
+        let saved = entry("https://code.aretta.ai", Some("acme/widgets"), "t1");
         let one = store(vec![saved.clone()]);
         let v = login_verdict(&one, &saved, &plain);
         assert!(v.contains("not a GitHub checkout (no .git/config"), "{v}");
@@ -640,7 +623,10 @@ mod tests {
         let plain = tmp.path().join("plain");
         std::fs::create_dir_all(&plain).unwrap();
         let a = entry("https://acme.aretta.ai", Some("acme/widgets"), "t1");
-        let two = store(vec![entry("prod", Some("other/x"), "t0"), a.clone()]);
+        let two = store(vec![
+            entry("https://code.aretta.ai", Some("other/x"), "t0"),
+            a.clone(),
+        ]);
         assert_eq!(
             status_verdict(&two, &acme),
             "this checkout (acme/widgets) resolves to: server https://acme.aretta.ai, repo acme/widgets"
