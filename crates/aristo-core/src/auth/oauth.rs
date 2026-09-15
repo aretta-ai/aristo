@@ -13,7 +13,7 @@
 //!    `POST <server>/auth/cli-token` along with the user's
 //!    `repo_full_name`. The proxy does OAuth code exchange against
 //!    GitHub, JWT mint (for dashboard access), and `arta_*` token
-//!    mint scoped to `(user_id, repo_full_name)`. Returns
+//!    mint as an org grant for the user. Returns
 //!    [`CliTokenResponse`] with the raw `arta_token` (shown ONCE per
 //!    the proxy's D-12 / Pitfall-8 — the SDK persists it).
 //!
