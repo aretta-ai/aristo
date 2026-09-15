@@ -458,8 +458,6 @@ fn run_show(ws: &Workspace, objective: &str) -> CliResult<()> {
             println!("    backed by: {backed_by}");
         }
     }
-    println!();
-    println!("card detail for any entry: `aristo canon show <canon_id>`.");
     Ok(())
 }
 

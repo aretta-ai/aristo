@@ -20,10 +20,7 @@
 
 use std::fmt;
 
-use super::types::{
-    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
-    RequestVerifyResponse,
-};
+use super::types::{CanonCatalogue, CanonMatchRequest, CanonMatchResponse};
 
 /// Trait abstracting over the canon API endpoints (`POST /canon/match`,
 /// `GET /canon/entry/<id>`, `POST /canon/request-verify`).
@@ -37,30 +34,6 @@ pub trait CanonClient: Send + Sync {
     /// `results` list is aligned to `req.annotations` by index.
     fn match_annotations(&self, req: &CanonMatchRequest) -> Result<CanonMatchResponse, CanonError>;
 
-    /// Fetch full per-entry detail by canon id. Paid-tier auth-gated
-    /// with per-token rate-limit (anti-enumeration); the response
-    /// deliberately excludes closed-IP fields (`match_signals`,
-    /// `verification_artifacts`, internal spec IDs) so the lookup
-    /// surface is the user-visible trust-card content only. No
-    /// match-history gate — the source-level `kanon:`/`aristos:`
-    /// prefix is the binding evidence and is already public in the
-    /// user's source. `version` is optional; when `None`, the server
-    /// returns the entry's currently-active version per its
-    /// `INDEX.yaml`.
-    fn get_entry(&self, canon_id: &str, version: Option<&str>) -> Result<CanonEntry, CanonError>;
-
-    /// Record the user's demand-signal for a canon entry's backing.
-    /// Idempotent on `(canon_id, repo_full_name, user_id)` — repeat
-    /// calls refresh `requested_at` and may update notes per
-    /// canon-strategy.md §CS11.
-    fn request_verify(&self, body: &RequestVerifyBody)
-        -> Result<RequestVerifyResponse, CanonError>;
-
-    /// Fetch the full active canon catalogue (`GET /catalogue`). One
-    /// entry per canon id at its active version; closed-IP fields are
-    /// stripped server-side. Requires auth (Read capability) and is
-    /// served by the org's server, addressed via the resolved
-    /// data-plane base.
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError>;
 }
 

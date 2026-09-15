@@ -793,15 +793,13 @@ fn assume_facets(e: &AssumeEntry) -> EntryFacets {
 // When `aristo show` displays a canon-bound annotation (id namespace is
 // `aristos:` or `kanon:`), append a trust-card block. The card sources
 // everything from local state (the index entry + the cache's
-// `accepted_matches[..]` for this id) — no network call. The user can
-// run `aristo canon show <bare_id>` to fetch the full canon-side
-// description / examples / references from the API.
+// `accepted_matches[..]` for this id) — no network call.
 //
 // Visual contract per cli-sessions.md "Cross-cutting: aristo show":
 // - `aristos:` tier: heavy box-drawing header (═) marking "backed".
 // - `kanon:` tier:   light box-drawing header (─) marking "unbacked".
-// - Renders `backed_by` for `aristos:`; renders the demand-signal
-//   prompt + `aristo canon request-verify <id>` hint for `kanon:`.
+// - Renders `backed_by` for `aristos:`; says plainly that `kanon:` has
+//   no verifier behind it yet.
 // - Phase 1: no per-user Verification block — that lands in Phase 2
 //   alongside the verification execution endpoint (see
 //   `_deferred/verification-execution.md`).
@@ -879,34 +877,12 @@ fn format_canon_binding(ws: &Workspace, id: &AnnotationId, entry: &IndexEntry) -
             out.push('\n');
             out.push_str(
                 "    This property is canonically recognized but doesn't have a\n    \
-                 verifier behind it. Aretta invests in verifiers by demand — tell\n    \
-                 us this one matters:\n\n        \
-                 aristo canon request-verify {bare}\n",
+                 verifier behind it yet.\n",
             );
-            // Best-effort: substitute the bare canon id into the hint.
-            if let Some(a) = accepted {
-                out = out.replace("{bare}", &a.canon_id);
-            } else {
-                // Fall back to stripping the prefix from the id ourselves.
-                let bare = id.as_str().split_once(':').map(|(_, b)| b).unwrap_or("");
-                out = out.replace("{bare}", bare);
-            }
         }
         _ => unreachable!(),
     }
     out.push('\n');
-    let bare_for_hint = accepted.map(|a| a.canon_id.clone()).unwrap_or_else(|| {
-        id.as_str()
-            .split_once(':')
-            .map(|(_, b)| b.to_string())
-            .unwrap_or_default()
-    });
-    if !bare_for_hint.is_empty() {
-        out.push_str(&format!(
-            "    For the full canon entry detail (description, examples, references),\n    \
-             run: `aristo canon show {bare_for_hint}`\n",
-        ));
-    }
     out.push_str(&rule);
     out.push('\n');
     out

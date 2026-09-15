@@ -190,8 +190,8 @@ mod tests {
         );
         // §6A: the decision card is reused, not reinvented.
         assert!(
-            body.contains("aristo canon show"),
-            "skill body must use `aristo canon show` as the decision card (reuse, not reinvent)"
+            body.contains("aristo canon suggestions"),
+            "skill body must use `aristo canon suggestions` as the decision card (reuse, not reinvent)"
         );
         // §6A: same-kind items are presented as a navigable batch.
         assert!(

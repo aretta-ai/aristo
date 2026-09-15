@@ -25,10 +25,7 @@ use serde::Serialize;
 use ureq::http::Response as HttpResponse;
 
 use super::client::{AuthError, CanonClient, CanonError};
-use super::types::{
-    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
-    RequestVerifyResponse,
-};
+use super::types::{CanonCatalogue, CanonMatchRequest, CanonMatchResponse};
 use super::Token;
 
 /// L3 graceful-degradation timeout. Applies to each individual
@@ -136,22 +133,6 @@ impl CanonClient for HttpCanonClient {
         self.post_json("/canon/match", req)
     }
 
-    fn get_entry(&self, canon_id: &str, version: Option<&str>) -> Result<CanonEntry, CanonError> {
-        let canon_id = url_encode(canon_id);
-        let path = match version {
-            Some(v) => format!("/canon/entry/{canon_id}?version={}", url_encode(v)),
-            None => format!("/canon/entry/{canon_id}"),
-        };
-        self.get_json(&path)
-    }
-
-    fn request_verify(
-        &self,
-        body: &RequestVerifyBody,
-    ) -> Result<RequestVerifyResponse, CanonError> {
-        self.post_json("/canon/request-verify", body)
-    }
-
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
         self.get_json("/catalogue")
     }
@@ -248,30 +229,10 @@ fn extract_message_or_body(body: &str) -> String {
     }
 }
 
-/// Minimal URL-path encoder for canon ids and version strings.
-/// Canon ids are constrained to `[a-z0-9_]`; versions to
-/// `v<digits>.<digits>.<digits>`. Both are ASCII; we still escape
-/// defensively in case the server ever issues an id with a special
-/// character.
-fn url_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        let safe = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~');
-        if safe {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{:02X}", b));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::canon::types::{
-        AnnotationMatchInput, CanonMatch, PrefixTier, References, VerificationMetadata,
-    };
+    use crate::canon::types::{CanonMatch, PrefixTier, VerificationMetadata};
 
     // ─── map_response: status-code dispatch ────────────────────────────────
 
@@ -376,20 +337,6 @@ mod tests {
     }
 
     #[test]
-    fn map_response_404_for_get_entry() {
-        let err: Result<CanonEntry, _> = map_response(404, r#"{"error": "canon entry not found"}"#);
-        match err.unwrap_err() {
-            CanonError::BadRequest {
-                status: 404,
-                message,
-            } => {
-                assert!(message.contains("not found"));
-            }
-            other => panic!("expected BadRequest 404, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn map_response_500_maps_to_server_error() {
         let err: Result<CanonMatchResponse, _> =
             map_response(500, r#"{"error": "internal server bug"}"#);
@@ -431,23 +378,6 @@ mod tests {
     }
 
     // ─── url_encode ────────────────────────────────────────────────────────
-
-    #[test]
-    fn url_encode_passes_through_safe_chars() {
-        assert_eq!(url_encode("foo_bar123"), "foo_bar123");
-        assert_eq!(url_encode("v0.2.1"), "v0.2.1");
-        assert_eq!(url_encode("a-b~c"), "a-b~c");
-    }
-
-    #[test]
-    fn url_encode_escapes_special_chars() {
-        assert_eq!(url_encode("foo bar"), "foo%20bar");
-        assert_eq!(url_encode("foo:bar"), "foo%3Abar");
-        assert_eq!(url_encode("foo&bar=baz"), "foo%26bar%3Dbaz");
-        assert_eq!(url_encode("foo/bar"), "foo%2Fbar");
-    }
-
-    // ─── HttpCanonClient construction ─────────────────────────────────────
 
     #[test]
     fn http_client_construction_does_not_panic() {
@@ -505,65 +435,4 @@ mod tests {
     }
 
     // ─── Sanity: real types round-trip through map_response ───────────────
-
-    #[test]
-    fn map_response_round_trip_via_canon_entry() {
-        use std::collections::BTreeMap;
-        let mut backed_by = BTreeMap::new();
-        backed_by.insert(
-            ":vanilla".to_string(),
-            Some("specialized neural checker".to_string()),
-        );
-        let mut prefix_tier_by_scope = BTreeMap::new();
-        prefix_tier_by_scope.insert(":vanilla".to_string(), PrefixTier::Aristos);
-        let entry = CanonEntry {
-            canon_id: "foo".into(),
-            version: "v0.2.1".into(),
-            active_version: "v0.2.1".into(),
-            is_deprecated: false,
-            canon_version: "v0.2.0".into(),
-            canonical_text: "the canonical phrasing".into(),
-            applies_to: vec!["fn".into()],
-            category: "invariants".into(),
-            property_type: "safety".into(),
-            backed_by,
-            prefix_tier_by_scope,
-            description: String::new(),
-            examples: vec![],
-            invariant_sketch: String::new(),
-            references: References::default(),
-            effective_scopes: vec![":vanilla".into()],
-        };
-        let body = serde_json::to_string(&entry).unwrap();
-        let got: CanonEntry = map_response(200, &body).unwrap();
-        assert_eq!(got, entry);
-    }
-
-    #[test]
-    fn map_response_round_trip_via_request_verify_response() {
-        let resp = RequestVerifyResponse {
-            status: "submitted".into(),
-            canon_id: "foo".into(),
-            current_backing: None,
-            previously_submitted_at: None,
-        };
-        let body = serde_json::to_string(&resp).unwrap();
-        let got: RequestVerifyResponse = map_response(200, &body).unwrap();
-        assert_eq!(got, resp);
-    }
-
-    // The unused-by-CanonClient method `unused_match_request` is
-    // gated here only to ensure the imports in this file stay tied
-    // to a real use site.
-    #[allow(dead_code)]
-    fn _import_match_request_for_test() {
-        let _req = CanonMatchRequest {
-            annotations: vec![AnnotationMatchInput {
-                annotation_text: "x".into(),
-                applies_to: vec!["fn".into()],
-            }],
-            confidence_threshold: 0.85,
-            include_suggestions: false,
-        };
-    }
 }

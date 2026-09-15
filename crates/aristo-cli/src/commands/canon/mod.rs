@@ -2,9 +2,8 @@
 //!
 //! `runner` is the API-call + cache-update primitive shared between
 //! `aristo stamp` (PR #5) and `aristo critique` (PR #6). The
-//! user-facing `aristo canon {show, list, refresh, unbind,
-//! request-verify}` subcommands land in PR #8/#9 alongside the
-//! trust-card renderer.
+//! user-facing `aristo canon {list, refresh, unbind}` subcommands sit
+//! alongside the trust-card renderer in `aristo show`.
 //!
 //! `accept` lands PR #7's atomic source rewrite + index rebind +
 //! cache pending → accepted move for an accepted canon match.
@@ -16,10 +15,8 @@ pub(crate) mod migrate;
 pub(crate) mod probe;
 pub(crate) mod refresh;
 pub(crate) mod reject;
-pub(crate) mod request_verify;
 pub(crate) mod runner;
 pub(crate) mod session_kind;
-pub(crate) mod show;
 pub(crate) mod suggestions;
 pub(crate) mod unbind;
 

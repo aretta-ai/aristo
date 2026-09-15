@@ -69,8 +69,7 @@ pub use reconcile::{raw_live_ids, reconcile, RawLiveIds, ReconcileReport};
 pub use rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError};
 pub use types::{
     synthesize_phase1_linked, AnnotationMatchInput, BundleCompanion, BundleCompileCheck,
-    BundleProvenance, CanonCatalogue, CanonCatalogueEntry, CanonEntry, CanonMatch,
-    CanonMatchRequest, CanonMatchResponse, ClusterSuggestion, InstrumentationBundle,
-    InstrumentationRecord, PrefixTier, RecordLanding, RecordPresence, References, Relationship,
-    RequestVerifyBody, RequestVerifyResponse, SuggestedEntry, VerificationMetadata,
+    BundleProvenance, CanonCatalogue, CanonCatalogueEntry, CanonMatch, CanonMatchRequest,
+    CanonMatchResponse, ClusterSuggestion, InstrumentationBundle, InstrumentationRecord,
+    PrefixTier, RecordLanding, RecordPresence, Relationship, SuggestedEntry, VerificationMetadata,
 };

@@ -138,10 +138,10 @@ so larger sets **paginate** (e.g. 5 siblings = a page of 4 + a page of 1); say "
 
 - Each **option** is an action; its **description** is the gray sub-line (counts, target site,
   confidence).
-- An option's **preview** (monospace) carries the rich context: the `aristo canon show` card for
+- An option's **preview** (monospace) carries the rich context: the `aristo canon suggestions <objective>` card for
   decisions, or the code snippet for placements. Putting alternate sites on sibling options lets
   the user **compare candidate sites side-by-side** by arrowing between options.
-- **Reuse, don't reinvent:** the decision card is literally the output of `aristo canon show <id>`
+- **Reuse, don't reinvent:** the decision card is literally the output of `aristo canon suggestions <objective>`
   — no bespoke card layout.
 
 ### The snippet rule (locked) — Stage A labeled rewrite vs Stage B pure-+
@@ -208,7 +208,7 @@ Present them as a **navigable batch** (≤4/page, paginate). For each match the 
 per match:  Accept (rewrite + bind) · Reject (keep your wording) · Skip · Back
   preview on Accept = a labeled before/after (NOT a diff): "Your text:" = your current wording,
     "Match (NEW):" = the canonical text it becomes on accept (see the snippet rule above)
-  preview on the card = aristo canon show <canon_id>
+  preview on the card = aristo canon suggestions <objective>
 ```
 
 Record each decision against the session:
@@ -238,7 +238,7 @@ global "re-decide the parent" loop):
 
 ```
 cluster gate:  Explore cluster · Reject cluster · Skip · Back
-  preview on Explore        = the cluster tree (✓ asserted / ☐ to consider), via aristo canon show
+  preview on Explore        = the cluster tree (✓ asserted / ☐ to consider), via aristo canon suggestions <objective>
   preview on Reject cluster = "DISCARD dragged-in only / KEEP your independent match" (D6)
 ```
 
@@ -256,7 +256,7 @@ cluster gate:  Explore cluster · Reject cluster · Skip · Back
 **PHASE 1 — batch-DECIDE siblings** (multi-Q, navigable, ≤4/page):
 
 ```
-per sibling:  Adopt · Reject · Skip      preview = aristo canon show <canon_id> card
+per sibling:  Adopt · Reject · Skip      preview = the sibling's block from aristo canon suggestions <objective>
 ```
 
 When you surface the suggested text for the decision, label it `Suggested intent (NEW):` (see the
@@ -269,7 +269,7 @@ shared rejection log) — surface them in a separate "auto-rejected" group, don'
 list.
 
 **PHASE 2 — agent batch-FINDS sites** for every "Adopt." For each adopted entry, the SDK exposes
-its `applies_to` + `canonical_text` + `description` (via `aristo canon show <canon_id>`).
+its `applies_to` + `canonical_text` + `description` (from `aristo canon suggestions <objective>`).
 **Site-finding is YOUR job** (the agent): locate the load-bearing site(s) where the invariant
 should be asserted. Propose a HIGH/MEDIUM-confidence primary site plus alternates.
 
@@ -341,7 +341,7 @@ Run `aristo canon refresh` to re-match any adopted/applied edits **after** the s
   same removal-block confusion as Stage A applies: nothing of the user's is touched. Show the
   suggested text labeled `Suggested intent (NEW):`, and the placement as plain context with only
   the new annotation line marked `+` (green).
-- ❌ Inventing a bespoke decision card. The card is `aristo canon show <id>` output, reused.
+- ❌ Inventing a bespoke decision card. The card is `aristo canon suggestions <objective>` output, reused.
 - ❌ Cramming more than 4 questions onto one page. The picker caps at 4 — paginate and say
   "page 1 of 2".
 - ❌ Writing an adopted annotation without the **confirm** AskUserQuestion. Every source edit needs

@@ -1,5 +1,5 @@
 //! End-to-end scenario tests for `aristo canon unbind` and
-//! `aristo canon request-verify` (PR #9).
+//! (PR #9).
 
 use std::path::Path;
 use std::process::Command;
@@ -162,30 +162,5 @@ fn unbind_non_canon_bound_id_errors() {
     assert!(
         stderr.contains("not canon-bound") || stderr.contains("aristos:"),
         "expected non-canon-bound diagnostic; got: {stderr}"
-    );
-}
-
-// ─── canon request-verify (coming soon) ──────────────────────────────────
-
-#[test]
-fn request_verify_reports_coming_soon() {
-    // `canon request-verify` is deferred (coming soon) pending the
-    // per-instance data-plane rework: it makes no canon-API call and no
-    // longer depends on auth or a fixture — any invocation reports the
-    // NotImplemented deferral (exit 64).
-    let ws = setup_workspace(SOURCE);
-    let out = aristo_in(ws.path())
-        .args(["canon", "request-verify", "anything"])
-        .output()
-        .unwrap();
-    assert!(
-        !out.status.success(),
-        "coming-soon command must exit non-zero"
-    );
-    assert_eq!(out.status.code(), Some(64), "NotImplemented exit code");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("canon request-verify") && stderr.contains("not implemented yet"),
-        "expected coming-soon diagnostic; got: {stderr}"
     );
 }

@@ -23,8 +23,8 @@ use std::net::TcpListener;
 use std::thread;
 
 use aristo_core::canon::types::{
-    AnnotationMatchInput, CanonEntry, CanonMatch, CanonMatchRequest, CanonMatchResponse,
-    PrefixTier, References, RequestVerifyBody, RequestVerifyResponse, VerificationMetadata,
+    AnnotationMatchInput, CanonMatch, CanonMatchRequest, CanonMatchResponse, PrefixTier,
+    VerificationMetadata,
 };
 use aristo_core::canon::{AuthError, CanonClient, CanonError, HttpCanonClient, Token};
 
@@ -190,139 +190,6 @@ fn match_annotations_happy_path_round_trips() {
 }
 
 // ─── End-to-end: GET /canon/entry/<id>?version=<v> ────────────────────────
-
-fn aristos_entry(canon_id: &str) -> CanonEntry {
-    use std::collections::BTreeMap;
-    let mut backed_by = BTreeMap::new();
-    backed_by.insert(
-        ":vanilla".to_string(),
-        Some("specialized neural checker".to_string()),
-    );
-    let mut prefix_tier_by_scope = BTreeMap::new();
-    prefix_tier_by_scope.insert(
-        ":vanilla".to_string(),
-        aristo_core::canon::PrefixTier::Aristos,
-    );
-    CanonEntry {
-        canon_id: canon_id.to_string(),
-        version: "v0.2.1".into(),
-        active_version: "v0.2.1".into(),
-        is_deprecated: false,
-        canon_version: "v0.2.0".into(),
-        canonical_text: "the canonical phrasing".into(),
-        applies_to: vec!["fn".into()],
-        category: "invariants".into(),
-        property_type: "safety".into(),
-        backed_by,
-        prefix_tier_by_scope,
-        description: String::new(),
-        examples: vec![],
-        invariant_sketch: String::new(),
-        references: References::default(),
-        effective_scopes: vec![":vanilla".into()],
-    }
-}
-
-fn kanon_entry(canon_id: &str) -> CanonEntry {
-    use std::collections::BTreeMap;
-    let mut backed_by = BTreeMap::new();
-    backed_by.insert(":vanilla".to_string(), None);
-    let mut prefix_tier_by_scope = BTreeMap::new();
-    prefix_tier_by_scope.insert(
-        ":vanilla".to_string(),
-        aristo_core::canon::PrefixTier::Kanon,
-    );
-    CanonEntry {
-        canon_id: canon_id.to_string(),
-        version: "v0.1.0".into(),
-        active_version: "v0.1.0".into(),
-        is_deprecated: false,
-        canon_version: "v0.1.0".into(),
-        canonical_text: "x".into(),
-        applies_to: vec!["fn".into()],
-        category: "invariants".into(),
-        property_type: "safety".into(),
-        backed_by,
-        prefix_tier_by_scope,
-        description: String::new(),
-        examples: vec![],
-        invariant_sketch: String::new(),
-        references: References::default(),
-        effective_scopes: vec![":vanilla".into()],
-    }
-}
-
-#[test]
-fn get_entry_with_version_sends_query_param() {
-    let canned_entry = aristos_entry("foo");
-    let body = serde_json::to_string(&canned_entry).unwrap();
-    let (base, server) = spawn_mock(CannedResponse {
-        status_line: "HTTP/1.1 200 OK",
-        body,
-    });
-
-    let token = Token::new("e2e-test-token");
-    let client = HttpCanonClient::new(base, &token, "widgets");
-    let entry = client.get_entry("foo", Some("v0.2.1")).expect("get_entry");
-    assert_eq!(entry, canned_entry);
-
-    let record = server.join().unwrap();
-    assert_eq!(record.method, "GET");
-    assert_eq!(record.path, "/widgets/api/canon/entry/foo?version=v0.2.1");
-}
-
-#[test]
-fn get_entry_without_version_omits_query_param() {
-    let canned_entry = kanon_entry("bar");
-    let body = serde_json::to_string(&canned_entry).unwrap();
-    let (base, server) = spawn_mock(CannedResponse {
-        status_line: "HTTP/1.1 200 OK",
-        body,
-    });
-
-    let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token, "widgets");
-    let _entry = client.get_entry("bar", None).expect("get_entry");
-
-    let record = server.join().unwrap();
-    assert_eq!(record.path, "/widgets/api/canon/entry/bar");
-}
-
-// ─── End-to-end: POST /canon/request-verify ───────────────────────────────
-
-#[test]
-fn request_verify_round_trips_with_optional_note() {
-    let canned = RequestVerifyResponse {
-        status: "submitted".into(),
-        canon_id: "foo".into(),
-        current_backing: Some("specialized neural checker".into()),
-        previously_submitted_at: None,
-    };
-    let body = serde_json::to_string(&canned).unwrap();
-    let (base, server) = spawn_mock(CannedResponse {
-        status_line: "HTTP/1.1 200 OK",
-        body,
-    });
-
-    let token = Token::new("t");
-    let client = HttpCanonClient::new(base, &token, "widgets");
-    let resp = client
-        .request_verify(&RequestVerifyBody {
-            canon_id: "foo".into(),
-            notes: Some("important for our audit".into()),
-        })
-        .unwrap();
-    assert_eq!(resp.status, "submitted");
-
-    let record = server.join().unwrap();
-    assert_eq!(record.method, "POST");
-    assert_eq!(record.path, "/widgets/api/canon/request-verify");
-    let sent: RequestVerifyBody = serde_json::from_str(&record.body).unwrap();
-    assert_eq!(sent.canon_id, "foo");
-    assert_eq!(sent.notes.as_deref(), Some("important for our audit"));
-}
-
-// ─── End-to-end: error status mapping ─────────────────────────────────────
 
 #[test]
 fn server_401_maps_to_auth_invalid() {

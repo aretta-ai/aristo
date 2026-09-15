@@ -71,7 +71,7 @@ Search the snapshot's `canonical_text` / `category` for your invariant. On a hit
 
 `aristo canon accept` is not a formality: it **rewrites the user's source** (annotation text → the canonical text, id → the tier-prefixed id) and creates a durable binding in the committed `.aristo/canon-matches.toml`. A wrong binding attaches the wrong proof obligations to the code — the decision belongs to the user.
 
-When `aristo stamp` surfaces a pending match for an annotation you just wrote, do NOT accept it inline. **Load the `aristo-intent-suggestions` skill and run its review flow** — its Stage A (pending PRIMARY matches) owns the presentation: `AskUserQuestion` menus with the `aristo canon show` card as the preview, per-match *Accept (rewrite + bind) / Reject / Skip* decisions, tier and confidence in view. Bring your sibling-entry disambiguation reasoning into the recommendation; return here afterwards for the post-accept instrumentation contract (below).
+When `aristo stamp` surfaces a pending match for an annotation you just wrote, do NOT accept it inline. **Load the `aristo-intent-suggestions` skill and run its review flow** — its Stage A (pending PRIMARY matches) owns the presentation: `AskUserQuestion` menus with the `aristo canon list` / `aristo canon suggestions` output as the preview, per-match *Accept (rewrite + bind) / Reject / Skip* decisions, tier and confidence in view. Bring your sibling-entry disambiguation reasoning into the recommendation; return here afterwards for the post-accept instrumentation contract (below).
 
 Auto-accept without the review flow only when the user explicitly pre-authorized it for this task ("bind and accept without asking", a standing CLAUDE.md instruction). Never accept pending matches on OTHER annotations as a side effect of your task — they belong to the same review flow later; mention them and move on.
 
@@ -471,7 +471,7 @@ Rule of thumb: **results that gate trust get committed; runtime, review-session,
 
 8. **`aristo verify --filter id=<your-id>`.** Confirms a runtime claim via the configured verification method. Only meaningful for `verify = "test"` / `"full"` intents.
 
-9. **`aristo review --filter "path/to/new/module/"`.** Deeper agentic critique — vocabulary inconsistencies, parent-shape concerns, rephrasing suggestions. Slower but produces actionable improvements. Apply judgment; suggestions are advisory.
+9. **`aristo critique --filter file=path/to/new/module/`.** Deeper agentic critique — vocabulary inconsistencies, parent-shape concerns, rephrasing suggestions. Slower but produces actionable improvements. Apply judgment; suggestions are advisory.
 
 If any of these commands fail with `not yet implemented (planned for slice X)`, you're running against an SDK build where that command hasn't shipped yet. Note the gap in your reply to the user; don't try to work around it.
 

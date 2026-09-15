@@ -763,22 +763,6 @@ pub(crate) enum CanonAction {
     /// does not call the canon API.
     List,
 
-    /// Fetch the canon entry detail for `<canon_id>` via the canon
-    /// API and render the longer description + example + references.
-    /// For the full trust card (server description + local binding
-    /// state combined), use `aristo show <bound_id>` instead.
-    Show {
-        /// Bare canon id (no `aristos:` / `kanon:` prefix). The
-        /// server's `GET /canon/entry/<canon_id>` endpoint returns
-        /// the same entry regardless of which tier you'd bind into;
-        /// the prefix is a per-user, per-scope attribute.
-        canon_id: String,
-        /// Optional explicit version (`v<minor>.<patch>`). Omit to
-        /// get the catalog's currently active version.
-        #[arg(long = "version")]
-        version: Option<String>,
-    },
-
     /// Re-query the canon API for every annotation in the index,
     /// bypassing the local match cache. Equivalent to
     /// `aristo stamp --refresh-canon` without the rest of the stamp
@@ -802,22 +786,6 @@ pub(crate) enum CanonAction {
         /// Canon-bound annotation id including the prefix (e.g.
         /// `aristos:cell_written_exactly_once_per_page_edit`).
         prefixed_id: String,
-    },
-
-    /// Record a verification-demand signal against a canon entry.
-    /// Idempotent on `(canon_id, repo, user)` — repeated calls don't
-    /// pile up. Use when an annotation is bound at the `kanon:` tier
-    /// and you'd like Aretta to invest in a verifier for that canon
-    /// entry.
-    RequestVerify {
-        /// Canon id (no prefix). The same id the trust card shows,
-        /// or that `aristo canon list` reports.
-        canon_id: String,
-        /// Optional note to attach to the demand signal (e.g.
-        /// "critical for our financial-tx audit"). A repeat call
-        /// with a new note replaces the previous one server-side.
-        #[arg(long = "notes")]
-        notes: Option<String>,
     },
 
     /// Report per-binding version drift between the local cache and
@@ -1181,14 +1149,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 reason,
             } => commands::canon::reject::run(&annotation_id, &canon_id, reason),
             CanonAction::List => commands::canon::list::run(),
-            CanonAction::Show { canon_id, version } => {
-                commands::canon::show::run(&canon_id, version)
-            }
             CanonAction::Refresh => commands::canon::refresh::run(),
             CanonAction::Unbind { prefixed_id } => commands::canon::unbind::run(&prefixed_id),
-            CanonAction::RequestVerify { canon_id, notes } => {
-                commands::canon::request_verify::run(&canon_id, notes)
-            }
             CanonAction::Migrate => commands::canon::migrate::run(),
             CanonAction::Catalogue => commands::canon::catalogue::run(),
             CanonAction::Probe {

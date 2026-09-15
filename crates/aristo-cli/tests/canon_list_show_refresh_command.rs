@@ -1,5 +1,5 @@
-//! End-to-end scenario tests for the `aristo canon {list, show,
-//! refresh}` subcommands (PR #8). Pattern mirrors the other canon_*
+//! End-to-end scenario tests for the `aristo canon {list, refresh}`
+//! subcommands (PR #8). Pattern mirrors the other canon_*
 //! command e2e tests.
 
 use std::path::Path;
@@ -157,33 +157,6 @@ fn list_after_accept_shows_accepted_match() {
         "expected prefixed key; got: {stdout}"
     );
 }
-
-// ─── canon show (coming soon) ─────────────────────────────────────────────
-
-#[test]
-fn show_reports_coming_soon() {
-    // `canon show` is deferred (coming soon) pending the per-instance
-    // data-plane rework: it makes no canon-API call and no longer
-    // depends on auth or a fixture — any invocation reports the
-    // NotImplemented deferral (exit 64).
-    let ws = setup_workspace(SOURCE);
-    let out = aristo_in(ws.path())
-        .args(["canon", "show", "anything"])
-        .output()
-        .unwrap();
-    assert!(
-        !out.status.success(),
-        "coming-soon command must exit non-zero"
-    );
-    assert_eq!(out.status.code(), Some(64), "NotImplemented exit code");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("canon show") && stderr.contains("not implemented yet"),
-        "expected coming-soon diagnostic; got: {stderr}"
-    );
-}
-
-// ─── canon refresh ───────────────────────────────────────────────────────
 
 #[test]
 fn refresh_re_runs_the_match_call_against_index() {
