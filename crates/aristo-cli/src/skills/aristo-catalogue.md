@@ -16,13 +16,13 @@ The catalogue is the corpus of **canon entries** — the reusable, curated invar
 aristo canon catalogue
 ```
 
-This requires sign-in — if it reports "requires authentication", tell the user to run `aristo auth login` and stop. It fetches the catalogue from this project's Aristo instance (the per-repo conductor when `[instance] url` is set in `aristo.toml`, otherwise the default server) and writes it to:
+This requires sign-in — if it reports "requires authentication", tell the user to run `aristo auth login` and stop. It fetches the catalogue from the server this checkout's credential was minted against (`aristo auth status` shows it; `ARETTA_API_URL` overrides) and writes it to:
 
 ```
 .aristo/catalogue.json
 ```
 
-**This file is a GITIGNORED local cache.** `aristo init` adds `.aristo/catalogue.json` to `.gitignore`; it is a regenerable snapshot, **never committed**. Do NOT `git add` it, do NOT treat it as a tracked artifact or reference it in committed code/docs, and re-run `aristo canon catalogue` to refresh it. If the command reports 0 entries, the instance has no canon corpus configured (or `[instance] url` isn't pointed at a conductor) — say so; never fabricate entries.
+**This file is a GITIGNORED local cache.** `aristo init` adds `.aristo/catalogue.json` to `.gitignore`; it is a regenerable snapshot, **never committed**. Do NOT `git add` it, do NOT treat it as a tracked artifact or reference it in committed code/docs, and re-run `aristo canon catalogue` to refresh it. If the command reports 0 entries, that server has no canon corpus configured — say so; never fabricate entries.
 
 **The snapshot's first field is a server-stamped `notice`** — a proprietary/confidential marking (this corpus is licensed to the design partner for internal use only). It is authoritative; surface it if the user asks about sharing the catalogue, never strip it, and treat it as a hard signal that this file must not leave the organization or land in any external/OSS repo.
 

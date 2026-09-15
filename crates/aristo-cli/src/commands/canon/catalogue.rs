@@ -4,7 +4,7 @@
 //! summary.
 //!
 //! Logged-in only: it presents the account's Bearer token to the
-//! per-repo conductor's `GET /catalogue` (Read-gated), addressed via
+//! org server's `GET /catalogue` (Read-gated), addressed via
 //! the resolved data-plane base. The
 //! download is a regenerable local cache — `aristo init` gitignores it
 //! (see `ARISTO_GITIGNORE_ENTRIES`) — so agents can browse/search the
