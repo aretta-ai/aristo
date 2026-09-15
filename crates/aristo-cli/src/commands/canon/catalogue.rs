@@ -12,9 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use aristo_core::canon::{
-    CanonCatalogue, CanonClient, CanonError, HttpCanonClient, MockCanonClient,
-};
+use aristo_core::canon::{CanonCatalogue, CanonError};
 
 use crate::commands::index::workspace_or_error;
 use crate::{CliError, CliResult};
@@ -27,26 +25,9 @@ const CATALOGUE_REL: &str = ".aristo/catalogue.json";
 pub(crate) fn run() -> CliResult<()> {
     let ws = workspace_or_error()?;
 
-    // Client selection mirrors the canon runner/migrate: fixture (tests)
-    // wins, then authenticated HTTP, else a logged-out error.
-    let client: Box<dyn CanonClient> = if let Some(mock) = MockCanonClient::from_env() {
-        Box::new(mock)
-    } else {
-        match aristo_core::auth::resolve_full() {
-            Ok(creds) => {
-                let base_url = crate::data_plane::resolve_base(&creds.server);
-                Box::new(HttpCanonClient::new(base_url, &creds.token))
-            }
-            Err(_) => {
-                return Err(CliError::Other {
-                    message: "canon catalogue requires authentication.\n  \
-                              Run `aristo auth login` first."
-                        .into(),
-                    exit_code: 1,
-                });
-            }
-        }
-    };
+    // Fixture (tests) wins, then the resolved credential; a resolver
+    // failure is the command's error with the resolver's diagnosis.
+    let client = super::required_client("canon catalogue")?;
 
     let catalogue = client.catalogue().map_err(canon_error_to_cli)?;
 

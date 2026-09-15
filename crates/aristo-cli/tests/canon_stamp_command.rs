@@ -210,6 +210,120 @@ fn stamp_free_tier_skips_canon_with_nudge() {
     assert!(!ws.path().join(".aristo/canon-matches.toml").exists());
 }
 
+// ─── Signed in, but not for this checkout (#76) ───────────────────────────
+
+/// Two stored credentials (v2 store) under the sandbox HOME, neither
+/// scoped to the repo the workspace's `.git/config` derives to.
+fn write_two_foreign_credentials(ws: &Path) {
+    let dir = ws.join("home/xdg/aristo");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("credentials"),
+        r#"version = 2
+
+[[entries]]
+server = "https://acme.aretta.ai"
+repo = "acme/widgets"
+token = "arta_secret_acme"
+minted_at = "2026-09-14T11:07:00Z"
+user_login = "alice"
+
+[[entries]]
+server = "https://code.aretta.ai"
+repo = "other/project"
+token = "arta_secret_other"
+minted_at = "2026-09-14T11:08:00Z"
+"#,
+    )
+    .unwrap();
+}
+
+fn write_git_origin(ws: &Path, url: &str) {
+    let git = ws.join(".git");
+    std::fs::create_dir_all(&git).unwrap();
+    std::fs::write(
+        git.join("config"),
+        format!("[remote \"origin\"]\n    url = {url}\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn stamp_with_credentials_for_other_repos_explains_instead_of_nudging() {
+    let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
+    write_two_foreign_credentials(ws.path());
+    // The checkout derives to a repo neither entry is scoped to (a fork).
+    write_git_origin(ws.path(), "https://github.com/alice/widgets.git");
+
+    let out = aristo_in(ws.path()).args(["stamp"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "stamp must stay non-fatal: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // The user IS signed in — no trial nudge.
+    assert!(!stdout.contains("Pro feature"), "stdout: {stdout}");
+    assert!(!stdout.contains("trial"), "stdout: {stdout}");
+    // What was derived, what is on file (token-free), and both remedies.
+    assert!(
+        stdout.contains("this checkout: alice/widgets"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("server: https://acme.aretta.ai   repo: acme/widgets   user: alice"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("server: https://code.aretta.ai   repo: other/project"),
+        "stdout: {stdout}"
+    );
+    assert!(!stdout.contains("arta_secret"), "token leaked: {stdout}");
+    assert!(
+        stdout.contains("`aristo auth login --repo alice/widgets` from this checkout"),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("ARETTA_TOKEN"), "stdout: {stdout}");
+    // Still no cache written — nothing was matched.
+    assert!(!ws.path().join(".aristo/canon-matches.toml").exists());
+}
+
+#[test]
+fn canon_refresh_with_non_github_checkout_shows_the_derivation_error() {
+    let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
+    write_two_foreign_credentials(ws.path());
+    write_git_origin(ws.path(), "https://gitlab.com/alice/widgets.git");
+    // `canon refresh` needs an index; build it without a match call.
+    assert!(aristo_in(ws.path())
+        .args(["stamp", "--skip-canon"])
+        .status()
+        .unwrap()
+        .success());
+
+    let out = aristo_in(ws.path())
+        .args(["canon", "refresh"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("Pro feature"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("could not derive owner/repo"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("doesn't look like a GitHub URL"),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("acme/widgets"), "stdout: {stdout}");
+    assert!(!stdout.contains("arta_secret"), "token leaked: {stdout}");
+}
+
 // ─── --skip-canon: per-invocation opt-out ─────────────────────────────────
 
 #[test]

@@ -515,10 +515,9 @@ fn verbatim_probe_stmt(
             return None;
         }
         (Some(ident.to_string()), pos + dot_pat.len() - 1)
-    } else if let Some(pos) = rhs.find(&path_pat) {
-        (None, pos + path_pat.len() - 1)
     } else {
-        return None;
+        rhs.find(&path_pat)
+            .map(|pos| (None, pos + path_pat.len() - 1))?
     };
 
     let close_idx = matching_paren(rhs, open_idx)?;

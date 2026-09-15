@@ -30,10 +30,7 @@
 use std::fs;
 
 use aristo_core::canon::cache::CanonMatchesFile;
-use aristo_core::canon::{
-    AnnotationMatchInput, CanonClient, CanonError, CanonMatchRequest, HttpCanonClient,
-    MockCanonClient,
-};
+use aristo_core::canon::{AnnotationMatchInput, CanonError, CanonMatchRequest};
 use aristo_core::index::{BindingState, IdNamespace, IndexEntry, IndexFile};
 
 use crate::commands::index::workspace_or_error;
@@ -101,25 +98,9 @@ pub(crate) fn run() -> CliResult<()> {
     let cache_path = ws.canon_matches_path();
     let cache = CanonMatchesFile::read(&cache_path).map_err(CliError::Io)?;
 
-    // Build a client. Same precedence as runner.
-    let client: Box<dyn CanonClient> = if let Some(mock) = MockCanonClient::from_env() {
-        Box::new(mock)
-    } else {
-        match aristo_core::auth::resolve_full() {
-            Ok(creds) => {
-                let base_url = crate::data_plane::resolve_base(&creds.server);
-                Box::new(HttpCanonClient::new(base_url, &creds.token))
-            }
-            Err(_) => {
-                return Err(CliError::Other {
-                    message: "canon API requires authentication.\n  \
-                              Run `aristo auth login` first."
-                        .into(),
-                    exit_code: 1,
-                });
-            }
-        }
-    };
+    // Fixture (tests) wins, then the resolved credential; a resolver
+    // failure is the command's error with the resolver's diagnosis.
+    let client = super::required_client("canon migrate")?;
 
     // Build the batched match request from canon-bound annotations.
     let request = CanonMatchRequest {

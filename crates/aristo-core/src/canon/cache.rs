@@ -288,7 +288,7 @@ pub struct RejectedMatch {
 impl CanonMatchesFile {
     /// Read the canon-matches cache from `path`. Returns
     /// `Ok(default)` if the file doesn't exist (typical first-run
-    /// case). Surfaces parse errors as [`io::Error::other`] so
+    /// case). Surfaces parse errors as `io::Error::other` so
     /// callers can propagate via `?`.
     pub fn read(path: &Path) -> io::Result<Self> {
         match fs::read_to_string(path) {

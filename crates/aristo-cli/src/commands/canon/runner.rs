@@ -13,7 +13,8 @@
 //! | `[canon] enabled = false` | [`NoopCanonClient`] | silent skip — opt-out for regulated buyers |
 //! | `--skip-canon` flag | [`NoopCanonClient`] | silent skip — per-invocation opt-out |
 //! | Auth token resolves | [`HttpCanonClient`] | real API call (Pro / Enterprise) |
-//! | No token resolved | [`NoopCanonClient`] | free-tier path; runner prints upgrade nudge |
+//! | Nothing on file (`NoToken`) | none | free-tier path; runner prints upgrade nudge |
+//! | Credentials on file, none usable | none | signed-in path; runner prints the resolver's diagnosis + remedies, never the nudge |
 //!
 //! `ARETTA_API_URL` env var overrides the production base URL
 //! (for staging + integration tests against a local TCP listener).
@@ -34,10 +35,11 @@
 
 use std::time::SystemTime;
 
+use aristo_core::auth::AuthError;
 use aristo_core::canon::{
     AnnotationMatchInput, CacheEntry, CanonClient, CanonError, CanonMatchRequest,
     CanonMatchResponse, CanonMatchesFile, Disposition, HttpCanonClient, MockCanonClient,
-    NoopCanonClient, PendingMatch,
+    PendingMatch,
 };
 use aristo_core::config::CanonConfig;
 use aristo_core::index::{AnnotationId, IndexEntry, IndexFile};
@@ -66,11 +68,21 @@ pub(crate) enum CanonStepOutcome {
     /// `--skip-canon` flag on the invocation. Per-invocation
     /// opt-out; same silence as `DisabledByConfig`.
     SkippedByFlag,
-    /// Free-tier user (no auth token + not in test mode). Runner
-    /// surfaces a one-line upgrade nudge; cached matches (if any)
-    /// from a prior paid session stay readable but no new matches
-    /// are surfaced.
+    /// Free-tier user (nothing on file, no `ARETTA_TOKEN`, not in test
+    /// mode). Runner surfaces a one-line upgrade nudge; cached matches
+    /// (if any) from a prior paid session stay readable but no new
+    /// matches are surfaced.
     FreeTier { annotations_skipped: usize },
+    /// Credentials exist but the resolver could not use them for this
+    /// invocation — several entries, none for this checkout
+    /// ([`AuthError::NoEntryForCheckout`]), or a malformed file. The
+    /// user is signed in, so the trial nudge would be wrong; the runner
+    /// prints the resolver's own diagnosis and remedies instead. Same
+    /// non-fatal treatment as [`CanonStepOutcome::FreeTier`].
+    Unresolved {
+        error: AuthError,
+        annotations_skipped: usize,
+    },
     /// API call failed (timeout, network, auth, server). Cached
     /// matches retained per L3's graceful-degradation policy.
     /// `failed_for` records how many annotations would have been
@@ -117,10 +129,9 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
         exit_code: 1,
     })?;
 
-    // ── Build the canon client. NoopCanonClient is the free-tier
-    //    + missing-token path; the caller branches on the outcome to
-    //    print the nudge. ────────────────────────────────────────────────
-    let (client, is_free_tier) = build_client(args.config);
+    // ── Select the canon client. No client = no API call; the caller
+    //    branches on the outcome to print the nudge or the diagnosis. ──────
+    let selection = select_client(args.config);
 
     // ── Collect annotations needing a fresh match ──────────────────────────
     let batch = collect_batch(args.index, &cache, args.refresh_flag);
@@ -129,12 +140,21 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
         return Ok(CanonStepOutcome::CacheHit { existing_pending });
     }
 
-    // ── Free-tier short-circuit: no API call, just surface the nudge ──────
-    if is_free_tier {
-        return Ok(CanonStepOutcome::FreeTier {
-            annotations_skipped: batch.len(),
-        });
-    }
+    // ── No-client short-circuits: nothing reaches the server ──────────────
+    let client = match selection {
+        ClientSelection::Client(c) => c,
+        ClientSelection::FreeTier => {
+            return Ok(CanonStepOutcome::FreeTier {
+                annotations_skipped: batch.len(),
+            })
+        }
+        ClientSelection::Unresolved(error) => {
+            return Ok(CanonStepOutcome::Unresolved {
+                error,
+                annotations_skipped: batch.len(),
+            })
+        }
+    };
 
     // ── Call /canon/match ─────────────────────────────────────────────────
     let req = CanonMatchRequest {
@@ -191,39 +211,52 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
 
 // ─── Client selection ──────────────────────────────────────────────────────
 
-/// Returns `(client, is_free_tier)`. `is_free_tier` is true only
-/// when the client is a Noop *because* of missing auth — `[canon]
-/// enabled = false` and `--skip-canon` are handled upstream.
+/// Picks the client, or the reason there is none. `FreeTier` is
+/// reserved for "nothing on file" — `[canon] enabled = false` and
+/// `--skip-canon` are handled upstream, and every other resolver
+/// failure is `Unresolved` (the user is signed in; say what's wrong).
 #[aristo::intent(
     "Client selection order is load-bearing: ARISTO_CANON_FIXTURE \
      wins outright (test mode beats everything, including auth), \
-     then auth-token resolution decides between HttpCanonClient and \
-     the free-tier Noop. Reversing — e.g. checking auth first — \
-     would make integration tests need a fake token to work, \
-     coupling test setup to the auth substrate unnecessarily.",
+     then auth-token resolution decides between HttpCanonClient, the \
+     free-tier outcome (only AuthError::NoToken — nothing on file) and \
+     the unresolved outcome (credentials on file but unusable for this \
+     checkout, or malformed). Reversing — e.g. checking auth first — \
+     would make integration tests need a fake token to work, coupling \
+     test setup to the auth substrate unnecessarily; collapsing \
+     unresolved into free-tier would tell a signed-in user to start a \
+     trial.",
     verify = "test",
     id = "canon_client_selection_test_mode_wins"
 )]
-fn build_client(_config: &CanonConfig) -> (Box<dyn CanonClient>, bool) {
+fn select_client(_config: &CanonConfig) -> ClientSelection {
     // Test mode: ARISTO_CANON_FIXTURE always wins, even over auth.
     // Lets integration tests run end-to-end without setting up a
     // token.
     if let Some(mock) = MockCanonClient::from_env() {
-        return (Box::new(mock), false);
+        return ClientSelection::Client(Box::new(mock));
     }
 
-    // Production / staging: resolve auth token. If unresolved →
-    // free tier (Noop, with the nudge).
+    // Production / staging: resolve auth token. Nothing on file at all
+    // → free tier (the nudge). Anything else the resolver reports —
+    // credentials on file but none for this checkout, a malformed file
+    // — is a signed-in user's problem to fix, not a trial to start.
     match aristo_core::auth::resolve_full() {
         Ok(creds) => {
             let base_url = crate::data_plane::resolve_base(&creds.server);
-            (
-                Box::new(HttpCanonClient::new(base_url, &creds.token)),
-                false,
-            )
+            ClientSelection::Client(Box::new(HttpCanonClient::new(base_url, &creds.token)))
         }
-        Err(_) => (Box::new(NoopCanonClient), true),
+        Err(AuthError::NoToken) => ClientSelection::FreeTier,
+        Err(other) => ClientSelection::Unresolved(other),
     }
+}
+
+/// Result of client selection. `FreeTier` and `Unresolved` both mean
+/// "no API call this run" — they differ only in what the user is told.
+enum ClientSelection {
+    Client(Box<dyn CanonClient>),
+    FreeTier,
+    Unresolved(AuthError),
 }
 
 // ─── Batch collection (L5 cache-skip policy) ───────────────────────────────
@@ -474,6 +507,23 @@ pub(crate) fn print_stamp_summary(
             println!(
                 "    Run `aristo auth login` to start a trial, or `aristo status` for details."
             );
+        }
+        CanonStepOutcome::Unresolved {
+            error,
+            annotations_skipped,
+        } => {
+            // First line of the resolver's message is the headline; the
+            // rest (derived repo, entries on file, remedies) indents
+            // under it. Nothing here is the trial nudge — the user is
+            // signed in.
+            let text = error.to_string();
+            let mut lines = text.lines();
+            let headline = lines.next().unwrap_or_default();
+            println!("→ canon-match: skipped ({headline})");
+            for line in lines {
+                println!("    {line}");
+            }
+            println!("    note: {annotations_skipped} annotation(s) could have matched.");
         }
         CanonStepOutcome::Degraded { error, failed_for } => {
             let _ = ws; // path may surface in future detail lines
