@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Removed
+- docs: three library doc comments name `aristo stamp --refresh-canon` instead of the removed `canon refresh`.
 - **cli: `aristo index`, `aristo canon refresh` and `aristo verify --check` are gone.** `aristo stamp --skip-canon` is the indexer (`index` was the same walk without the drift and binding work); `aristo stamp --refresh-canon` is the re-match (`canon refresh` was the same call without the walk); `verify --check` never had behavior. Every hint, the `aristo-intent-suggestions` skill and the CI-gates scenario name the surviving forms. `stamp --check` and `critique --staged` stay: both have behavior, specs and tests.
 - **cli: `aristo canon show` and `aristo canon request-verify` are gone.** Both were stubs that exited "not implemented"; the trust card in `aristo show` no longer points at them (a `kanon:` binding now says plainly that no verifier stands behind it yet), and the `aristo-intent-suggestions` skill's decision card is `aristo canon suggestions <objective>`, which exists. The `aristo-authoring` skill's stale `aristo review --filter` instruction reads `aristo critique --filter file=…`. Library: `CanonClient::{get_entry, request_verify}`, `CanonEntry`, `References`, `RequestVerifyBody` / `RequestVerifyResponse` and the mock's entry fixtures are removed.
 - docs: the OAuth module's rustdoc link points at `save_full` (its previous target was pruned), so `cargo doc -D warnings` passes.

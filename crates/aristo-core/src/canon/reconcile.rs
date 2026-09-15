@@ -51,7 +51,7 @@ pub struct ReconcileReport {
     pub demoted: Vec<AnnotationId>,
     /// Live canon-prefixed ids with no cache row or no
     /// `accepted_matches` — no mutation; the caller may warn and
-    /// suggest `aristo canon refresh`.
+    /// suggest `aristo stamp --refresh-canon`.
     pub missing_binding: Vec<AnnotationId>,
     /// Dead bare-id rows preserved instead of pruned because a
     /// pending match's canon-prefixed form IS live in source AND

@@ -35,7 +35,7 @@
 //!   entry and finishes the binding.
 //! - **Cache-write failed after source+index:** the binding is now
 //!   correct in source + index; the cache just lacks the
-//!   accepted_matches entry. The next `aristo canon refresh` (PR #8)
+//!   accepted_matches entry. The next `aristo stamp --refresh-canon` (PR #8)
 //!   re-fetches.
 //!
 //! ## Phase-1 scope

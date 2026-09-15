@@ -280,7 +280,7 @@ impl PrefixTier {
 /// SDK keeps reading it from the wire (the `Option<String>` field).
 /// Existing cache + index entries created with synthesized placeholders
 /// stay valid for `BindingState::Bound` — they'll only be invalidated
-/// if/when the user runs a future `aristo canon refresh` that surfaces
+/// if/when the user runs a future `aristo stamp --refresh-canon` that surfaces
 /// the real server-issued id, OR when Phase 2's verified_outcome lands
 /// and rebinding becomes a separate user-driven step.
 pub fn synthesize_phase1_linked(canon_id: &str, version: &str) -> crate::index::ArtaId {
