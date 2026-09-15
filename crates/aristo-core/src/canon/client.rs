@@ -4,9 +4,8 @@
 //!
 //! - [`HttpCanonClient`](super::http_client) — real HTTP via
 //!   `reqwest`. Lands in PR #3.
-//! - [`NoopCanonClient`](super::noop_client) — opt-out path; every
-//!   method returns [`CanonError::NotEnabled`] so the caller can
-//!   skip silently without branching on
+//! - the opt-outs (`[canon] enabled = false`, `--skip-canon`) never
+//!   construct a client at all; the runner short-circuits before
 //!   `Option<dyn CanonClient>`.
 //! - [`MockCanonClient`](super::mock_client) — TOML-fixture-driven
 //!   for tests. Reads canned responses from a directory pointed to
@@ -70,9 +69,6 @@ pub trait CanonClient: Send + Sync {
 /// or fail hard.
 #[derive(Debug)]
 pub enum CanonError {
-    /// `[canon] enabled = false` in `aristo.toml`. Caller should
-    /// skip silently — the user opted out.
-    NotEnabled,
     /// No auth token resolved (env var unset, no credentials file).
     /// Caller should surface the "run `aristo auth login`" hint and
     /// downgrade canon to a warning, not an error (the daily loop
@@ -107,10 +103,6 @@ pub enum CanonError {
 impl fmt::Display for CanonError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CanonError::NotEnabled => write!(
-                f,
-                "canon disabled via aristo.toml `[canon] enabled = false`"
-            ),
             CanonError::Auth(e) => write!(f, "canon auth error: {e}"),
             CanonError::Network(msg) => write!(f, "canon network error: {msg}"),
             CanonError::Timeout => write!(f, "canon request timed out (>8s)"),
@@ -144,26 +136,6 @@ pub use crate::auth::AuthError;
 mod tests {
     use super::*;
     use std::error::Error;
-
-    #[test]
-    fn canon_error_displays_render_useful_messages() {
-        let e = CanonError::NotEnabled;
-        assert!(e.to_string().contains("aristo.toml"));
-        assert!(e.to_string().contains("enabled"));
-
-        let e = CanonError::Auth(AuthError::NoToken);
-        assert!(e.to_string().contains("aristo auth login"));
-
-        let e = CanonError::Timeout;
-        assert!(e.to_string().contains("timed out"));
-
-        let e = CanonError::BadRequest {
-            status: 400,
-            message: "threshold too low".into(),
-        };
-        assert!(e.to_string().contains("400"));
-        assert!(e.to_string().contains("threshold too low"));
-    }
 
     #[test]
     fn auth_error_chains_through_canon_error_source() {

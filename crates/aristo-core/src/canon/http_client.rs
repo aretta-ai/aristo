@@ -31,12 +31,6 @@ use super::types::{
 };
 use super::Token;
 
-/// Default base URL for the canon API. Points at production
-/// (`code.aretta.ai`); tests + staging override via
-/// [`HttpCanonClient::new`]. See [`crate::auth::ServerUrl`] for the
-/// dev/prod/custom enum that owns the well-known URL constants.
-pub const DEFAULT_BASE_URL: &str = crate::auth::ServerUrl::PROD;
-
 /// L3 graceful-degradation timeout. Applies to each individual
 /// request (not the whole operation). Covers connect + TLS handshake +
 /// full round-trip; `stamp` is a one-shot process so every canon call
@@ -90,11 +84,6 @@ impl HttpCanonClient {
             bearer_header,
             agent,
         }
-    }
-
-    /// Construct with the production base URL.
-    pub fn production(token: &Token, repo: impl Into<String>) -> Self {
-        Self::new(DEFAULT_BASE_URL, token, repo)
     }
 
     /// `<base>/<repo>/api<path>`.
@@ -500,13 +489,6 @@ mod tests {
             c.url("/catalogue"),
             "https://api.example.test/widgets/api/catalogue"
         );
-    }
-
-    #[test]
-    fn http_client_production_constructor_uses_default_base_url() {
-        let tok = Token::new("t");
-        let c = HttpCanonClient::production(&tok, "widgets");
-        assert_eq!(c.base_url, DEFAULT_BASE_URL);
     }
 
     #[test]

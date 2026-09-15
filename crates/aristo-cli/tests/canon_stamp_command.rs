@@ -188,7 +188,7 @@ fn stamp_not_signed_in_skips_canon_with_the_login_hint() {
     let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
     // NO ARISTO_CANON_FIXTURE → MockCanonClient::from_env returns None.
     // NO ARETTA_TOKEN, no credentials file → auth::resolve returns NoToken.
-    // Runner builds NoopCanonClient with is_free_tier = true.
+    // The runner short-circuits before building any client.
     let out = aristo_in(ws.path())
         .args(["stamp"])
         .output()

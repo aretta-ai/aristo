@@ -18,9 +18,6 @@ use super::client::{VerifyClient, VerifyError};
 use super::types::{GetVerifySessionResponse, PostVerifySessionResponse, VerifySessionRequest};
 use crate::auth::{AuthError, Token};
 
-/// Default base URL — mirrors [`crate::canon::DEFAULT_BASE_URL`].
-pub const DEFAULT_BASE_URL: &str = crate::auth::ServerUrl::PROD;
-
 /// Per-request transport timeout in seconds. Wide enough to comfort-
 /// ably absorb a 30-second server-side long-poll (§7c row 9) plus
 /// network round-trip jitter.
@@ -61,10 +58,6 @@ impl HttpVerifyClient {
             bearer_header,
             agent,
         }
-    }
-
-    pub fn production(token: &Token, repo: impl Into<String>) -> Self {
-        Self::new(DEFAULT_BASE_URL, token, repo)
     }
 
     /// `<base>/<repo><path>`.
