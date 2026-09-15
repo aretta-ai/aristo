@@ -166,7 +166,7 @@ minted_at = "2026-09-14T11:08:00Z"
         "stderr: {stderr}"
     );
     assert!(
-        stderr.contains("`aristo auth login --repo alice/widgets` from this checkout"),
+        stderr.contains("`aristo auth login --server https://<org>.aretta.ai --repo alice/widgets` from this checkout"),
         "stderr: {stderr}"
     );
     assert!(!stderr.contains("arta_secret"), "token leaked: {stderr}");

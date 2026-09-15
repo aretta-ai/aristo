@@ -94,7 +94,7 @@ Index health:
   schema_version: 1 (current)
 
 Canon binding:
-  Auth:              no token (free-tier mode)
+  Auth:              not signed in
   Last fetched:      never
   Catalog version:   —
   Pending:           0

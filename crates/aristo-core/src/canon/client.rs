@@ -60,7 +60,7 @@ pub trait CanonClient: Send + Sync {
     /// Fetch the full active canon catalogue (`GET /catalogue`). One
     /// entry per canon id at its active version; closed-IP fields are
     /// stripped server-side. Requires auth (Read capability) and is
-    /// served by a per-repo conductor, addressed via the resolved
+    /// served by the org's server, addressed via the resolved
     /// data-plane base.
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError>;
 }

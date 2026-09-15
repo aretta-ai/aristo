@@ -1,10 +1,11 @@
 //! End-to-end tests for the multi-repo credential store surface:
-//! several repos logged in at once, `auth token` resolving the right
-//! one (by `--repo` and by cwd), `auth status` listing all, and
-//! repo-scoped vs `--all` logout.
+//! several repos on file at once, `auth token` resolving the right one
+//! (by `--repo` and by cwd), `auth status` listing all with the
+//! per-directory verdict, and repo-scoped vs `--all` logout.
 //!
-//! Offline and hermetic — `--token` bypass logins, no network, no
-//! dependency on the discovery endpoint.
+//! Offline and hermetic: the store is seeded directly, the way a
+//! completed `aristo auth login` leaves it (OAuth is the only login;
+//! its output is covered in `auth_oauth_login.rs`).
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -55,46 +56,45 @@ fn git_workspace(parent: &Path, name: &str, owner_repo: &str) -> std::path::Path
     ws
 }
 
+/// Seed the store under `home` with `(server, repo, token)` entries.
+fn seed(home: &Path, entries: &[(&str, &str, &str)]) {
+    let p = home.join("xdg/aristo/credentials");
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    let mut body = String::from("version = 2\n");
+    for (i, (server, repo, token)) in entries.iter().enumerate() {
+        body.push_str(&format!(
+            "\n[[entries]]\nserver = \"{server}\"\nrepo = \"{repo}\"\ntoken = \"{token}\"\n\
+             minted_at = \"2026-09-15T00:0{i}:00Z\"\n"
+        ));
+    }
+    std::fs::write(&p, body).unwrap();
+}
+
+fn fresh_home(tmp: &TempDir) -> std::path::PathBuf {
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    home
+}
+
+fn plain_dir(tmp: &TempDir, name: &str) -> std::path::PathBuf {
+    let d = tmp.path().join(name);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
 #[test]
 fn two_repos_by_flag_resolve_independently() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    // A non-git cwd so only the explicit --repo keys the entries.
-    let cwd = tmp.path().join("work");
-    std::fs::create_dir_all(&cwd).unwrap();
-
-    // Log in two repos on two servers via the bypass.
-    let a = run(
+    let home = fresh_home(&tmp);
+    // A non-git cwd so only the explicit --repo picks an entry.
+    let cwd = plain_dir(&tmp, "work");
+    seed(
         &home,
-        &cwd,
         &[
-            "auth",
-            "login",
-            "--token",
-            "tok_A",
-            "--repo",
-            "org/repoA",
-            "--server",
-            "https://a.example.com",
+            ("https://a.example.com", "org/repoA", "tok_A"),
+            ("https://b.example.com", "org/repoB", "tok_B"),
         ],
     );
-    assert!(a.status.success(), "login A: {}", stdout(&a));
-    let b = run(
-        &home,
-        &cwd,
-        &[
-            "auth",
-            "login",
-            "--token",
-            "tok_B",
-            "--repo",
-            "org/repoB",
-            "--server",
-            "https://b.example.com",
-        ],
-    );
-    assert!(b.status.success(), "login B: {}", stdout(&b));
 
     // `auth token --repo` resolves each independently.
     let ta = run(&home, &cwd, &["auth", "token", "--repo", "org/repoA"]);
@@ -118,19 +118,16 @@ fn two_repos_by_flag_resolve_independently() {
 #[test]
 fn auth_token_resolves_by_cwd_repo() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
+    let home = fresh_home(&tmp);
     let ws_a = git_workspace(tmp.path(), "a", "org/repoA");
     let ws_b = git_workspace(tmp.path(), "b", "org/repoB");
-
-    // Log in from each workspace with no --repo — the repo is derived
-    // from the cwd's git remote.
-    assert!(run(&home, &ws_a, &["auth", "login", "--token", "tok_A"])
-        .status
-        .success());
-    assert!(run(&home, &ws_b, &["auth", "login", "--token", "tok_B"])
-        .status
-        .success());
+    seed(
+        &home,
+        &[
+            ("https://code.aretta.ai", "org/repoA", "tok_A"),
+            ("https://code.aretta.ai", "org/repoB", "tok_B"),
+        ],
+    );
 
     // `auth token` (no --repo) prints the credential for the cwd's repo.
     assert_eq!(
@@ -141,25 +138,25 @@ fn auth_token_resolves_by_cwd_repo() {
         stdout(&run(&home, &ws_b, &["auth", "token"])).trim(),
         "tok_B"
     );
+    // Outside a checkout nothing resolves without --repo.
+    let plain = plain_dir(&tmp, "plain");
+    let miss = run(&home, &plain, &["auth", "token"]);
+    assert!(!miss.status.success());
+    let err = String::from_utf8_lossy(&miss.stderr);
+    assert!(err.contains("--repo"), "{err}");
 }
 
 #[test]
 fn logout_repo_scoped_removes_only_that_entry() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let cwd = tmp.path().join("work");
-    std::fs::create_dir_all(&cwd).unwrap();
-
-    run(
+    let home = fresh_home(&tmp);
+    let cwd = plain_dir(&tmp, "work");
+    seed(
         &home,
-        &cwd,
-        &["auth", "login", "--token", "tok_A", "--repo", "org/repoA"],
-    );
-    run(
-        &home,
-        &cwd,
-        &["auth", "login", "--token", "tok_B", "--repo", "org/repoB"],
+        &[
+            ("https://code.aretta.ai", "org/repoA", "tok_A"),
+            ("https://code.aretta.ai", "org/repoB", "tok_B"),
+        ],
     );
 
     // Log out of just repoA.
@@ -175,7 +172,6 @@ fn logout_repo_scoped_removes_only_that_entry() {
         stdout(&run(&home, &cwd, &["auth", "token", "--repo", "org/repoB"])).trim(),
         "tok_B"
     );
-    // repoA no longer resolves.
     let miss = run(&home, &cwd, &["auth", "token", "--repo", "org/repoA"]);
     assert!(
         !miss.status.success(),
@@ -184,22 +180,31 @@ fn logout_repo_scoped_removes_only_that_entry() {
 }
 
 #[test]
+fn logout_outside_a_checkout_needs_repo_or_all() {
+    let tmp = TempDir::new().unwrap();
+    let home = fresh_home(&tmp);
+    let cwd = plain_dir(&tmp, "work");
+    seed(&home, &[("https://code.aretta.ai", "org/repoA", "tok_A")]);
+
+    let out = run(&home, &cwd, &["auth", "logout"]);
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--repo") && err.contains("--all"), "{err}");
+    // Nothing was removed.
+    assert!(stdout(&run(&home, &cwd, &["auth", "status"])).contains("org/repoA"));
+}
+
+#[test]
 fn logout_all_clears_every_entry() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let cwd = tmp.path().join("work");
-    std::fs::create_dir_all(&cwd).unwrap();
-
-    run(
+    let home = fresh_home(&tmp);
+    let cwd = plain_dir(&tmp, "work");
+    seed(
         &home,
-        &cwd,
-        &["auth", "login", "--token", "tok_A", "--repo", "org/repoA"],
-    );
-    run(
-        &home,
-        &cwd,
-        &["auth", "login", "--token", "tok_B", "--repo", "org/repoB"],
+        &[
+            ("https://code.aretta.ai", "org/repoA", "tok_A"),
+            ("https://code.aretta.ai", "org/repoB", "tok_B"),
+        ],
     );
 
     let out = run(&home, &cwd, &["auth", "logout", "--all"]);
@@ -207,74 +212,25 @@ fn logout_all_clears_every_entry() {
     assert!(stdout(&out).contains("logged out"), "{}", stdout(&out));
 
     let st = stdout(&run(&home, &cwd, &["auth", "status"]));
-    assert!(st.contains("not authenticated"), "status: {st}");
+    assert!(st.contains("not signed in"), "status: {st}");
 }
 
-// ─── login / status say which entry this checkout resolves to (#77) ───────
+// ─── status says which entry this checkout resolves to (#77) ──────────────
 
 #[test]
-fn login_reports_added_entry_and_that_this_checkout_resolves_to_it() {
+fn status_verdict_follows_the_checkout() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let ws = git_workspace(tmp.path(), "a", "org/repoA");
-
-    let out = run(&home, &ws, &["auth", "login", "--token", "tok_A"]);
-    assert!(out.status.success(), "{}", stdout(&out));
-    let s = stdout(&out);
-    assert!(s.contains("entry added"), "login: {s}");
-    assert!(s.contains("repo org/repoA"), "login: {s}");
-    assert!(s.contains("1 entry on file"), "login: {s}");
-    assert!(
-        s.contains("this checkout (org/repoA) resolves to this entry"),
-        "login: {s}"
-    );
-    assert!(!s.contains("tok_A"), "token leaked: {s}");
-}
-
-#[test]
-fn login_for_another_repo_warns_this_checkout_will_not_resolve_to_it() {
-    let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
+    let home = fresh_home(&tmp);
     let ws_a = git_workspace(tmp.path(), "a", "org/repoA");
     let ws_fork = git_workspace(tmp.path(), "fork", "alice/repoB");
-
-    assert!(run(&home, &ws_a, &["auth", "login", "--token", "tok_A"])
-        .status
-        .success());
-    // From a fork checkout, log in for the upstream repo: two entries now,
-    // and this directory derives to neither.
-    let out = run(
+    seed(
         &home,
-        &ws_fork,
-        &["auth", "login", "--token", "tok_B", "--repo", "org/repoB"],
+        &[
+            ("https://code.aretta.ai", "org/repoA", "tok_A"),
+            ("https://code.aretta.ai", "org/repoB", "tok_B"),
+        ],
     );
-    assert!(out.status.success(), "{}", stdout(&out));
-    let s = stdout(&out);
-    assert!(s.contains("entry added"), "login: {s}");
-    assert!(s.contains("2 entries on file"), "login: {s}");
-    assert!(
-        s.contains("this checkout (alice/repoB) will NOT resolve to this entry"),
-        "login: {s}"
-    );
-    assert!(
-        s.contains("org/repoB checkout"),
-        "remedy names the repo: {s}"
-    );
-    assert!(s.contains("ARETTA_TOKEN"), "remedy names the env var: {s}");
 
-    // `auth status` from the same directory gives the same verdict.
-    let st = stdout(&run(&home, &ws_fork, &["auth", "status"]));
-    assert!(
-        st.contains("this checkout (alice/repoB) resolves to: no stored credential"),
-        "status: {st}"
-    );
-    assert!(
-        st.contains("aristo auth login --repo alice/repoB"),
-        "status: {st}"
-    );
-    // And from the matching checkout, status names the entry.
     let st_a = stdout(&run(&home, &ws_a, &["auth", "status"]));
     assert!(
         st_a.contains(
@@ -282,69 +238,29 @@ fn login_for_another_repo_warns_this_checkout_will_not_resolve_to_it() {
         ),
         "status: {st_a}"
     );
-}
-
-#[test]
-fn login_retry_for_the_same_repo_replaces_instead_of_accumulating() {
-    let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let ws = git_workspace(tmp.path(), "a", "org/repoA");
-
-    assert!(run(
-        &home,
-        &ws,
-        &[
-            "auth",
-            "login",
-            "--token",
-            "tok_1",
-            "--server",
-            "https://one.example.com"
-        ]
-    )
-    .status
-    .success());
-    let out = run(
-        &home,
-        &ws,
-        &[
-            "auth",
-            "login",
-            "--token",
-            "tok_2",
-            "--server",
-            "https://two.example.com",
-        ],
-    );
-    let s = stdout(&out);
-    assert!(s.contains("entry replaced"), "login: {s}");
-    assert!(s.contains("dropped 1 older entry"), "login: {s}");
-    assert!(s.contains("1 entry on file"), "login: {s}");
+    let st = stdout(&run(&home, &ws_fork, &["auth", "status"]));
     assert!(
-        s.contains("this checkout (org/repoA) resolves to this entry"),
-        "login: {s}"
+        st.contains("this checkout (alice/repoB) resolves to: no stored credential"),
+        "status: {st}"
     );
-    assert_eq!(stdout(&run(&home, &ws, &["auth", "token"])).trim(), "tok_2");
+    assert!(
+        st.contains("aristo auth login --server https://<org>.aretta.ai --repo alice/repoB"),
+        "status: {st}"
+    );
 }
 
 #[test]
-fn status_outside_a_github_checkout_says_so_and_names_the_sole_fallback() {
+fn status_outside_a_github_checkout_says_so_and_resolves_nothing() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let ws = git_workspace(tmp.path(), "a", "org/repoA");
-    let plain = tmp.path().join("plain");
-    std::fs::create_dir_all(&plain).unwrap();
+    let home = fresh_home(&tmp);
+    let plain = plain_dir(&tmp, "plain");
+    seed(&home, &[("https://code.aretta.ai", "org/repoA", "tok_A")]);
 
-    assert!(run(&home, &ws, &["auth", "login", "--token", "tok_A"])
-        .status
-        .success());
     let st = stdout(&run(&home, &plain, &["auth", "status"]));
     assert!(st.contains("not a GitHub checkout"), "status: {st}");
     assert!(st.contains("no .git/config"), "status: {st}");
     assert!(
-        st.contains("resolves to: server https://code.aretta.ai, repo org/repoA"),
-        "the sole entry still applies: {st}"
+        st.contains("resolves to: no stored credential (1 on file"),
+        "no single-entry fallback: {st}"
     );
 }

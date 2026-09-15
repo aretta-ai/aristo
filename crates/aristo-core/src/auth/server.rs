@@ -8,13 +8,16 @@
 //!
 //! ## Parsing user input
 //!
-//! The CLI's `--server <spec>` flag accepts:
+//! The CLI's `--server <spec>` flag (and `ARETTA_API_URL`) accept a URL:
 //!
-//! - `prod` / `production` → [`ServerUrl::Prod`]
-//! - any other string that starts with `http://` or `https://` →
-//!   [`ServerUrl::Custom`]
+//! - a string that starts with `http://` or `https://` →
+//!   [`ServerUrl::Custom`] (trailing `/` stripped)
 //! - any other string → [`ServerUrl::Custom`] with `https://` prefix
 //!   added (so users can type `localhost:8443`).
+//!
+//! A server is named by its URL, one way. The empty string maps to
+//! [`ServerUrl::Prod`] so a credentials entry without a `server` field
+//! still reads.
 
 /// The Aretta proxy this credential is for.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -40,12 +43,12 @@ impl ServerUrl {
         }
     }
 
-    /// Parse a user-supplied spec (from the `--server` CLI flag or
-    /// a persisted credentials-file `server` field).
+    /// Parse a user-supplied spec (from the `--server` CLI flag,
+    /// `ARETTA_API_URL`, or a persisted credentials-file `server` field).
     pub fn parse(raw: &str) -> Self {
         let trimmed = raw.trim();
         match trimmed {
-            "prod" | "production" => Self::Prod,
+            // Legacy credentials entries with no `server` field.
             "" => Self::Prod,
             // Already a full URL — pass through.
             other if other.starts_with("http://") || other.starts_with("https://") => {
@@ -69,63 +72,43 @@ impl std::fmt::Display for ServerUrl {
 }
 
 /// Resolve the base URL for **data-plane** requests — verify-session
-/// dispatch and canon match. Precedence, highest first:
+/// dispatch and canon match. Two tiers, highest first:
 ///
 /// 1. `env_override` — the `ARETTA_API_URL` env var (CI / test /
 ///    staging redirect). A blank/whitespace value is treated as unset
-///    (matching [`login_server`]), so it falls through instead of
-///    routing to an empty base; a present value is returned verbatim
-///    (trimmed, not normalized), preserving CI/test redirects.
-/// 2. `instance` — the project's `[instance] url` from `aristo.toml`,
-///    normalized through [`ServerUrl::parse`] (a bare host gets
-///    `https://`, a trailing `/` is stripped). Blank/whitespace is
-///    ignored.
-/// 3. `server` — the signed-in account's server; its default already
-///    resolves to `https://code.aretta.ai`, so it is also the final
-///    fallback.
-///
-/// This is the **data plane**, distinct from the auth/control plane:
-/// the `arta_*` token is minted against `server`, but verified-data
-/// requests are addressed here. Env and config take precedence so a
-/// repo can pin its data plane to a per-repo conductor
-/// (`https://<slug>.aretta.ai`) without re-authenticating.
+///    (matching [`login_server`]); a present value is normalized via
+///    [`ServerUrl::parse`], the one way a server spec is read.
+/// 2. `server` — the credential's own server: the host the `arta_*`
+///    token was minted against, or `ARETTA_API_URL` itself for an env
+///    token.
 ///
 /// Kept pure — env is passed in, not read here — so it is
 /// unit-testable under the workspace's `unsafe_code` ban on
 /// `std::env::set_var`.
 #[aristo::intent(
     "Data-plane base-URL precedence is exactly ARETTA_API_URL (env) > \
-     aristo.toml [instance] url > the account server, in that order and \
-     no other. A blank/whitespace env override is treated as unset \
-     (matching the login resolver, login_server) so it falls through to \
-     [instance] then server instead of routing to an empty base. A \
-     present env override is returned verbatim (trimmed, not \
-     normalized), preserving CI/test redirects; the [instance] url is \
-     normalized via ServerUrl::parse; server.as_str() is the final \
-     fallback (its default is code.aretta.ai). Reordering these tiers, \
-     dropping the blank-as-unset guard, or normalizing or dropping a \
-     present verbatim env override, would silently misroute verify and \
-     canon-match requests to the wrong Aretta deployment.",
+     the credential's server, and no other tier. A blank/whitespace env \
+     override is treated as unset (matching the login resolver, \
+     login_server) so it falls through to the credential's server \
+     instead of routing to an empty base; a present env override is \
+     normalized via ServerUrl::parse, the same reading every server \
+     spec gets. Adding a tier, dropping the blank-as-unset guard, or \
+     reading the env override differently from the login server would \
+     silently misroute verify and canon-match requests to the wrong \
+     Aretta deployment.",
     verify = "neural",
     id = "data_plane_base_precedence"
 )]
-pub fn data_plane_base(
-    env_override: Option<&str>,
-    instance: Option<&str>,
-    server: &ServerUrl,
-) -> String {
-    if let Some(v) = env_override.map(str::trim).filter(|s| !s.is_empty()) {
-        return v.to_string();
+pub fn data_plane_base(env_override: Option<&str>, server: &ServerUrl) -> String {
+    match env_override.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(v) => ServerUrl::parse(v).as_str().to_string(),
+        None => server.as_str().to_string(),
     }
-    if let Some(inst) = instance.map(str::trim).filter(|s| !s.is_empty()) {
-        return ServerUrl::parse(inst).as_str().to_string();
-    }
-    server.as_str().to_string()
 }
 
-/// Where the login (auth-plane) server URL was resolved from. Carried
-/// alongside the [`ServerUrl`] so the caller can name the provenance on
-/// the "Authenticating against …" line — making a stale `ARETTA_API_URL`
+/// Where the login (auth-plane) server URL came from. Carried alongside
+/// the [`ServerUrl`] so the caller can name the provenance on the
+/// "Authenticating against …" line — making a stale `ARETTA_API_URL`
 /// export visible at a glance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginServerSource {
@@ -133,26 +116,14 @@ pub enum LoginServerSource {
     Flag,
     /// Resolved from the `ARETTA_API_URL` environment variable.
     Env,
-    /// Resolved by zero-config org discovery (queried at the
-    /// prod-default platform when neither flag nor env was supplied).
-    Discovered,
-    /// Neither flag nor env nor discovery — the built-in production
-    /// default.
-    Default,
 }
 
 impl LoginServerSource {
-    /// Short provenance suffix for the "Authenticating against …" line,
-    /// or `None` for the built-in [`Default`](Self::Default) (where
-    /// naming the source adds no signal). `repo_full_name` is
-    /// interpolated only for [`Discovered`](Self::Discovered)
-    /// (`discovered for <repo>`), where the repo is what was looked up.
-    pub fn provenance(self, repo_full_name: &str) -> Option<String> {
+    /// Short provenance suffix for the "Authenticating against …" line.
+    pub fn provenance(self) -> &'static str {
         match self {
-            Self::Flag => Some("from --server".to_string()),
-            Self::Env => Some("from ARETTA_API_URL".to_string()),
-            Self::Discovered => Some(format!("discovered for {repo_full_name}")),
-            Self::Default => None,
+            Self::Flag => "from --server",
+            Self::Env => "from ARETTA_API_URL",
         }
     }
 }
@@ -161,92 +132,29 @@ impl LoginServerSource {
 /// token is minted. Precedence, highest first:
 ///
 /// 1. `flag` — an explicit `--server` value the user passed. Threaded
-///    as `Option<&str>` so `None` means "unset" (distinguishing a
-///    user-supplied value from clap's default); parsed via
+///    as `Option<&str>` so `None` means "unset"; parsed via
 ///    [`ServerUrl::parse`].
 /// 2. `env_override` — the `ARETTA_API_URL` env var. A blank/whitespace
 ///    value is treated as unset; a present value is parsed via
 ///    [`ServerUrl::parse`] so full URLs and bare hosts both work, and
 ///    the minted token's server matches the data plane
 ///    ([`data_plane_base`]).
-/// 3. The prod default ([`ServerUrl::Prod`] = `code.aretta.ai`).
 ///
-/// This mirrors the data-plane precedence so the auth plane and data
-/// plane agree: without honoring `ARETTA_API_URL` here, a user who
-/// exported it to target an org conductor would still authenticate
-/// against prod and mint a token that org rejects.
+/// `None` when neither is given. The platform apex cannot mint an
+/// org-scoped token, so the caller asks the user for the server
+/// instead of guessing one.
 ///
 /// Kept pure — env is passed in, not read here — so it is unit-testable
 /// under the workspace's `unsafe_code` ban on `std::env::set_var`.
-///
-/// (The sibling [`data_plane_base`] carries an `#[aristo::intent]` for
-/// this same precedence-invariant class; a matching intent for this
-/// function should be authored via the `aristo-authoring` skill in a
-/// follow-up rather than hand-written — see CLAUDE.md §10.)
 pub fn login_server(
     flag: Option<&str>,
     env_override: Option<&str>,
-) -> (ServerUrl, LoginServerSource) {
+) -> Option<(ServerUrl, LoginServerSource)> {
     if let Some(f) = flag {
-        return (ServerUrl::parse(f), LoginServerSource::Flag);
+        return Some((ServerUrl::parse(f), LoginServerSource::Flag));
     }
-    if let Some(v) = env_override.map(str::trim).filter(|s| !s.is_empty()) {
-        return (ServerUrl::parse(v), LoginServerSource::Env);
-    }
-    (ServerUrl::Prod, LoginServerSource::Default)
-}
-
-/// Resolve the login (auth-plane) server with zero-config org discovery
-/// folded into the precedence. Highest first:
-///
-/// 1. `flag` — an explicit `--server` value.
-/// 2. `env_override` — the `ARETTA_API_URL` env var (blank = unset).
-/// 3. **discovery** — `discover(platform)`, run *only* when neither
-///    flag nor env is supplied. `Some` redirects login to the
-///    discovered `base_url`; `None` (404 / miss / any error) falls
-///    through to `platform`.
-/// 4. `platform` — the discovery platform itself, which is also the
-///    miss fallback (the prod default in production; see below).
-///
-/// `discover` is invoked at most once, and **never** when an explicit
-/// choice (flag or env) is present — an explicit server always wins and
-/// skips the network lookup entirely. It receives `platform` so the
-/// caller can query `<platform>/.well-known/aretta-org`.
-///
-/// `platform` is the "prod default platform" in production
-/// (`code.aretta.ai`); the caller may relocate it (e.g. a self-hosted
-/// deployment, or a test capture server) so discovery *and* its miss
-/// fallback move together. The flag/env tiers delegate to
-/// [`login_server`] so the two resolvers can't drift.
-///
-/// Env-var interaction: because a present `ARETTA_API_URL` (the env tier)
-/// short-circuits discovery, the discovery `platform` — which
-/// `ARETTA_DISCOVERY_URL` relocates (see the CLI's `discovery_platform`) —
-/// is ignored whenever `ARETTA_API_URL` is set. The two never both take
-/// effect: `ARETTA_API_URL` pins the login server outright,
-/// `ARETTA_DISCOVERY_URL` only matters when discovery actually runs.
-pub fn login_server_discovering(
-    flag: Option<&str>,
-    env_override: Option<&str>,
-    platform: &ServerUrl,
-    discover: impl FnOnce(&ServerUrl) -> Option<super::discovery::DiscoveredOrg>,
-) -> (ServerUrl, LoginServerSource) {
-    let (server, source) = login_server(flag, env_override);
-    // An explicit choice (flag or env) short-circuits discovery: the
-    // network lookup runs only when `login_server` fell to the default.
-    if source != LoginServerSource::Default {
-        return (server, source);
-    }
-    // Neither flag nor env: query discovery at `platform`, and fall back
-    // to `platform` itself (not a hardcoded prod) on a miss so the two
-    // move together when the platform is relocated.
-    match discover(platform) {
-        Some(org) => (
-            ServerUrl::parse(&org.base_url),
-            LoginServerSource::Discovered,
-        ),
-        None => (platform.clone(), LoginServerSource::Default),
-    }
+    let v = env_override.map(str::trim).filter(|s| !s.is_empty())?;
+    Some((ServerUrl::parse(v), LoginServerSource::Env))
 }
 
 #[cfg(test)]
@@ -259,11 +167,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_prod_aliases() {
-        assert_eq!(ServerUrl::parse("prod"), ServerUrl::Prod);
-        assert_eq!(ServerUrl::parse("production"), ServerUrl::Prod);
+    fn parse_has_no_alias() {
+        // A server is named by URL. Only the empty field maps to the
+        // platform default.
+        assert_eq!(ServerUrl::parse(""), ServerUrl::Prod);
+        assert_eq!(ServerUrl::parse("   "), ServerUrl::Prod);
+        assert_eq!(
+            ServerUrl::parse("prod"),
+            ServerUrl::Custom("https://prod".into())
+        );
         // Trims whitespace.
-        assert_eq!(ServerUrl::parse("  prod  "), ServerUrl::Prod);
+        assert_eq!(
+            ServerUrl::parse("  x.example.com  "),
+            ServerUrl::Custom("https://x.example.com".into())
+        );
     }
 
     #[test]
@@ -341,57 +258,34 @@ mod tests {
     }
 
     #[test]
-    fn data_plane_base_env_override_wins_verbatim() {
-        // ARETTA_API_URL (passed in) beats both instance and server, and
-        // is returned verbatim — no normalization — so CI/test redirects
-        // behave exactly as before.
-        let s = data_plane_base(
-            Some("https://ci.example.com"),
-            Some("https://turso.aretta.ai"),
-            &ServerUrl::Prod,
-        );
+    fn data_plane_base_env_override_wins_and_is_normalized() {
+        // ARETTA_API_URL beats the credential's server and is read the
+        // same way as every server spec.
+        let s = data_plane_base(Some("ci.example.com/"), &ServerUrl::Prod);
         assert_eq!(s, "https://ci.example.com");
     }
 
     #[test]
-    fn data_plane_base_empty_env_falls_through_to_instance() {
-        // An empty ARETTA_API_URL (e.g. an unset CI Variable expands to
-        // "") is treated as unset — matching login_server — so it falls
-        // through to [instance] rather than routing to an empty base.
-        let s = data_plane_base(Some(""), Some("https://turso.aretta.ai"), &ServerUrl::Prod);
-        assert_eq!(s, "https://turso.aretta.ai");
-    }
-
-    #[test]
-    fn data_plane_base_whitespace_env_falls_through_to_server() {
-        // Whitespace-only is likewise unset; with no [instance] it falls
-        // all the way through to the account server.
-        let s = data_plane_base(Some("   "), None, &ServerUrl::Prod);
-        assert_eq!(s, "https://code.aretta.ai");
-    }
-
-    #[test]
-    fn data_plane_base_instance_beats_server_and_is_normalized() {
-        // No env override: the [instance] url wins over the account
-        // server, and a bare host + trailing slash is normalized.
-        let s = data_plane_base(None, Some("turso.aretta.ai/"), &ServerUrl::Prod);
-        assert_eq!(s, "https://turso.aretta.ai");
-    }
-
-    #[test]
-    fn data_plane_base_blank_instance_is_ignored() {
-        let s = data_plane_base(
-            None,
-            Some("   "),
-            &ServerUrl::Custom("https://staging.example.com".into()),
+    fn data_plane_base_blank_env_falls_through_to_server() {
+        // An empty or whitespace ARETTA_API_URL (an unset CI Variable
+        // expands to "") is unset — matching login_server.
+        let custom = ServerUrl::Custom("https://staging.example.com".into());
+        assert_eq!(
+            data_plane_base(Some(""), &custom),
+            "https://staging.example.com"
         );
-        assert_eq!(s, "https://staging.example.com");
+        assert_eq!(
+            data_plane_base(Some("   "), &custom),
+            "https://staging.example.com"
+        );
     }
 
     #[test]
     fn data_plane_base_falls_back_to_server() {
-        let s = data_plane_base(None, None, &ServerUrl::Prod);
-        assert_eq!(s, "https://code.aretta.ai");
+        assert_eq!(
+            data_plane_base(None, &ServerUrl::Prod),
+            "https://code.aretta.ai"
+        );
     }
 
     // ─── login_server precedence ────────────────────────────────────────────
@@ -402,146 +296,44 @@ mod tests {
         let (server, source) = login_server(
             Some("https://flag.example.com"),
             Some("https://turso.aretta.ai"),
-        );
+        )
+        .unwrap();
         assert_eq!(server, ServerUrl::Custom("https://flag.example.com".into()));
         assert_eq!(source, LoginServerSource::Flag);
     }
 
     #[test]
-    fn login_server_env_beats_default() {
-        // No flag: ARETTA_API_URL wins over the prod default. This is the
-        // field bug — the old login path ignored the env and hit prod.
-        let (server, source) = login_server(None, Some("https://turso.aretta.ai"));
+    fn login_server_env_when_no_flag() {
+        let (server, source) = login_server(None, Some("https://turso.aretta.ai")).unwrap();
         assert_eq!(server, ServerUrl::Custom("https://turso.aretta.ai".into()));
         assert_eq!(source, LoginServerSource::Env);
     }
 
     #[test]
     fn login_server_env_parsed_via_serverurl_parse() {
-        // The env value goes through ServerUrl::parse: the `prod` alias,
-        // bare hosts (→ https://), and trailing slashes all normalize.
-        assert_eq!(login_server(None, Some("prod")).0, ServerUrl::Prod);
+        // The env value goes through ServerUrl::parse: bare hosts
+        // (→ https://) and trailing slashes normalize.
         assert_eq!(
-            login_server(None, Some("turso.aretta.ai/")).0,
+            login_server(None, Some("turso.aretta.ai/")).unwrap().0,
             ServerUrl::Custom("https://turso.aretta.ai".into())
         );
     }
 
     #[test]
-    fn login_server_blank_env_is_ignored() {
+    fn login_server_blank_env_is_unset() {
         // A blank/whitespace ARETTA_API_URL is treated as unset, not as an
-        // empty custom server, so it falls through to the prod default.
-        let (server, source) = login_server(None, Some("   "));
-        assert_eq!(server, ServerUrl::Prod);
-        assert_eq!(source, LoginServerSource::Default);
+        // empty custom server; nothing else fills in.
+        assert_eq!(login_server(None, Some("   ")), None);
     }
 
     #[test]
-    fn login_server_unset_env_falls_back_to_prod() {
-        let (server, source) = login_server(None, None);
-        assert_eq!(server, ServerUrl::Prod);
-        assert_eq!(source, LoginServerSource::Default);
+    fn login_server_has_no_default() {
+        assert_eq!(login_server(None, None), None);
     }
 
     #[test]
-    fn login_server_provenance_named_only_when_not_default() {
-        let repo = "owner/repo";
-        assert_eq!(
-            LoginServerSource::Flag.provenance(repo).as_deref(),
-            Some("from --server")
-        );
-        assert_eq!(
-            LoginServerSource::Env.provenance(repo).as_deref(),
-            Some("from ARETTA_API_URL")
-        );
-        assert_eq!(
-            LoginServerSource::Discovered.provenance(repo).as_deref(),
-            Some("discovered for owner/repo")
-        );
-        assert_eq!(LoginServerSource::Default.provenance(repo), None);
-    }
-
-    // ─── login_server_discovering (precedence + discovery tier) ──────────────
-
-    use super::super::discovery::DiscoveredOrg;
-
-    fn discovered(base_url: &str) -> DiscoveredOrg {
-        DiscoveredOrg {
-            org: "acme".into(),
-            base_url: base_url.into(),
-        }
-    }
-
-    #[test]
-    fn discovering_flag_skips_the_network_lookup() {
-        // An explicit --server wins outright: the discovery closure must
-        // never run (it panics if it does).
-        let (server, source) = login_server_discovering(
-            Some("https://flag.example.com"),
-            Some("https://turso.aretta.ai"),
-            &ServerUrl::Prod,
-            |_| panic!("discovery must not run when --server is given"),
-        );
-        assert_eq!(server, ServerUrl::Custom("https://flag.example.com".into()));
-        assert_eq!(source, LoginServerSource::Flag);
-    }
-
-    #[test]
-    fn discovering_env_skips_the_network_lookup() {
-        // ARETTA_API_URL (no flag) also short-circuits discovery.
-        let (server, source) = login_server_discovering(
-            None,
-            Some("https://turso.aretta.ai"),
-            &ServerUrl::Prod,
-            |_| panic!("discovery must not run when ARETTA_API_URL is set"),
-        );
-        assert_eq!(server, ServerUrl::Custom("https://turso.aretta.ai".into()));
-        assert_eq!(source, LoginServerSource::Env);
-    }
-
-    #[test]
-    fn discovering_uses_discovered_base_url_at_the_platform() {
-        // Neither flag nor env: discovery runs, is handed the platform,
-        // and its base_url wins with the Discovered source.
-        let mut queried_platform = None;
-        let (server, source) = login_server_discovering(None, None, &ServerUrl::Prod, |platform| {
-            queried_platform = Some(platform.as_str().to_string());
-            Some(discovered("https://turso.aretta.ai"))
-        });
-        assert_eq!(server, ServerUrl::Custom("https://turso.aretta.ai".into()));
-        assert_eq!(source, LoginServerSource::Discovered);
-        assert_eq!(queried_platform.as_deref(), Some(ServerUrl::PROD));
-    }
-
-    #[test]
-    fn discovering_falls_back_to_the_platform_on_miss() {
-        // Discovery ran but the repo isn't mapped (None) → the platform
-        // (prod default here).
-        let (server, source) = login_server_discovering(None, None, &ServerUrl::Prod, |_| None);
-        assert_eq!(server, ServerUrl::Prod);
-        assert_eq!(source, LoginServerSource::Default);
-    }
-
-    #[test]
-    fn discovering_miss_fallback_follows_a_relocated_platform() {
-        // When the platform is relocated (self-host / test), a discovery
-        // miss falls back to *that* platform, not a hardcoded prod — so
-        // discovery and its fallback move together.
-        let platform = ServerUrl::Custom("http://127.0.0.1:9".into());
-        let (server, source) = login_server_discovering(None, None, &platform, |_| None);
-        assert_eq!(server, platform);
-        assert_eq!(source, LoginServerSource::Default);
-    }
-
-    #[test]
-    fn discovering_blank_env_still_runs_discovery() {
-        // A blank ARETTA_API_URL is treated as unset, so discovery is
-        // still eligible (mirrors login_server's blank-env handling).
-        let (server, source) =
-            login_server_discovering(None, Some("   "), &ServerUrl::Prod, |_| {
-                Some(discovered("https://x.aretta.ai"))
-            });
-        assert_eq!(server, ServerUrl::Custom("https://x.aretta.ai".into()));
-        assert_eq!(source, LoginServerSource::Discovered);
+    fn login_server_provenance_is_always_named() {
+        assert_eq!(LoginServerSource::Flag.provenance(), "from --server");
+        assert_eq!(LoginServerSource::Env.provenance(), "from ARETTA_API_URL");
     }
 }

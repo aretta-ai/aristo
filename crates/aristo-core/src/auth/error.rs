@@ -5,13 +5,23 @@
 
 use std::fmt;
 
+/// The one way to sign in, ready to paste, with the repo filled in when
+/// the caller knows it. Every hint that tells a user to log in goes
+/// through here so they all say the same thing.
+pub fn login_command(repo: Option<&str>) -> String {
+    format!(
+        "aristo auth login --server https://<org>.aretta.ai --repo {}",
+        repo.unwrap_or("<owner/repo>")
+    )
+}
+
 /// Why an auth-token resolution failed. Cleaved so the SDK can
 /// surface the right user hint (login vs token-expired vs
 /// CI-token-missing).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthError {
     /// No `ARETTA_TOKEN` env var, no `~/.config/aristo/credentials`.
-    /// Hint: run `aristo auth login` (or set `ARETTA_TOKEN` for CI).
+    /// Its message is the complete sign-in hint; callers print it as is.
     NoToken,
     /// Token present but server rejected it (401). Likely expired
     /// or revoked.
@@ -35,6 +45,10 @@ pub enum AuthError {
         /// The stored entries, token-free.
         entries: Vec<EntrySummary>,
     },
+    /// `ARETTA_TOKEN` is set but `ARETTA_API_URL` is not. An env token
+    /// carries no server, and the platform apex cannot serve an org's
+    /// data plane, so the server must be named.
+    EnvTokenWithoutServer,
 }
 
 /// A stored credential minus its secret — what the CLI may print when
@@ -69,11 +83,17 @@ impl fmt::Display for AuthError {
         match self {
             AuthError::NoToken => write!(
                 f,
-                "no auth token configured \
-                 (run `aristo auth login` or set ARETTA_TOKEN)"
+                "not signed in: run `{}` (the org host is your Aretta dashboard's hostname), \
+                 or set ARETTA_TOKEN + ARETTA_API_URL",
+                login_command(None)
             ),
             AuthError::Invalid => write!(f, "auth token rejected by server (expired or revoked)"),
             AuthError::Malformed(msg) => write!(f, "credentials malformed: {msg}"),
+            AuthError::EnvTokenWithoutServer => write!(
+                f,
+                "ARETTA_TOKEN is set but ARETTA_API_URL is not — set \
+                 ARETTA_API_URL=https://<org>.aretta.ai (the server the token was minted against)"
+            ),
             AuthError::NoEntryForCheckout {
                 checkout,
                 path,
@@ -96,13 +116,10 @@ impl fmt::Display for AuthError {
                 for e in entries {
                     writeln!(f, "    • {e}")?;
                 }
-                let login_repo = match checkout {
-                    Ok(repo) => repo.as_str(),
-                    Err(_) => "<owner/repo>",
-                };
                 writeln!(
                     f,
-                    "  fix: run `aristo auth login --repo {login_repo}` from this checkout,"
+                    "  fix: run `{}` from this checkout,",
+                    login_command(checkout.as_deref().ok())
                 )?;
                 write!(
                     f,
@@ -123,8 +140,15 @@ mod tests {
     #[test]
     fn display_no_token_mentions_login_command() {
         let s = AuthError::NoToken.to_string();
-        assert!(s.contains("aristo auth login"), "got: {s}");
-        assert!(s.contains("ARETTA_TOKEN"), "got: {s}");
+        assert!(
+            s.contains("aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>"),
+            "got: {s}"
+        );
+        assert!(
+            s.contains("ARETTA_TOKEN") && s.contains("ARETTA_API_URL"),
+            "got: {s}"
+        );
+        assert!(!s.contains("tier") && !s.contains("trial"), "got: {s}");
     }
 
     #[test]
@@ -179,7 +203,7 @@ mod tests {
         );
         // Remedy 1 names the derived repo; remedy 2 is the env var.
         assert!(
-            s.contains("`aristo auth login --repo alice/widgets` from this checkout"),
+            s.contains("`aristo auth login --server https://<org>.aretta.ai --repo alice/widgets` from this checkout"),
             "got: {s}"
         );
         assert!(s.contains("ARETTA_TOKEN"), "got: {s}");
@@ -199,10 +223,19 @@ mod tests {
         assert!(s.contains("doesn't look like a GitHub URL"), "got: {s}");
         // No derived repo to plug in — the placeholder form of remedy 1.
         assert!(
-            s.contains("--repo <owner/repo>` from this checkout"),
+            s.contains("--server https://<org>.aretta.ai --repo <owner/repo>` from this checkout"),
             "got: {s}"
         );
         assert!(s.contains("ARETTA_TOKEN"), "got: {s}");
+    }
+
+    #[test]
+    fn display_env_token_without_server_names_both_variables() {
+        let s = AuthError::EnvTokenWithoutServer.to_string();
+        assert!(
+            s.contains("ARETTA_TOKEN") && s.contains("ARETTA_API_URL"),
+            "got: {s}"
+        );
     }
 
     #[test]

@@ -14,14 +14,13 @@
 //! - [`token`] — the [`Token`] newtype with `Debug` redaction.
 //! - [`store`] — credentials-file atomic I/O. Honors `$XDG_CONFIG_HOME`;
 //!   `0600` perms on Unix.
-//! - [`mod@resolve`] — env-var → file precedence. Returns [`Token`] or
-//!   [`AuthError`].
+//! - [`mod@resolve`] — env-var → the checkout's stored entry. Returns
+//!   [`ResolvedCreds`] or [`AuthError`].
 //! - [`error`] — [`AuthError`] variants (`NoToken`, `Invalid`,
 //!   `Malformed`).
 //!
-//! Future additions (see `docs/mockups/13-canon-and-matching/PLAN-auth-extraction-and-oauth.md`):
-//!
-//! - `server` — [`ServerUrl`] enum for prod / dev / custom base URLs.
+//! - `server` — [`ServerUrl`] plus the login-server and data-plane
+//!   resolvers.
 //! - `oauth` — GitHub OAuth code-exchange against the proxy's
 //!   `/auth/cli-token` endpoint.
 //! - `git` — auto-derive `repo_full_name` from a workspace's
@@ -34,7 +33,6 @@
 //! requires; tests pass explicit env-var + home-dir overrides instead
 //! of mutating process state.
 
-pub mod discovery;
 pub mod error;
 pub mod git;
 pub mod oauth;
@@ -43,17 +41,14 @@ pub mod server;
 pub mod store;
 pub mod token;
 
-pub use discovery::{discover_org, DiscoveredOrg};
-pub use error::{AuthError, EntrySummary};
+pub use error::{login_command, AuthError, EntrySummary};
 pub use git::derive_repo_full_name;
 pub use oauth::{oauth_exchange, oauth_start, CliTokenResponse, GitHubUser, OAuthInit};
 pub use resolve::{
-    checkout_at, cwd_checkout, resolve, resolve_full, resolve_full_for_checkout, resolve_full_with,
-    resolve_with, ResolvedCreds, ENV_VAR,
+    checkout_at, cwd_checkout, resolve_full, resolve_full_for_checkout, resolve_full_with,
+    ResolvedCreds, ENV_VAR, SERVER_ENV_VAR,
 };
-pub use server::{
-    data_plane_base, login_server, login_server_discovering, LoginServerSource, ServerUrl,
-};
+pub use server::{data_plane_base, login_server, LoginServerSource, ServerUrl};
 pub use store::{
     clear, clear_with, clear_with_home, config_dir, credentials_path, load_store, load_store_with,
     save, save_full, save_full_with, save_store, save_store_with, save_with, save_with_home,

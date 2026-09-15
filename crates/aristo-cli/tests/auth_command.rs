@@ -44,6 +44,35 @@ fn creds_path(home: &std::path::Path) -> std::path::PathBuf {
     home.join("xdg/aristo/credentials")
 }
 
+/// A directory whose `.git/config` names `owner/repo` as the GitHub
+/// origin, so `aristo` treats it as a checkout of that repo.
+fn checkout_of_owner_repo(home: &std::path::Path) -> std::path::PathBuf {
+    let ws = home.join("checkout");
+    std::fs::create_dir_all(ws.join(".git")).unwrap();
+    std::fs::write(
+        ws.join(".git/config"),
+        "[remote \"origin\"]\n    url = https://github.com/owner/repo.git\n",
+    )
+    .unwrap();
+    ws
+}
+
+/// Seed the store with one repo-scoped credential, the way a completed
+/// `aristo auth login` leaves it. Tests never paste tokens: OAuth is the
+/// only login, and CI reads `ARETTA_TOKEN` instead of the store.
+fn seed_store(home: &std::path::Path, repo: &str, token: &str) {
+    let p = creds_path(home);
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(
+        &p,
+        format!(
+            "version = 2\n\n[[entries]]\nserver = \"https://code.aretta.ai\"\nrepo = \"{repo}\"\n\
+             token = \"{token}\"\nminted_at = \"2026-09-15T00:00:00Z\"\n"
+        ),
+    )
+    .unwrap();
+}
+
 // ─── auth status ──────────────────────────────────────────────────────────
 
 #[test]
@@ -53,15 +82,26 @@ fn status_when_not_authenticated() {
         .args(["auth", "status"])
         .output()
         .expect("run aristo");
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    // The exit code mirrors the verdict, like `gh auth status`.
+    assert_eq!(out.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("not authenticated"), "stdout: {stdout}");
+    assert!(stdout.contains("not signed in"), "stdout: {stdout}");
     assert!(stdout.contains("aristo auth login"), "stdout: {stdout}");
     assert!(stdout.contains("ARETTA_TOKEN"), "stdout: {stdout}");
+}
+
+#[test]
+fn status_env_token_without_server_is_not_authenticated() {
+    let tmp = TempDir::new().unwrap();
+    let out = isolated(tmp.path())
+        .args(["auth", "status"])
+        .env("ARETTA_TOKEN", "env-test-tok")
+        .output()
+        .expect("run aristo");
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("ARETTA_API_URL is not"), "stdout: {stdout}");
+    assert!(!stdout.contains("env-test-tok"), "stdout: {stdout}");
 }
 
 #[test]
@@ -70,6 +110,7 @@ fn status_reads_env_var_when_set() {
     let out = isolated(tmp.path())
         .args(["auth", "status"])
         .env("ARETTA_TOKEN", "env-test-tok")
+        .env("ARETTA_API_URL", "https://acme.aretta.ai")
         .output()
         .expect("run aristo");
     assert!(out.status.success());
@@ -96,11 +137,13 @@ fn status_reads_credentials_file() {
 [aretta]
 token = "file-tok"
 issued_at = "2026-05-20T00:00:00Z"
+repo = "owner/repo"
 "#,
     )
     .unwrap();
 
     let out = isolated(tmp.path())
+        .current_dir(checkout_of_owner_repo(tmp.path()))
         .args(["auth", "status"])
         .output()
         .unwrap();
@@ -142,106 +185,11 @@ fn status_malformed_credentials_surfaces_error() {
 // ─── auth login ───────────────────────────────────────────────────────────
 
 #[test]
-fn login_with_token_flag_persists_credentials_file() {
-    let tmp = TempDir::new().unwrap();
-    let out = isolated(tmp.path())
-        .args(["auth", "login", "--token", "flag-tok-12345"])
-        .output()
-        .expect("run aristo");
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("authenticated"), "stdout: {stdout}");
-    // Must NOT echo the token.
-    assert!(
-        !stdout.contains("flag-tok-12345"),
-        "login MUST NOT echo the token; stdout: {stdout}"
-    );
-
-    // Credentials file landed on disk under XDG path.
-    let p = creds_path(tmp.path());
-    assert!(p.exists(), "expected credentials at {p:?}");
-    let body = std::fs::read_to_string(&p).unwrap();
-    assert!(
-        body.contains("flag-tok-12345"),
-        "creds file should contain token"
-    );
-    assert!(
-        body.contains("minted_at"),
-        "creds file should include timestamp"
-    );
-}
-
-#[test]
-#[cfg(unix)]
-fn login_sets_unix_0600_perms() {
-    use std::os::unix::fs::PermissionsExt;
-    let tmp = TempDir::new().unwrap();
-    let out = isolated(tmp.path())
-        .args(["auth", "login", "--token", "tok"])
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    let p = creds_path(tmp.path());
-    let mode = std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o600, "expected 0600, got {mode:o}");
-}
-
-#[test]
-fn login_with_stdin_pipe() {
-    let tmp = TempDir::new().unwrap();
-    let mut child = isolated(tmp.path())
-        .args(["auth", "login", "--stdin"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    {
-        use std::io::Write;
-        let stdin = child.stdin.as_mut().unwrap();
-        stdin.write_all(b"piped-tok-67890\n").unwrap();
-    }
-    let out = child.wait_with_output().unwrap();
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-
-    let p = creds_path(tmp.path());
-    let body = std::fs::read_to_string(&p).unwrap();
-    assert!(body.contains("piped-tok-67890"));
-}
-
-#[test]
-fn login_empty_token_rejected() {
-    let tmp = TempDir::new().unwrap();
-    let out = isolated(tmp.path())
-        .args(["auth", "login", "--token", "   "])
-        .output()
-        .unwrap();
-    assert!(
-        !out.status.success(),
-        "expected non-zero exit on empty token"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("no token"), "stderr: {stderr}");
-    // No credentials file should have been created.
-    assert!(!creds_path(tmp.path()).exists());
-}
-
-#[test]
 fn login_then_status_round_trip() {
     let tmp = TempDir::new().unwrap();
-    let _ = isolated(tmp.path())
-        .args(["auth", "login", "--token", "round-trip-tok"])
-        .output()
-        .unwrap();
+    seed_store(tmp.path(), "owner/repo", "round-trip-tok");
     let out = isolated(tmp.path())
+        .current_dir(checkout_of_owner_repo(tmp.path()))
         .args(["auth", "status"])
         .output()
         .unwrap();
@@ -252,6 +200,20 @@ fn login_then_status_round_trip() {
         !stdout.contains("round-trip-tok"),
         "status must not print token"
     );
+}
+
+#[test]
+fn login_has_no_raw_token_mode() {
+    // OAuth is the only login. The old paste flags are gone, not hidden.
+    for flag in ["--token", "--stdin"] {
+        let out = isolated(TempDir::new().unwrap().path())
+            .args(["auth", "login", flag, "x"])
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{flag} must be rejected");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("unexpected argument"), "{flag}: {stderr}");
+    }
 }
 
 // ─── auth logout ──────────────────────────────────────────────────────────
@@ -274,14 +236,11 @@ fn logout_when_not_logged_in_is_noop_and_zero_exit() {
 #[test]
 fn logout_after_login_removes_file() {
     let tmp = TempDir::new().unwrap();
-    let _ = isolated(tmp.path())
-        .args(["auth", "login", "--token", "tok"])
-        .output()
-        .unwrap();
+    seed_store(tmp.path(), "owner/repo", "tok");
     assert!(creds_path(tmp.path()).exists());
 
     let out = isolated(tmp.path())
-        .args(["auth", "logout"])
+        .args(["auth", "logout", "--repo", "owner/repo"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -296,12 +255,9 @@ fn logout_after_login_removes_file() {
 #[test]
 fn logout_warns_when_env_var_still_set() {
     let tmp = TempDir::new().unwrap();
-    let _ = isolated(tmp.path())
-        .args(["auth", "login", "--token", "tok"])
-        .output()
-        .unwrap();
+    seed_store(tmp.path(), "owner/repo", "tok");
     let out = isolated(tmp.path())
-        .args(["auth", "logout"])
+        .args(["auth", "logout", "--repo", "owner/repo"])
         .env("ARETTA_TOKEN", "still-set")
         .output()
         .unwrap();
@@ -324,14 +280,10 @@ fn full_auth_lifecycle() {
         .args(["auth", "status"])
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&out.stdout).contains("not authenticated"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("not signed in"));
 
     // 2. login
-    let out = isolated(tmp.path())
-        .args(["auth", "login", "--token", "lifecycle-tok"])
-        .output()
-        .unwrap();
-    assert!(out.status.success());
+    seed_store(tmp.path(), "owner/repo", "lifecycle-tok");
 
     // 3. status: authenticated
     let out = isolated(tmp.path())
@@ -344,7 +296,7 @@ fn full_auth_lifecycle() {
 
     // 4. logout
     let out = isolated(tmp.path())
-        .args(["auth", "logout"])
+        .args(["auth", "logout", "--repo", "owner/repo"])
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("logged out"));
@@ -354,7 +306,7 @@ fn full_auth_lifecycle() {
         .args(["auth", "status"])
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&out.stdout).contains("not authenticated"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("not signed in"));
 }
 
 // ─── auth token ────────────────────────────────────────────────────────────
@@ -384,12 +336,12 @@ fn token_prints_value_from_credentials_file() {
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(
         &p,
-        "[aretta]\ntoken = \"arta_file_tok_456\"\nissued_at = \"2026-05-20T00:00:00Z\"\n",
+        "[aretta]\ntoken = \"arta_file_tok_456\"\nissued_at = \"2026-05-20T00:00:00Z\"\nrepo = \"owner/repo\"\n",
     )
     .unwrap();
 
     let out = isolated(tmp.path())
-        .args(["auth", "token"])
+        .args(["auth", "token", "--repo", "owner/repo"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -409,6 +361,6 @@ fn token_errors_when_not_authenticated() {
         "expected non-zero exit when no token is available"
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("not authenticated"), "stderr: {stderr}");
+    assert!(stderr.contains("not signed in"), "stderr: {stderr}");
     assert!(stderr.contains("aristo auth login"), "stderr: {stderr}");
 }

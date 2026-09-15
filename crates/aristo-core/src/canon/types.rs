@@ -654,8 +654,8 @@ pub struct RequestVerifyResponse {
 /// Response for `GET /catalogue` — the full active canon corpus
 /// catalogue (one entry per canon id, at its active version). Closed-IP
 /// fields (alternative phrasings, match signals) are stripped
-/// server-side; this is the browsable trust-card surface. Served by a
-/// per-repo conductor; addressed via the resolved data-plane base.
+/// server-side; this is the browsable trust-card surface. Served by
+/// the org's server; addressed via the resolved data-plane base.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CanonCatalogue {
     /// Server-stamped proprietary / confidential notice (one line per

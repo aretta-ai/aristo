@@ -94,16 +94,10 @@ const GH_VERIFY_WORKFLOW: &str = "\
 # Manual + nightly.
 #
 # Setup:
-#   1. Add a repository secret ARETTA_TOKEN (your arta_* token; paid tier).
-#   2. Hosted org (your server is not code.aretta.ai)? Point the data plane at
-#      your org's server so the token is spent there — a bare token otherwise
-#      resolves to the code.aretta.ai default. Simplest: commit
-#      `[instance] url = \"https://<org>.aretta.ai\"` in aristo.toml (committed,
-#      and it fixes local `aristo verify` too). Alternatively add a repository
-#      Variable ARETTA_API_URL = your org's URL and wire it on the verify job
-#      (`env: { ARETTA_API_URL: ${{ vars.ARETTA_API_URL }} }`) — an unset
-#      Variable expands to empty, which aristo treats as unset (falls back to
-#      [instance] url or the default), so it's safe to leave off for prod.
+#   1. Add a repository secret ARETTA_TOKEN (your arta_* token; `aristo auth token`).
+#   2. Add a repository Variable ARETTA_API_URL = https://<org>.aretta.ai — the
+#      server the token was minted against (`aristo auth status` shows it).
+#      A token carries no server, so verify refuses to run without this.
 # NOT on pull_request — verify needs the checked-out commit pushed to origin.
 name: aristo verify
 on:
@@ -116,6 +110,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: aretta-ai/aristo-action@v1
+        env:
+          ARETTA_API_URL: ${{ vars.ARETTA_API_URL }}
         with:
           checks: verify
           aretta-token: ${{ secrets.ARETTA_TOKEN }}
@@ -349,12 +345,14 @@ fn print_verify_token_help(cwd: &Path) {
     println!(
         "  2. Token value:    `aristo auth token` prints yours — pipe to your clipboard, e.g. `aristo auth token | pbcopy`"
     );
-    println!("                     ...or `aristo auth login` to mint a new one.");
     println!(
-        "  3. Hosted org?     If your server isn't code.aretta.ai, point verify at it: commit\n\
-        \x20                    `[instance] url = \"https://<org>.aretta.ai\"` in aristo.toml (simplest), or set a\n\
-        \x20                    repository Variable ARETTA_API_URL to your org's URL. A bare token otherwise\n\
-        \x20                    defaults to code.aretta.ai, so verify would hit the wrong server."
+        "                     ...or `{}` to mint a new one.",
+        aristo_core::auth::login_command(None)
+    );
+    println!(
+        "  3. Server:         add a repository Variable ARETTA_API_URL = https://<org>.aretta.ai\n\
+        \x20                    (the server your token was minted against; `aristo auth status` shows it).\n\
+        \x20                    A token carries no server, so verify refuses to run without it."
     );
 }
 

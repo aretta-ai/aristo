@@ -36,12 +36,12 @@
 fn cli_scenarios() {
     // Isolate spawned binaries from developer-machine credentials.
     // Without this, a developer who has logged in to dev.aretta.ai
-    // via `aristo auth login --server dev` sees `lifecycle_ci_gates.md`
+    // via `aristo auth login` sees `lifecycle_ci_gates.md`
     // fail: their real credentials at
     // `$HOME/Library/Application Support/aristo/credentials` (macOS) or
     // `$XDG_CONFIG_HOME/aristo/credentials` leak into trycmd's spawned
     // `aristo` process via inherited HOME, flipping `aristo status`'s
-    // canon-binding block from "no token (free-tier mode)" (the spec)
+    // canon-binding block from "not signed in" (the spec)
     // to "authenticated (token present)". The token never reaches the
     // wire — it just changes the local rendering — but the byte-exact
     // trycmd assertion sees the difference.

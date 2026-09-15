@@ -13,7 +13,7 @@
 //! | `[canon] enabled = false` | [`NoopCanonClient`] | silent skip — opt-out for regulated buyers |
 //! | `--skip-canon` flag | [`NoopCanonClient`] | silent skip — per-invocation opt-out |
 //! | Auth token resolves | [`HttpCanonClient`] | real API call (Pro / Enterprise) |
-//! | Nothing on file (`NoToken`) | none | free-tier path; runner prints upgrade nudge |
+//! | Nothing on file (`NoToken`) | none | not signed in; runner prints the sign-in hint |
 //! | Credentials on file, none usable | none | signed-in path; runner prints the resolver's diagnosis + remedies, never the nudge |
 //!
 //! `ARETTA_API_URL` env var overrides the production base URL
@@ -68,17 +68,16 @@ pub(crate) enum CanonStepOutcome {
     /// `--skip-canon` flag on the invocation. Per-invocation
     /// opt-out; same silence as `DisabledByConfig`.
     SkippedByFlag,
-    /// Free-tier user (nothing on file, no `ARETTA_TOKEN`, not in test
-    /// mode). Runner surfaces a one-line upgrade nudge; cached matches
-    /// (if any) from a prior paid session stay readable but no new
-    /// matches are surfaced.
-    FreeTier { annotations_skipped: usize },
+    /// Not signed in (nothing on file, no `ARETTA_TOKEN`, not in test
+    /// mode). Runner prints the sign-in hint; cached matches (if any)
+    /// stay readable but no new matches are surfaced.
+    NotSignedIn { annotations_skipped: usize },
     /// Credentials exist but the resolver could not use them for this
     /// invocation — several entries, none for this checkout
     /// ([`AuthError::NoEntryForCheckout`]), or a malformed file. The
-    /// user is signed in, so the trial nudge would be wrong; the runner
+    /// user is signed in, so the sign-in hint would be wrong; the runner
     /// prints the resolver's own diagnosis and remedies instead. Same
-    /// non-fatal treatment as [`CanonStepOutcome::FreeTier`].
+    /// non-fatal treatment as [`CanonStepOutcome::NotSignedIn`].
     Unresolved {
         error: AuthError,
         annotations_skipped: usize,
@@ -143,8 +142,8 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
     // ── No-client short-circuits: nothing reaches the server ──────────────
     let client = match selection {
         ClientSelection::Client(c) => c,
-        ClientSelection::FreeTier => {
-            return Ok(CanonStepOutcome::FreeTier {
+        ClientSelection::NotSignedIn => {
+            return Ok(CanonStepOutcome::NotSignedIn {
                 annotations_skipped: batch.len(),
             })
         }
@@ -211,7 +210,7 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
 
 // ─── Client selection ──────────────────────────────────────────────────────
 
-/// Picks the client, or the reason there is none. `FreeTier` is
+/// Picks the client, or the reason there is none. `NotSignedIn` is
 /// reserved for "nothing on file" — `[canon] enabled = false` and
 /// `--skip-canon` are handled upstream, and every other resolver
 /// failure is `Unresolved` (the user is signed in; say what's wrong).
@@ -219,13 +218,13 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
     "Client selection order is load-bearing: ARISTO_CANON_FIXTURE \
      wins outright (test mode beats everything, including auth), \
      then auth-token resolution decides between HttpCanonClient, the \
-     free-tier outcome (only AuthError::NoToken — nothing on file) and \
-     the unresolved outcome (credentials on file but unusable for this \
-     checkout, or malformed). Reversing — e.g. checking auth first — \
-     would make integration tests need a fake token to work, coupling \
+     not-signed-in outcome (only AuthError::NoToken — nothing on file) \
+     and the unresolved outcome (credentials on file but unusable for \
+     this checkout, or malformed). Reversing — e.g. checking auth first \
+     — would make integration tests need a fake token to work, coupling \
      test setup to the auth substrate unnecessarily; collapsing \
-     unresolved into free-tier would tell a signed-in user to start a \
-     trial.",
+     unresolved into not-signed-in would tell a signed-in user to sign \
+     in.",
     verify = "test",
     id = "canon_client_selection_test_mode_wins"
 )]
@@ -238,24 +237,24 @@ fn select_client(_config: &CanonConfig) -> ClientSelection {
     }
 
     // Production / staging: resolve auth token. Nothing on file at all
-    // → free tier (the nudge). Anything else the resolver reports —
+    // → not signed in (the sign-in hint). Anything else the resolver reports —
     // credentials on file but none for this checkout, a malformed file
-    // — is a signed-in user's problem to fix, not a trial to start.
+    // — is a signed-in user's problem to fix, not a sign-in to repeat.
     match aristo_core::auth::resolve_full() {
         Ok(creds) => {
             let base_url = crate::data_plane::resolve_base(&creds.server);
             ClientSelection::Client(Box::new(HttpCanonClient::new(base_url, &creds.token)))
         }
-        Err(AuthError::NoToken) => ClientSelection::FreeTier,
+        Err(AuthError::NoToken) => ClientSelection::NotSignedIn,
         Err(other) => ClientSelection::Unresolved(other),
     }
 }
 
-/// Result of client selection. `FreeTier` and `Unresolved` both mean
+/// Result of client selection. `NotSignedIn` and `Unresolved` both mean
 /// "no API call this run" — they differ only in what the user is told.
 enum ClientSelection {
     Client(Box<dyn CanonClient>),
-    FreeTier,
+    NotSignedIn,
     Unresolved(AuthError),
 }
 
@@ -496,17 +495,11 @@ pub(crate) fn print_stamp_summary(
         CanonStepOutcome::SkippedByFlag => {
             println!("→ canon-match: skipped (`--skip-canon`).");
         }
-        CanonStepOutcome::FreeTier {
+        CanonStepOutcome::NotSignedIn {
             annotations_skipped,
         } => {
-            println!("→ canon-match: skipped (Pro feature).");
-            println!(
-                "    note: canon matching is a Pro feature. {annotations_skipped} \
-                 annotation(s) could have matched."
-            );
-            println!(
-                "    Run `aristo auth login` to start a trial, or `aristo status` for details."
-            );
+            println!("→ canon-match: skipped — {}.", AuthError::NoToken);
+            println!("    note: {annotations_skipped} annotation(s) could have matched.");
         }
         CanonStepOutcome::Unresolved {
             error,
@@ -514,7 +507,7 @@ pub(crate) fn print_stamp_summary(
         } => {
             // First line of the resolver's message is the headline; the
             // rest (derived repo, entries on file, remedies) indents
-            // under it. Nothing here is the trial nudge — the user is
+            // under it. Nothing here is the sign-in hint — the user is
             // signed in.
             let text = error.to_string();
             let mut lines = text.lines();

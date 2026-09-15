@@ -98,8 +98,8 @@ fn status_shows_no_token_when_unauthenticated() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("Canon binding"), "got: {stdout}");
     assert!(
-        stdout.contains("no token") || stdout.contains("free-tier"),
-        "expected no-token state; got: {stdout}"
+        stdout.contains("not signed in"),
+        "expected the not-signed-in state; got: {stdout}"
     );
     assert!(
         stdout.contains("Last fetched:      never"),

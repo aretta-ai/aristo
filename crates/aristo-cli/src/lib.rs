@@ -631,50 +631,27 @@ enum Commands {
 /// (or the platform default per `aristo_core::auth`).
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum AuthAction {
-    /// Authenticate against the Aretta proxy.
+    /// Sign in with GitHub and store the minted token.
     ///
-    /// **Default mode (GitHub OAuth):** the CLI fetches the GitHub
-    /// authorization URL from the proxy, tries to open it in your
-    /// browser, and prompts you to paste the code shown on the
-    /// proxy's callback page. The proxy then mints an `arta_*`
-    /// token scoped to your `(user, repo)` pair.
+    /// The CLI fetches the GitHub authorization URL from the Aretta
+    /// server, tries to open it in your browser, and prompts you to
+    /// paste the code shown on the callback page. The server then
+    /// mints an `arta_*` token scoped to your `(user, repo)` pair,
+    /// stored under `$XDG_CONFIG_HOME/aristo/credentials` with `0600`
+    /// Unix permissions.
     ///
-    /// **Bypass modes (for CI / scripting):**
-    ///
-    /// - **`--stdin`** — read the raw token from stdin
-    ///   (`echo "$TOKEN" | aristo auth login --stdin`).
-    /// - **`--token=<T>`** — use the literal token value.
-    ///
-    /// The token is persisted to `$XDG_CONFIG_HOME/aristo/credentials`
-    /// with `0600` Unix permissions.
+    /// CI and scripts do not log in: set `ARETTA_TOKEN` (and
+    /// `ARETTA_API_URL`) in the environment instead.
     Login {
-        /// Read the token from stdin (consumes entire stdin). Skips
-        /// the OAuth flow.
-        #[arg(long, conflicts_with = "token")]
-        stdin: bool,
-        /// Use this token directly. Skips the OAuth flow.
-        #[arg(long, value_name = "TOKEN")]
-        token: Option<String>,
-        /// Aretta server to authenticate against. Accepts:
-        /// `prod` / `production` (= https://code.aretta.ai),
-        /// or a full URL for a self-hosted deployment or per-org
-        /// conductor (`https://aretta.example.com`).
-        ///
-        /// Precedence when unset: this flag > the `ARETTA_API_URL` env
-        /// var (parsed the same way, full URLs included) > zero-config
-        /// org discovery for the repo > the `prod` default. Discovery
-        /// runs only when neither this flag nor `ARETTA_API_URL` is set,
-        /// so an explicit choice always wins and skips the lookup.
-        /// Honoring `ARETTA_API_URL` keeps the login (auth) plane pointed
-        /// at the same deployment as the data plane.
-        #[arg(long)]
+        /// Your org's Aretta host — your dashboard's hostname, e.g.
+        /// `https://<org>.aretta.ai` (a bare host gets `https://`).
+        /// Required: this flag, else the `ARETTA_API_URL` env var.
+        #[arg(long, value_name = "URL")]
         server: Option<String>,
         /// Repo to scope the minted token to (`owner/repo`). Defaults to
         /// auto-deriving from `<cwd>/.git/config`'s `remote.origin.url`.
         /// Required for non-git directories or when the remote isn't a
-        /// GitHub URL. In `--stdin` / `--token` bypass modes it (with
-        /// `--server`) keys the stored credential for later multi-repo
-        /// lookup — best-effort there, so it may be omitted.
+        /// GitHub URL.
         #[arg(long, value_name = "OWNER/REPO")]
         repo: Option<String>,
     },
@@ -862,7 +839,7 @@ pub(crate) enum CanonAction {
     /// Download the canon catalogue (the full list of available canon
     /// entries) to `.aristo/catalogue.json` — a gitignored local
     /// snapshot — and print a summary. Requires authentication; served
-    /// by the per-repo conductor addressed via `[instance] url`.
+    /// by the org's server.
     Catalogue,
 
     /// Run the S2 presence probe against a local SUT checkout: union

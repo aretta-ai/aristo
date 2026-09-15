@@ -166,14 +166,17 @@ fn print_canon_health(ws: &crate::Workspace) {
     }
 
     // Auth: do we have a resolvable token?
-    let auth_state = match auth::resolve() {
+    let auth_state = match auth::resolve_full() {
         Ok(_) => "authenticated (token present)".to_string(),
-        Err(aristo_core::canon::AuthError::NoToken) => "no token (free-tier mode)".to_string(),
+        Err(aristo_core::canon::AuthError::NoToken) => "not signed in".to_string(),
         Err(aristo_core::canon::AuthError::Malformed(_)) => {
             "malformed credentials file".to_string()
         }
         Err(aristo_core::canon::AuthError::Invalid) => {
             "invalid token (server rejected)".to_string()
+        }
+        Err(aristo_core::canon::AuthError::EnvTokenWithoutServer) => {
+            "ARETTA_TOKEN is set without ARETTA_API_URL".to_string()
         }
         Err(aristo_core::canon::AuthError::NoEntryForCheckout { .. }) => {
             "signed in, but no stored credential is for this checkout (`aristo auth status`)"

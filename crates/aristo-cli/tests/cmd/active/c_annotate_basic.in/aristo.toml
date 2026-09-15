@@ -29,5 +29,3 @@ threshold_critique = 0.65
 
 [nudges]
 aggressiveness = "medium"
-
-[instance]

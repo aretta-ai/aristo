@@ -6,32 +6,20 @@
 //! `aretta-admin` clone or scripted tooling) can call them
 //! directly without going through the CLI.
 //!
-//! ## Login flow (paste-flow, deliberately simple)
+//! ## Login flow
 //!
-//! The first slice of `aristo auth login` is a **paste flow**:
-//!
-//! 1. Print a one-line prompt telling the user where to get a token.
-//! 2. Read a token from stdin (`--stdin` consumes all; default reads
-//!    one line; `--token=<T>` bypasses both for tests / scripting).
-//! 3. Persist via `canon::auth::save`.
-//!
-//! Server-side validation of the token (e.g., `GET /auth/whoami`) is
-//! intentionally deferred — the first canon API call (`aristo stamp`,
-//! `aristo critique`, `aristo canon show`) surfaces a typed
-//! [`AuthError::Invalid`] if the token is bad. Adding a validation
-//! roundtrip here would couple `aristo auth login` to network state,
-//! breaking the offline-friendly invariant.
-//!
-//! A device-code OAuth flow is a future enhancement (open browser →
-//! poll for token); not needed for v0.1.
+//! `aristo auth login --server <url> --repo <owner/repo>` is the GitHub
+//! OAuth flow: the CLI fetches the authorize URL from the server, the
+//! user pastes the code shown on the callback page, the server mints an
+//! `arta_*` token scoped to `(user, repo)`, and the CLI stores it keyed
+//! by server and repo. CI and scripts read `ARETTA_TOKEN` +
+//! `ARETTA_API_URL` from the environment and never touch the store.
 
-use std::io::Read;
 use std::path::Path;
 
 use aristo_core::auth::{
-    self, derive_repo_full_name, login_server, login_server_discovering, AuthError,
-    CredentialEntry, CredentialStore, LoginServerSource, ServerUrl, Token, UpsertOutcome,
-    UpsertReport,
+    self, derive_repo_full_name, login_command, login_server, AuthError, CredentialEntry,
+    CredentialStore, LoginServerSource, ServerUrl, Token, UpsertOutcome, UpsertReport,
 };
 
 use crate::{AuthAction, CliError, CliResult};
@@ -39,12 +27,7 @@ use crate::{AuthAction, CliError, CliResult};
 /// Dispatcher for `aristo auth` subcommands.
 pub(crate) fn run(action: AuthAction) -> CliResult<()> {
     match action {
-        AuthAction::Login {
-            stdin,
-            token,
-            server,
-            repo,
-        } => login(stdin, token, server, repo),
+        AuthAction::Login { server, repo } => login(server, repo),
         AuthAction::Status => status(),
         AuthAction::Token { repo } => token(repo),
         AuthAction::Logout { all, repo } => logout(all, repo),
@@ -53,55 +36,22 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
 
 // ─── login ─────────────────────────────────────────────────────────────────
 
-fn login(
-    read_stdin: bool,
-    token_flag: Option<String>,
-    server_flag: Option<String>,
-    repo_flag: Option<String>,
-) -> CliResult<()> {
-    // Bypass modes — caller supplied a raw token directly. No OAuth and
-    // no discovery (the token's scope is already fixed server-side), but
-    // `--server` / `--repo` still key the stored entry so the multi-repo
-    // store can look it up later.
-    if read_stdin || token_flag.is_some() {
-        return login_with_raw_token(read_stdin, token_flag, server_flag, repo_flag);
-    }
-
-    // OAuth flow. Resolve the repo first — both zero-config discovery
-    // and token scoping need it.
-    let repo_full_name = resolve_repo_full_name(repo_flag)?;
-
-    // Resolve the server the token is minted against. Precedence:
-    // --server flag > ARETTA_API_URL env > zero-config org discovery
-    // (queried at the platform) > the platform default. Discovery runs
-    // only when neither flag nor env is supplied, so an explicit choice
-    // always wins and skips the network lookup. Honoring the env keeps
-    // the auth plane aligned with the data plane, which already treats
-    // ARETTA_API_URL as its highest-precedence override (see
-    // `crate::data_plane`).
+fn login(server_flag: Option<String>, repo_flag: Option<String>) -> CliResult<()> {
+    // The two things a token is scoped by, both required: the server
+    // it is minted against (`--server`, else `ARETTA_API_URL`) and the
+    // repo (`--repo`, else the checkout's origin). The platform apex
+    // cannot mint an org token, so the server is never guessed.
     let env_override = std::env::var("ARETTA_API_URL").ok();
-    let platform = discovery_platform();
-    let (server, source) = login_server_discovering(
-        server_flag.as_deref(),
-        env_override.as_deref(),
-        &platform,
-        |p| auth::discover_org(p, &repo_full_name),
-    );
-
+    let (server, source) = login_server(server_flag.as_deref(), env_override.as_deref())
+        .ok_or_else(|| CliError::Other {
+            message: "no server given.\n  \
+                      Pass `--server https://<org>.aretta.ai` (your Aretta dashboard's hostname), \
+                      or set ARETTA_API_URL."
+                .into(),
+            exit_code: 2,
+        })?;
+    let repo_full_name = resolve_repo_full_name(repo_flag)?;
     login_via_oauth(&server, source, repo_full_name)
-}
-
-/// The platform where zero-config org discovery is queried — and the
-/// server login falls back to when discovery misses. Defaults to the
-/// prod platform (`code.aretta.ai`); `ARETTA_DISCOVERY_URL` relocates it
-/// for self-hosted deployments (and offline tests). Distinct from
-/// `ARETTA_API_URL`, which pins the login server outright and skips
-/// discovery entirely.
-fn discovery_platform() -> ServerUrl {
-    match std::env::var("ARETTA_DISCOVERY_URL").ok() {
-        Some(v) if !v.trim().is_empty() => ServerUrl::parse(&v),
-        _ => ServerUrl::Prod,
-    }
 }
 
 fn login_via_oauth(
@@ -113,13 +63,10 @@ fn login_via_oauth(
     let init = auth::oauth_start(server).map_err(auth_error_to_cli)?;
 
     // 2. Show the URL + try to open the browser. Name where the server
-    //    came from when it wasn't the default, so a stale ARETTA_API_URL
-    //    export is visible before the user authorizes.
+    //    came from, so a stale ARETTA_API_URL export is visible before
+    //    the user authorizes.
     eprintln!();
-    match source.provenance(&repo_full_name) {
-        Some(prov) => eprintln!("Authenticating against {server} ({prov})"),
-        None => eprintln!("Authenticating against {server}"),
-    }
+    eprintln!("Authenticating against {server} ({})", source.provenance());
     eprintln!("Scoping token to repo: {repo_full_name}");
     eprintln!();
     eprintln!("Open this URL to authorize with GitHub:");
@@ -163,48 +110,6 @@ fn login_via_oauth(
         resp.user.login, resp.repo_full_name
     );
     println!("    token saved to {}", path.display());
-    print_login_report(&report, &creds.token)?;
-    println!("    `aristo auth status` to verify; `aristo auth logout` to remove.");
-    Ok(())
-}
-
-fn login_with_raw_token(
-    read_stdin: bool,
-    token_flag: Option<String>,
-    server_flag: Option<String>,
-    repo_flag: Option<String>,
-) -> CliResult<()> {
-    let token_raw = collect_raw_token(read_stdin, token_flag)?;
-    let trimmed = token_raw.trim();
-    if trimmed.is_empty() {
-        return Err(CliError::Other {
-            message: "no token provided.\n\
-                     Run `aristo auth login` (OAuth flow, default) to mint one interactively, or if you already have an arta_* token:\n  \
-                       `aristo auth login --stdin` (pipe), or\n  \
-                       `aristo auth login --token <TOKEN>` (scripting)."
-                .into(),
-            exit_code: 2,
-        });
-    }
-    // Key the entry by (resolved server, repo). No discovery — the token
-    // scope is already fixed server-side; we only record where it came
-    // from so the multi-repo store can look it up. Server precedence is
-    // --server > ARETTA_API_URL > prod; the repo is --repo or the cwd's
-    // git remote (best-effort — absent is fine for a scriptless paste).
-    let env_override = std::env::var("ARETTA_API_URL").ok();
-    let (server, _) = login_server(server_flag.as_deref(), env_override.as_deref());
-    let repo = resolve_repo_best_effort(repo_flag)?;
-    let creds = aristo_core::auth::CredentialsRecord {
-        token: Token::new(trimmed),
-        server,
-        user_login: None,
-        user_id: None,
-        repo,
-    };
-    let report = aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
-
-    let path = auth::credentials_path().map_err(auth_error_to_cli)?;
-    println!("ok: authenticated. token saved to {}", path.display());
     print_login_report(&report, &creds.token)?;
     println!("    `aristo auth status` to verify; `aristo auth logout` to remove.");
     Ok(())
@@ -299,14 +204,8 @@ fn login_verdict(store: &CredentialStore, saved: &CredentialEntry, dir: &Path) -
         (Ok(repo), false) => {
             format!("this checkout ({repo}) will NOT resolve to this entry — {remedy}")
         }
-        (Err(why), true) => format!(
-            "this directory is not a GitHub checkout ({why}); as the sole entry on file, \
-             this entry still resolves here."
-        ),
-        (Err(why), false) => format!(
-            "this directory is not a GitHub checkout ({why}); with {} entries on file \
-             nothing resolves here — {remedy}",
-            store.len()
+        (Err(why), _) => format!(
+            "this directory is not a GitHub checkout ({why}); nothing resolves here — {remedy}"
         ),
     }
 }
@@ -319,37 +218,15 @@ fn status_verdict(store: &CredentialStore, dir: &Path) -> String {
         (Ok(repo), Some(e)) => format!("this checkout ({repo}) resolves to: {}", entry_key(e)),
         (Ok(repo), None) => format!(
             "this checkout ({repo}) resolves to: no stored credential — \
-             run `aristo auth login --repo {repo}` here, or set ARETTA_TOKEN."
+             run `{}` here, or set ARETTA_TOKEN + ARETTA_API_URL.",
+            login_command(Some(&repo))
         ),
-        (Err(why), Some(e)) => format!(
-            "this directory is not a GitHub checkout ({why}) — resolves to: {} (the sole entry)",
-            entry_key(e)
-        ),
-        (Err(why), None) => format!(
+        (Err(why), _) => format!(
             "this directory is not a GitHub checkout ({why}) — resolves to: no stored \
              credential ({} on file; run from a checkout of one of them, or set ARETTA_TOKEN).",
             store.len()
         ),
     }
-}
-
-/// Determine where the raw token comes from in bypass modes.
-fn collect_raw_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<String> {
-    if let Some(t) = token_flag {
-        return Ok(t);
-    }
-    if read_stdin {
-        let mut buf = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(CliError::Io)?;
-        return Ok(buf);
-    }
-    // Should not be reached — caller checks the flags first.
-    Err(CliError::Other {
-        message: "internal: collect_raw_token called without --stdin or --token".into(),
-        exit_code: 1,
-    })
 }
 
 /// Validate a `--repo owner/repo` flag value.
@@ -431,7 +308,8 @@ fn store_error_to_cli(e: AuthError) -> CliError {
         AuthError::Malformed(msg) => CliError::Other {
             message: format!(
                 "credentials file is malformed: {msg}\n  \
-                 Run `aristo auth logout --all` then `aristo auth login` to re-create it."
+                 Run `aristo auth logout --all`, then `{}` to re-create it.",
+                login_command(None)
             ),
             exit_code: 1,
         },
@@ -453,66 +331,70 @@ fn note_env_still_set() {
 // ─── status ────────────────────────────────────────────────────────────────
 
 fn status() -> CliResult<()> {
-    let env_set = std::env::var(auth::ENV_VAR)
+    // Exit code mirrors the verdict: 0 iff a run from this directory
+    // would authenticate (env token with its server, or a stored entry
+    // for this checkout). Everything printed is token-free.
+    let env_token_set = std::env::var(auth::ENV_VAR).is_ok_and(|v| !v.trim().is_empty());
+    let env_server = std::env::var(auth::SERVER_ENV_VAR)
         .ok()
-        .is_some_and(|v| !v.trim().is_empty());
-    if env_set {
-        println!(
-            "ok: authenticated via {} environment variable.",
-            auth::ENV_VAR
-        );
-        println!("    (env var takes precedence over the on-disk credentials file.)");
-    }
+        .filter(|v| !v.trim().is_empty());
 
-    // List every stored credential — never the token itself.
     let store = auth::load_store().map_err(store_error_to_cli)?;
-    if store.is_empty() {
-        if !env_set {
-            println!("not authenticated.");
-            println!(
-                "    Run `aristo auth login` to log in, or set the {} env var for CI.",
-                auth::ENV_VAR
-            );
-            // Not an error — CI gates on the stdout text, not the exit
-            // code (unauthenticated must not fail the process).
-        }
-        return Ok(());
-    }
-
     let path = auth::credentials_path().map_err(auth_error_to_cli)?;
-    if env_set {
+    let cwd = std::env::current_dir().map_err(CliError::Io)?;
+
+    let resolves = if env_token_set {
+        match env_server {
+            Some(server) => {
+                println!(
+                    "ok: authenticated via {} for {} ({} takes precedence over every stored entry).",
+                    auth::ENV_VAR,
+                    ServerUrl::parse(&server),
+                    auth::ENV_VAR
+                );
+                true
+            }
+            None => {
+                println!("not authenticated: {}", AuthError::EnvTokenWithoutServer);
+                false
+            }
+        }
+    } else if store.is_empty() {
+        println!("{}", AuthError::NoToken);
+        false
+    } else {
+        let (checkout, picked) = resolution_at(&store, &cwd);
+        println!(
+            "{}: {} credential(s) in {}",
+            if picked.is_some() {
+                "ok: authenticated"
+            } else {
+                "not authenticated for this checkout"
+            },
+            store.len(),
+            path.display()
+        );
+        for e in &store.entries {
+            println!("    • {}", e.summary());
+        }
+        println!("    {}", status_verdict(&store, &cwd));
+        let _ = checkout;
+        picked.is_some()
+    };
+
+    if env_token_set && !store.is_empty() {
         println!(
             "    also stored (shadowed by {}): {} credential(s) in {}",
             auth::ENV_VAR,
             store.len(),
             path.display()
         );
+    }
+    if resolves {
+        Ok(())
     } else {
-        println!(
-            "ok: authenticated — {} credential(s) in {}",
-            store.len(),
-            path.display()
-        );
+        Err(CliError::Silent { exit_code: 1 })
     }
-    for e in &store.entries {
-        let repo = e.repo.as_deref().unwrap_or("(unscoped)");
-        match &e.user_login {
-            Some(user) => println!("    • server: {}   repo: {repo}   user: {user}", e.server),
-            None => println!("    • server: {}   repo: {repo}", e.server),
-        }
-    }
-    // The verdict for THIS directory — the question a user standing in
-    // the wrong checkout actually has.
-    if env_set {
-        println!(
-            "    this checkout: {} takes precedence over every stored entry.",
-            auth::ENV_VAR
-        );
-    } else {
-        let cwd = std::env::current_dir().map_err(CliError::Io)?;
-        println!("    {}", status_verdict(&store, &cwd));
-    }
-    Ok(())
 }
 
 // ─── token ─────────────────────────────────────────────────────────────────
@@ -521,8 +403,7 @@ fn status() -> CliResult<()> {
 /// cleanly into a clipboard tool (`aristo auth token | pbcopy`) or a CI
 /// secret. Unlike `status`, this deliberately prints the secret value, so
 /// it's only ever written to stdout on explicit request. Resolves the
-/// entry for `--repo` (or the cwd's repo), falling back to the sole
-/// stored entry.
+/// entry for `--repo` (or the cwd's repo); nothing else.
 fn token(repo_flag: Option<String>) -> CliResult<()> {
     // Env var wins outright (CI precedence), like `resolve`.
     if let Ok(v) = std::env::var(auth::ENV_VAR) {
@@ -535,18 +416,13 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
     let store = auth::load_store().map_err(store_error_to_cli)?;
     if store.is_empty() {
         return Err(CliError::Other {
-            message: format!(
-                "not authenticated — no token found.\n  \
-                 Run `aristo auth login` to mint one, or set the {} env var.",
-                auth::ENV_VAR
-            ),
+            message: AuthError::NoToken.to_string(),
             exit_code: 1,
         });
     }
-    // An explicit `--repo` must match strictly — no single-entry
-    // fallback, so asking for a repo you're not logged in to errors
-    // rather than silently handing back a different repo's token. With
-    // no `--repo`, prefer the cwd's repo, else the sole stored entry.
+    // `--repo` or the cwd's repo, matched strictly — asking for a repo
+    // you're not logged in to errors rather than silently handing back
+    // a different repo's token.
     let entry = if let Some(raw) = repo_flag {
         let repo = validate_repo_flag(&raw)?;
         match store.find_by_repo(&repo) {
@@ -554,8 +430,9 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
             None => {
                 return Err(CliError::Other {
                     message: format!(
-                        "no credential for {repo}; run `aristo auth login --repo {repo}` \
-                         (or `aristo auth status` to list what's stored)."
+                        "no credential for {repo}; run `{}` \
+                         (or `aristo auth status` to list what's stored).",
+                        login_command(Some(&repo))
                     ),
                     exit_code: 1,
                 })
@@ -565,10 +442,7 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
         let cwd_repo = std::env::current_dir()
             .ok()
             .and_then(|cwd| derive_repo_full_name(&cwd).ok());
-        cwd_repo
-            .as_deref()
-            .and_then(|r| store.find_by_repo(r))
-            .or_else(|| store.sole())
+        cwd_repo.as_deref().and_then(|r| store.find_by_repo(r))
     };
     match entry {
         Some(e) => {
@@ -576,8 +450,8 @@ fn token(repo_flag: Option<String>) -> CliResult<()> {
             Ok(())
         }
         None => Err(CliError::Other {
-            message: "several credentials stored — pass `--repo <owner/repo>` to pick one \
-                      (or `aristo auth status` to list)."
+            message: "no credential for this checkout — pass `--repo <owner/repo>` to pick one \
+                      (or `aristo auth status` to list what's stored)."
                 .into(),
             exit_code: 1,
         }),
@@ -621,32 +495,22 @@ fn logout(all: bool, repo_flag: Option<String>) -> CliResult<()> {
         return Ok(());
     }
 
-    // Which entry? `--repo` / the cwd repo; or the sole entry when that
-    // is unambiguous (single-repo convenience).
-    let repo_hint = resolve_repo_best_effort(repo_flag)?;
-    let removed_label = match &repo_hint {
-        Some(r) => {
-            if store.remove_by_repo(r) == 0 {
-                println!("ok: no credential for {r} to remove (nothing changed).");
-                note_env_still_set();
-                return Ok(());
-            }
-            format!("of {r}")
-        }
-        None => {
-            if store.len() == 1 {
-                store.entries.clear();
-                "the stored credential".to_string()
-            } else {
-                return Err(CliError::Other {
-                    message: "several credentials stored — pass `--repo <owner/repo>` to log out \
-                              of one, or `--all` to clear everything."
-                        .into(),
-                    exit_code: 2,
-                });
-            }
-        }
+    // Which entry? `--repo`, else the cwd's repo. Nothing else — the
+    // same rule the resolver uses to pick an entry.
+    let Some(repo) = resolve_repo_best_effort(repo_flag)? else {
+        return Err(CliError::Other {
+            message: "not a GitHub checkout — pass `--repo <owner/repo>` to log out of one \
+                      credential, or `--all` to clear everything."
+                .into(),
+            exit_code: 2,
+        });
     };
+    if store.remove_by_repo(&repo) == 0 {
+        println!("ok: no credential for {repo} to remove (nothing changed).");
+        note_env_still_set();
+        return Ok(());
+    }
+    let removed_label = format!("of {repo}");
 
     // Persist: drop the file when the store is now empty, else rewrite it.
     if store.is_empty() {
@@ -698,7 +562,7 @@ mod tests {
             store_change_line(UpsertOutcome::Replaced { dropped: 2 }, &e, 3),
             "entry replaced (dropped 2 older entries for this repo): server https://acme.aretta.ai, repo acme/widgets — 3 entries on file."
         );
-        let unscoped = entry("prod", None, "t");
+        let unscoped = entry("https://code.aretta.ai", None, "t");
         assert!(store_change_line(UpsertOutcome::Added, &unscoped, 1).contains("repo (unscoped)"));
     }
 
@@ -706,8 +570,11 @@ mod tests {
     fn login_verdict_matching_checkout_resolves() {
         let tmp = TempDir::new().unwrap();
         let dir = checkout(tmp.path(), "w", "acme/widgets");
-        let saved = entry("prod", Some("acme/widgets"), "t1");
-        let st = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
+        let saved = entry("https://code.aretta.ai", Some("acme/widgets"), "t1");
+        let st = store(vec![
+            entry("https://code.aretta.ai", Some("other/x"), "t0"),
+            saved.clone(),
+        ]);
         assert_eq!(
             login_verdict(&st, &saved, &dir),
             "this checkout (acme/widgets) resolves to this entry."
@@ -718,8 +585,11 @@ mod tests {
     fn login_verdict_mismatched_checkout_names_the_repo_and_both_remedies() {
         let tmp = TempDir::new().unwrap();
         let dir = checkout(tmp.path(), "fork", "alice/widgets");
-        let saved = entry("prod", Some("acme/widgets"), "t1");
-        let st = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
+        let saved = entry("https://code.aretta.ai", Some("acme/widgets"), "t1");
+        let st = store(vec![
+            entry("https://code.aretta.ai", Some("other/x"), "t0"),
+            saved.clone(),
+        ]);
         let v = login_verdict(&st, &saved, &dir);
         assert!(
             v.starts_with("this checkout (alice/widgets) will NOT resolve to this entry"),
@@ -733,23 +603,18 @@ mod tests {
     }
 
     #[test]
-    fn login_verdict_outside_a_checkout_depends_on_the_sole_entry_grace() {
+    fn login_verdict_outside_a_checkout_never_resolves() {
+        // No single-entry fallback: even the only credential on file does
+        // not apply in a directory that is not its checkout.
         let tmp = TempDir::new().unwrap();
         let plain = tmp.path().join("plain");
         std::fs::create_dir_all(&plain).unwrap();
-        let saved = entry("prod", Some("acme/widgets"), "t1");
-        // Sole entry: still resolves.
+        let saved = entry("https://code.aretta.ai", Some("acme/widgets"), "t1");
         let one = store(vec![saved.clone()]);
         let v = login_verdict(&one, &saved, &plain);
         assert!(v.contains("not a GitHub checkout (no .git/config"), "{v}");
-        assert!(v.contains("this entry still resolves here"), "{v}");
-        // Several entries: nothing resolves; remedy given.
-        let two = store(vec![entry("prod", Some("other/x"), "t0"), saved.clone()]);
-        let v = login_verdict(&two, &saved, &plain);
-        assert!(
-            v.contains("with 2 entries on file nothing resolves here"),
-            "{v}"
-        );
+        assert!(v.contains("nothing resolves here"), "{v}");
+        assert!(v.contains("run aristo from a acme/widgets checkout"), "{v}");
         assert!(v.contains("ARETTA_TOKEN"), "{v}");
     }
 
@@ -761,7 +626,10 @@ mod tests {
         let plain = tmp.path().join("plain");
         std::fs::create_dir_all(&plain).unwrap();
         let a = entry("https://acme.aretta.ai", Some("acme/widgets"), "t1");
-        let two = store(vec![entry("prod", Some("other/x"), "t0"), a.clone()]);
+        let two = store(vec![
+            entry("https://code.aretta.ai", Some("other/x"), "t0"),
+            a.clone(),
+        ]);
         assert_eq!(
             status_verdict(&two, &acme),
             "this checkout (acme/widgets) resolves to: server https://acme.aretta.ai, repo acme/widgets"
@@ -772,14 +640,17 @@ mod tests {
             "{v}"
         );
         assert!(
-            v.contains("`aristo auth login --repo alice/widgets` here"),
+            v.contains(
+                "`aristo auth login --server https://<org>.aretta.ai --repo alice/widgets` here"
+            ),
             "{v}"
         );
         let v = status_verdict(&two, &plain);
         assert!(v.contains("not a GitHub checkout"), "{v}");
         assert!(v.contains("no stored credential (2 on file"), "{v}");
+        // The only entry on file does not apply outside its checkout either.
         let one = store(vec![a]);
         let v = status_verdict(&one, &plain);
-        assert!(v.ends_with("repo acme/widgets (the sole entry)"), "{v}");
+        assert!(v.contains("no stored credential (1 on file"), "{v}");
     }
 }

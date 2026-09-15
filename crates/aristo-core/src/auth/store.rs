@@ -30,7 +30,7 @@ pub const CREDENTIALS_FILENAME: &str = "credentials";
 
 /// Persist a token to the credentials file. Reads `$XDG_CONFIG_HOME`
 /// and `$HOME` from the process env to determine the destination
-/// path — same precedence as [`super::resolve::resolve`] so that
+/// path — same precedence as [`super::resolve::resolve_full`] so that
 /// `aristo auth login` and the next API call agree on which file to
 /// touch.
 pub fn save(token: &Token) -> io::Result<()> {
@@ -247,8 +247,9 @@ const STORE_HEADER: &str = "\
 #
 # DOWNGRADE CAVEAT: aristo < 0.6 understands only the older single-slot
 # format and will not read these entries (it treats this file as
-# unauthenticated, or errors as malformed). After upgrading run
-# `aristo auth login` again, or `aristo auth logout --all` to reset.
+# unauthenticated, or errors as malformed). After upgrading, sign in
+# again (`aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>`)
+# or run `aristo auth logout --all` to reset.
 ";
 
 /// One credential entry. Keyed by `repo` when scoped, else by `server`.
@@ -350,25 +351,13 @@ impl CredentialStore {
         self.entries.len()
     }
 
-    /// The sole entry iff there is exactly one — the single-repo grace
-    /// a resolver falls back to when it has no repo hint (or the hint
-    /// doesn't match).
-    pub fn sole(&self) -> Option<&CredentialEntry> {
-        match &self.entries[..] {
-            [only] => Some(only),
-            _ => None,
-        }
-    }
-
-    /// The entry a resolver picks for a checkout: the one scoped to
-    /// `repo_hint` when there is a hint and a match, else the sole entry
-    /// (single-repo grace), else nothing. This is THE selection rule —
-    /// `resolve_full` and every "which entry will this directory use?"
-    /// verdict go through it, so they cannot disagree.
+    /// The entry a resolver picks for a checkout: the one scoped to the
+    /// checkout's repo, or nothing. There is no fallback — a credential
+    /// applies exactly where its repo is checked out. This is THE
+    /// selection rule: `resolve_full` and every "which entry will this
+    /// directory use?" verdict go through it, so they cannot disagree.
     pub fn resolve_for(&self, repo_hint: Option<&str>) -> Option<&CredentialEntry> {
-        repo_hint
-            .and_then(|r| self.find_by_repo(r))
-            .or_else(|| self.sole())
+        repo_hint.and_then(|r| self.find_by_repo(r))
     }
 
     /// The entry scoped to `repo`. When several share a repo (different
@@ -383,10 +372,9 @@ impl CredentialStore {
     /// Insert `entry`, replacing what it supersedes. A repo-scoped entry
     /// replaces EVERY older entry for that repo, whatever their server:
     /// the resolver only ever picks the newest entry for a repo, so an
-    /// older one is unreachable — and, worse, it defeats the sole-entry
-    /// grace. A retry of `aristo auth login` therefore never
-    /// accumulates entries. An unscoped entry (no repo) replaces only
-    /// the unscoped entry on the same server.
+    /// older one is unreachable dead weight. A retry of `aristo auth
+    /// login` therefore never accumulates entries. An unscoped entry (no
+    /// repo) replaces only the unscoped entry on the same server.
     pub fn upsert(&mut self, entry: CredentialEntry) -> UpsertOutcome {
         let dropped = match entry.repo.as_deref() {
             Some(repo) => self.remove_by_repo(repo),
@@ -507,8 +495,7 @@ fn parse_store(raw: &str, path: &Path) -> Result<CredentialStore, AuthError> {
             entries: vec![entry],
         });
     }
-    // Legacy bare token (a single non-TOML line) — same back-compat the
-    // pre-v2 resolver honored.
+    // Bare token (a single non-TOML line).
     let token = raw.trim();
     if !token.is_empty() && !token.contains('=') && !token.contains('[') {
         return Ok(CredentialStore {
@@ -872,8 +859,8 @@ repo = "owner/legacy"
     fn upsert_same_repo_on_another_server_replaces_the_older_entry() {
         // A repo has one usable credential: the resolver only ever picks
         // the newest entry for a repo, so an older one on another server
-        // is dead weight that also breaks the sole-entry grace. A login
-        // for the same repo replaces it, whatever the server.
+        // is dead weight. A login for the same repo replaces it, whatever
+        // the server.
         let mut store = CredentialStore::default();
         store.upsert(entry(
             ServerUrl::Prod,
@@ -1007,26 +994,6 @@ repo = "owner/legacy"
         let on_disk = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
         assert_eq!(on_disk.len(), 1);
         assert_eq!(on_disk.entries[0].token.as_str(), "t2");
-    }
-
-    #[test]
-    fn sole_only_with_exactly_one_entry() {
-        let mut store = CredentialStore::default();
-        assert!(store.sole().is_none());
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/a",
-            "a",
-            "2026-07-22T00:00:00Z",
-        ));
-        assert_eq!(store.sole().unwrap().token.as_str(), "a");
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/b",
-            "b",
-            "2026-07-22T00:00:00Z",
-        ));
-        assert!(store.sole().is_none());
     }
 
     #[test]

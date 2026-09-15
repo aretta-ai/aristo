@@ -2,11 +2,8 @@
 //! detail view.
 //!
 //! Coming soon. The canon detail view is being reworked to resolve
-//! against the per-instance data plane (see `[instance]` in
-//! `aristo.toml`); until that lands the command reports the deferral
-//! instead of calling a canon endpoint. Prior behavior: `GET
-//! /canon/entry/<canon_id>` rendered category / property / backing /
-//! statement / references for the entry.
+//! against the org's data plane; until that lands the command reports the deferral
+//! instead of calling a canon endpoint.
 
 use crate::{CliError, CliResult};
 
