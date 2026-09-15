@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- cli: `--help` shows only what a person runs by hand. The worker plumbing the skills drive (`verify --pop-next/--queue-status/--submit-verdict/--id/--json/--apply-verdicts/--rewrite-hashes`, `critique --pop-next/--queue-status/--submit-findings/--id/--json/--apply-findings/--include-closed/--rerun/--all/--yes`, `session status/decide/list`) and the `canon unbind` escape hatch still work exactly as before but are hidden from the listings.
+
 ### Removed
 - docs: three library doc comments name `aristo stamp --refresh-canon` instead of the removed `canon refresh`.
 - **cli: `aristo index`, `aristo canon refresh` and `aristo verify --check` are gone.** `aristo stamp --skip-canon` is the indexer (`index` was the same walk without the drift and binding work); `aristo stamp --refresh-canon` is the re-match (`canon refresh` was the same call without the walk); `verify --check` never had behavior. Every hint, the `aristo-intent-suggestions` skill and the CI-gates scenario name the surviving forms. `stamp --check` and `critique --staged` stay: both have behavior, specs and tests.

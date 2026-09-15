@@ -263,7 +263,11 @@ enum Commands {
         /// index. Reads every `<id>.proof`, runs the mechanical
         /// validator, and (if it passes) flips the entry's status.
         /// Skips dispatch of new verifications when set.
-        #[arg(long = "apply-verdicts", conflicts_with = "submit_verdict")]
+        #[arg(
+            long = "apply-verdicts",
+            hide = true,
+            conflicts_with = "submit_verdict"
+        )]
         apply_verdicts: bool,
         /// Migration only: ignore any agent-stamped ground hashes in
         /// the `.proof` files and recompute them from the cited file
@@ -273,7 +277,7 @@ enum Commands {
         /// mismatches the current source is reported as staleness
         /// and the proof is rejected. Only meaningful with
         /// `--apply-verdicts`.
-        #[arg(long = "rewrite-hashes", requires = "apply_verdicts")]
+        #[arg(long = "rewrite-hashes", hide = true, requires = "apply_verdicts")]
         rewrite_hashes: bool,
         /// **Internal — invoked by the verification skill.** Submit
         /// a single verdict: parse the JSON payload, validate it,
@@ -281,19 +285,24 @@ enum Commands {
         /// Prints `accepted: sha256:<hex>` on success; structured
         /// errors on reject. Agents never write `.proof` files
         /// directly — the SDK is the sole writer.
-        #[arg(long = "submit-verdict", requires = "id", requires = "json")]
+        #[arg(
+            long = "submit-verdict",
+            hide = true,
+            requires = "id",
+            requires = "json"
+        )]
         submit_verdict: bool,
         /// Annotation id this verdict is about. Required with
         /// `--submit-verdict`. The `.proof` file lands at
         /// `.aristo/proofs/<id>.proof` (with `:` rewritten to `__`).
-        #[arg(long = "id", requires = "submit_verdict")]
+        #[arg(long = "id", hide = true, requires = "submit_verdict")]
         id: Option<String>,
         /// JSON-serialized ProofFile body. Required with
         /// `--submit-verdict`. Pass as a single-quoted shell string;
         /// the SDK parses it into a ProofFile and rejects anything
         /// the validator would reject. Same schema as the TOML body
         /// written on accept.
-        #[arg(long = "json", requires = "submit_verdict")]
+        #[arg(long = "json", hide = true, requires = "submit_verdict")]
         json: Option<String>,
         /// **Internal — invoked by the verification skill.**
         /// Atomically claim one task from the pending queue and
@@ -303,13 +312,13 @@ enum Commands {
         /// context doesn't carry between verifications. The
         /// orchestrator runs N workers in parallel and uses
         /// `--queue-status` to decide when to spawn the next wave.
-        #[arg(long = "pop-next", conflicts_with_all = ["apply_verdicts", "submit_verdict", "queue_status"])]
+        #[arg(long = "pop-next", hide = true, conflicts_with_all = ["apply_verdicts", "submit_verdict", "queue_status"])]
         pop_next: bool,
         /// Peek at queue state without claiming. Prints `pending: N`,
         /// `claimed: M` to stdout, exit 0. Used by the orchestrator
         /// to decide whether to dispatch another wave of workers.
         /// Safe to call concurrently.
-        #[arg(long = "queue-status", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
+        #[arg(long = "queue-status", hide = true, conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
         queue_status: bool,
         /// Block until the canon-verify session reaches a terminal
         /// state, rendering a snapshot at each long-poll return and
@@ -403,21 +412,21 @@ enum Commands {
         /// `disposition` is `None` (open / not yet reviewed); pass
         /// `--include-closed` for the full view including findings
         /// already triaged via `aristo session decide`.
-        #[arg(long = "apply-findings", conflicts_with_all = ["submit_findings", "pop_next", "queue_status"])]
+        #[arg(long = "apply-findings", hide = true, conflicts_with_all = ["submit_findings", "pop_next", "queue_status"])]
         apply_findings: bool,
         /// Include findings whose `disposition` has been set (Accepted /
         /// Rejected / Deferred) in the `--apply-findings` summary.
         /// By default only open findings are listed — closed ones
         /// stop re-surfacing on every apply, which is how a review
         /// closes the loop. Only meaningful with `--apply-findings`.
-        #[arg(long = "include-closed", requires = "apply_findings")]
+        #[arg(long = "include-closed", hide = true, requires = "apply_findings")]
         include_closed: bool,
         /// Force re-enqueue of every matched annotation, bypassing the
         /// `last_critiqued_at_text_hash` cache. Default behavior skips
         /// annotations whose text hasn't drifted since the cached
         /// critique was produced (so re-runs of `aristo critique
         /// --filter id=X` are free when X is unchanged).
-        #[arg(long = "rerun")]
+        #[arg(long = "rerun", hide = true)]
         rerun: bool,
         /// Restrict scope to annotations in files git-staged for the
         /// next commit (`git diff --cached --name-only`). Useful for
@@ -433,12 +442,12 @@ enum Commands {
         /// ~$X cost — proceed with --all --yes?)` and exits 2 unless
         /// you also pass `--yes`. Without the confirmation, an agent
         /// could accidentally fire hundreds of LLM calls in one go.
-        #[arg(long = "all", conflicts_with_all = ["filters", "staged"])]
+        #[arg(long = "all", hide = true, conflicts_with_all = ["filters", "staged"])]
         all: bool,
         /// Skip the confirmation prompt for `--all`. Required
         /// alongside `--all` to actually enqueue the sweep; without
         /// it `--all` just prints the cost estimate and exits 2.
-        #[arg(long = "yes", requires = "all")]
+        #[arg(long = "yes", hide = true, requires = "all")]
         yes: bool,
         /// **Internal — invoked by the critique skill.** Atomically
         /// claim one task from the critique queue and print its TOML
@@ -446,26 +455,31 @@ enum Commands {
         /// (exit 0 either way). Unlike verify, critique workers loop
         /// on this call — the tasks are shallow and vocabulary stays
         /// consistent when one worker handles several.
-        #[arg(long = "pop-next", conflicts_with_all = ["apply_findings", "submit_findings", "queue_status"])]
+        #[arg(long = "pop-next", hide = true, conflicts_with_all = ["apply_findings", "submit_findings", "queue_status"])]
         pop_next: bool,
         /// Peek at queue state without claiming. Prints `pending: N`
         /// + `claimed: M` to stdout, exit 0.
-        #[arg(long = "queue-status", conflicts_with_all = ["apply_findings", "submit_findings"])]
+        #[arg(long = "queue-status", hide = true, conflicts_with_all = ["apply_findings", "submit_findings"])]
         queue_status: bool,
         /// **Internal — invoked by the critique skill.** Submit a
         /// single critique: parse the JSON payload, validate it, and
         /// (on accept) atomically write
         /// `.aristo/critiques/<id>.critique`. Prints
         /// `accepted: sha256:<hex>` on success.
-        #[arg(long = "submit-findings", requires = "id", requires = "json")]
+        #[arg(
+            long = "submit-findings",
+            hide = true,
+            requires = "id",
+            requires = "json"
+        )]
         submit_findings: bool,
         /// Annotation id this submission is about. Required with
         /// `--submit-findings`.
-        #[arg(long = "id", requires = "submit_findings")]
+        #[arg(long = "id", hide = true, requires = "submit_findings")]
         id: Option<String>,
         /// JSON-serialized CritiqueFile body. Required with
         /// `--submit-findings`.
-        #[arg(long = "json", requires = "submit_findings")]
+        #[arg(long = "json", hide = true, requires = "submit_findings")]
         json: Option<String>,
     },
 
@@ -763,6 +777,7 @@ pub(crate) enum CanonAction {
     /// Unbind is for LIVE annotations. If the annotation was deleted
     /// from source, no unbind is needed: the next `aristo stamp`
     /// prunes its `.aristo/canon-matches.toml` entry automatically.
+    #[command(hide = true)]
     Unbind {
         /// Canon-bound annotation id including the prefix (e.g.
         /// `aristos:cell_written_exactly_once_per_page_edit`).
@@ -897,8 +912,10 @@ pub(crate) enum SessionAction {
     },
     /// Print bucket counts + open items for the active session.
     /// Exit 0; errors out if no session is active.
+    #[command(hide = true)]
     Status,
     /// Record a decision on one item in the active session.
+    #[command(hide = true)]
     Decide {
         /// Item reference (`<id>#<index>` for indexed items, or any
         /// opaque per-kind string).
@@ -928,6 +945,7 @@ pub(crate) enum SessionAction {
         yes: bool,
     },
     /// List the active session and the most recent N closed sessions.
+    #[command(hide = true)]
     List {
         /// Maximum number of closed-session rows to include.
         #[arg(long = "limit", default_value_t = 10)]
