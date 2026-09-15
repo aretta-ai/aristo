@@ -60,7 +60,7 @@ struct CliTokenRequest<'a> {
 pub struct CliTokenResponse {
     /// Raw `arta_*` token. Shown to the caller **once** per the
     /// proxy's D-12 / Pitfall-8; the SDK persists it via
-    /// [`super::store::save`] (or the extended TOML save in
+    /// [`super::store::save_full`] (or the extended TOML save in
     /// commit 4 of the plan addendum).
     pub arta_token: String,
     /// JWT for any `/dashboard/api/*` calls the SDK might want.
