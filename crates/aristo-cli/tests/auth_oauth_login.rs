@@ -26,6 +26,14 @@ fn aristo_bin() -> &'static str {
 /// env, isolated `HOME`/`XDG_CONFIG_HOME` so the user's real
 /// credentials are never touched.
 fn isolated(workspace: &Path) -> Command {
+    isolated_at(workspace, workspace)
+}
+
+/// Like [`isolated`], with the sandbox HOME under `home_root` and the
+/// working directory at `cwd` — for tests that log in from one checkout
+/// while the store already holds entries from another.
+fn isolated_at(home_root: &Path, cwd: &Path) -> Command {
+    let workspace = home_root;
     let mut c = Command::new(aristo_bin());
     c.env_clear();
     if let Ok(p) = std::env::var("PATH") {
@@ -43,8 +51,70 @@ fn isolated(workspace: &Path) -> Command {
     // otherwise every test run pops a browser tab on the dev's
     // machine.
     c.env("ARISTO_NO_BROWSER", "1");
-    c.current_dir(workspace);
+    c.current_dir(cwd);
     c
+}
+
+/// A directory whose `.git/config` names a GitHub `origin` remote.
+fn git_workspace(parent: &Path, name: &str, owner_repo: &str) -> std::path::PathBuf {
+    let ws = parent.join(name);
+    let git = ws.join(".git");
+    std::fs::create_dir_all(&git).unwrap();
+    std::fs::write(
+        git.join("config"),
+        format!("[remote \"origin\"]\n    url = https://github.com/{owner_repo}.git\n"),
+    )
+    .unwrap();
+    ws
+}
+
+/// Seed the sandbox store with `(server, repo, token)` entries.
+fn seed(workspace: &Path, entries: &[(&str, &str, &str)]) {
+    let p = workspace.join("home/xdg/aristo/credentials");
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    let mut body = String::from("version = 2\n");
+    for (i, (server, repo, token)) in entries.iter().enumerate() {
+        body.push_str(&format!(
+            "\n[[entries]]\nserver = \"{server}\"\nrepo = \"{repo}\"\ntoken = \"{token}\"\n\
+             minted_at = \"2026-09-15T00:0{i}:00Z\"\n"
+        ));
+    }
+    std::fs::write(&p, body).unwrap();
+}
+
+/// The canned happy-path pair: a login URL, then a minted token for
+/// `login` scoped to `repo`.
+fn happy_mock(token: &str, login: &str, repo: &str) -> (CannedResponse, CannedResponse) {
+    (
+        CannedResponse {
+            status_line: "200 OK",
+            body: r#"{"url":"https://github.com/login/oauth/authorize?client_id=test"}"#.into(),
+        },
+        CannedResponse {
+            status_line: "200 OK",
+            body: format!(
+                r#"{{"arta_token": "{token}", "jwt": "j", "user": {{"id": 42, "login": "{login}"}},
+                    "token_id": "tok_1", "repo_full_name": "{repo}", "last_4": "1234"}}"#
+            ),
+        },
+    )
+}
+
+/// Drive one OAuth login to completion against `base`, pasting the code.
+fn oauth_login(mut cmd: Command, base: &str, extra: &[&str]) -> std::process::Output {
+    cmd.args(["auth", "login", "--server", base])
+        .args(extra)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn aristo");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"oauth-code\n")
+        .unwrap();
+    child.wait_with_output().expect("wait")
 }
 
 /// Spin up a two-step mock server that:
@@ -329,25 +399,101 @@ fn auth_login_oauth_requires_repo_or_git_remote() {
     );
 }
 
+// ─── what login reports: the store change + this checkout's verdict (#77) ──
+
 #[test]
-fn auth_login_with_token_bypass_still_works() {
-    // The OAuth refactor must not break the existing --token bypass.
-    let workspace = TempDir::new().unwrap();
+fn login_reports_added_entry_and_that_this_checkout_resolves_to_it() {
+    let sandbox = TempDir::new().unwrap();
+    let ws = git_workspace(sandbox.path(), "a", "org/repoA");
+    let (l, t) = happy_mock("arta_A", "octocat", "org/repoA");
+    let (base, handle) = spawn_two_step_mock(l, t);
 
-    let output = isolated(workspace.path())
-        .args(["auth", "login", "--token", "arta_bypass_works"])
+    let out = oauth_login(isolated_at(sandbox.path(), &ws), &base, &[]);
+    handle.join().unwrap();
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{s}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(s.contains("entry added"), "login: {s}");
+    assert!(s.contains("repo org/repoA"), "login: {s}");
+    assert!(s.contains("1 entry on file"), "login: {s}");
+    assert!(
+        s.contains("this checkout (org/repoA) resolves to this entry"),
+        "login: {s}"
+    );
+    assert!(!s.contains("arta_A"), "token leaked: {s}");
+}
+
+#[test]
+fn login_for_another_repo_warns_this_checkout_will_not_resolve_to_it() {
+    let sandbox = TempDir::new().unwrap();
+    seed(
+        sandbox.path(),
+        &[("https://code.aretta.ai", "org/repoA", "arta_A")],
+    );
+    // From a fork checkout, log in for the upstream repo: two entries now,
+    // and this directory derives to neither.
+    let fork = git_workspace(sandbox.path(), "fork", "alice/repoB");
+    let (l, t) = happy_mock("arta_B", "octocat", "org/repoB");
+    let (base, handle) = spawn_two_step_mock(l, t);
+
+    let out = oauth_login(
+        isolated_at(sandbox.path(), &fork),
+        &base,
+        &["--repo", "org/repoB"],
+    );
+    handle.join().unwrap();
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{s}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(s.contains("entry added"), "login: {s}");
+    assert!(s.contains("2 entries on file"), "login: {s}");
+    assert!(
+        s.contains("this checkout (alice/repoB) will NOT resolve to this entry"),
+        "login: {s}"
+    );
+    assert!(
+        s.contains("org/repoB checkout"),
+        "remedy names the repo: {s}"
+    );
+    assert!(s.contains("ARETTA_TOKEN"), "remedy names the env var: {s}");
+}
+
+#[test]
+fn login_retry_for_the_same_repo_replaces_instead_of_accumulating() {
+    let sandbox = TempDir::new().unwrap();
+    let ws = git_workspace(sandbox.path(), "a", "org/repoA");
+    // An earlier login for the same repo against another server.
+    seed(
+        sandbox.path(),
+        &[("https://one.example.com", "org/repoA", "arta_old")],
+    );
+    let (l, t) = happy_mock("arta_new", "octocat", "org/repoA");
+    let (base, handle) = spawn_two_step_mock(l, t);
+
+    let out = oauth_login(isolated_at(sandbox.path(), &ws), &base, &[]);
+    handle.join().unwrap();
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{s}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(s.contains("entry replaced"), "login: {s}");
+    assert!(s.contains("dropped 1 older entry"), "login: {s}");
+    assert!(s.contains("1 entry on file"), "login: {s}");
+    assert!(
+        s.contains("this checkout (org/repoA) resolves to this entry"),
+        "login: {s}"
+    );
+    let tok = isolated_at(sandbox.path(), &ws)
+        .args(["auth", "token"])
         .output()
-        .expect("run aristo");
-    assert!(
-        output.status.success(),
-        "bypass mode failed: stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let creds_path = workspace.path().join("home/xdg/aristo/credentials");
-    let body = std::fs::read_to_string(&creds_path).unwrap();
-    assert!(
-        body.contains("arta_bypass_works"),
-        "credentials should contain the bypass token; got:\n{body}"
-    );
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&tok.stdout).trim(), "arta_new");
 }

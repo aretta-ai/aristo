@@ -631,30 +631,18 @@ enum Commands {
 /// (or the platform default per `aristo_core::auth`).
 #[derive(clap::Subcommand, Debug)]
 pub(crate) enum AuthAction {
-    /// Authenticate against the Aretta proxy.
+    /// Sign in with GitHub and store the minted token.
     ///
-    /// **Default mode (GitHub OAuth):** the CLI fetches the GitHub
-    /// authorization URL from the proxy, tries to open it in your
-    /// browser, and prompts you to paste the code shown on the
-    /// proxy's callback page. The proxy then mints an `arta_*`
-    /// token scoped to your `(user, repo)` pair.
+    /// The CLI fetches the GitHub authorization URL from the Aretta
+    /// server, tries to open it in your browser, and prompts you to
+    /// paste the code shown on the callback page. The server then
+    /// mints an `arta_*` token scoped to your `(user, repo)` pair,
+    /// stored under `$XDG_CONFIG_HOME/aristo/credentials` with `0600`
+    /// Unix permissions.
     ///
-    /// **Bypass modes (for CI / scripting):**
-    ///
-    /// - **`--stdin`** — read the raw token from stdin
-    ///   (`echo "$TOKEN" | aristo auth login --stdin`).
-    /// - **`--token=<T>`** — use the literal token value.
-    ///
-    /// The token is persisted to `$XDG_CONFIG_HOME/aristo/credentials`
-    /// with `0600` Unix permissions.
+    /// CI and scripts do not log in: set `ARETTA_TOKEN` (and
+    /// `ARETTA_API_URL`) in the environment instead.
     Login {
-        /// Read the token from stdin (consumes entire stdin). Skips
-        /// the OAuth flow.
-        #[arg(long, conflicts_with = "token")]
-        stdin: bool,
-        /// Use this token directly. Skips the OAuth flow.
-        #[arg(long, value_name = "TOKEN")]
-        token: Option<String>,
         /// Aretta server to authenticate against. Accepts:
         /// `prod` / `production` (= https://code.aretta.ai),
         /// or a full URL for a self-hosted deployment or per-org
@@ -672,9 +660,7 @@ pub(crate) enum AuthAction {
         /// Repo to scope the minted token to (`owner/repo`). Defaults to
         /// auto-deriving from `<cwd>/.git/config`'s `remote.origin.url`.
         /// Required for non-git directories or when the remote isn't a
-        /// GitHub URL. In `--stdin` / `--token` bypass modes it (with
-        /// `--server`) keys the stored credential for later multi-repo
-        /// lookup — best-effort there, so it may be omitted.
+        /// GitHub URL.
         #[arg(long, value_name = "OWNER/REPO")]
         repo: Option<String>,
     },

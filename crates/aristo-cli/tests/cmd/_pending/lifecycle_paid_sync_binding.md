@@ -4,7 +4,7 @@ Source: `../aretta-sdk/docs/diagrams/01-lifecycle.mmd` § "3 · Server binding (
 
 Walks the paid-tier binding flow: `aristo auth login` → `aristo sync` (server matches the annotation against its property template, applies the `aristos:` namespace prefix in source, populates `linked` + `verified_outcome` in the index) → `aristo show` confirms the certificate.
 
-The interactive bits of `auth login` (browser flow, etc.) are stubbed in `[..]` here; the activated form will use a fixture credential or `--token <env-var>` for non-interactive testing.
+The interactive bits of `auth login` (browser flow, etc.) are stubbed in `[..]` here; the activated form will use a fixture credential for non-interactive testing.
 
 ```console
 $ aristo auth login

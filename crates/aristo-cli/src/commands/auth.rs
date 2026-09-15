@@ -6,32 +6,20 @@
 //! `aretta-admin` clone or scripted tooling) can call them
 //! directly without going through the CLI.
 //!
-//! ## Login flow (paste-flow, deliberately simple)
+//! ## Login flow
 //!
-//! The first slice of `aristo auth login` is a **paste flow**:
-//!
-//! 1. Print a one-line prompt telling the user where to get a token.
-//! 2. Read a token from stdin (`--stdin` consumes all; default reads
-//!    one line; `--token=<T>` bypasses both for tests / scripting).
-//! 3. Persist via `canon::auth::save`.
-//!
-//! Server-side validation of the token (e.g., `GET /auth/whoami`) is
-//! intentionally deferred — the first canon API call (`aristo stamp`,
-//! `aristo critique`, `aristo canon show`) surfaces a typed
-//! [`AuthError::Invalid`] if the token is bad. Adding a validation
-//! roundtrip here would couple `aristo auth login` to network state,
-//! breaking the offline-friendly invariant.
-//!
-//! A device-code OAuth flow is a future enhancement (open browser →
-//! poll for token); not needed for v0.1.
+//! `aristo auth login` is the GitHub OAuth flow and nothing else: the
+//! CLI fetches the authorize URL from the server, the user pastes the
+//! code shown on the callback page, the server mints an `arta_*` token
+//! scoped to `(user, repo)`, and the CLI stores it keyed by server and
+//! repo. There is no raw-token paste mode — CI and scripts read
+//! `ARETTA_TOKEN` from the environment and never touch the store.
 
-use std::io::Read;
 use std::path::Path;
 
 use aristo_core::auth::{
-    self, derive_repo_full_name, login_server, login_server_discovering, AuthError,
-    CredentialEntry, CredentialStore, LoginServerSource, ServerUrl, Token, UpsertOutcome,
-    UpsertReport,
+    self, derive_repo_full_name, login_server_discovering, AuthError, CredentialEntry,
+    CredentialStore, LoginServerSource, ServerUrl, Token, UpsertOutcome, UpsertReport,
 };
 
 use crate::{AuthAction, CliError, CliResult};
@@ -39,12 +27,7 @@ use crate::{AuthAction, CliError, CliResult};
 /// Dispatcher for `aristo auth` subcommands.
 pub(crate) fn run(action: AuthAction) -> CliResult<()> {
     match action {
-        AuthAction::Login {
-            stdin,
-            token,
-            server,
-            repo,
-        } => login(stdin, token, server, repo),
+        AuthAction::Login { server, repo } => login(server, repo),
         AuthAction::Status => status(),
         AuthAction::Token { repo } => token(repo),
         AuthAction::Logout { all, repo } => logout(all, repo),
@@ -53,22 +36,9 @@ pub(crate) fn run(action: AuthAction) -> CliResult<()> {
 
 // ─── login ─────────────────────────────────────────────────────────────────
 
-fn login(
-    read_stdin: bool,
-    token_flag: Option<String>,
-    server_flag: Option<String>,
-    repo_flag: Option<String>,
-) -> CliResult<()> {
-    // Bypass modes — caller supplied a raw token directly. No OAuth and
-    // no discovery (the token's scope is already fixed server-side), but
-    // `--server` / `--repo` still key the stored entry so the multi-repo
-    // store can look it up later.
-    if read_stdin || token_flag.is_some() {
-        return login_with_raw_token(read_stdin, token_flag, server_flag, repo_flag);
-    }
-
-    // OAuth flow. Resolve the repo first — both zero-config discovery
-    // and token scoping need it.
+fn login(server_flag: Option<String>, repo_flag: Option<String>) -> CliResult<()> {
+    // Resolve the repo first — both zero-config discovery and token
+    // scoping need it.
     let repo_full_name = resolve_repo_full_name(repo_flag)?;
 
     // Resolve the server the token is minted against. Precedence:
@@ -163,48 +133,6 @@ fn login_via_oauth(
         resp.user.login, resp.repo_full_name
     );
     println!("    token saved to {}", path.display());
-    print_login_report(&report, &creds.token)?;
-    println!("    `aristo auth status` to verify; `aristo auth logout` to remove.");
-    Ok(())
-}
-
-fn login_with_raw_token(
-    read_stdin: bool,
-    token_flag: Option<String>,
-    server_flag: Option<String>,
-    repo_flag: Option<String>,
-) -> CliResult<()> {
-    let token_raw = collect_raw_token(read_stdin, token_flag)?;
-    let trimmed = token_raw.trim();
-    if trimmed.is_empty() {
-        return Err(CliError::Other {
-            message: "no token provided.\n\
-                     Run `aristo auth login` (OAuth flow, default) to mint one interactively, or if you already have an arta_* token:\n  \
-                       `aristo auth login --stdin` (pipe), or\n  \
-                       `aristo auth login --token <TOKEN>` (scripting)."
-                .into(),
-            exit_code: 2,
-        });
-    }
-    // Key the entry by (resolved server, repo). No discovery — the token
-    // scope is already fixed server-side; we only record where it came
-    // from so the multi-repo store can look it up. Server precedence is
-    // --server > ARETTA_API_URL > prod; the repo is --repo or the cwd's
-    // git remote (best-effort — absent is fine for a scriptless paste).
-    let env_override = std::env::var("ARETTA_API_URL").ok();
-    let (server, _) = login_server(server_flag.as_deref(), env_override.as_deref());
-    let repo = resolve_repo_best_effort(repo_flag)?;
-    let creds = aristo_core::auth::CredentialsRecord {
-        token: Token::new(trimmed),
-        server,
-        user_login: None,
-        user_id: None,
-        repo,
-    };
-    let report = aristo_core::auth::save_full(&creds).map_err(CliError::Io)?;
-
-    let path = auth::credentials_path().map_err(auth_error_to_cli)?;
-    println!("ok: authenticated. token saved to {}", path.display());
     print_login_report(&report, &creds.token)?;
     println!("    `aristo auth status` to verify; `aristo auth logout` to remove.");
     Ok(())
@@ -321,25 +249,6 @@ fn status_verdict(store: &CredentialStore, dir: &Path) -> String {
             store.len()
         ),
     }
-}
-
-/// Determine where the raw token comes from in bypass modes.
-fn collect_raw_token(read_stdin: bool, token_flag: Option<String>) -> CliResult<String> {
-    if let Some(t) = token_flag {
-        return Ok(t);
-    }
-    if read_stdin {
-        let mut buf = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(CliError::Io)?;
-        return Ok(buf);
-    }
-    // Should not be reached — caller checks the flags first.
-    Err(CliError::Other {
-        message: "internal: collect_raw_token called without --stdin or --token".into(),
-        exit_code: 1,
-    })
 }
 
 /// Validate a `--repo owner/repo` flag value.
