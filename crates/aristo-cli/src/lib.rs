@@ -633,58 +633,51 @@ enum Commands {
 pub(crate) enum AuthAction {
     /// Sign in with GitHub and store the minted token.
     ///
-    /// The CLI fetches the GitHub authorization URL from the Aretta
-    /// server, tries to open it in your browser, and prompts you to
-    /// paste the code shown on the callback page. The server then
-    /// mints an `arta_*` token scoped to your `(user, repo)` pair,
-    /// stored under `$XDG_CONFIG_HOME/aristo/credentials` with `0600`
-    /// Unix permissions.
+    /// The CLI fetches the GitHub authorization URL from your org's
+    /// Aretta server, tries to open it in your browser, and prompts you
+    /// to paste the code shown on the callback page. The server mints
+    /// an `arta_*` token — an org grant, valid for every repo the org
+    /// admits you to — stored under `$XDG_CONFIG_HOME/aristo/credentials`
+    /// with `0600` Unix permissions, one entry per server.
     ///
-    /// CI and scripts do not log in: set `ARETTA_TOKEN` (and
-    /// `ARETTA_API_URL`) in the environment instead.
+    /// CI and scripts do not log in: set `ARETTA_TOKEN` and
+    /// `ARETTA_API_URL` in the environment instead.
     Login {
         /// Your org's Aretta host — your dashboard's hostname, e.g.
         /// `https://<org>.aretta.ai` (a bare host gets `https://`).
         /// Required: this flag, else the `ARETTA_API_URL` env var.
         #[arg(long, value_name = "URL")]
         server: Option<String>,
-        /// Repo to scope the minted token to (`owner/repo`). Defaults to
-        /// auto-deriving from `<cwd>/.git/config`'s `remote.origin.url`.
-        /// Required for non-git directories or when the remote isn't a
-        /// GitHub URL.
-        #[arg(long, value_name = "OWNER/REPO")]
-        repo: Option<String>,
     },
-    /// Show the current authentication state. Lists every stored
-    /// credential (server, repo, user) — never the token itself — plus
-    /// any `ARETTA_TOKEN` env override. Handy for sanity-checking before
-    /// running `aristo stamp`.
+    /// Show the current authentication state: every stored credential
+    /// (server, user) — never the token itself — which one commands will
+    /// use, and any `ARETTA_TOKEN` env override. Exits 1 when a run from
+    /// here would not authenticate.
     Status,
     /// Print the resolved `arta_*` token to stdout — the `ARETTA_TOKEN`
-    /// env var if set, else the stored credential for the current repo.
-    /// Nothing else is printed, so it pipes cleanly to your clipboard,
-    /// e.g. `aristo auth token | pbcopy` (macOS) or
+    /// env var if set, else the stored credential for the server. Nothing
+    /// else is printed, so it pipes cleanly to your clipboard, e.g.
+    /// `aristo auth token | pbcopy` (macOS) or
     /// `aristo auth token | xclip -selection clipboard` (Linux). Handy for
     /// setting the `ARETTA_TOKEN` CI secret. Errors if not authenticated.
     Token {
-        /// Repo (`owner/repo`) whose token to print. Defaults to the
-        /// cwd's git remote; with several credentials stored and no
-        /// match, errors telling you to pass this.
-        #[arg(long, value_name = "OWNER/REPO")]
-        repo: Option<String>,
+        /// Server whose token to print. Defaults to `ARETTA_API_URL`,
+        /// else the single stored entry; with several stored and none
+        /// named, errors telling you to pass this.
+        #[arg(long, value_name = "URL")]
+        server: Option<String>,
     },
-    /// Remove a stored credential. By default removes the current repo's
-    /// entry (from `--repo` or the cwd's git remote); `--all` clears
-    /// every credential. Idempotent — logging out when not logged in is
-    /// not an error.
+    /// Remove a stored credential: the one for `--server` (or
+    /// `ARETTA_API_URL`), the single entry when only one is stored, or
+    /// `--all`. Idempotent — logging out when not logged in is not an
+    /// error.
     Logout {
-        /// Remove every stored credential, not just the current repo's.
+        /// Remove every stored credential.
         #[arg(long)]
         all: bool,
-        /// Repo (`owner/repo`) whose credential to remove. Defaults to
-        /// the cwd's git remote. Ignored with `--all`.
-        #[arg(long, value_name = "OWNER/REPO", conflicts_with = "all")]
-        repo: Option<String>,
+        /// Server whose credential to remove. Ignored with `--all`.
+        #[arg(long, value_name = "URL", conflicts_with = "all")]
+        server: Option<String>,
     },
 }
 

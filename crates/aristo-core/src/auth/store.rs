@@ -49,16 +49,15 @@ pub fn save_with_home(token: &Token, home_override: Option<&Path>) -> io::Result
 }
 
 /// Persist a bare token with full env-var + home-dir overrides. Upserts
-/// a single entry keyed `(prod, no-repo)` into the multi-repo store —
-/// callers that know the server/repo persist a full record via
-/// [`save_full_with`] instead.
+/// a single entry keyed by the platform server — callers that know the
+/// server persist a full record via [`save_full_with`] instead.
 pub fn save_with(
     token: &Token,
     xdg_config_home: Option<&str>,
     home_override: Option<&Path>,
 ) -> io::Result<()> {
     upsert_entry_with(
-        CredentialEntry::bare(token.clone(), super::server::ServerUrl::Prod, None),
+        CredentialEntry::bare(token.clone(), super::server::ServerUrl::Prod),
         xdg_config_home,
         home_override,
     )
@@ -165,11 +164,9 @@ pub(super) struct CredentialsFile {
     pub(super) aretta: AretaCredentials,
 }
 
-/// On-disk credentials. Extended in commit 4 of the auth-extraction
-/// plan: in addition to the raw `token`, we now persist the server
-/// URL the token was minted against, the GitHub user identity, and
-/// the repo scope. All four new fields are optional so old bare-
-/// token files still parse cleanly.
+/// The v1 single-slot record: the raw `token`, the server it was minted
+/// against, and the GitHub user identity. Read-only today; every
+/// field but `token` is optional so the oldest files still parse.
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct AretaCredentials {
     pub(super) token: String,
@@ -188,8 +185,9 @@ pub(super) struct AretaCredentials {
     /// Numeric GitHub user id at mint time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) user_id: Option<u64>,
-    /// `owner/repo` the token is scoped to server-side.
+    /// Present in files written before tokens were org-scoped; ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[allow(dead_code)]
     pub(super) repo: Option<String>,
 }
 
@@ -201,13 +199,11 @@ pub struct CredentialsRecord {
     pub server: super::server::ServerUrl,
     pub user_login: Option<String>,
     pub user_id: Option<u64>,
-    pub repo: Option<String>,
 }
 
-/// Persist a full credentials record (token + server + user + repo).
-/// Upserts the entry into the multi-repo store (see
-/// [`CredentialStore::upsert`] for the key), migrating any older
-/// single-slot file and preserving other repos' entries. Reads env vars
+/// Persist a full credentials record (token + server + user). Upserts
+/// the entry for its server (see [`CredentialStore::upsert`]),
+/// migrating any older file and preserving other servers' entries. Reads env vars
 /// for path resolution; see [`save_full_with`] for the
 /// explicit-overrides variant used by tests. Returns what happened and
 /// the store as saved, so a caller can tell the user.
@@ -224,42 +220,36 @@ pub fn save_full_with(
     upsert_entry_with(creds.into(), xdg_config_home, home_override)
 }
 
-// ─── v2 multi-repo store ─────────────────────────────────────────────────────
+// ─── the keyed store ─────────────────────────────────────────────────────────
 //
-// The single-slot `[aretta]` file (v1, above) holds one token. The v2
-// store is a keyed, versioned list: one entry per repo (an unscoped
-// entry is keyed by its server instead), so a user can be logged in to
-// several repos at once. v1 files still read transparently and migrate
-// to v2 on the next write.
+// One entry per server: an `arta_*` token is an org grant, minted at the
+// org's server, valid for every repo the org admits. Older files (v1
+// single slot, v2 keyed by server + repo, bare token) still read; the
+// next write persists the current format.
 
 /// Current on-disk format version. v1 was the single-slot `[aretta]`
-/// table; v2 is a keyed, multi-repo `[[entries]]` list.
-const STORE_VERSION: u32 = 2;
+/// table; v2 keyed entries by server + repo; v3 keys by server.
+const STORE_VERSION: u32 = 3;
 
-/// Header comment prepended to the v2 store file. Documents the
-/// downgrade caveat for an older CLI that only understands v1.
+/// Header comment prepended to the store file. Documents the downgrade
+/// caveat for an older CLI.
 const STORE_HEADER: &str = "\
-# Aristo credentials store (v2, multi-repo).
+# Aristo credentials store (v3, one entry per server).
 #
-# Managed by `aristo auth`; one entry per repo (a login for a repo
-# replaces its older entry). Tokens are secrets — on Unix this file is
-# created 0600 (owner-only).
+# Managed by `aristo auth`; a login at a server replaces its entry. Tokens
+# are secrets — on Unix this file is created 0600 (owner-only).
 #
-# DOWNGRADE CAVEAT: aristo < 0.6 understands only the older single-slot
-# format and will not read these entries (it treats this file as
-# unauthenticated, or errors as malformed). After upgrading, sign in
-# again (`aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>`)
-# or run `aristo auth logout --all` to reset.
+# DOWNGRADE CAVEAT: aristo < 0.8 does not read this format (it errors as
+# malformed). After upgrading, sign in again
+# (`aristo auth login --server https://<org>.aretta.ai`) or run
+# `aristo auth logout --all` to reset.
 ";
 
-/// One credential entry. Keyed by `repo` when scoped, else by `server`.
+/// One credential entry, keyed by its server (the org's host).
 #[derive(Debug, Clone)]
 pub struct CredentialEntry {
     /// Aretta server this token was minted against.
     pub server: super::server::ServerUrl,
-    /// `owner/repo` the token is scoped to, or `None` when the scope is
-    /// unknown (e.g. a `--token` paste with no `--repo`).
-    pub repo: Option<String>,
     /// The `arta_*` token.
     pub token: Token,
     /// RFC-3339 timestamp when this entry was minted / written.
@@ -271,12 +261,11 @@ pub struct CredentialEntry {
 }
 
 impl CredentialEntry {
-    /// A minimal entry for a raw token whose `(server, repo)` scope is
-    /// otherwise unknown. Stamps `minted_at` now.
-    pub fn bare(token: Token, server: super::server::ServerUrl, repo: Option<String>) -> Self {
+    /// A minimal entry for a raw token with no user identity. Stamps
+    /// `minted_at` now.
+    pub fn bare(token: Token, server: super::server::ServerUrl) -> Self {
         CredentialEntry {
             server,
-            repo,
             token,
             minted_at: now_iso8601(),
             user_login: None,
@@ -284,16 +273,10 @@ impl CredentialEntry {
         }
     }
 
-    /// True iff this entry's key is exactly `(server, repo)`.
-    fn keyed_as(&self, server: &super::server::ServerUrl, repo: Option<&str>) -> bool {
-        &self.server == server && self.repo.as_deref() == repo
-    }
-
     /// The printable, token-free view of this entry.
     pub fn summary(&self) -> super::error::EntrySummary {
         super::error::EntrySummary {
             server: self.server.as_str().to_string(),
-            repo: self.repo.clone(),
             user_login: self.user_login.clone(),
         }
     }
@@ -303,7 +286,6 @@ impl From<&CredentialsRecord> for CredentialEntry {
     fn from(r: &CredentialsRecord) -> Self {
         CredentialEntry {
             server: r.server.clone(),
-            repo: r.repo.clone(),
             token: r.token.clone(),
             minted_at: now_iso8601(),
             user_login: r.user_login.clone(),
@@ -324,16 +306,14 @@ pub struct CredentialStore {
 /// What [`CredentialStore::upsert`] did with the entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpsertOutcome {
-    /// No entry shared the key; the entry was appended.
+    /// No entry for that server; the entry was appended.
     Added,
-    /// `dropped` older entries with the same key were removed and the
-    /// entry took their place.
-    Replaced { dropped: usize },
+    /// The server's entry was replaced.
+    Replaced,
 }
 
 /// What a persisting upsert did, plus the store exactly as saved — so
-/// a caller can report the entry count and the resolution verdict
-/// without a second read.
+/// a caller can report the entry count without a second read.
 #[derive(Debug, Clone)]
 pub struct UpsertReport {
     pub outcome: UpsertOutcome,
@@ -351,61 +331,58 @@ impl CredentialStore {
         self.entries.len()
     }
 
-    /// The entry a resolver picks for a checkout: the one scoped to the
-    /// checkout's repo, or nothing. There is no fallback — a credential
-    /// applies exactly where its repo is checked out. This is THE
-    /// selection rule: `resolve_full` and every "which entry will this
-    /// directory use?" verdict go through it, so they cannot disagree.
-    pub fn resolve_for(&self, repo_hint: Option<&str>) -> Option<&CredentialEntry> {
-        repo_hint.and_then(|r| self.find_by_repo(r))
-    }
-
-    /// The entry scoped to `repo`. When several share a repo (different
-    /// servers), the most-recently-minted wins.
-    pub fn find_by_repo(&self, repo: &str) -> Option<&CredentialEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.repo.as_deref() == Some(repo))
-            .max_by(|a, b| a.minted_at.cmp(&b.minted_at))
-    }
-
-    /// Insert `entry`, replacing what it supersedes. A repo-scoped entry
-    /// replaces EVERY older entry for that repo, whatever their server:
-    /// the resolver only ever picks the newest entry for a repo, so an
-    /// older one is unreachable dead weight. A retry of `aristo auth
-    /// login` therefore never accumulates entries. An unscoped entry (no
-    /// repo) replaces only the unscoped entry on the same server.
-    pub fn upsert(&mut self, entry: CredentialEntry) -> UpsertOutcome {
-        let dropped = match entry.repo.as_deref() {
-            Some(repo) => self.remove_by_repo(repo),
-            None => {
-                let before = self.entries.len();
-                self.entries.retain(|e| !e.keyed_as(&entry.server, None));
-                before - self.entries.len()
-            }
-        };
-        self.entries.push(entry);
-        if dropped == 0 {
-            UpsertOutcome::Added
-        } else {
-            UpsertOutcome::Replaced { dropped }
+    /// The entry a resolver picks: the one for `server` when a server
+    /// was named, else the single entry when exactly one is on file,
+    /// else nothing. An org token is valid from any directory, so with
+    /// one server on file there is nothing to choose; with several, the
+    /// caller must name one. This is THE selection rule — `resolve_full`
+    /// and every "which server will this use?" answer go through it.
+    pub fn resolve_for(
+        &self,
+        server: Option<&super::server::ServerUrl>,
+    ) -> Option<&CredentialEntry> {
+        match server {
+            Some(s) => self.find_by_server(s),
+            None => match &self.entries[..] {
+                [only] => Some(only),
+                _ => None,
+            },
         }
     }
 
-    /// Remove every entry scoped to `repo`. Returns the count removed.
-    pub fn remove_by_repo(&mut self, repo: &str) -> usize {
+    /// The entry minted at `server`.
+    pub fn find_by_server(&self, server: &super::server::ServerUrl) -> Option<&CredentialEntry> {
+        self.entries.iter().find(|e| &e.server == server)
+    }
+
+    /// Insert `entry`, replacing the entry for the same server: a server
+    /// holds one org grant per person, so a re-login never accumulates.
+    pub fn upsert(&mut self, entry: CredentialEntry) -> UpsertOutcome {
         let before = self.entries.len();
-        self.entries.retain(|e| e.repo.as_deref() != Some(repo));
-        before - self.entries.len()
+        self.entries.retain(|e| e.server != entry.server);
+        let outcome = if self.entries.len() < before {
+            UpsertOutcome::Replaced
+        } else {
+            UpsertOutcome::Added
+        };
+        self.entries.push(entry);
+        outcome
+    }
+
+    /// Remove the entry for `server`. Returns whether one was removed.
+    pub fn remove_by_server(&mut self, server: &super::server::ServerUrl) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|e| &e.server != server);
+        self.entries.len() < before
     }
 }
 
 // ─── v2 on-disk schema ───────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
-struct StoreFileV2 {
-    /// Format version — its presence distinguishes v2 from a v1
-    /// `[aretta]` file (which has no `version` key).
+struct StoreFileVersioned {
+    /// Format version — its presence distinguishes a keyed file from a
+    /// v1 `[aretta]` file (which has no `version` key).
     version: u32,
     #[serde(default)]
     entries: Vec<EntryToml>,
@@ -414,7 +391,9 @@ struct StoreFileV2 {
 #[derive(Debug, Serialize, Deserialize)]
 struct EntryToml {
     server: String,
+    /// Written by v2 files (per-repo tokens); read and ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[allow(dead_code)]
     repo: Option<String>,
     token: String,
     #[serde(default)]
@@ -426,9 +405,9 @@ struct EntryToml {
 }
 
 /// Load the credential store, reading env vars for the path. Reads the
-/// current v2 format, migrates a v1 `[aretta]` file transparently on
-/// read (the migration is persisted on the next write), and accepts a
-/// legacy bare-token file. A missing file yields an empty store.
+/// current format and the older ones (v2 keyed by server + repo, v1
+/// `[aretta]` single slot, bare token) transparently; the next write
+/// persists the current format. A missing file yields an empty store.
 pub fn load_store() -> Result<CredentialStore, AuthError> {
     load_store_with(
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
@@ -450,24 +429,30 @@ pub fn load_store_with(
     parse_store(&raw, &path)
 }
 
-/// Pure: parse the credentials file text into a store. Tries v2, then a
-/// v1 `[aretta]` table, then a legacy bare token.
+/// Pure: parse the credentials file text into a store. Tries the keyed
+/// formats (v3, v2), then a v1 `[aretta]` table, then a bare token. A
+/// v2 file may hold several entries for one server (one per repo);
+/// the newest wins so the store holds one per server.
 fn parse_store(raw: &str, path: &Path) -> Result<CredentialStore, AuthError> {
-    // v2 — recognized by the `version` key.
-    if let Ok(v2) = toml::from_str::<StoreFileV2>(raw) {
-        if v2.version != STORE_VERSION {
+    if let Ok(keyed) = toml::from_str::<StoreFileVersioned>(raw) {
+        if keyed.version > STORE_VERSION || keyed.version < 2 {
             return Err(AuthError::Malformed(format!(
                 "credentials file at {} is format version {} — upgrade aristo to read it",
                 path.display(),
-                v2.version
+                keyed.version
             )));
         }
-        let entries = v2
+        let mut store = CredentialStore::default();
+        let mut entries = keyed
             .entries
             .into_iter()
             .map(|t| entry_from_toml(t, path))
             .collect::<Result<Vec<_>, _>>()?;
-        return Ok(CredentialStore { entries });
+        entries.sort_by(|a, b| a.minted_at.cmp(&b.minted_at));
+        for e in entries {
+            store.upsert(e);
+        }
+        return Ok(store);
     }
     // v1 — single `[aretta]` table. Migrated to one keyed entry.
     if let Ok(v1) = toml::from_str::<CredentialsFile>(raw) {
@@ -485,7 +470,6 @@ fn parse_store(raw: &str, path: &Path) -> Result<CredentialStore, AuthError> {
                 .as_deref()
                 .map(super::server::ServerUrl::parse)
                 .unwrap_or_default(),
-            repo: v1.aretta.repo.clone(),
             token: Token::new(token),
             minted_at: v1.aretta.issued_at.clone(),
             user_login: v1.aretta.user_login.clone(),
@@ -518,7 +502,6 @@ fn entry_from_toml(t: EntryToml, path: &Path) -> Result<CredentialEntry, AuthErr
     }
     Ok(CredentialEntry {
         server: super::server::ServerUrl::parse(&t.server),
-        repo: t.repo,
         token: Token::new(token),
         minted_at: t.minted_at,
         user_login: t.user_login,
@@ -529,7 +512,7 @@ fn entry_from_toml(t: EntryToml, path: &Path) -> Result<CredentialEntry, AuthErr
 fn entry_to_toml(e: &CredentialEntry) -> EntryToml {
     EntryToml {
         server: e.server.as_str().to_string(),
-        repo: e.repo.clone(),
+        repo: None,
         token: e.token.as_str().to_string(),
         minted_at: e.minted_at.clone(),
         user_login: e.user_login.clone(),
@@ -537,9 +520,8 @@ fn entry_to_toml(e: &CredentialEntry) -> EntryToml {
     }
 }
 
-/// Persist the whole store as v2 (versioned + header comment), reading
-/// env vars for the path. Atomic write, `0600` on Unix — same idiom as
-/// the v1 [`save_full_with`].
+/// Persist the whole store (versioned + header comment), reading env
+/// vars for the path. Atomic write, `0600` on Unix.
 pub fn save_store(store: &CredentialStore) -> io::Result<()> {
     save_store_with(
         store,
@@ -558,7 +540,7 @@ pub fn save_store_with(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let file = StoreFileV2 {
+    let file = StoreFileVersioned {
         version: STORE_VERSION,
         entries: store.entries.iter().map(entry_to_toml).collect(),
     };
@@ -573,8 +555,9 @@ pub fn save_store_with(
     Ok(())
 }
 
-/// Insert-or-replace one entry, migrating any existing v1 file to v2 and
-/// preserving every other entry. Reads env vars for the path.
+/// Insert-or-replace one entry, migrating any older file to the current
+/// format and preserving every other server's entry. Reads env vars
+/// for the path.
 pub fn upsert_entry(entry: CredentialEntry) -> io::Result<UpsertReport> {
     upsert_entry_with(
         entry,
@@ -603,7 +586,6 @@ impl CredentialEntry {
     fn bare_no_stamp(token: Token) -> Self {
         CredentialEntry {
             server: super::server::ServerUrl::Prod,
-            repo: None,
             token,
             minted_at: String::new(),
             user_login: None,
@@ -615,11 +597,9 @@ impl CredentialEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::server::ServerUrl;
     use tempfile::TempDir;
 
-    /// Test environment: a TempDir + a pinned XDG path so tests are
-    /// platform-independent (macOS would otherwise resolve to
-    /// `~/Library/Application Support` instead of `~/.config`).
     struct TestEnv {
         _tmp: TempDir,
         xdg: PathBuf,
@@ -647,6 +627,19 @@ mod tests {
         Some(Path::new("/nonexistent-test-home"))
     }
 
+    fn entry(server: &str, token: &str, minted_at: &str) -> CredentialEntry {
+        CredentialEntry {
+            server: ServerUrl::parse(server),
+            token: Token::new(token),
+            minted_at: minted_at.to_string(),
+            user_login: Some("octocat".into()),
+            user_id: Some(1),
+        }
+    }
+
+    const ACME: &str = "https://acme.aretta.ai";
+    const OTHER: &str = "https://other.aretta.ai";
+
     #[test]
     fn save_creates_parent_directory() {
         let env = TestEnv::new();
@@ -661,37 +654,17 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let env = TestEnv::new();
         save_with(&Token::new("tok"), Some(env.xdg_str()), dummy_home()).unwrap();
-        let meta = fs::metadata(&env.creds).unwrap();
-        let mode = meta.permissions().mode() & 0o777;
-        assert_eq!(
-            mode, 0o600,
-            "credentials file should be owner-only readable, got {mode:o}"
-        );
+        let mode = fs::metadata(&env.creds).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "expected 0600, got {mode:o}");
     }
 
     #[test]
-    fn clear_removes_file() {
+    fn clear_removes_file_and_is_idempotent() {
         let env = TestEnv::new();
         save_with(&Token::new("tok"), Some(env.xdg_str()), dummy_home()).unwrap();
-        assert!(env.creds.exists());
         clear_with(Some(env.xdg_str()), dummy_home()).unwrap();
         assert!(!env.creds.exists());
-    }
-
-    #[test]
-    fn clear_when_file_missing_is_not_an_error() {
-        let env = TestEnv::new();
         clear_with(Some(env.xdg_str()), dummy_home()).unwrap();
-        // Idempotent — calling twice is fine.
-        clear_with(Some(env.xdg_str()), dummy_home()).unwrap();
-    }
-
-    #[test]
-    fn xdg_config_home_lands_file_under_xdg_path() {
-        let env = TestEnv::new();
-        save_with(&Token::new("tok"), Some(env.xdg_str()), dummy_home()).unwrap();
-        // File lands under XDG path, not under the (fake) home.
-        assert!(env.xdg.join("aristo/credentials").exists());
     }
 
     #[test]
@@ -701,54 +674,169 @@ mod tests {
         assert_eq!(p, env.creds);
     }
 
-    // ─── v2 multi-repo store ─────────────────────────────────────────────────
-
-    use crate::auth::server::ServerUrl;
-
-    fn entry(server: ServerUrl, repo: &str, token: &str, minted_at: &str) -> CredentialEntry {
-        CredentialEntry {
-            server,
-            repo: Some(repo.to_string()),
-            token: Token::new(token),
-            minted_at: minted_at.to_string(),
-            user_login: Some("octocat".into()),
-            user_id: Some(1),
-        }
-    }
+    // ─── keyed by server ─────────────────────────────────────────────────────
 
     #[test]
-    fn store_round_trips_multiple_entries() {
+    fn store_round_trips_one_entry_per_server() {
         let env = TestEnv::new();
         let mut store = CredentialStore::default();
-        store.upsert(entry(
-            ServerUrl::parse("https://turso.aretta.ai"),
-            "tursodatabase/turso",
-            "arta_turso",
-            "2026-07-22T00:00:00Z",
-        ));
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/other",
-            "arta_other",
-            "2026-07-22T01:00:00Z",
-        ));
+        store.upsert(entry(ACME, "arta_acme", "2026-09-15T00:00:00Z"));
+        store.upsert(entry(OTHER, "arta_other", "2026-09-15T01:00:00Z"));
         save_store_with(&store, Some(env.xdg_str()), dummy_home()).unwrap();
 
         let loaded = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
         assert_eq!(loaded.len(), 2);
-        let t = loaded.find_by_repo("tursodatabase/turso").unwrap();
-        assert_eq!(t.token.as_str(), "arta_turso");
-        assert_eq!(t.server, ServerUrl::parse("https://turso.aretta.ai"));
-        assert_eq!(t.minted_at, "2026-07-22T00:00:00Z");
+        let a = loaded.find_by_server(&ServerUrl::parse(ACME)).unwrap();
+        assert_eq!(a.token.as_str(), "arta_acme");
+        assert_eq!(a.minted_at, "2026-09-15T00:00:00Z");
+        let raw = fs::read_to_string(&env.creds).unwrap();
+        assert!(raw.contains("version = 3"), "{raw}");
+        assert!(!raw.contains("repo"), "no repo is ever written: {raw}");
+    }
+
+    #[test]
+    fn upsert_replaces_the_servers_entry_and_reports_it() {
+        let mut store = CredentialStore::default();
         assert_eq!(
-            loaded.find_by_repo("owner/other").unwrap().token.as_str(),
-            "arta_other"
+            store.upsert(entry(ACME, "t1", "2026-09-15T00:00:00Z")),
+            UpsertOutcome::Added
+        );
+        assert_eq!(
+            store.upsert(entry(ACME, "t2", "2026-09-15T01:00:00Z")),
+            UpsertOutcome::Replaced
+        );
+        assert_eq!(
+            store.upsert(entry(OTHER, "t3", "2026-09-15T02:00:00Z")),
+            UpsertOutcome::Added
+        );
+        assert_eq!(store.len(), 2);
+        assert_eq!(
+            store
+                .find_by_server(&ServerUrl::parse(ACME))
+                .unwrap()
+                .token
+                .as_str(),
+            "t2"
+        );
+    }
+
+    #[test]
+    fn resolve_for_named_server_or_the_single_entry() {
+        let mut store = CredentialStore::default();
+        assert!(store.resolve_for(None).is_none());
+        store.upsert(entry(ACME, "a", "2026-09-15T00:00:00Z"));
+        // One entry: used from anywhere, named or not.
+        assert_eq!(store.resolve_for(None).unwrap().token.as_str(), "a");
+        assert_eq!(
+            store
+                .resolve_for(Some(&ServerUrl::parse(ACME)))
+                .unwrap()
+                .token
+                .as_str(),
+            "a"
+        );
+        assert!(store.resolve_for(Some(&ServerUrl::parse(OTHER))).is_none());
+        store.upsert(entry(OTHER, "b", "2026-09-15T01:00:00Z"));
+        // Several: only a named server resolves.
+        assert!(store.resolve_for(None).is_none());
+        assert_eq!(
+            store
+                .resolve_for(Some(&ServerUrl::parse(OTHER)))
+                .unwrap()
+                .token
+                .as_str(),
+            "b"
+        );
+    }
+
+    #[test]
+    fn remove_by_server_removes_and_reports() {
+        let mut store = CredentialStore::default();
+        store.upsert(entry(ACME, "a", "2026-09-15T00:00:00Z"));
+        store.upsert(entry(OTHER, "b", "2026-09-15T00:00:00Z"));
+        assert!(store.remove_by_server(&ServerUrl::parse(ACME)));
+        assert!(!store.remove_by_server(&ServerUrl::parse(ACME)));
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.entries[0].server, ServerUrl::parse(OTHER));
+    }
+
+    #[test]
+    fn upsert_entry_with_reports_outcome_and_the_saved_store() {
+        let env = TestEnv::new();
+        let first = upsert_entry_with(
+            entry(ACME, "t1", "2026-09-15T00:00:00Z"),
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
+        assert_eq!(first.outcome, UpsertOutcome::Added);
+        assert_eq!(first.store.len(), 1);
+        let second = upsert_entry_with(
+            entry(ACME, "t2", "2026-09-15T01:00:00Z"),
+            Some(env.xdg_str()),
+            dummy_home(),
+        )
+        .unwrap();
+        assert_eq!(second.outcome, UpsertOutcome::Replaced);
+        let on_disk = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
+        assert_eq!(on_disk.len(), 1);
+        assert_eq!(on_disk.entries[0].token.as_str(), "t2");
+    }
+
+    // ─── older files still read ──────────────────────────────────────────────
+
+    #[test]
+    fn v2_file_collapses_to_one_entry_per_server_newest_first() {
+        // A v2 file (per-repo tokens) may hold several entries for one
+        // server; the newest is kept, the repo field is ignored.
+        let env = TestEnv::new();
+        fs::create_dir_all(env.creds.parent().unwrap()).unwrap();
+        fs::write(
+            &env.creds,
+            r#"version = 2
+
+[[entries]]
+server = "https://acme.aretta.ai"
+repo = "acme/a"
+token = "older"
+minted_at = "2026-09-14T00:00:00Z"
+
+[[entries]]
+server = "https://acme.aretta.ai"
+repo = "acme/b"
+token = "newer"
+minted_at = "2026-09-15T00:00:00Z"
+
+[[entries]]
+server = "https://other.aretta.ai"
+repo = "other/x"
+token = "other"
+minted_at = "2026-09-13T00:00:00Z"
+"#,
+        )
+        .unwrap();
+        let store = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
+        assert_eq!(store.len(), 2);
+        assert_eq!(
+            store
+                .find_by_server(&ServerUrl::parse(ACME))
+                .unwrap()
+                .token
+                .as_str(),
+            "newer"
+        );
+        assert_eq!(
+            store
+                .find_by_server(&ServerUrl::parse(OTHER))
+                .unwrap()
+                .token
+                .as_str(),
+            "other"
         );
     }
 
     #[test]
     fn v1_file_reads_as_single_entry() {
-        // A v1 [aretta] file migrates on read to one keyed entry.
         let env = TestEnv::new();
         fs::create_dir_all(env.creds.parent().unwrap()).unwrap();
         fs::write(
@@ -766,262 +854,56 @@ repo = "owner/legacy"
         assert_eq!(store.len(), 1);
         let e = &store.entries[0];
         assert_eq!(e.token.as_str(), "v1-token");
-        // v1 stored the full URL; parse round-trips it (as a Custom with
-        // the same as_str(), exactly as the pre-v2 resolver did).
         assert_eq!(e.server.as_str(), "https://dev.aretta.ai");
-        assert_eq!(e.repo.as_deref(), Some("owner/legacy"));
         assert_eq!(e.minted_at, "2026-05-20T00:00:00Z");
     }
 
     #[test]
-    fn upsert_migrates_v1_and_preserves_the_old_entry() {
-        // The headline migration: an existing v1 entry survives, the new
-        // entry is added, and the file is rewritten as v2.
+    fn upsert_migrates_an_older_file_and_preserves_other_servers() {
         let env = TestEnv::new();
         fs::create_dir_all(env.creds.parent().unwrap()).unwrap();
         fs::write(
             &env.creds,
-            "[aretta]\ntoken = \"old-tok\"\nissued_at = \"2026-05-20T00:00:00Z\"\nrepo = \"owner/old\"\n",
+            "[aretta]\ntoken = \"old-tok\"\nissued_at = \"2026-05-20T00:00:00Z\"\nserver = \"https://other.aretta.ai\"\n",
         )
         .unwrap();
-
         upsert_entry_with(
-            entry(
-                ServerUrl::Prod,
-                "owner/new",
-                "new-tok",
-                "2026-07-22T00:00:00Z",
-            ),
+            entry(ACME, "new-tok", "2026-09-15T00:00:00Z"),
             Some(env.xdg_str()),
             dummy_home(),
         )
         .unwrap();
-
-        // Both entries present.
         let store = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
         assert_eq!(store.len(), 2);
         assert_eq!(
-            store.find_by_repo("owner/old").unwrap().token.as_str(),
+            store
+                .find_by_server(&ServerUrl::parse(OTHER))
+                .unwrap()
+                .token
+                .as_str(),
             "old-tok"
         );
-        assert_eq!(
-            store.find_by_repo("owner/new").unwrap().token.as_str(),
-            "new-tok"
-        );
-        // File is now v2.
         let raw = fs::read_to_string(&env.creds).unwrap();
-        assert!(raw.contains("version = 2"), "expected v2 file; got:\n{raw}");
+        assert!(raw.contains("version = 3"), "expected v3 file; got:\n{raw}");
         assert!(!raw.contains("[aretta]"), "v1 table should be gone:\n{raw}");
     }
 
     #[test]
-    fn upsert_replaces_entry_with_same_key() {
-        let mut store = CredentialStore::default();
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/repo",
-            "tok1",
-            "2026-07-22T00:00:00Z",
-        ));
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/repo",
-            "tok2",
-            "2026-07-22T02:00:00Z",
-        ));
-        assert_eq!(store.len(), 1);
-        assert_eq!(
-            store.find_by_repo("owner/repo").unwrap().token.as_str(),
-            "tok2"
-        );
-    }
-
-    #[test]
-    fn upsert_keeps_distinct_repos() {
-        // Different repos are distinct entries, whatever the server.
-        let mut store = CredentialStore::default();
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/repo",
-            "prod-tok",
-            "2026-07-22T00:00:00Z",
-        ));
-        store.upsert(entry(
-            ServerUrl::Custom("https://staging.example.com".into()),
-            "owner/other",
-            "other-tok",
-            "2026-07-22T00:00:00Z",
-        ));
-        assert_eq!(store.len(), 2);
-    }
-
-    #[test]
-    fn upsert_same_repo_on_another_server_replaces_the_older_entry() {
-        // A repo has one usable credential: the resolver only ever picks
-        // the newest entry for a repo, so an older one on another server
-        // is dead weight. A login for the same repo replaces it, whatever
-        // the server.
-        let mut store = CredentialStore::default();
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/repo",
-            "prod-tok",
-            "2026-07-22T00:00:00Z",
-        ));
-        let outcome = store.upsert(entry(
-            ServerUrl::Custom("https://staging.example.com".into()),
-            "owner/repo",
-            "dev-tok",
-            "2026-07-22T01:00:00Z",
-        ));
-        assert_eq!(outcome, UpsertOutcome::Replaced { dropped: 1 });
-        assert_eq!(store.len(), 1);
-        assert_eq!(
-            store.find_by_repo("owner/repo").unwrap().token.as_str(),
-            "dev-tok"
-        );
-        assert_eq!(
-            store.entries[0].server,
-            ServerUrl::Custom("https://staging.example.com".into())
-        );
-    }
-
-    #[test]
-    fn upsert_reports_added_then_replaced_with_the_drop_count() {
-        let mut store = CredentialStore::default();
-        assert_eq!(
-            store.upsert(entry(
-                ServerUrl::Prod,
-                "owner/repo",
-                "t1",
-                "2026-07-22T00:00:00Z"
-            )),
-            UpsertOutcome::Added
-        );
-        // Two stale same-repo entries (as an older CLI may have written)
-        // are both dropped by one login.
-        store.entries.push(entry(
-            ServerUrl::Custom("https://a.example.com".into()),
-            "owner/repo",
-            "t2",
-            "2026-07-22T01:00:00Z",
-        ));
-        assert_eq!(
-            store.upsert(entry(
-                ServerUrl::Prod,
-                "owner/repo",
-                "t3",
-                "2026-07-22T02:00:00Z"
-            )),
-            UpsertOutcome::Replaced { dropped: 2 }
-        );
-        assert_eq!(store.len(), 1);
-        assert_eq!(store.entries[0].token.as_str(), "t3");
-    }
-
-    #[test]
-    fn upsert_unscoped_entries_key_by_server() {
-        // With no repo there is nothing to key on but the server: same
-        // server replaces, another server adds.
-        let mut store = CredentialStore::default();
-        let unscoped =
-            |server: ServerUrl, tok: &str| CredentialEntry::bare(Token::new(tok), server, None);
-        assert_eq!(
-            store.upsert(unscoped(ServerUrl::Prod, "p1")),
-            UpsertOutcome::Added
-        );
-        assert_eq!(
-            store.upsert(unscoped(ServerUrl::Prod, "p2")),
-            UpsertOutcome::Replaced { dropped: 1 }
-        );
-        assert_eq!(
-            store.upsert(unscoped(
-                ServerUrl::Custom("https://a.example.com".into()),
-                "a1"
-            )),
-            UpsertOutcome::Added
-        );
-        assert_eq!(store.len(), 2);
-    }
-
-    #[test]
-    fn find_by_repo_prefers_most_recent_when_a_file_shares_a_repo() {
-        // A file written by an older CLI may still hold two entries for
-        // one repo; on read, the newest wins.
-        let store = CredentialStore {
-            entries: vec![
-                entry(
-                    ServerUrl::Prod,
-                    "owner/repo",
-                    "older",
-                    "2026-07-22T00:00:00Z",
-                ),
-                entry(
-                    ServerUrl::Custom("https://staging.example.com".into()),
-                    "owner/repo",
-                    "newer",
-                    "2026-07-22T05:00:00Z",
-                ),
-            ],
-        };
-        assert_eq!(
-            store.find_by_repo("owner/repo").unwrap().token.as_str(),
-            "newer"
-        );
-        assert!(store.find_by_repo("nope/nope").is_none());
-    }
-
-    #[test]
-    fn upsert_entry_with_reports_outcome_and_the_saved_store() {
+    fn bare_token_file_reads_as_single_entry() {
         let env = TestEnv::new();
-        let first = upsert_entry_with(
-            entry(ServerUrl::Prod, "owner/repo", "t1", "2026-07-22T00:00:00Z"),
-            Some(env.xdg_str()),
-            dummy_home(),
-        )
-        .unwrap();
-        assert_eq!(first.outcome, UpsertOutcome::Added);
-        assert_eq!(first.store.len(), 1);
-        let second = upsert_entry_with(
-            entry(ServerUrl::Prod, "owner/repo", "t2", "2026-07-22T01:00:00Z"),
-            Some(env.xdg_str()),
-            dummy_home(),
-        )
-        .unwrap();
-        assert_eq!(second.outcome, UpsertOutcome::Replaced { dropped: 1 });
-        assert_eq!(second.store.len(), 1);
-        // What was reported is what is on disk.
-        let on_disk = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
-        assert_eq!(on_disk.len(), 1);
-        assert_eq!(on_disk.entries[0].token.as_str(), "t2");
-    }
-
-    #[test]
-    fn remove_by_repo_removes_and_counts() {
-        let mut store = CredentialStore::default();
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/a",
-            "a",
-            "2026-07-22T00:00:00Z",
-        ));
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/b",
-            "b",
-            "2026-07-22T00:00:00Z",
-        ));
-        assert_eq!(store.remove_by_repo("owner/a"), 1);
-        assert_eq!(store.remove_by_repo("owner/a"), 0);
+        fs::create_dir_all(env.creds.parent().unwrap()).unwrap();
+        fs::write(&env.creds, "arta_bare\n").unwrap();
+        let store = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
         assert_eq!(store.len(), 1);
-        assert_eq!(store.entries[0].repo.as_deref(), Some("owner/b"));
+        assert_eq!(store.entries[0].token.as_str(), "arta_bare");
     }
 
     #[test]
     fn load_missing_file_is_empty_store() {
         let env = TestEnv::new();
-        let store = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
-        assert!(store.is_empty());
+        assert!(load_store_with(Some(env.xdg_str()), dummy_home())
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -1034,59 +916,34 @@ repo = "owner/legacy"
     }
 
     #[test]
-    fn unknown_version_is_a_helpful_error() {
+    fn newer_version_is_a_helpful_error() {
         let env = TestEnv::new();
         fs::create_dir_all(env.creds.parent().unwrap()).unwrap();
-        fs::write(&env.creds, "version = 3\n").unwrap();
+        fs::write(&env.creds, "version = 4\n").unwrap();
         match load_store_with(Some(env.xdg_str()), dummy_home()).unwrap_err() {
             AuthError::Malformed(m) => {
-                assert!(m.contains("version 3"), "got: {m}");
-                assert!(m.contains("upgrade"), "got: {m}");
+                assert!(m.contains("version 4") && m.contains("upgrade"), "got: {m}");
             }
             other => panic!("expected Malformed, got {other:?}"),
         }
     }
 
     #[test]
-    fn bare_token_file_reads_as_single_entry() {
-        let env = TestEnv::new();
-        fs::create_dir_all(env.creds.parent().unwrap()).unwrap();
-        fs::write(&env.creds, "arta_bare_legacy\n").unwrap();
-        let store = load_store_with(Some(env.xdg_str()), dummy_home()).unwrap();
-        assert_eq!(store.len(), 1);
-        assert_eq!(store.entries[0].token.as_str(), "arta_bare_legacy");
-    }
-
-    #[test]
-    fn save_writes_header_with_downgrade_caveat() {
+    fn save_writes_header_with_downgrade_caveat_and_owner_only_perms() {
         let env = TestEnv::new();
         let mut store = CredentialStore::default();
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/repo",
-            "tok",
-            "2026-07-22T00:00:00Z",
-        ));
+        store.upsert(entry(ACME, "tok", "2026-09-15T00:00:00Z"));
         save_store_with(&store, Some(env.xdg_str()), dummy_home()).unwrap();
         let raw = fs::read_to_string(&env.creds).unwrap();
-        assert!(raw.contains("DOWNGRADE CAVEAT"), "header missing:\n{raw}");
-        assert!(raw.contains("aristo < 0.6"), "caveat missing:\n{raw}");
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn save_store_sets_owner_only_perms() {
-        use std::os::unix::fs::PermissionsExt;
-        let env = TestEnv::new();
-        let mut store = CredentialStore::default();
-        store.upsert(entry(
-            ServerUrl::Prod,
-            "owner/repo",
-            "tok",
-            "2026-07-22T00:00:00Z",
-        ));
-        save_store_with(&store, Some(env.xdg_str()), dummy_home()).unwrap();
-        let mode = fs::metadata(&env.creds).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "expected 0600, got {mode:o}");
+        assert!(
+            raw.contains("DOWNGRADE CAVEAT") && raw.contains("aristo < 0.8"),
+            "{raw}"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&env.creds).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "expected 0600, got {mode:o}");
+        }
     }
 }

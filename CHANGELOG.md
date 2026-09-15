@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- **auth: one token per org.** An `arta_*` token is an org grant, valid for every repo the org admits you to, so the credentials store keeps one entry per server: `aristo auth login --server <url>` (no `--repo`), and a login at a server replaces its entry. Resolution is `ARETTA_TOKEN` + `ARETTA_API_URL`, else the entry for the server named by `ARETTA_API_URL`, else the single entry on file, else an error that lists the servers on file (never a token). `aristo auth token` / `auth logout` select by `--server` (or `ARETTA_API_URL`); `auth status` says which server commands use. Stores written by 0.7.x (one entry per repo) still read, newest per server. Library: `CredentialsRecord` / `CredentialEntry` / `ResolvedCreds` lose `repo`; `CredentialStore::{find_by_server, remove_by_server, resolve_for(server)}`; `AuthError::SeveralServers` replaces `NoEntryForCheckout`; `login_command()` takes no repo; `oauth_exchange` sends the checkout's repo as information only.
+
 ## [0.7.1] — 2026-09-15
 
 ### Fixed

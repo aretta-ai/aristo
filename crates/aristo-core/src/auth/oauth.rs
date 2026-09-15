@@ -47,8 +47,10 @@ pub struct OAuthInit {
 #[derive(Debug, Clone, Serialize)]
 struct CliTokenRequest<'a> {
     code: &'a str,
-    #[serde(rename = "repoFullName")]
-    repo_full_name: &'a str,
+    /// Informational: the checkout the login was run from, when known.
+    /// The token is an org grant; the server does not scope by this.
+    #[serde(rename = "repoFullName", skip_serializing_if = "Option::is_none")]
+    repo_full_name: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<&'a str>,
 }
@@ -143,13 +145,13 @@ pub(crate) fn url_encode(s: &str) -> String {
 }
 
 /// Exchange an OAuth `code` (returned by the proxy's `/auth/callback`
-/// page) for an `arta_*` token scoped to `(github_user, repo_full_name)`.
+/// page) for an `arta_*` token: an org grant for `github_user` at `server`.
 ///
 /// The proxy's `name` parameter defaults to `"aristo-cli"` if `None`.
 pub fn oauth_exchange(
     server: &ServerUrl,
     code: &str,
-    repo_full_name: &str,
+    repo_full_name: Option<&str>,
     name: Option<&str>,
 ) -> Result<CliTokenResponse, AuthError> {
     let url = format!("{}/auth/cli-token", server.as_str());

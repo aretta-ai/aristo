@@ -347,7 +347,7 @@ fn print_verify_token_help(cwd: &Path) {
     );
     println!(
         "                     ...or `{}` to mint a new one.",
-        aristo_core::auth::login_command(None)
+        aristo_core::auth::login_command()
     );
     println!(
         "  3. Server:         add a repository Variable ARETTA_API_URL = https://<org>.aretta.ai\n\

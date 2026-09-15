@@ -1588,7 +1588,7 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
             message: format!(
                 "verify auth error: {inner}\n  \
                  Your token may be expired — re-run `{}`.",
-                aristo_core::auth::login_command(None)
+                aristo_core::auth::login_command()
             ),
             exit_code: 1,
         },
