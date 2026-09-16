@@ -1,8 +1,7 @@
 //! Wire types for the canon API contract.
 //!
 //! Mirrors `../aretta-sdk/docs/mockups/13-canon-and-matching/README.md` §L3
-//! byte-for-byte for `POST /canon/match`, `GET /canon/entry/<id>`,
-//! `POST /canon/request-verify`. Slice 3 (aretta-code) consumes the
+//! byte-for-byte for the canon match call and the catalogue download. Slice 3 (aretta-code) consumes the
 //! same shapes; cross-slice drift here breaks both ends.
 //!
 //! All types serialize to JSON (the wire format) and can also be

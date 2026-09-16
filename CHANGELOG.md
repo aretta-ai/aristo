@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- cli: nothing names removed surface any more — the `aristo show` missing-index hint says `aristo stamp` (it offered `aristo index`), the authoring skill's `verify = "full"` row loses "(paid tier)", the live-dev runbook's login line is `--server https://dev.aretta.ai`, library docs stop citing `canon request-verify` / `aristo index`, and the deferred scenarios follow the same rulings (CLAUDE.md §12).
+
 ## [0.8.0] — 2026-09-16
 
 The one-token-per-org release. An `arta_*` token is an org grant, the client keeps one credential per server, every data-plane call goes to the org's repo by name, and the surface loses what nobody ran: the tier vocabulary, two erroring stubs, three duplicate commands, and a second way to reject a canon match. Requires the matching conductor release (org-grant mint, `GET /_org/api/repos`, repo-prefixed canon routes; bare paths removed).

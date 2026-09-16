@@ -16,7 +16,7 @@ use aristo_core::walk::{DiscoveredAnnotation, ParentRaw, WalkOptions};
 use crate::{CliError, CliResult, Workspace};
 
 /// `(id-keyed entries, id → parent ids)` — the two parallel maps
-/// `aristo index` builds in one walk: the first becomes the
+/// the index walk builds in one pass: the first becomes the
 /// `IndexFile.entries`, the second feeds [`detect_cycles`].
 pub(crate) type BuiltEntries = (
     BTreeMap<AnnotationId, IndexEntry>,

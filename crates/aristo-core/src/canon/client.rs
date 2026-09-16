@@ -22,10 +22,10 @@ use std::fmt;
 
 use super::types::{CanonCatalogue, CanonMatchRequest, CanonMatchResponse};
 
-/// Trait abstracting over the canon API endpoints (`POST /canon/match`,
-/// `GET /canon/entry/<id>`, `POST /canon/request-verify`).
+/// Trait over the canon data plane: the match call and the catalogue
+/// download.
 ///
-/// All three methods return [`CanonError`] on failure. Callers
+/// Both methods return [`CanonError`] on failure. Callers
 /// typically downgrade these to "skip canon for this run; warn once"
 /// rather than aborting (the daily authoring loop continues even
 /// when the server is unreachable).

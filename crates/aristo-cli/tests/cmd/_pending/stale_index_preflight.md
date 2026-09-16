@@ -4,7 +4,7 @@ Source: `../aretta-sdk/docs/mockups/11-gap-closures/cli-sessions.md` § "J5 — 
 
 J5 established a shared internal preflight that runs at the start of every CLI command which READS `.aristo/*` artifacts. Compares per-file source mtimes against the index's mtime cache; if any source file is newer than its indexed entry, emits one stderr warning recommending `aristo stamp` and continues with the (possibly stale) index. Advisory only — exit code unchanged.
 
-The same wording appears across `aristo show`, `aristo graph`, `aristo verify` (incl. `--audit-only`), `aristo doc`, `aristo status`, `aristo badge`, `aristo list`, `aristo review`. Refresh commands (`aristo stamp`, `aristo index`) do not emit it; they are the refresh path.
+The same wording appears across `aristo show`, `aristo graph`, `aristo verify` (incl. `--audit-only`), `aristo doc`, `aristo status`, `aristo badge`, `aristo list`, `aristo review`. The refresh command (`aristo stamp`) does not emit it; it is the refresh path.
 
 ## On `aristo show`
 

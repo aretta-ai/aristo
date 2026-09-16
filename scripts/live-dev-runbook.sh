@@ -107,7 +107,7 @@ cat <<EOF
 
   Otherwise, please run:
 
-      aristo auth login --server dev --repo <owner/repo>
+      aristo auth login --server https://dev.aretta.ai
 
   before starting this flow.
 
