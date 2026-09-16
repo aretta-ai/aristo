@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-09-16
+
 ### Fixed
 - cli: nothing names removed surface any more — the `aristo show` missing-index hint says `aristo stamp` (it offered `aristo index`), the authoring skill's `verify = "full"` row loses "(paid tier)", the live-dev runbook's login line is `--server https://dev.aretta.ai`, library docs stop citing `canon request-verify` / `aristo index`, and the deferred scenarios follow the same rulings (CLAUDE.md §12).
 
