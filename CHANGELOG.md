@@ -8,6 +8,17 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-16
+
+The one-token-per-org release. An `arta_*` token is an org grant, the client keeps one credential per server, every data-plane call goes to the org's repo by name, and the surface loses what nobody ran: the tier vocabulary, two erroring stubs, three duplicate commands, and a second way to reject a canon match. Requires the matching conductor release (org-grant mint, `GET /_org/api/repos`, repo-prefixed canon routes; bare paths removed).
+
+### Migration
+
+- Sign in once per org: `aristo auth login --server https://<org>.aretta.ai` (no `--repo`). A store written by 0.7.x still reads.
+- CI: `ARETTA_TOKEN` + `ARETTA_API_URL`, unchanged from 0.7.x.
+- Run aristo from a checkout of one of the org's repos (or set `ARISTO_REPO=<owner/repo>`); the CLI maps it to the org's repo name itself.
+- `aristo index` → `aristo stamp --skip-canon`; `aristo canon refresh` → `aristo stamp --refresh-canon`; `aristo canon reject` → decide `rejected` in the intent-review session; `aristo canon show` / `request-verify` are gone.
+
 ### Changed
 - **cli: rejecting a pending canon match is one action.** Deciding `rejected` on a primary match in an `intent-review` session (`aristo session decide --item match:<annotation>#<canon_id> --bucket rejected [--note …]`) now also pins the rejection in `.aristo/canon-matches.toml`, so `stamp` stops re-surfacing it until the annotation text changes — what `aristo canon reject` used to do on its own. `aristo canon reject` is removed; `aristo canon migrate` (the catalog version-drift check, hand-only) is hidden from `--help`.
 - cli: `--help` shows only what a person runs by hand. The worker plumbing the skills drive (`verify --pop-next/--queue-status/--submit-verdict/--id/--json/--apply-verdicts/--rewrite-hashes`, `critique --pop-next/--queue-status/--submit-findings/--id/--json/--apply-findings/--include-closed/--rerun/--all/--yes`, `session status/decide/list`) and the `canon unbind` escape hatch still work exactly as before but are hidden from the listings.
