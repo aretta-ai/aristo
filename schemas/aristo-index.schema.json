@@ -276,7 +276,7 @@
           ]
         },
         "generated_by": {
-          "description": "Identity of the writer (e.g., `\"aristo index v0.1.0\"`). Optional; informational only.",
+          "description": "Identity of the writer (e.g., `\"aristo stamp v0.8.0\"`). Optional; informational only.",
           "type": [
             "string",
             "null"

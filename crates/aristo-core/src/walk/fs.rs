@@ -9,7 +9,7 @@
 //! no configuration.
 //!
 //! Output paths are returned relative to the walk root, in lexicographic
-//! order, so `aristo index` writes a deterministic `.aristo/index.toml`
+//! order, so `aristo stamp` writes a deterministic `.aristo/index.toml`
 //! across runs and across machines.
 
 use std::collections::BTreeMap;

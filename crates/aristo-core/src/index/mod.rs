@@ -66,7 +66,7 @@ pub struct Meta {
     /// Schema version of this index file. Always `1` in the current SDK.
     pub schema_version: u32,
 
-    /// Identity of the writer (e.g., `"aristo index v0.1.0"`).
+    /// Identity of the writer (e.g., `"aristo stamp v0.8.0"`).
     /// Optional; informational only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated_by: Option<String>,
@@ -232,7 +232,7 @@ mod tests {
     fn meta_optional_fields_round_trip() {
         let meta = Meta {
             schema_version: 1,
-            generated_by: Some("aristo index v0.1.0".into()),
+            generated_by: Some("aristo stamp v0.8.0".into()),
             generated_at: Some("2026-05-13T14:23:00Z".into()),
             source_root: Some(".".into()),
         };
