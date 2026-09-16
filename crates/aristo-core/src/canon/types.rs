@@ -510,19 +510,13 @@ pub struct RecordPresence {
 
 // ─── GET /catalogue ─────────────────────────────────────────────────────────
 
-/// Response for `GET /catalogue` — the full active canon corpus
-/// catalogue (one entry per canon id, at its active version). Closed-IP
-/// fields (alternative phrasings, match signals) are stripped
-/// server-side; this is the browsable trust-card surface. Served by
-/// the org's server; addressed via the resolved data-plane base.
+/// The full active canon corpus catalogue (one entry per canon id, at
+/// its active version). Closed-IP fields (alternative phrasings, match
+/// signals) are stripped server-side; this is the browsable trust-card
+/// surface. On the wire, `GET /<repo>/api/catalogue` is the bare list
+/// of entries; this wrapper is the local snapshot's shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CanonCatalogue {
-    /// Server-stamped proprietary / confidential notice (one line per
-    /// element), written at the top of the downloaded snapshot so the
-    /// marking travels with this proprietary corpus. Empty from servers
-    /// that don't send it (older conductors).
-    #[serde(default)]
-    pub notice: Vec<String>,
     #[serde(default)]
     pub entries: Vec<CanonCatalogueEntry>,
 }
@@ -860,7 +854,6 @@ mod tests {
     #[test]
     fn catalogue_json_round_trips_and_tolerates_empty() {
         let cat = CanonCatalogue {
-            notice: vec!["PROPRIETARY & CONFIDENTIAL".to_string()],
             entries: vec![CanonCatalogueEntry {
                 canon_id: "a".into(),
                 version: "v0.1.0".into(),
@@ -875,16 +868,9 @@ mod tests {
         let json = serde_json::to_string(&cat).unwrap();
         let back: CanonCatalogue = serde_json::from_str(&json).unwrap();
         assert_eq!(back, cat);
-        // The notice serializes FIRST (top of the downloaded snapshot).
-        assert!(
-            json.find("notice").unwrap() < json.find("entries").unwrap(),
-            "notice must serialize before entries: {json}"
-        );
-        // The server sends {"entries":[]} when no canon dir is configured,
-        // and the notice defaults to empty for older servers that omit it.
+        // A snapshot with no entries still reads.
         let empty: CanonCatalogue = serde_json::from_str(r#"{"entries":[]}"#).unwrap();
         assert!(empty.entries.is_empty());
-        assert!(empty.notice.is_empty());
     }
 
     // ─── P-008 instrumentation bundle ──────────────────────────────────────
