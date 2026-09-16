@@ -8,8 +8,16 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
-### Fixed
-- cli: `aristo canon catalogue` reads the catalogue as the org's server sends it on `/<repo>/api/catalogue` — the bare list of entries — instead of failing to decode it. The `notice` envelope field, which the server does not send, is gone from the snapshot type.
+## [0.8.0] — 2026-09-16
+
+The one-token-per-org release. An `arta_*` token is an org grant, the client keeps one credential per server, every data-plane call goes to the org's repo by name, and the surface loses what nobody ran: the tier vocabulary, two erroring stubs, three duplicate commands, and a second way to reject a canon match. Requires the matching conductor release (org-grant mint, `GET /_org/api/repos`, repo-prefixed canon routes; bare paths removed).
+
+### Migration
+
+- Sign in once per org: `aristo auth login --server https://<org>.aretta.ai` (no `--repo`). A store written by 0.7.x still reads.
+- CI: `ARETTA_TOKEN` + `ARETTA_API_URL`, unchanged from 0.7.x.
+- Run aristo from a checkout of one of the org's repos (or set `ARISTO_REPO=<owner/repo>`); the CLI maps it to the org's repo name itself.
+- `aristo index` → `aristo stamp --skip-canon`; `aristo canon refresh` → `aristo stamp --refresh-canon`; `aristo canon reject` → decide `rejected` in the intent-review session; `aristo canon show` / `request-verify` are gone.
 
 ### Changed
 - **cli: rejecting a pending canon match is one action.** Deciding `rejected` on a primary match in an `intent-review` session (`aristo session decide --item match:<annotation>#<canon_id> --bucket rejected [--note …]`) now also pins the rejection in `.aristo/canon-matches.toml`, so `stamp` stops re-surfacing it until the annotation text changes — what `aristo canon reject` used to do on its own. `aristo canon reject` is removed; `aristo canon migrate` (the catalog version-drift check, hand-only) is hidden from `--help`.
@@ -27,6 +35,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 - docs(skills): the `aristo-help`, `aristo-verify` and `aristo-catalogue` skills instruct `aristo auth login --server https://<org>.aretta.ai` (no repo).
 - **canon and verify address the org's repo by name: `<server>/<repo>/verify/sessions…` and `<server>/<repo>/api/canon/…` / `<repo>/api/catalogue`.** The CLI reads the org's repo directory (`GET /_org/api/repos`) once per server-touching command and matches the checkout's GitHub `owner/repo` (git derivation, or `ARISTO_REPO`) to the conductor's repo name. A checkout the org does not have is reported as `<owner/repo> is not a repo of <server>`; an unreachable server as `could not reach <server>: …`. The bare `/verify/*`, `/canon/match` and `/catalogue` paths are no longer called. Library: `HttpCanonClient::new` / `HttpVerifyClient::new` take the repo name; `auth::{fetch_org_repos, repo_segment_for, OrgRepo}`; `AuthError::{RepoNotInOrg, Unreachable}`.
 - **auth: one token per org.** An `arta_*` token is an org grant, valid for every repo the org admits you to, so the credentials store keeps one entry per server: `aristo auth login --server <url>` (no `--repo`), and a login at a server replaces its entry. Resolution is `ARETTA_TOKEN` + `ARETTA_API_URL`, else the entry for the server named by `ARETTA_API_URL`, else the single entry on file, else an error that lists the servers on file (never a token). `aristo auth token` / `auth logout` select by `--server` (or `ARETTA_API_URL`); `auth status` says which server commands use. Stores written by 0.7.x (one entry per repo) still read, newest per server. Library: `CredentialsRecord` / `CredentialEntry` / `ResolvedCreds` lose `repo`; `CredentialStore::{find_by_server, remove_by_server, resolve_for(server)}`; `AuthError::SeveralServers` replaces `NoEntryForCheckout`; `login_command()` takes no repo; `oauth_exchange` sends the checkout's repo as information only.
+
+### Fixed
+- cli: `aristo canon catalogue` reads the catalogue as the org's server sends it on `/<repo>/api/catalogue` — the bare list of entries — instead of failing to decode it. The `notice` envelope field, which the server does not send, is gone from the snapshot type.
 
 ## [0.7.1] — 2026-09-15
 
