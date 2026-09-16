@@ -1,7 +1,8 @@
-//! `aristo canon reject <annotation_id> <canon_id> [--reason <text>]` —
-//! move a pending canon match into the `rejected_matches[..]` bucket
-//! so it doesn't re-surface on future stamps until the annotation
-//! text changes. Closes Flow 7 from cli-sessions.md.
+//! Rejecting a pending canon match — `aristo session decide --item
+//! match:<annotation_id>#<canon_id> --bucket rejected [--note <text>]`
+//! in an `intent-review` session — moves it into the `rejected_matches[..]`
+//! bucket so it doesn't re-surface on future stamps until the
+//! annotation text changes.
 //!
 //! Unlike [`super::accept`], rejection is a **cache-only** operation:
 //! source bytes are not touched and the index entry is not modified.
@@ -34,18 +35,10 @@
 use aristo_core::canon::cache::{CanonMatchesFile, PendingMatch, RejectedMatch};
 use aristo_core::index::{AnnotationId, IndexEntry};
 
-use crate::commands::index::workspace_or_error;
 use crate::{CliError, CliResult, Workspace};
 
-/// Entry point invoked from `lib::dispatch`.
-pub(crate) fn run(annotation_id: &str, canon_id: &str, reason: Option<String>) -> CliResult<()> {
-    let ws = workspace_or_error()?;
-    let now = now_rfc3339();
-    apply_rejection(&ws, annotation_id, canon_id, reason, &now)
-}
-
-/// Library-level orchestration — public to this crate so tests can
-/// drive it without spawning a subprocess.
+/// The rejection itself, driven by the intent-review session's
+/// rejected bucket.
 pub(crate) fn apply_rejection(
     ws: &Workspace,
     annotation_id_raw: &str,
@@ -148,13 +141,4 @@ fn locate_pending(
             ),
             exit_code: 1,
         })
-}
-
-fn now_rfc3339() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is post-1970")
-        .as_secs();
-    crate::session::id_gen::format_rfc3339(secs)
 }

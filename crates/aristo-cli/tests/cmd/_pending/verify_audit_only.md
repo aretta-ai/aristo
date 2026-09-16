@@ -2,7 +2,7 @@
 
 Source: `../aretta-sdk/docs/mockups/11-gap-closures/cli-sessions.md` § "J1.c — `aristo verify --audit-only`".
 
-Offline-validates every `verified_outcome` in `.aristo/index.toml` against bundled public keys; runs the B5b four-check pipeline (signature validity → identity → content hashes → commit ancestry); reports counts across the diagnostic states. Never modifies the index. Never requires auth — works for free-tier users auditing paid crates pulled from crates.io.
+Offline-validates every `verified_outcome` in `.aristo/index.toml` against bundled public keys; runs the B5b four-check pipeline (signature validity → identity → content hashes → commit ancestry); reports counts across the diagnostic states. Never modifies the index. Never requires auth — works for local users auditing paid crates pulled from crates.io.
 
 Supersedes the previously-proposed `aristo verify-bindings` (per J1).
 

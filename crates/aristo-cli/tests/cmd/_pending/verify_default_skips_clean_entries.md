@@ -13,7 +13,7 @@ The first run is the standard mining pipeline (covered by `verify_test_free_full
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 → Mining assertions via aristo-mine-assertions skill ([..]) … 3 generated
 [..]
 ok: 3 annotations verified (method: test).
@@ -23,7 +23,7 @@ ok: 3 annotations verified (method: test).
 
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 note: 3 annotations are already in a clean verified/tested state; skipping
       (use `--rerun` to force re-verification).
 
@@ -42,7 +42,7 @@ ok: 3 annotations stamped, 0 ids assigned.
 
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 note: 2 annotations are already in a clean verified/tested state; skipping.
       • dedup_invariant
       • commit_atomicity

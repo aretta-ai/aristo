@@ -154,7 +154,7 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool, gc: bool) 
     //    against the RAW walk (never against a possibly stale on-disk
     //    index, and never against the post-validation entry set).
     //    Runs before the canon step so its early returns
-    //    (--skip-canon, disabled config, cache hit, free tier,
+    //    (--skip-canon, disabled config, cache hit, not signed in,
     //    degraded) can't let stale rows survive; under --check the
     //    early return above runs the same reconcile as a read-only
     //    drift check instead (check_canon_matches_drift). ────────────

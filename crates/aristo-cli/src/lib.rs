@@ -65,7 +65,7 @@ enum Commands {
 
         /// Also write the nightly/manual verify workflow
         /// (`.github/workflows/aristo-verify.yml`). Needs an `ARETTA_TOKEN` repo
-        /// secret (paid tier). Implies `--ci`.
+        /// secret. Implies `--ci`.
         #[arg(long)]
         ci_verify: bool,
 
@@ -124,13 +124,6 @@ enum Commands {
         force: bool,
     },
 
-    /// Scan source for annotations and write the index (`.aristo/index.toml`).
-    Index {
-        /// Force a full re-walk, ignoring the per-file mtime cache.
-        #[arg(long)]
-        all: bool,
-    },
-
     /// Refresh the annotation index — pick up new annotations, detect
     /// drift, and (when signed in) match against the Aretta canon.
     Stamp {
@@ -148,7 +141,7 @@ enum Commands {
         skip_canon: bool,
         /// Invalidate the local canon-match cache and re-query every
         /// annotation on this run. Equivalent to
-        /// `aristo canon refresh && aristo stamp`.
+        /// `aristo stamp --refresh-canon`.
         #[arg(long = "refresh-canon", conflicts_with = "skip_canon")]
         refresh_canon: bool,
         /// Garbage-collect archived orphan proofs after stamping. Removed
@@ -255,10 +248,6 @@ enum Commands {
         /// a re-check.
         #[arg(long)]
         rerun: bool,
-        /// CI mode: report whether any status would change, without
-        /// writing the index. Exits non-zero if any change is needed.
-        #[arg(long)]
-        check: bool,
         /// Treat warn-severity verification outcomes as failure too.
         #[arg(long)]
         strict: bool,
@@ -274,7 +263,11 @@ enum Commands {
         /// index. Reads every `<id>.proof`, runs the mechanical
         /// validator, and (if it passes) flips the entry's status.
         /// Skips dispatch of new verifications when set.
-        #[arg(long = "apply-verdicts", conflicts_with = "submit_verdict")]
+        #[arg(
+            long = "apply-verdicts",
+            hide = true,
+            conflicts_with = "submit_verdict"
+        )]
         apply_verdicts: bool,
         /// Migration only: ignore any agent-stamped ground hashes in
         /// the `.proof` files and recompute them from the cited file
@@ -284,7 +277,7 @@ enum Commands {
         /// mismatches the current source is reported as staleness
         /// and the proof is rejected. Only meaningful with
         /// `--apply-verdicts`.
-        #[arg(long = "rewrite-hashes", requires = "apply_verdicts")]
+        #[arg(long = "rewrite-hashes", hide = true, requires = "apply_verdicts")]
         rewrite_hashes: bool,
         /// **Internal — invoked by the verification skill.** Submit
         /// a single verdict: parse the JSON payload, validate it,
@@ -292,19 +285,24 @@ enum Commands {
         /// Prints `accepted: sha256:<hex>` on success; structured
         /// errors on reject. Agents never write `.proof` files
         /// directly — the SDK is the sole writer.
-        #[arg(long = "submit-verdict", requires = "id", requires = "json")]
+        #[arg(
+            long = "submit-verdict",
+            hide = true,
+            requires = "id",
+            requires = "json"
+        )]
         submit_verdict: bool,
         /// Annotation id this verdict is about. Required with
         /// `--submit-verdict`. The `.proof` file lands at
         /// `.aristo/proofs/<id>.proof` (with `:` rewritten to `__`).
-        #[arg(long = "id", requires = "submit_verdict")]
+        #[arg(long = "id", hide = true, requires = "submit_verdict")]
         id: Option<String>,
         /// JSON-serialized ProofFile body. Required with
         /// `--submit-verdict`. Pass as a single-quoted shell string;
         /// the SDK parses it into a ProofFile and rejects anything
         /// the validator would reject. Same schema as the TOML body
         /// written on accept.
-        #[arg(long = "json", requires = "submit_verdict")]
+        #[arg(long = "json", hide = true, requires = "submit_verdict")]
         json: Option<String>,
         /// **Internal — invoked by the verification skill.**
         /// Atomically claim one task from the pending queue and
@@ -314,13 +312,13 @@ enum Commands {
         /// context doesn't carry between verifications. The
         /// orchestrator runs N workers in parallel and uses
         /// `--queue-status` to decide when to spawn the next wave.
-        #[arg(long = "pop-next", conflicts_with_all = ["apply_verdicts", "submit_verdict", "queue_status"])]
+        #[arg(long = "pop-next", hide = true, conflicts_with_all = ["apply_verdicts", "submit_verdict", "queue_status"])]
         pop_next: bool,
         /// Peek at queue state without claiming. Prints `pending: N`,
         /// `claimed: M` to stdout, exit 0. Used by the orchestrator
         /// to decide whether to dispatch another wave of workers.
         /// Safe to call concurrently.
-        #[arg(long = "queue-status", conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
+        #[arg(long = "queue-status", hide = true, conflicts_with_all = ["apply_verdicts", "submit_verdict"])]
         queue_status: bool,
         /// Block until the canon-verify session reaches a terminal
         /// state, rendering a snapshot at each long-poll return and
@@ -380,7 +378,7 @@ enum Commands {
             value_name = "CANON_ID",
             requires = "because",
             conflicts_with_all = [
-                "view", "wait", "tags", "rerun", "check", "strict", "filters",
+                "view", "wait", "tags", "rerun", "strict", "filters",
                 "apply_verdicts", "rewrite_hashes", "submit_verdict", "id",
                 "json", "pop_next", "queue_status"
             ]
@@ -414,21 +412,21 @@ enum Commands {
         /// `disposition` is `None` (open / not yet reviewed); pass
         /// `--include-closed` for the full view including findings
         /// already triaged via `aristo session decide`.
-        #[arg(long = "apply-findings", conflicts_with_all = ["submit_findings", "pop_next", "queue_status"])]
+        #[arg(long = "apply-findings", hide = true, conflicts_with_all = ["submit_findings", "pop_next", "queue_status"])]
         apply_findings: bool,
         /// Include findings whose `disposition` has been set (Accepted /
         /// Rejected / Deferred) in the `--apply-findings` summary.
         /// By default only open findings are listed — closed ones
         /// stop re-surfacing on every apply, which is how a review
         /// closes the loop. Only meaningful with `--apply-findings`.
-        #[arg(long = "include-closed", requires = "apply_findings")]
+        #[arg(long = "include-closed", hide = true, requires = "apply_findings")]
         include_closed: bool,
         /// Force re-enqueue of every matched annotation, bypassing the
         /// `last_critiqued_at_text_hash` cache. Default behavior skips
         /// annotations whose text hasn't drifted since the cached
         /// critique was produced (so re-runs of `aristo critique
         /// --filter id=X` are free when X is unchanged).
-        #[arg(long = "rerun")]
+        #[arg(long = "rerun", hide = true)]
         rerun: bool,
         /// Restrict scope to annotations in files git-staged for the
         /// next commit (`git diff --cached --name-only`). Useful for
@@ -444,12 +442,12 @@ enum Commands {
         /// ~$X cost — proceed with --all --yes?)` and exits 2 unless
         /// you also pass `--yes`. Without the confirmation, an agent
         /// could accidentally fire hundreds of LLM calls in one go.
-        #[arg(long = "all", conflicts_with_all = ["filters", "staged"])]
+        #[arg(long = "all", hide = true, conflicts_with_all = ["filters", "staged"])]
         all: bool,
         /// Skip the confirmation prompt for `--all`. Required
         /// alongside `--all` to actually enqueue the sweep; without
         /// it `--all` just prints the cost estimate and exits 2.
-        #[arg(long = "yes", requires = "all")]
+        #[arg(long = "yes", hide = true, requires = "all")]
         yes: bool,
         /// **Internal — invoked by the critique skill.** Atomically
         /// claim one task from the critique queue and print its TOML
@@ -457,26 +455,31 @@ enum Commands {
         /// (exit 0 either way). Unlike verify, critique workers loop
         /// on this call — the tasks are shallow and vocabulary stays
         /// consistent when one worker handles several.
-        #[arg(long = "pop-next", conflicts_with_all = ["apply_findings", "submit_findings", "queue_status"])]
+        #[arg(long = "pop-next", hide = true, conflicts_with_all = ["apply_findings", "submit_findings", "queue_status"])]
         pop_next: bool,
         /// Peek at queue state without claiming. Prints `pending: N`
         /// + `claimed: M` to stdout, exit 0.
-        #[arg(long = "queue-status", conflicts_with_all = ["apply_findings", "submit_findings"])]
+        #[arg(long = "queue-status", hide = true, conflicts_with_all = ["apply_findings", "submit_findings"])]
         queue_status: bool,
         /// **Internal — invoked by the critique skill.** Submit a
         /// single critique: parse the JSON payload, validate it, and
         /// (on accept) atomically write
         /// `.aristo/critiques/<id>.critique`. Prints
         /// `accepted: sha256:<hex>` on success.
-        #[arg(long = "submit-findings", requires = "id", requires = "json")]
+        #[arg(
+            long = "submit-findings",
+            hide = true,
+            requires = "id",
+            requires = "json"
+        )]
         submit_findings: bool,
         /// Annotation id this submission is about. Required with
         /// `--submit-findings`.
-        #[arg(long = "id", requires = "submit_findings")]
+        #[arg(long = "id", hide = true, requires = "submit_findings")]
         id: Option<String>,
         /// JSON-serialized CritiqueFile body. Required with
         /// `--submit-findings`.
-        #[arg(long = "json", requires = "submit_findings")]
+        #[arg(long = "json", hide = true, requires = "submit_findings")]
         json: Option<String>,
     },
 
@@ -603,9 +606,9 @@ enum Commands {
         action: SessionAction,
     },
 
-    /// Sign in to the Aretta canon API. Required for `aristo stamp`
-    /// and `aristo critique` to see canon matches on the Pro /
-    /// Enterprise tiers.
+    /// Sign in to your org's Aretta server. Required for `aristo stamp`
+    /// and `aristo critique` to see canon matches, and for `aristo verify`
+    /// to dispatch server sessions.
     Auth {
         #[command(subcommand)]
         action: AuthAction,
@@ -633,58 +636,51 @@ enum Commands {
 pub(crate) enum AuthAction {
     /// Sign in with GitHub and store the minted token.
     ///
-    /// The CLI fetches the GitHub authorization URL from the Aretta
-    /// server, tries to open it in your browser, and prompts you to
-    /// paste the code shown on the callback page. The server then
-    /// mints an `arta_*` token scoped to your `(user, repo)` pair,
-    /// stored under `$XDG_CONFIG_HOME/aristo/credentials` with `0600`
-    /// Unix permissions.
+    /// The CLI fetches the GitHub authorization URL from your org's
+    /// Aretta server, tries to open it in your browser, and prompts you
+    /// to paste the code shown on the callback page. The server mints
+    /// an `arta_*` token — an org grant, valid for every repo the org
+    /// admits you to — stored under `$XDG_CONFIG_HOME/aristo/credentials`
+    /// with `0600` Unix permissions, one entry per server.
     ///
-    /// CI and scripts do not log in: set `ARETTA_TOKEN` (and
-    /// `ARETTA_API_URL`) in the environment instead.
+    /// CI and scripts do not log in: set `ARETTA_TOKEN` and
+    /// `ARETTA_API_URL` in the environment instead.
     Login {
         /// Your org's Aretta host — your dashboard's hostname, e.g.
         /// `https://<org>.aretta.ai` (a bare host gets `https://`).
         /// Required: this flag, else the `ARETTA_API_URL` env var.
         #[arg(long, value_name = "URL")]
         server: Option<String>,
-        /// Repo to scope the minted token to (`owner/repo`). Defaults to
-        /// auto-deriving from `<cwd>/.git/config`'s `remote.origin.url`.
-        /// Required for non-git directories or when the remote isn't a
-        /// GitHub URL.
-        #[arg(long, value_name = "OWNER/REPO")]
-        repo: Option<String>,
     },
-    /// Show the current authentication state. Lists every stored
-    /// credential (server, repo, user) — never the token itself — plus
-    /// any `ARETTA_TOKEN` env override. Handy for sanity-checking before
-    /// running `aristo stamp`.
+    /// Show the current authentication state: every stored credential
+    /// (server, user) — never the token itself — which one commands will
+    /// use, and any `ARETTA_TOKEN` env override. Exits 1 when a run from
+    /// here would not authenticate.
     Status,
     /// Print the resolved `arta_*` token to stdout — the `ARETTA_TOKEN`
-    /// env var if set, else the stored credential for the current repo.
-    /// Nothing else is printed, so it pipes cleanly to your clipboard,
-    /// e.g. `aristo auth token | pbcopy` (macOS) or
+    /// env var if set, else the stored credential for the server. Nothing
+    /// else is printed, so it pipes cleanly to your clipboard, e.g.
+    /// `aristo auth token | pbcopy` (macOS) or
     /// `aristo auth token | xclip -selection clipboard` (Linux). Handy for
     /// setting the `ARETTA_TOKEN` CI secret. Errors if not authenticated.
     Token {
-        /// Repo (`owner/repo`) whose token to print. Defaults to the
-        /// cwd's git remote; with several credentials stored and no
-        /// match, errors telling you to pass this.
-        #[arg(long, value_name = "OWNER/REPO")]
-        repo: Option<String>,
+        /// Server whose token to print. Defaults to `ARETTA_API_URL`,
+        /// else the single stored entry; with several stored and none
+        /// named, errors telling you to pass this.
+        #[arg(long, value_name = "URL")]
+        server: Option<String>,
     },
-    /// Remove a stored credential. By default removes the current repo's
-    /// entry (from `--repo` or the cwd's git remote); `--all` clears
-    /// every credential. Idempotent — logging out when not logged in is
-    /// not an error.
+    /// Remove a stored credential: the one for `--server` (or
+    /// `ARETTA_API_URL`), the single entry when only one is stored, or
+    /// `--all`. Idempotent — logging out when not logged in is not an
+    /// error.
     Logout {
-        /// Remove every stored credential, not just the current repo's.
+        /// Remove every stored credential.
         #[arg(long)]
         all: bool,
-        /// Repo (`owner/repo`) whose credential to remove. Defaults to
-        /// the cwd's git remote. Ignored with `--all`.
-        #[arg(long, value_name = "OWNER/REPO", conflicts_with = "all")]
-        repo: Option<String>,
+        /// Server whose credential to remove. Ignored with `--all`.
+        #[arg(long, value_name = "URL", conflicts_with = "all")]
+        server: Option<String>,
     },
 }
 
@@ -744,55 +740,11 @@ pub(crate) enum CanonAction {
         canon_id: String,
     },
 
-    /// Reject a pending canon match: move the entry from
-    /// `pending_matches` to `rejected_matches`, pinned to the
-    /// current annotation `text_hash`. The rejection keeps the same
-    /// `(canon_id, text_hash)` pair from re-surfacing on future
-    /// `aristo stamp` runs; once the annotation text changes, the
-    /// rejection no longer applies and the match is re-evaluated.
-    /// Source and index are not touched — rejection is a cache-only
-    /// operation.
-    Reject {
-        /// Annotation id whose pending match you're rejecting.
-        annotation_id: String,
-        /// Canon id from the pending match.
-        canon_id: String,
-        /// Optional note recorded with the rejection. Useful for
-        /// capturing the *why* (e.g. "this canon entry is too broad",
-        /// "wrong category") for whoever revisits it later.
-        #[arg(long = "reason")]
-        reason: Option<String>,
-    },
-
     /// List the current canon match state: one line per annotation
     /// with pending / accepted / rejected counts, plus per-bucket
     /// detail lines for each match. Reads `.aristo/canon-matches.toml`;
     /// does not call the canon API.
     List,
-
-    /// Fetch the canon entry detail for `<canon_id>` via the canon
-    /// API and render the longer description + example + references.
-    /// For the full trust card (server description + local binding
-    /// state combined), use `aristo show <bound_id>` instead.
-    Show {
-        /// Bare canon id (no `aristos:` / `kanon:` prefix). The
-        /// server's `GET /canon/entry/<canon_id>` endpoint returns
-        /// the same entry regardless of which tier you'd bind into;
-        /// the prefix is a per-user, per-scope attribute.
-        canon_id: String,
-        /// Optional explicit version (`v<minor>.<patch>`). Omit to
-        /// get the catalog's currently active version.
-        #[arg(long = "version")]
-        version: Option<String>,
-    },
-
-    /// Re-query the canon API for every annotation in the index,
-    /// bypassing the local match cache. Equivalent to
-    /// `aristo stamp --refresh-canon` without the rest of the stamp
-    /// pipeline — no source walk, no drift check, no index rewrite.
-    /// Useful when you know a new catalog version has shipped and
-    /// want fresh matches without a full stamp.
-    Refresh,
 
     /// Reverse of `aristo canon accept`: strip the `aristos:` /
     /// `kanon:` prefix from a canon-bound annotation, revert its
@@ -805,32 +757,18 @@ pub(crate) enum CanonAction {
     /// Unbind is for LIVE annotations. If the annotation was deleted
     /// from source, no unbind is needed: the next `aristo stamp`
     /// prunes its `.aristo/canon-matches.toml` entry automatically.
+    #[command(hide = true)]
     Unbind {
         /// Canon-bound annotation id including the prefix (e.g.
         /// `aristos:cell_written_exactly_once_per_page_edit`).
         prefixed_id: String,
     },
 
-    /// Record a verification-demand signal against a canon entry.
-    /// Idempotent on `(canon_id, repo, user)` — repeated calls don't
-    /// pile up. Use when an annotation is bound at the `kanon:` tier
-    /// and you'd like Aretta to invest in a verifier for that canon
-    /// entry.
-    RequestVerify {
-        /// Canon id (no prefix). The same id the trust card shows,
-        /// or that `aristo canon list` reports.
-        canon_id: String,
-        /// Optional note to attach to the demand signal (e.g.
-        /// "critical for our financial-tx audit"). A repeat call
-        /// with a new note replaces the previous one server-side.
-        #[arg(long = "notes")]
-        notes: Option<String>,
-    },
-
+    #[command(hide = true)]
     /// Report per-binding version drift between the local cache and
     /// the canon API. Reports three classes: `current` (no change),
     /// `patch-bump` (same canon_id, newer version — recommended
-    /// action: `aristo canon refresh`), and `minor-bump` (canon_id
+    /// action: `aristo stamp --refresh-canon`), and `minor-bump` (canon_id
     /// retired — recommended action: `aristo canon unbind <id>` then
     /// re-stamp). Currently diagnostic-only; automatic patch-bump
     /// application is planned.
@@ -955,8 +893,10 @@ pub(crate) enum SessionAction {
     },
     /// Print bucket counts + open items for the active session.
     /// Exit 0; errors out if no session is active.
+    #[command(hide = true)]
     Status,
     /// Record a decision on one item in the active session.
+    #[command(hide = true)]
     Decide {
         /// Item reference (`<id>#<index>` for indexed items, or any
         /// opaque per-kind string).
@@ -986,6 +926,7 @@ pub(crate) enum SessionAction {
         yes: bool,
     },
     /// List the active session and the most recent N closed sessions.
+    #[command(hide = true)]
     List {
         /// Maximum number of closed-session rows to include.
         #[arg(long = "limit", default_value_t = 10)]
@@ -1047,7 +988,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::UninstallSkills { agent, user, force } => {
             commands::install_skills::uninstall(agent, user, force)
         }
-        Commands::Index { all } => commands::index::run(all),
         Commands::Stamp {
             check,
             skip_canon,
@@ -1069,7 +1009,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         Commands::Verify {
             filters,
             rerun,
-            check,
             strict,
             audit,
             apply_verdicts,
@@ -1089,7 +1028,6 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
         } => commands::verify::run(
             &filters,
             rerun,
-            check,
             strict,
             audit,
             apply_verdicts,
@@ -1182,20 +1120,8 @@ fn dispatch(cmd: Commands) -> CliResult<()> {
                 annotation_id,
                 canon_id,
             } => commands::canon::accept::run(&annotation_id, &canon_id),
-            CanonAction::Reject {
-                annotation_id,
-                canon_id,
-                reason,
-            } => commands::canon::reject::run(&annotation_id, &canon_id, reason),
             CanonAction::List => commands::canon::list::run(),
-            CanonAction::Show { canon_id, version } => {
-                commands::canon::show::run(&canon_id, version)
-            }
-            CanonAction::Refresh => commands::canon::refresh::run(),
             CanonAction::Unbind { prefixed_id } => commands::canon::unbind::run(&prefixed_id),
-            CanonAction::RequestVerify { canon_id, notes } => {
-                commands::canon::request_verify::run(&canon_id, notes)
-            }
             CanonAction::Migrate => commands::canon::migrate::run(),
             CanonAction::Catalogue => commands::canon::catalogue::run(),
             CanonAction::Probe {

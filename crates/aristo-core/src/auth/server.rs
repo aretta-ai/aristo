@@ -57,12 +57,6 @@ impl ServerUrl {
             other => Self::Custom(format!("https://{}", other.trim_end_matches('/'))),
         }
     }
-
-    /// True iff this is a well-known Aretta server (the `code.aretta.ai`
-    /// production default). Self-hosted / per-org `Custom` URLs are not.
-    pub fn is_well_known(&self) -> bool {
-        matches!(self, Self::Prod)
-    }
 }
 
 impl std::fmt::Display for ServerUrl {
@@ -240,12 +234,6 @@ mod tests {
     #[test]
     fn default_is_prod() {
         assert_eq!(ServerUrl::default(), ServerUrl::Prod);
-    }
-
-    #[test]
-    fn is_well_known_matches_prod_only() {
-        assert!(ServerUrl::Prod.is_well_known());
-        assert!(!ServerUrl::Custom("https://example.com".into()).is_well_known());
     }
 
     #[test]

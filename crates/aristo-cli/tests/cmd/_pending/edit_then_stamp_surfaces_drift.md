@@ -46,7 +46,7 @@ note: body hash changed since last verification.
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 note: 0 annotations are already in a clean verified/tested state.
 → Mining assertions via aristo-mine-assertions skill ([..]) … 1 generated
 [..]

@@ -5,14 +5,10 @@
 
 use std::fmt;
 
-/// The one way to sign in, ready to paste, with the repo filled in when
-/// the caller knows it. Every hint that tells a user to log in goes
-/// through here so they all say the same thing.
-pub fn login_command(repo: Option<&str>) -> String {
-    format!(
-        "aristo auth login --server https://<org>.aretta.ai --repo {}",
-        repo.unwrap_or("<owner/repo>")
-    )
+/// The one way to sign in, ready to paste. Every hint that tells a user
+/// to log in goes through here so they all say the same thing.
+pub fn login_command() -> String {
+    "aristo auth login --server https://<org>.aretta.ai".to_string()
 }
 
 /// Why an auth-token resolution failed. Cleaved so the SDK can
@@ -29,21 +25,29 @@ pub enum AuthError {
     /// Token present but the resolution code couldn't read /
     /// parse it (filesystem error, malformed credentials file).
     Malformed(String),
-    /// Credentials ARE on file, but none of them is for the current
-    /// checkout: several entries stored, none scoped to the checkout's
-    /// `owner/repo`, so the sole-entry grace does not apply either.
-    /// Distinct from [`AuthError::NoToken`] (nothing on file) because
-    /// the remedy is different — the user is signed in, just not for
-    /// this directory — and the "start a trial" nudge would be wrong.
-    NoEntryForCheckout {
-        /// `Ok(owner/repo)` derived from the cwd's git remote, or
-        /// `Err(why)` when it could not be derived (not a git checkout,
-        /// no `origin`, non-GitHub URL).
-        checkout: Result<String, String>,
+    /// Credentials for several servers are on file and nothing selected
+    /// one: pass `--server` or set `ARETTA_API_URL`. Distinct from
+    /// [`AuthError::NoToken`] (nothing on file): the user is signed in.
+    SeveralServers {
         /// Where the credentials file lives, for the user's orientation.
         path: String,
         /// The stored entries, token-free.
         entries: Vec<EntrySummary>,
+    },
+    /// The org's server could not be reached (DNS, connect, timeout).
+    Unreachable {
+        /// The server (data-plane base) that was addressed.
+        server: String,
+        /// The transport's reason.
+        reason: String,
+    },
+    /// The checkout's GitHub repo is not one of the org's repos at this
+    /// server — the org's directory has no entry for it.
+    RepoNotInOrg {
+        /// The checkout's `owner/repo`.
+        github_repo: String,
+        /// The org's server.
+        server: String,
     },
     /// `ARETTA_TOKEN` is set but `ARETTA_API_URL` is not. An env token
     /// carries no server, and the platform apex cannot serve an org's
@@ -55,22 +59,15 @@ pub enum AuthError {
 /// listing what is on file. Deliberately carries no token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntrySummary {
-    /// Login URL the entry is keyed under (display form).
+    /// The org's server the entry is keyed under (display form).
     pub server: String,
-    /// `owner/repo` the entry is scoped to, if known.
-    pub repo: Option<String>,
     /// GitHub login recorded at mint time, if any.
     pub user_login: Option<String>,
 }
 
 impl fmt::Display for EntrySummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "server: {}   repo: {}",
-            self.server,
-            self.repo.as_deref().unwrap_or("(unscoped)")
-        )?;
+        write!(f, "server: {}", self.server)?;
         if let Some(user) = &self.user_login {
             write!(f, "   user: {user}")?;
         }
@@ -85,45 +82,38 @@ impl fmt::Display for AuthError {
                 f,
                 "not signed in: run `{}` (the org host is your Aretta dashboard's hostname), \
                  or set ARETTA_TOKEN + ARETTA_API_URL",
-                login_command(None)
+                login_command()
             ),
             AuthError::Invalid => write!(f, "auth token rejected by server (expired or revoked)"),
             AuthError::Malformed(msg) => write!(f, "credentials malformed: {msg}"),
+            AuthError::Unreachable { server, reason } => {
+                write!(f, "could not reach {server}: {reason}")
+            }
+            AuthError::RepoNotInOrg {
+                github_repo,
+                server,
+            } => write!(
+                f,
+                "{github_repo} is not a repo of {server} — run from a checkout of one of the org's \
+                 repos, or set ARETTA_API_URL to the org that has it"
+            ),
             AuthError::EnvTokenWithoutServer => write!(
                 f,
                 "ARETTA_TOKEN is set but ARETTA_API_URL is not — set \
                  ARETTA_API_URL=https://<org>.aretta.ai (the server the token was minted against)"
             ),
-            AuthError::NoEntryForCheckout {
-                checkout,
-                path,
-                entries,
-            } => {
+            AuthError::SeveralServers { path, entries } => {
                 writeln!(
                     f,
-                    "signed in, but no stored credential is for this checkout."
+                    "signed in to several servers; say which: pass `--server <url>` or set ARETTA_API_URL."
                 )?;
-                match checkout {
-                    Ok(repo) => writeln!(
-                        f,
-                        "  this checkout: {repo} (from .git/config remote.origin.url)"
-                    )?,
-                    Err(why) => {
-                        writeln!(f, "  this checkout: could not derive owner/repo — {why}")?
-                    }
-                }
                 writeln!(f, "  on file ({path}):")?;
                 for e in entries {
                     writeln!(f, "    • {e}")?;
                 }
-                writeln!(
-                    f,
-                    "  fix: run `{}` from this checkout,",
-                    login_command(checkout.as_deref().ok())
-                )?;
                 write!(
                     f,
-                    "       or set ARETTA_TOKEN (`aristo auth token --repo <owner/repo>` prints a stored one)."
+                    "  (`aristo auth logout --server <url>` drops one you no longer use.)"
                 )
             }
         }
@@ -141,7 +131,7 @@ mod tests {
     fn display_no_token_mentions_login_command() {
         let s = AuthError::NoToken.to_string();
         assert!(
-            s.contains("aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>"),
+            s.contains("aristo auth login --server https://<org>.aretta.ai"),
             "got: {s}"
         );
         assert!(
@@ -167,66 +157,36 @@ mod tests {
         vec![
             EntrySummary {
                 server: "https://acme.aretta.ai".into(),
-                repo: Some("acme/widgets".into()),
                 user_login: Some("alice".into()),
             },
             EntrySummary {
-                server: "https://code.aretta.ai".into(),
-                repo: None,
+                server: "https://other.aretta.ai".into(),
                 user_login: None,
             },
         ]
     }
 
     #[test]
-    fn display_no_entry_for_checkout_with_derived_repo_lists_entries_and_remedies() {
-        let s = AuthError::NoEntryForCheckout {
-            checkout: Ok("alice/widgets".into()),
+    fn display_several_servers_lists_servers_and_both_selectors() {
+        let s = AuthError::SeveralServers {
             path: "/home/alice/.config/aristo/credentials".into(),
             entries: two_entries(),
         }
         .to_string();
-        // Never the trial nudge; the user IS signed in.
-        assert!(!s.contains("trial"), "got: {s}");
-        assert!(s.contains("this checkout: alice/widgets"), "got: {s}");
+        assert!(
+            s.contains("--server <url>") && s.contains("ARETTA_API_URL"),
+            "got: {s}"
+        );
         assert!(
             s.contains("/home/alice/.config/aristo/credentials"),
             "got: {s}"
         );
         assert!(
-            s.contains("server: https://acme.aretta.ai   repo: acme/widgets   user: alice"),
+            s.contains("server: https://acme.aretta.ai   user: alice"),
             "got: {s}"
         );
-        assert!(
-            s.contains("server: https://code.aretta.ai   repo: (unscoped)"),
-            "got: {s}"
-        );
-        // Remedy 1 names the derived repo; remedy 2 is the env var.
-        assert!(
-            s.contains("`aristo auth login --server https://<org>.aretta.ai --repo alice/widgets` from this checkout"),
-            "got: {s}"
-        );
-        assert!(s.contains("ARETTA_TOKEN"), "got: {s}");
-    }
-
-    #[test]
-    fn display_no_entry_for_checkout_with_derivation_error_shows_the_reason() {
-        let s = AuthError::NoEntryForCheckout {
-            checkout: Err(
-                "remote.origin.url `https://gitlab.com/x/y` doesn't look like a GitHub URL".into(),
-            ),
-            path: "/c".into(),
-            entries: two_entries(),
-        }
-        .to_string();
-        assert!(s.contains("could not derive owner/repo"), "got: {s}");
-        assert!(s.contains("doesn't look like a GitHub URL"), "got: {s}");
-        // No derived repo to plug in — the placeholder form of remedy 1.
-        assert!(
-            s.contains("--server https://<org>.aretta.ai --repo <owner/repo>` from this checkout"),
-            "got: {s}"
-        );
-        assert!(s.contains("ARETTA_TOKEN"), "got: {s}");
+        assert!(s.contains("server: https://other.aretta.ai"), "got: {s}");
+        assert!(!s.contains("tier") && !s.contains("trial"), "got: {s}");
     }
 
     #[test]

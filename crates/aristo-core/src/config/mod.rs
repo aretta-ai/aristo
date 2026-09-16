@@ -89,8 +89,7 @@ pub struct InstanceConfig {
 #[serde(deny_unknown_fields)]
 pub struct VerifyConfig {
     /// Resolves `verify = true` on annotations to a concrete method.
-    /// `None` means "use the per-tier default" (free → `"test"`,
-    /// paid → `"full"` per G1).
+    /// `None` means `"test"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_method: Option<VerifyMethod>,
     #[serde(default)]
@@ -164,7 +163,7 @@ pub enum HooksMode {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TelemetryConfig {
-    /// Opt-in toggle for free-tier usage telemetry. Default `false`.
+    /// Opt-in toggle for usage telemetry. Default `false`.
     /// Per H8: never gated as required; fully off by default.
     #[serde(default)]
     pub enabled: bool,
@@ -392,13 +391,11 @@ pub struct IndexConfig {
 
 // ─── [canon] ──────────────────────────────────────────────────────────────
 
-/// §13 canon-and-matching tunables (Pro/Enterprise tiers only — the
-/// free tier ignores this section and surfaces an upgrade nudge).
+/// §13 canon-and-matching tunables.
 ///
 /// `enabled` is the project-level opt-out: regulated buyers and
 /// air-gapped CI set `enabled = false` to skip canon API calls
-/// unconditionally. Default is `true`; tier-gating is server-side
-/// (the API returns the upgrade nudge for free-tier tokens).
+/// unconditionally. Default is `true`.
 ///
 /// The two threshold knobs control which match candidates surface.
 /// Server enforces a floor of `0.5` (HTTP 400 below that). Defaults

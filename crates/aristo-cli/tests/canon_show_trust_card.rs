@@ -143,8 +143,8 @@ fn show_on_aristos_bound_id_renders_backed_trust_card() {
         "expected backed_by; got: {stdout}"
     );
     assert!(
-        stdout.contains("aristo canon show"),
-        "expected canon-show hint; got: {stdout}"
+        !stdout.contains("canon show") && !stdout.contains("request-verify"),
+        "no pointers to commands that do not exist; got: {stdout}"
     );
     // Heavy box-drawing rule should appear (aristos: tier).
     assert!(
@@ -178,8 +178,12 @@ fn show_on_kanon_bound_id_renders_unbacked_trust_card() {
         "expected no-backing message; got: {stdout}"
     );
     assert!(
-        stdout.contains("aristo canon request-verify checkout_total_non_negative"),
-        "expected request-verify hint with bare canon id; got: {stdout}"
+        stdout.contains("verifier behind it yet"),
+        "expected the plain no-verifier sentence; got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("canon show") && !stdout.contains("request-verify"),
+        "no pointers to commands that do not exist; got: {stdout}"
     );
     // Light box-drawing rule should appear (kanon: tier).
     assert!(

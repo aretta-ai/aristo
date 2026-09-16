@@ -13,8 +13,6 @@
 //! ```text
 //! <fixture_dir>/
 //!   match.toml                        ← canned POST /canon/match response
-//!   entry/<canon_id>/<version>.toml   ← canned GET /canon/entry/<id>?version=<v>
-//!   entry/<canon_id>/active.toml      ← canned response when version unspecified
 //!   request-verify.toml               ← canned POST /canon/request-verify response
 //! ```
 //!
@@ -40,10 +38,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::client::{CanonClient, CanonError};
-use super::types::{
-    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
-    RequestVerifyResponse,
-};
+use super::types::{CanonCatalogue, CanonMatchRequest, CanonMatchResponse};
 
 /// Fixture-backed canon client.
 ///
@@ -95,21 +90,6 @@ impl CanonClient for MockCanonClient {
         self.load(Path::new("match.toml"))
     }
 
-    fn get_entry(&self, canon_id: &str, version: Option<&str>) -> Result<CanonEntry, CanonError> {
-        let file_stem = version.unwrap_or("active");
-        let rel = PathBuf::from("entry")
-            .join(canon_id)
-            .join(format!("{file_stem}.toml"));
-        self.load(&rel)
-    }
-
-    fn request_verify(
-        &self,
-        _body: &RequestVerifyBody,
-    ) -> Result<RequestVerifyResponse, CanonError> {
-        self.load(Path::new("request-verify.toml"))
-    }
-
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
         self.load(Path::new("catalogue.toml"))
     }
@@ -123,12 +103,6 @@ mod tests {
 
     fn write_match_fixture(dir: &Path, body: &str) {
         fs::write(dir.join("match.toml"), body).unwrap();
-    }
-
-    fn write_entry_fixture(dir: &Path, canon_id: &str, version: &str, body: &str) {
-        let entry_dir = dir.join("entry").join(canon_id);
-        fs::create_dir_all(&entry_dir).unwrap();
-        fs::write(entry_dir.join(format!("{version}.toml")), body).unwrap();
     }
 
     #[test]
@@ -208,126 +182,6 @@ results = [
         };
         let err = client.match_annotations(&req).unwrap_err();
         assert!(matches!(err, CanonError::Fixture(_)));
-    }
-
-    #[test]
-    fn get_entry_with_version_loads_versioned_fixture() {
-        let tmp = TempDir::new().unwrap();
-        let body = r#"
-canon_id = "foo"
-version = "v0.2.1"
-active_version = "v0.2.1"
-is_deprecated = false
-canon_version = "v0.2.0"
-canonical_text = "foo"
-applies_to = ["fn"]
-category = "invariants"
-property_type = "safety"
-description = ""
-invariant_sketch = ""
-examples = []
-effective_scopes = [":vanilla"]
-
-[backed_by]
-":vanilla" = "specialized neural checker"
-
-[prefix_tier_by_scope]
-":vanilla" = "aristos:"
-
-[references]
-"#;
-        write_entry_fixture(tmp.path(), "foo", "v0.2.1", body);
-        let client = MockCanonClient::new(tmp.path().to_path_buf());
-        let entry = client.get_entry("foo", Some("v0.2.1")).unwrap();
-        assert_eq!(entry.canon_id, "foo");
-        assert_eq!(entry.version, "v0.2.1");
-        assert_eq!(entry.effective_scopes, vec![":vanilla".to_string()]);
-        assert_eq!(
-            entry.backed_by.get(":vanilla").and_then(|v| v.as_deref()),
-            Some("specialized neural checker")
-        );
-        assert_eq!(
-            entry.prefix_tier_by_scope.get(":vanilla"),
-            Some(&crate::canon::PrefixTier::Aristos)
-        );
-    }
-
-    #[test]
-    fn get_entry_without_version_loads_active_fixture() {
-        let tmp = TempDir::new().unwrap();
-        let body = r#"
-canon_id = "foo"
-version = "v0.2.1"
-active_version = "v0.2.1"
-is_deprecated = false
-canon_version = "v0.2.0"
-canonical_text = "foo"
-applies_to = ["fn"]
-category = "invariants"
-property_type = "safety"
-description = ""
-invariant_sketch = ""
-examples = []
-effective_scopes = [":vanilla"]
-
-[backed_by]
-":vanilla" = ""
-
-[prefix_tier_by_scope]
-":vanilla" = "kanon:"
-
-[references]
-"#;
-        // Note: TOML has no null; the empty string here decodes via
-        // serde as Some("") not None. To represent a true kanon: tier
-        // (backed_by[scope] = null) the wire is JSON-only — mock_client
-        // fixtures use the prefix_tier_by_scope as the source of truth
-        // for the test below.
-        write_entry_fixture(tmp.path(), "foo", "active", body);
-        let client = MockCanonClient::new(tmp.path().to_path_buf());
-        let entry = client.get_entry("foo", None).unwrap();
-        assert_eq!(entry.canon_id, "foo");
-        // kanon: tier signaled via prefix_tier_by_scope; backed_by may
-        // be empty-string in the fixture (TOML limitation).
-        assert_eq!(
-            entry.prefix_tier_by_scope.get(":vanilla"),
-            Some(&crate::canon::PrefixTier::Kanon)
-        );
-    }
-
-    #[test]
-    fn get_entry_missing_fixture_includes_canon_id_in_error() {
-        let tmp = TempDir::new().unwrap();
-        let client = MockCanonClient::new(tmp.path().to_path_buf());
-        let err = client.get_entry("missing_id", Some("v0.1.0")).unwrap_err();
-        assert!(matches!(err, CanonError::Fixture(_)));
-        let msg = err.to_string();
-        assert!(msg.contains("missing_id"), "got: {msg}");
-        assert!(msg.contains("v0.1.0"), "got: {msg}");
-    }
-
-    #[test]
-    fn request_verify_loads_fixture() {
-        let tmp = TempDir::new().unwrap();
-        let body = r#"
-status = "submitted"
-canon_id = "foo"
-current_backing = "specialized neural checker"
-"#;
-        fs::write(tmp.path().join("request-verify.toml"), body).unwrap();
-        let client = MockCanonClient::new(tmp.path().to_path_buf());
-        let resp = client
-            .request_verify(&RequestVerifyBody {
-                canon_id: "foo".into(),
-                notes: None,
-            })
-            .unwrap();
-        assert_eq!(resp.status, "submitted");
-        assert_eq!(resp.canon_id, "foo");
-        assert_eq!(
-            resp.current_backing.as_deref(),
-            Some("specialized neural checker")
-        );
     }
 
     #[test]

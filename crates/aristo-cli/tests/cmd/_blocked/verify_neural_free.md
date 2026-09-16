@@ -1,8 +1,8 @@
-# `aristo verify` — `verify = "neural"` on free tier (local skill only)
+# `aristo verify` — `verify = "neural"` with local skills (local skill only)
 
 Source: `../aretta-sdk/docs/diagrams/03-verify-execution.mmd` § `n_tier=Free → n_free → out_status` ("aristo-neural-verify skill via Cursor / Claude Code").
 
-The free-tier path for `verify = "neural"` is purely local: the host coding agent (Cursor / Claude Code / etc.) runs the `aristo-neural-verify` skill against the annotation's text and the surrounding source, and produces a status verdict. No mining, no spec write, no `cargo test` invocation, no signed `verified_outcome` — just a status update on the index entry. Contrast with `verify = "test"` (which writes a spec + runs cargo test) and `verify = "neural"` paid (which produces a signed outcome via the HQ neural model).
+The local path for `verify = "neural"` is purely local: the host coding agent (Cursor / Claude Code / etc.) runs the `aristo-neural-verify` skill against the annotation's text and the surrounding source, and produces a status verdict. No mining, no spec write, no `cargo test` invocation, no signed `verified_outcome` — just a status update on the index entry. Contrast with `verify = "test"` (which writes a spec + runs cargo test) and `verify = "neural"` paid (which produces a signed outcome via the HQ neural model).
 
 Output observable: `out_status` in the diagram — index entry's `status` field updates; nothing else changes.
 
@@ -11,7 +11,7 @@ Output observable: `out_status` in the diagram — index entry's `status` field 
 ```console
 $ aristo verify
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 
 → Invoking aristo-neural-verify skill via [..] … [..]
   • api_idempotency           neural verdict: holds      (confidence: high)
@@ -30,7 +30,7 @@ ok: 3 annotations verified (method: neural).
 ```console
 $ aristo verify --filter id=api_idempotency
 
-→ Running verification (free tier; local skills only) …
+→ Running verification (local skills only) …
 → Invoking aristo-neural-verify skill via [..] … [..]
   • api_idempotency           neural verdict: holds      (confidence: high)
 

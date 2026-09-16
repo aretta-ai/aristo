@@ -13,7 +13,7 @@
 //!    `POST <server>/auth/cli-token` along with the user's
 //!    `repo_full_name`. The proxy does OAuth code exchange against
 //!    GitHub, JWT mint (for dashboard access), and `arta_*` token
-//!    mint scoped to `(user_id, repo_full_name)`. Returns
+//!    mint as an org grant for the user. Returns
 //!    [`CliTokenResponse`] with the raw `arta_token` (shown ONCE per
 //!    the proxy's D-12 / Pitfall-8 — the SDK persists it).
 //!
@@ -47,8 +47,10 @@ pub struct OAuthInit {
 #[derive(Debug, Clone, Serialize)]
 struct CliTokenRequest<'a> {
     code: &'a str,
-    #[serde(rename = "repoFullName")]
-    repo_full_name: &'a str,
+    /// Informational: the checkout the login was run from, when known.
+    /// The token is an org grant; the server does not scope by this.
+    #[serde(rename = "repoFullName", skip_serializing_if = "Option::is_none")]
+    repo_full_name: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<&'a str>,
 }
@@ -58,7 +60,7 @@ struct CliTokenRequest<'a> {
 pub struct CliTokenResponse {
     /// Raw `arta_*` token. Shown to the caller **once** per the
     /// proxy's D-12 / Pitfall-8; the SDK persists it via
-    /// [`super::store::save`] (or the extended TOML save in
+    /// [`super::store::save_full`] (or the extended TOML save in
     /// commit 4 of the plan addendum).
     pub arta_token: String,
     /// JWT for any `/dashboard/api/*` calls the SDK might want.
@@ -143,13 +145,13 @@ pub(crate) fn url_encode(s: &str) -> String {
 }
 
 /// Exchange an OAuth `code` (returned by the proxy's `/auth/callback`
-/// page) for an `arta_*` token scoped to `(github_user, repo_full_name)`.
+/// page) for an `arta_*` token: an org grant for `github_user` at `server`.
 ///
 /// The proxy's `name` parameter defaults to `"aristo-cli"` if `None`.
 pub fn oauth_exchange(
     server: &ServerUrl,
     code: &str,
-    repo_full_name: &str,
+    repo_full_name: Option<&str>,
     name: Option<&str>,
 ) -> Result<CliTokenResponse, AuthError> {
     let url = format!("{}/auth/cli-token", server.as_str());
@@ -168,7 +170,7 @@ pub fn oauth_exchange(
 
 // ─── transport ─────────────────────────────────────────────────────────────
 
-fn build_agent() -> ureq::Agent {
+pub(crate) fn build_agent() -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
         .user_agent(format!("aristo/{}", env!("CARGO_PKG_VERSION")))
@@ -182,7 +184,7 @@ fn build_agent() -> ureq::Agent {
 
 /// Drive a ureq result through a JSON-body decode + status-code
 /// dispatch into an [`AuthError`].
-fn consume_response<T>(
+pub(crate) fn consume_response<T>(
     result: Result<HttpResponse<ureq::Body>, ureq::Error>,
 ) -> Result<T, AuthError>
 where
@@ -254,7 +256,7 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-fn read_body_capped(response: HttpResponse<ureq::Body>, cap: usize) -> String {
+pub(crate) fn read_body_capped(response: HttpResponse<ureq::Body>, cap: usize) -> String {
     use std::io::Read;
     let mut reader = response.into_body().into_reader();
     let mut buf = Vec::with_capacity(8 * 1024);

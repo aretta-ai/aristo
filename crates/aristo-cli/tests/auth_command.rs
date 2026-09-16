@@ -44,34 +44,23 @@ fn creds_path(home: &std::path::Path) -> std::path::PathBuf {
     home.join("xdg/aristo/credentials")
 }
 
-/// A directory whose `.git/config` names `owner/repo` as the GitHub
-/// origin, so `aristo` treats it as a checkout of that repo.
-fn checkout_of_owner_repo(home: &std::path::Path) -> std::path::PathBuf {
-    let ws = home.join("checkout");
-    std::fs::create_dir_all(ws.join(".git")).unwrap();
-    std::fs::write(
-        ws.join(".git/config"),
-        "[remote \"origin\"]\n    url = https://github.com/owner/repo.git\n",
-    )
-    .unwrap();
-    ws
-}
-
-/// Seed the store with one repo-scoped credential, the way a completed
+/// Seed the store with one credential for `server`, the way a completed
 /// `aristo auth login` leaves it. Tests never paste tokens: OAuth is the
 /// only login, and CI reads `ARETTA_TOKEN` instead of the store.
-fn seed_store(home: &std::path::Path, repo: &str, token: &str) {
+fn seed_store(home: &std::path::Path, server: &str, token: &str) {
     let p = creds_path(home);
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(
         &p,
         format!(
-            "version = 2\n\n[[entries]]\nserver = \"https://code.aretta.ai\"\nrepo = \"{repo}\"\n\
+            "version = 3\n\n[[entries]]\nserver = \"{server}\"\n\
              token = \"{token}\"\nminted_at = \"2026-09-15T00:00:00Z\"\n"
         ),
     )
     .unwrap();
 }
+
+const ACME: &str = "https://acme.aretta.ai";
 
 // ─── auth status ──────────────────────────────────────────────────────────
 
@@ -115,7 +104,7 @@ fn status_reads_env_var_when_set() {
         .expect("run aristo");
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("authenticated"), "stdout: {stdout}");
+    assert!(stdout.contains("signed in"), "stdout: {stdout}");
     assert!(stdout.contains("ARETTA_TOKEN"), "stdout: {stdout}");
     // Must NOT print the token itself.
     assert!(
@@ -143,13 +132,12 @@ repo = "owner/repo"
     .unwrap();
 
     let out = isolated(tmp.path())
-        .current_dir(checkout_of_owner_repo(tmp.path()))
         .args(["auth", "status"])
         .output()
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("authenticated"), "stdout: {stdout}");
+    assert!(stdout.contains("signed in"), "stdout: {stdout}");
     // Path appears in the success message (cross-platform check —
     // just look for the filename, not the full prefix).
     assert!(stdout.contains("credentials"), "stdout: {stdout}");
@@ -187,15 +175,14 @@ fn status_malformed_credentials_surfaces_error() {
 #[test]
 fn login_then_status_round_trip() {
     let tmp = TempDir::new().unwrap();
-    seed_store(tmp.path(), "owner/repo", "round-trip-tok");
+    seed_store(tmp.path(), ACME, "round-trip-tok");
     let out = isolated(tmp.path())
-        .current_dir(checkout_of_owner_repo(tmp.path()))
         .args(["auth", "status"])
         .output()
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("authenticated"));
+    assert!(stdout.contains("signed in"));
     assert!(
         !stdout.contains("round-trip-tok"),
         "status must not print token"
@@ -236,11 +223,11 @@ fn logout_when_not_logged_in_is_noop_and_zero_exit() {
 #[test]
 fn logout_after_login_removes_file() {
     let tmp = TempDir::new().unwrap();
-    seed_store(tmp.path(), "owner/repo", "tok");
+    seed_store(tmp.path(), ACME, "tok");
     assert!(creds_path(tmp.path()).exists());
 
     let out = isolated(tmp.path())
-        .args(["auth", "logout", "--repo", "owner/repo"])
+        .args(["auth", "logout"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -255,9 +242,9 @@ fn logout_after_login_removes_file() {
 #[test]
 fn logout_warns_when_env_var_still_set() {
     let tmp = TempDir::new().unwrap();
-    seed_store(tmp.path(), "owner/repo", "tok");
+    seed_store(tmp.path(), ACME, "tok");
     let out = isolated(tmp.path())
-        .args(["auth", "logout", "--repo", "owner/repo"])
+        .args(["auth", "logout"])
         .env("ARETTA_TOKEN", "still-set")
         .output()
         .unwrap();
@@ -283,7 +270,7 @@ fn full_auth_lifecycle() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("not signed in"));
 
     // 2. login
-    seed_store(tmp.path(), "owner/repo", "lifecycle-tok");
+    seed_store(tmp.path(), ACME, "lifecycle-tok");
 
     // 3. status: authenticated
     let out = isolated(tmp.path())
@@ -291,12 +278,12 @@ fn full_auth_lifecycle() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("authenticated"), "stdout: {stdout}");
+    assert!(stdout.contains("signed in"), "stdout: {stdout}");
     assert!(!stdout.contains("lifecycle-tok"));
 
     // 4. logout
     let out = isolated(tmp.path())
-        .args(["auth", "logout", "--repo", "owner/repo"])
+        .args(["auth", "logout"])
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("logged out"));
@@ -341,7 +328,7 @@ fn token_prints_value_from_credentials_file() {
     .unwrap();
 
     let out = isolated(tmp.path())
-        .args(["auth", "token", "--repo", "owner/repo"])
+        .args(["auth", "token"])
         .output()
         .unwrap();
     assert!(out.status.success());

@@ -117,7 +117,7 @@ pub(crate) fn partition_full<'a>(
 /// handled), whose canon-matches entry is absent, or whose accepted-
 /// match list is empty are silently dropped from the dispatch.
 /// They'd fail the server-side eligibility check anyway and surface
-/// a clearer error on the next `aristo canon refresh`.
+/// a clearer error on the next `aristo stamp --refresh-canon`.
 pub(crate) fn build_tags(
     entries: &[CanonDispatchEntry<'_>],
     matches: &CanonMatchesFile,
@@ -253,25 +253,17 @@ pub(crate) fn run_canon_dispatch(
             canon_entries.len()
         );
         println!(
-            "  .aristo/canon-matches.toml. Run `aristo canon refresh` to repopulate the cache."
+            "  .aristo/canon-matches.toml. Run `aristo stamp --refresh-canon` to repopulate the cache."
         );
         return Ok(0);
     }
 
-    // 3. Resolve repo + commit_sha via git.
-    let repo_full_name = match aristo_core::auth::derive_repo_full_name(workspace_root) {
-        Ok(r) => r,
-        Err(e) => {
-            // ARISTO_REPO env override as a CI escape hatch.
-            std::env::var("ARISTO_REPO").map_err(|_| CliError::Other {
-                message: format!(
-                    "could not determine repo for verify: {e}\n  \
-                     Set ARISTO_REPO=<owner/repo> to override (CI use)."
-                ),
-                exit_code: 1,
-            })?
-        }
-    };
+    // 3. Resolve repo + commit_sha via git (ARISTO_REPO overrides the repo).
+    let repo_full_name =
+        crate::data_plane::github_repo_for(workspace_root).map_err(|e| CliError::Other {
+            message: format!("could not determine repo for verify: {e}"),
+            exit_code: 1,
+        })?;
     let commit_sha =
         aristo_core::git::rev_parse_head(workspace_root).map_err(|e| CliError::Other {
             message: format!("git rev-parse HEAD failed: {e}"),
@@ -298,13 +290,14 @@ pub(crate) fn run_canon_dispatch(
         });
     }
 
-    // 5. Build the HTTP client. Data-plane base: ARETTA_API_URL >
-    //    the credential's server.
-    let base_url = crate::data_plane::resolve_base(&creds.server);
+    // 5. Build the HTTP client at `<base>/<repo>/...` (the org's repo
+    //    name for this checkout, from the org's directory).
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {
-        Box::new(HttpVerifyClient::new(base_url, &creds.token))
+        let t = crate::data_plane::resolve_target(&creds, workspace_root)
+            .map_err(no_auth_to_cli_error)?;
+        Box::new(HttpVerifyClient::new(t.base_url, &creds.token, t.repo))
     };
 
     // 6. POST.
@@ -368,11 +361,12 @@ fn exit_error_for(verdict: &waiver::WaiverVerdict) -> CliError {
 /// Skips POST + push-first precheck entirely.
 pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
     let creds = aristo_core::auth::resolve_full().map_err(no_auth_to_cli_error)?;
-    let base_url = crate::data_plane::resolve_base(&creds.server);
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {
-        Box::new(HttpVerifyClient::new(base_url, &creds.token))
+        let start = crate::data_plane::checkout_start();
+        let t = crate::data_plane::resolve_target(&creds, &start).map_err(no_auth_to_cli_error)?;
+        Box::new(HttpVerifyClient::new(t.base_url, &creds.token, t.repo))
     };
 
     let snapshot = if wait {
@@ -544,7 +538,7 @@ pub(crate) fn zero_dispatch_warning(
              All {canon_candidates} canon-bound entr{} dropped at the canon-matches cache \
              join: .aristo/canon-matches.toml is missing, stale, or carries no accepted \
              matches.\n  \
-             Fix: run `aristo canon refresh` and commit the refreshed cache. CI can gate \
+             Fix: run `aristo stamp --refresh-canon` and commit the refreshed cache. CI can gate \
              on this with `aristo verify --require-dispatch`.",
             if canon_candidates == 1 {
                 "y was"
@@ -1588,20 +1582,7 @@ fn verify_error_to_cli(e: VerifyError) -> CliError {
             message: format!(
                 "verify auth error: {inner}\n  \
                  Your token may be expired — re-run `{}`.",
-                aristo_core::auth::login_command(None)
-            ),
-            exit_code: 1,
-        },
-        VerifyError::BadRequest {
-            status: 402,
-            message,
-        } => CliError::Other {
-            message: format!(
-                "no canon coverage applies for your scopes — verification \
-                 requires Aretta DP onboarding.\n  \
-                 Contact Aretta at hello@aretta.ai (https://aretta.ai) to \
-                 enable it.\n  \
-                 (server message: {message})"
+                aristo_core::auth::login_command()
             ),
             exit_code: 1,
         },
@@ -2490,7 +2471,7 @@ mod tests {
         let w = zero_dispatch_warning(0, 2, 0).expect("candidates dropped at cache join → warn");
         assert!(w.contains("warning: no canon-verify dispatch"), "{w}");
         assert!(w.contains("canon-matches"), "{w}");
-        assert!(w.contains("aristo canon refresh"), "{w}");
+        assert!(w.contains("aristo stamp --refresh-canon"), "{w}");
         assert!(w.contains("--require-dispatch"), "{w}");
     }
 
@@ -2541,29 +2522,6 @@ mod tests {
         assert!(
             mock.cancelled_sessions().is_empty(),
             "a settled session must not receive a late cancel"
-        );
-    }
-
-    #[test]
-    fn verify_402_names_a_concrete_contact_channel() {
-        // "contact Aretta" with no channel is a dead end for a paying
-        // prospect. Pin the concrete pointers (the repo's canonical
-        // contact address + site).
-        let msg = other_message(verify_error_to_cli(VerifyError::BadRequest {
-            status: 402,
-            message: "no_canon_coverage".into(),
-        }));
-        assert!(
-            msg.contains("hello@aretta.ai"),
-            "402 must name the contact address: {msg}"
-        );
-        assert!(
-            msg.contains("https://aretta.ai"),
-            "402 must name the site: {msg}"
-        );
-        assert!(
-            msg.contains("no_canon_coverage"),
-            "server message must still be surfaced: {msg}"
         );
     }
 
@@ -2628,8 +2586,8 @@ mod tests {
     fn dispatch_session_propagates_server_error() {
         let mock =
             aristo_core::canon_verify::MockVerifyClient::with_post_error(VerifyError::BadRequest {
-                status: 402,
-                message: "no_canon_coverage".into(),
+                status: 409,
+                message: "conflict".into(),
             });
         let req = VerifySessionRequest {
             repo_full_name: "o/r".into(),
@@ -2638,8 +2596,8 @@ mod tests {
         };
         let err = dispatch_session(&mock, &req).unwrap_err();
         match err {
-            VerifyError::BadRequest { status: 402, .. } => {}
-            other => panic!("expected BadRequest 402, got {other:?}"),
+            VerifyError::BadRequest { status: 409, .. } => {}
+            other => panic!("expected BadRequest 409, got {other:?}"),
         }
     }
 }

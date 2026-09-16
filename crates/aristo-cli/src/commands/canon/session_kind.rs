@@ -9,7 +9,8 @@
 //! - **Primary match** (`match:<annotation-id>#<canon-id>`) — a pending
 //!   match the user's own annotation produced, living in
 //!   `canon-matches.toml`. Accept rewrites the annotation to canonical +
-//!   binds (reuse `canon::accept`); reject fingerprints the `canon_id`.
+//!   binds (reuse `canon::accept`); reject pins the match in the cache
+//!   (reuse `canon::reject`) and fingerprints the `canon_id`.
 //! - **Suggestion cluster** (`cluster:<key>`) + its **siblings**
 //!   (`sibling:<key>#<canon-id>`) — the dragged-in proof-objective
 //!   cluster queued by the matcher (Slice 2). The **parent is decided
@@ -32,7 +33,7 @@
 
 use aristo_core::canon::cache::CanonMatchesFile;
 
-use crate::commands::canon::{accept, suggestions};
+use crate::commands::canon::{accept, reject, suggestions};
 use crate::session::kind::SessionKind;
 use crate::session::rejections::{self, RejectionEntry};
 use crate::session::types::{ItemRef, NestingPolicy};
@@ -136,9 +137,23 @@ impl SessionKind for IntentReviewSession {
         ws: &Workspace,
     ) -> CliResult<serde_json::Value> {
         match IntentItem::parse(item_ref)? {
-            // Primary / sibling reject: fingerprint the bare canon_id so
-            // dedup ②/④ suppress it on future runs.
-            IntentItem::Match { canon_id, .. } => Ok(suggestions::rejection_fingerprint(&canon_id)),
+            // Primary reject: pin the rejection in the canon-matches cache
+            // (keyed by the annotation's text hash, so `stamp` stops
+            // re-surfacing it until the text changes) AND fingerprint the
+            // bare canon_id so dedup ②/④ suppress it on future runs.
+            IntentItem::Match {
+                annotation_id,
+                canon_id,
+            } => {
+                reject::apply_rejection(
+                    ws,
+                    &annotation_id,
+                    &canon_id,
+                    note.map(str::to_string),
+                    &now_rfc3339(),
+                )?;
+                Ok(suggestions::rejection_fingerprint(&canon_id))
+            }
             IntentItem::Sibling { canon_id, .. } => {
                 Ok(suggestions::rejection_fingerprint(&canon_id))
             }

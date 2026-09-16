@@ -9,7 +9,7 @@
 //! Flags follow J2 (mockup 11): `--filter` reuses the unified J2
 //! grammar from `aristo list` / `graph` / `review`; `--rerun` is the
 //! orthogonal force-flag that re-processes entries already in a clean
-//! verified state; `--check` is the CI no-write mode; `--strict` is
+//! verified state; `--strict` is
 //! reserved for warn-severity outcomes (no warnings yet — slice 22 has
 //! only skip / not-implemented arms).
 
@@ -42,7 +42,6 @@ pub(crate) mod waiver;
 pub(crate) fn run(
     filter_strings: &[String],
     rerun: bool,
-    check: bool,
     strict: bool,
     audit: bool,
     apply_verdicts: bool,
@@ -60,8 +59,6 @@ pub(crate) fn run(
     because: Option<String>,
     tracking: Option<String>,
 ) -> CliResult<()> {
-    let _ = check; // wired for forward-compat; no behavior yet (see module doc)
-
     // E3: `--view <session_id>` attaches to an existing session.
     // Read-only — no session guard, no workspace mutation. Runs
     // before workspace resolution since the operation only needs
@@ -225,7 +222,7 @@ pub(crate) fn run(
                       Likely causes: no canon-bound `verify=\"full\"` entries matched; every \
                       matching entry was skipped as already verified and fresh (pass --rerun \
                       to force); or the canon-matches cache is missing/stale (run \
-                      `aristo canon refresh` and commit .aristo/canon-matches.toml)."
+                      `aristo stamp --refresh-canon` and commit .aristo/canon-matches.toml)."
                 .into(),
             exit_code: 1,
         });
@@ -527,7 +524,7 @@ fn parent_ids(entry: &IndexEntry) -> Option<&aristo_core::index::ParentLink> {
 )]
 #[aristo::intent(
     "Bool(true) resolves through the project's [verify].default_method \
-     and falls back to the free-tier default (\"test\") when absent. \
+     and falls back to the default (\"test\") when absent. \
      A refactor that hard-codes either side would silently change \
      verification depth for every annotation that opted into the \
      project default — those are precisely the entries where the \
@@ -544,7 +541,7 @@ fn resolve_verify_level(entry: &IndexEntry, cfg: &ConfigFile) -> VerifyLevel {
     match raw {
         VerifyLevel::Bool(true) => match cfg.verify.default_method {
             Some(m) => VerifyLevel::Method(m),
-            None => VerifyLevel::Method(VerifyMethod::Test), // free-tier default
+            None => VerifyLevel::Method(VerifyMethod::Test), // the default
         },
         other => other,
     }
@@ -674,7 +671,7 @@ mod tests {
     #[test]
     fn counts_toward_canon_dispatch_resolves_bool_true_through_project_default() {
         // verify=true defers to the project default — a default of
-        // "full" makes a canon-bound entry count; the free-tier "test"
+        // "full" makes a canon-bound entry count; the "test"
         // fallback does not.
         let (id, entry) = intent("kanon:bar", VerifyLevel::Bool(true), Status::Unknown);
         let mut cfg = ConfigFile::default();

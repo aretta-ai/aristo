@@ -178,8 +178,12 @@ fn print_canon_health(ws: &crate::Workspace) {
         Err(aristo_core::canon::AuthError::EnvTokenWithoutServer) => {
             "ARETTA_TOKEN is set without ARETTA_API_URL".to_string()
         }
-        Err(aristo_core::canon::AuthError::NoEntryForCheckout { .. }) => {
-            "signed in, but no stored credential is for this checkout (`aristo auth status`)"
+        Err(
+            aristo_core::canon::AuthError::Unreachable { .. }
+            | aristo_core::canon::AuthError::RepoNotInOrg { .. },
+        ) => "signed in".to_string(),
+        Err(aristo_core::canon::AuthError::SeveralServers { .. }) => {
+            "signed in to several servers; pass --server or set ARETTA_API_URL (`aristo auth status`)"
                 .to_string()
         }
     };
@@ -301,7 +305,7 @@ fn default_verify_for_display(ws: &crate::Workspace) -> String {
         Some(VerifyMethod::Neural) => "\"neural\"".to_string(),
         Some(VerifyMethod::Test) => "\"test\"".to_string(),
         Some(VerifyMethod::Full) => "\"full\"".to_string(),
-        None => "(per-tier default)".to_string(),
+        None => "\"test\" (default)".to_string(),
     }
 }
 

@@ -1,12 +1,12 @@
 # `aristo critique --filter` — agentic review with J2 unified filter grammar
 
-Source: `../aretta-sdk/docs/diagrams/01-lifecycle.mmd` § "3 · Inspect & debug" — `I → i5` ("aristo critique --filter (free tier; local skill)") + `docs/mockups/07-lint-critique-skills/examples.md` § "aristo critique".
+Source: `../aretta-sdk/docs/diagrams/01-lifecycle.mmd` § "3 · Inspect & debug" — `I → i5` ("aristo critique --filter (local skills; local skill)") + `docs/mockups/07-lint-critique-skills/examples.md` § "aristo critique".
 
-This scenario is the only `aristo critique` coverage in the test suite (per the audit in `docs/WORKFLOW-COVERAGE.md` §1.1). `aristo critique` is the agentic, tier-aware deeper-critique command: free tier invokes the `aristo-critique` via the host coding agent (Claude Code / Cursor / etc.); paid tier uses the HQ critique agent. Output is a list of findings categorized by `[rephrasing]` / `[parent-shape]` / `[vocabulary]` / etc., severity-tagged (`strong-suggest` / `suggest` / `info`). Read-only — never modifies source.
+This scenario is the only `aristo critique` coverage in the test suite (per the audit in `docs/WORKFLOW-COVERAGE.md` §1.1). `aristo critique` is the agentic, tier-aware deeper-critique command: local skills invokes the `aristo-critique` via the host coding agent (Claude Code / Cursor / etc.); the server uses the HQ critique agent. Output is a list of findings categorized by `[rephrasing]` / `[parent-shape]` / `[vocabulary]` / etc., severity-tagged (`strong-suggest` / `suggest` / `info`). Read-only — never modifies source.
 
 `--filter` uses the J2 unified grammar (`id=`, `file=`, `parent=`, `status=`) shared with `aristo list` / `verify` / `graph`. Range form (`<file>:<start>-<end>`) is supported per the mockup 07 examples. `aristo critique` also auto-skips targets that have outstanding `aristo lint` findings — the diagnostic in the output points the user at `aristo lint --fix` first.
 
-## Whole-project run (free tier, local skill)
+## Whole-project run (local skill)
 
 ```console
 $ aristo critique

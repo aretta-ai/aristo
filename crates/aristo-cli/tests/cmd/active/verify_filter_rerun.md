@@ -46,13 +46,13 @@ $ aristo verify --rerun
 
 ```
 
-## Composes with `--check` and `--strict`
+## Composes with `--strict`
 
 ```console
-$ aristo verify --filter file=core/storage/btree.rs --check
+$ aristo verify --filter file=core/storage/btree.rs
 [..]
 
-$ aristo verify --filter status=stale --check --strict
+$ aristo verify --filter status=stale --strict
 [..]
 
 ```

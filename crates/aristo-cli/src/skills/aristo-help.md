@@ -37,7 +37,7 @@ When the user invokes this skill (typically `/aristo-help`, or "what aristo skil
 **PR review (CI).** On a pull request, an automated pass critiques the annotations added/modified and authors any missing intents on the changed code, then comments back — comment-only by default, no silent source mutation.
 *Yields:* intent coverage + prose quality enforced at review time, not after merge.
 
-**Canon-bound deep verify.** Sign in (`aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>`; the org host is your Aretta dashboard's hostname) → `/aristo-verify` (full / both — server proofs in the background) → `/aristo-intent-suggestions` to adopt the matched canonical wording + sibling invariants.
+**Canon-bound deep verify.** Sign in (`aristo auth login --server https://<org>.aretta.ai`; the org host is your Aretta dashboard's hostname) → `/aristo-verify` (full / both — server proofs in the background) → `/aristo-intent-suggestions` to adopt the matched canonical wording + sibling invariants.
 *Yields:* claims bound to the shared catalog with reusable, server-verified proofs.
 
 **Failure → fix-or-waive.** `/aristo-verify` surfaces a ✗ refuted card (the claim, the tested call-path, the violating path in *your* code) → **Fix in code** (edit + re-verify) or **Waive** (`aristo verify --accept <id> --because <reason>` — a tracked known-gap that the strict ratchet flips back to red if it ever starts passing).

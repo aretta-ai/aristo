@@ -20,8 +20,8 @@ Then two informational steps (no exit-code gating):
 5. `aristo badge --out=docs/badge.svg` — regenerates the SVG so the
    CI workflow can upload it as an artifact.
 
-**Note on `verify --check`:** slice 34 originally included
-`aristo verify --check --strict` as the third gate, between `lint`
+**Note on `verify --strict`:** slice 34 originally included
+`aristo verify --strict` as the third gate, between `lint`
 and `doc`. It was removed from CI on 2026-05-19 because
 `aristo verify` surfaces `CliError::NotImplemented` whenever the
 workspace has any `verify="test"` or `verify="full"` annotation —
@@ -49,7 +49,7 @@ ok: 0 lint findings.
 ```
 
 ```console
-$ aristo verify --check --strict
+$ aristo verify --strict
 ok: 0 annotations verified, 0 skipped (documentation-only).
 → 2 entries pending neural verification — enqueued under .aristo/verify-queue/pending/.
   In Claude Code (or another agent with the aristo-verify skill installed), run:

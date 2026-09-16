@@ -15,7 +15,7 @@
 //! Every place that needs the checkout's repo — the credential
 //! resolver, the login default, `auth token` / `auth logout`, verify
 //! dispatch — calls this; if it can't resolve a repo, it surfaces a
-//! clear "pass `--repo <owner/repo>` explicitly" diagnostic.
+//! clear "set ARISTO_REPO=<owner/repo>" diagnostic.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ use super::error::AuthError;
 pub fn derive_repo_full_name(start: &Path) -> Result<String, AuthError> {
     let config_path = git_config_path(start).ok_or_else(|| {
         AuthError::Malformed(format!(
-            "no git repository at or above {} — pass `--repo <owner/repo>` to scope the token explicitly",
+            "no git repository at or above {} — run from a checkout, or set ARISTO_REPO=<owner/repo>",
             start.display()
         ))
     })?;
@@ -41,13 +41,13 @@ pub fn derive_repo_full_name(start: &Path) -> Result<String, AuthError> {
         .map_err(|e| AuthError::Malformed(format!("read {}: {e}", config_path.display())))?;
     let url = extract_origin_url(&raw).ok_or_else(|| {
         AuthError::Malformed(format!(
-            "no `[remote \"origin\"]` url in {} — pass `--repo <owner/repo>`",
+            "no `[remote \"origin\"]` url in {} — set ARISTO_REPO=<owner/repo>",
             config_path.display()
         ))
     })?;
     parse_github_url(&url).ok_or_else(|| {
         AuthError::Malformed(format!(
-            "remote.origin.url `{url}` doesn't look like a GitHub URL — pass `--repo <owner/repo>`"
+            "remote.origin.url `{url}` doesn't look like a GitHub URL — set ARISTO_REPO=<owner/repo>"
         ))
     })
 }
@@ -332,7 +332,7 @@ mod tests {
         match err {
             AuthError::Malformed(m) => {
                 assert!(m.contains("no git repository"), "got: {m}");
-                assert!(m.contains("--repo"), "got: {m}");
+                assert!(m.contains("ARISTO_REPO"), "got: {m}");
             }
             other => panic!("expected Malformed, got {other:?}"),
         }
@@ -355,7 +355,7 @@ mod tests {
         match err {
             AuthError::Malformed(m) => {
                 assert!(m.contains("doesn't look like a GitHub URL"), "got: {m}");
-                assert!(m.contains("--repo"), "got: {m}");
+                assert!(m.contains("ARISTO_REPO"), "got: {m}");
             }
             other => panic!("expected Malformed, got {other:?}"),
         }

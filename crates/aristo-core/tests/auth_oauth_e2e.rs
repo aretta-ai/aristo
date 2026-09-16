@@ -166,7 +166,7 @@ fn oauth_exchange_happy_path_returns_arta_token_and_user() {
     let r: CliTokenResponse = oauth_exchange(
         &custom_server(&base),
         "oauth-code-abc",
-        "owner/repo",
+        Some("owner/repo"),
         Some("aristo-cli"),
     )
     .expect("ok");
@@ -202,7 +202,7 @@ fn oauth_exchange_omits_name_when_none() {
         status_line: "200 OK",
         body: body.into(),
     });
-    let _ = oauth_exchange(&custom_server(&base), "c", "o/r", None).expect("ok");
+    let _ = oauth_exchange(&custom_server(&base), "c", Some("o/r"), None).expect("ok");
     let record = handle.join().unwrap();
     let parsed: serde_json::Value =
         serde_json::from_str(&record.body).expect("body parses as JSON");
@@ -222,7 +222,8 @@ fn oauth_exchange_400_missing_code_surfaces_proxy_error_message() {
         status_line: "400 Bad Request",
         body: r#"{"error":"Missing code"}"#.into(),
     });
-    let err = oauth_exchange(&custom_server(&base), "", "owner/repo", None).expect_err("must fail");
+    let err =
+        oauth_exchange(&custom_server(&base), "", Some("owner/repo"), None).expect_err("must fail");
     match err {
         AuthError::Malformed(m) => assert!(m.contains("Missing code"), "got: {m}"),
         other => panic!("expected Malformed, got {other:?}"),
@@ -235,8 +236,8 @@ fn oauth_exchange_403_unknown_user_maps_to_invalid() {
         status_line: "403 Forbidden",
         body: r#"{"error":"User not authorized"}"#.into(),
     });
-    let err =
-        oauth_exchange(&custom_server(&base), "c", "owner/repo", None).expect_err("must fail");
+    let err = oauth_exchange(&custom_server(&base), "c", Some("owner/repo"), None)
+        .expect_err("must fail");
     assert_eq!(err, AuthError::Invalid);
 }
 
@@ -246,8 +247,8 @@ fn oauth_exchange_502_oauth_failed_maps_to_malformed_with_proxy_message() {
         status_line: "502 Bad Gateway",
         body: r#"{"error":"OAuth exchange failed: github unreachable"}"#.into(),
     });
-    let err =
-        oauth_exchange(&custom_server(&base), "c", "owner/repo", None).expect_err("must fail");
+    let err = oauth_exchange(&custom_server(&base), "c", Some("owner/repo"), None)
+        .expect_err("must fail");
     match err {
         AuthError::Malformed(m) => {
             assert!(m.contains("502"), "got: {m}");

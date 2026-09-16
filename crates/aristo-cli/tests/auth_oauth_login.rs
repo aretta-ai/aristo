@@ -68,14 +68,14 @@ fn git_workspace(parent: &Path, name: &str, owner_repo: &str) -> std::path::Path
     ws
 }
 
-/// Seed the sandbox store with `(server, repo, token)` entries.
-fn seed(workspace: &Path, entries: &[(&str, &str, &str)]) {
+/// Seed the sandbox store with `(server, token)` entries.
+fn seed(workspace: &Path, entries: &[(&str, &str)]) {
     let p = workspace.join("home/xdg/aristo/credentials");
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    let mut body = String::from("version = 2\n");
-    for (i, (server, repo, token)) in entries.iter().enumerate() {
+    let mut body = String::from("version = 3\n");
+    for (i, (server, token)) in entries.iter().enumerate() {
         body.push_str(&format!(
-            "\n[[entries]]\nserver = \"{server}\"\nrepo = \"{repo}\"\ntoken = \"{token}\"\n\
+            "\n[[entries]]\nserver = \"{server}\"\ntoken = \"{token}\"\n\
              minted_at = \"2026-09-15T00:0{i}:00Z\"\n"
         ));
     }
@@ -229,7 +229,7 @@ fn auth_login_oauth_persists_arta_token_on_happy_path() {
     );
 
     let mut cmd = isolated(workspace.path());
-    cmd.args(["auth", "login", "--server", &base, "--repo", "owner/repo"])
+    cmd.args(["auth", "login", "--server", &base])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -259,7 +259,8 @@ fn auth_login_oauth_persists_arta_token_on_happy_path() {
     assert_eq!(rec2.path, "/auth/cli-token");
     let body: serde_json::Value = serde_json::from_str(&rec2.body).expect("body parses as JSON");
     assert_eq!(body["code"], "oauth-code-from-callback");
-    assert_eq!(body["repoFullName"], "owner/repo");
+    // No checkout in the sandbox: the informational repo hint is absent.
+    assert!(body.get("repoFullName").is_none(), "{body}");
 
     // The credentials file should contain the arta_token returned by
     // the mock.
@@ -281,8 +282,8 @@ fn auth_login_oauth_persists_arta_token_on_happy_path() {
         "expected user login in stdout; got: {stdout}"
     );
     assert!(
-        stdout.contains("owner/repo"),
-        "expected repo in stdout; got: {stdout}"
+        stdout.contains(&format!("at {base}")),
+        "expected the server in stdout; got: {stdout}"
     );
 }
 
@@ -302,7 +303,7 @@ fn auth_login_oauth_403_unknown_user_surfaces_invalid_error() {
     );
 
     let mut cmd = isolated(workspace.path());
-    cmd.args(["auth", "login", "--server", &base, "--repo", "owner/repo"])
+    cmd.args(["auth", "login", "--server", &base])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -347,7 +348,7 @@ fn auth_login_oauth_410_gone_surfaces_retired_platform_hint() {
     );
 
     let mut cmd = isolated(workspace.path());
-    cmd.args(["auth", "login", "--server", &base, "--repo", "owner/repo"])
+    cmd.args(["auth", "login", "--server", &base])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -375,31 +376,6 @@ fn auth_login_oauth_410_gone_surfaces_retired_platform_hint() {
 }
 
 #[test]
-fn auth_login_oauth_requires_repo_or_git_remote() {
-    // No --repo flag, no .git/config — must refuse.
-    let workspace = TempDir::new().unwrap();
-
-    // Spawn a mock that won't be called (server arg present but no
-    // request expected before we error out on repo derivation).
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-
-    let mut cmd = isolated(workspace.path());
-    cmd.args(["auth", "login", "--server", &base])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let output = cmd.output().expect("run aristo");
-    assert!(!output.status.success(), "must refuse without --repo");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("--repo") || stderr.contains(".git/config"),
-        "expected --repo hint; got: {stderr}"
-    );
-}
-
-#[test]
 fn auth_login_requires_a_server() {
     // No --server, no ARETTA_API_URL: there is no default to guess.
     let sandbox = TempDir::new().unwrap();
@@ -417,51 +393,41 @@ fn auth_login_requires_a_server() {
     assert!(!sandbox.path().join("home/xdg/aristo/credentials").exists());
 }
 
-// ─── what login reports: the store change + this checkout's verdict (#77) ──
+// ─── what login reports: the store change ─────────────────────────────────
 
 #[test]
-fn login_reports_added_entry_and_that_this_checkout_resolves_to_it() {
+fn login_reports_added_entry_for_the_server() {
     let sandbox = TempDir::new().unwrap();
     let ws = git_workspace(sandbox.path(), "a", "org/repoA");
     let (l, t) = happy_mock("arta_A", "octocat", "org/repoA");
     let (base, handle) = spawn_two_step_mock(l, t);
 
     let out = oauth_login(isolated_at(sandbox.path(), &ws), &base, &[]);
-    handle.join().unwrap();
+    let (_, rec2) = handle.join().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(
         out.status.success(),
         "{s}\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(s.contains("entry added"), "login: {s}");
-    assert!(s.contains("repo org/repoA"), "login: {s}");
-    assert!(s.contains("1 entry on file"), "login: {s}");
     assert!(
-        s.contains("this checkout (org/repoA) resolves to this entry"),
+        s.contains(&format!("entry added: server {base} — 1 server on file.")),
         "login: {s}"
     );
     assert!(!s.contains("arta_A"), "token leaked: {s}");
+    // From a checkout, the repo rides along as information only.
+    let body: serde_json::Value = serde_json::from_str(&rec2.body).unwrap();
+    assert_eq!(body["repoFullName"], "org/repoA");
 }
 
 #[test]
-fn login_for_another_repo_warns_this_checkout_will_not_resolve_to_it() {
+fn login_at_a_second_server_adds_and_warns_about_selection() {
     let sandbox = TempDir::new().unwrap();
-    seed(
-        sandbox.path(),
-        &[("https://code.aretta.ai", "org/repoA", "arta_A")],
-    );
-    // From a fork checkout, log in for the upstream repo: two entries now,
-    // and this directory derives to neither.
-    let fork = git_workspace(sandbox.path(), "fork", "alice/repoB");
+    seed(sandbox.path(), &[("https://other.aretta.ai", "arta_other")]);
     let (l, t) = happy_mock("arta_B", "octocat", "org/repoB");
     let (base, handle) = spawn_two_step_mock(l, t);
 
-    let out = oauth_login(
-        isolated_at(sandbox.path(), &fork),
-        &base,
-        &["--repo", "org/repoB"],
-    );
+    let out = oauth_login(isolated(sandbox.path()), &base, &[]);
     handle.join().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -469,32 +435,21 @@ fn login_for_another_repo_warns_this_checkout_will_not_resolve_to_it() {
         "{s}\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(s.contains("entry added"), "login: {s}");
-    assert!(s.contains("2 entries on file"), "login: {s}");
+    assert!(s.contains("2 servers on file"), "login: {s}");
     assert!(
-        s.contains("this checkout (alice/repoB) will NOT resolve to this entry"),
+        s.contains("several servers on file") && s.contains("ARETTA_API_URL"),
         "login: {s}"
     );
-    assert!(
-        s.contains("org/repoB checkout"),
-        "remedy names the repo: {s}"
-    );
-    assert!(s.contains("ARETTA_TOKEN"), "remedy names the env var: {s}");
 }
 
 #[test]
-fn login_retry_for_the_same_repo_replaces_instead_of_accumulating() {
+fn login_again_at_the_same_server_replaces_the_entry() {
     let sandbox = TempDir::new().unwrap();
-    let ws = git_workspace(sandbox.path(), "a", "org/repoA");
-    // An earlier login for the same repo against another server.
-    seed(
-        sandbox.path(),
-        &[("https://one.example.com", "org/repoA", "arta_old")],
-    );
     let (l, t) = happy_mock("arta_new", "octocat", "org/repoA");
     let (base, handle) = spawn_two_step_mock(l, t);
+    seed(sandbox.path(), &[(&base, "arta_old")]);
 
-    let out = oauth_login(isolated_at(sandbox.path(), &ws), &base, &[]);
+    let out = oauth_login(isolated(sandbox.path()), &base, &[]);
     handle.join().unwrap();
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -502,14 +457,11 @@ fn login_retry_for_the_same_repo_replaces_instead_of_accumulating() {
         "{s}\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(s.contains("entry replaced"), "login: {s}");
-    assert!(s.contains("dropped 1 older entry"), "login: {s}");
-    assert!(s.contains("1 entry on file"), "login: {s}");
     assert!(
-        s.contains("this checkout (org/repoA) resolves to this entry"),
+        s.contains("entry replaced") && s.contains("1 server on file"),
         "login: {s}"
     );
-    let tok = isolated_at(sandbox.path(), &ws)
+    let tok = isolated(sandbox.path())
         .args(["auth", "token"])
         .output()
         .unwrap();

@@ -25,17 +25,8 @@ use serde::Serialize;
 use ureq::http::Response as HttpResponse;
 
 use super::client::{AuthError, CanonClient, CanonError};
-use super::types::{
-    CanonCatalogue, CanonEntry, CanonMatchRequest, CanonMatchResponse, RequestVerifyBody,
-    RequestVerifyResponse,
-};
+use super::types::{CanonCatalogue, CanonMatchRequest, CanonMatchResponse};
 use super::Token;
-
-/// Default base URL for the canon API. Points at production
-/// (`code.aretta.ai`); tests + staging override via
-/// [`HttpCanonClient::new`]. See [`crate::auth::ServerUrl`] for the
-/// dev/prod/custom enum that owns the well-known URL constants.
-pub const DEFAULT_BASE_URL: &str = crate::auth::ServerUrl::PROD;
 
 /// L3 graceful-degradation timeout. Applies to each individual
 /// request (not the whole operation). Covers connect + TLS handshake +
@@ -53,15 +44,19 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 8;
 /// owned by the client.
 pub struct HttpCanonClient {
     base_url: String,
+    /// The org's repo name — the path segment every route is under.
+    repo: String,
     bearer_header: String,
     agent: ureq::Agent,
 }
 
 impl HttpCanonClient {
-    /// Construct a client. `base_url` should NOT end with `/` —
-    /// the client appends absolute paths (`/canon/match` etc.).
-    pub fn new(base_url: impl Into<String>, token: &Token) -> Self {
+    /// Construct a client. `base_url` should NOT end with `/`; `repo`
+    /// is the org's repo name (see [`crate::auth::repo_segment_for`]) —
+    /// the client builds `/<repo>/api/canon/...` paths under it.
+    pub fn new(base_url: impl Into<String>, token: &Token, repo: impl Into<String>) -> Self {
         let base_url = base_url.into();
+        let repo = repo.into();
         // Pre-compute the Bearer header so we don't reformat per
         // call. The token string is also embedded here; the original
         // Token's redacted Debug impl prevents leaks via the client's
@@ -82,18 +77,15 @@ impl HttpCanonClient {
 
         Self {
             base_url,
+            repo,
             bearer_header,
             agent,
         }
     }
 
-    /// Construct with the production base URL.
-    pub fn production(token: &Token) -> Self {
-        Self::new(DEFAULT_BASE_URL, token)
-    }
-
+    /// `<base>/<repo>/api<path>`.
     fn url(&self, path: &str) -> String {
-        format!("{}{}", self.base_url, path)
+        format!("{}/{}/api{}", self.base_url, self.repo, path)
     }
 
     fn post_json<Req, Resp>(&self, path: &str, body: &Req) -> Result<Resp, CanonError>
@@ -130,6 +122,7 @@ impl std::fmt::Debug for HttpCanonClient {
         // Redact bearer_header so Debug never prints the token.
         f.debug_struct("HttpCanonClient")
             .field("base_url", &self.base_url)
+            .field("repo", &self.repo)
             .field("bearer_header", &"Bearer <redacted>")
             .finish()
     }
@@ -140,24 +133,7 @@ impl CanonClient for HttpCanonClient {
         self.post_json("/canon/match", req)
     }
 
-    fn get_entry(&self, canon_id: &str, version: Option<&str>) -> Result<CanonEntry, CanonError> {
-        let canon_id = url_encode(canon_id);
-        let path = match version {
-            Some(v) => format!("/canon/entry/{canon_id}?version={}", url_encode(v)),
-            None => format!("/canon/entry/{canon_id}"),
-        };
-        self.get_json(&path)
-    }
-
-    fn request_verify(
-        &self,
-        body: &RequestVerifyBody,
-    ) -> Result<RequestVerifyResponse, CanonError> {
-        self.post_json("/canon/request-verify", body)
-    }
-
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
-        // Top-level conductor route (NOT under `/canon/`).
         self.get_json("/catalogue")
     }
 }
@@ -253,30 +229,10 @@ fn extract_message_or_body(body: &str) -> String {
     }
 }
 
-/// Minimal URL-path encoder for canon ids and version strings.
-/// Canon ids are constrained to `[a-z0-9_]`; versions to
-/// `v<digits>.<digits>.<digits>`. Both are ASCII; we still escape
-/// defensively in case the server ever issues an id with a special
-/// character.
-fn url_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        let safe = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~');
-        if safe {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{:02X}", b));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::canon::types::{
-        AnnotationMatchInput, CanonMatch, PrefixTier, References, VerificationMetadata,
-    };
+    use crate::canon::types::{CanonMatch, PrefixTier, VerificationMetadata};
 
     // ─── map_response: status-code dispatch ────────────────────────────────
 
@@ -381,20 +337,6 @@ mod tests {
     }
 
     #[test]
-    fn map_response_404_for_get_entry() {
-        let err: Result<CanonEntry, _> = map_response(404, r#"{"error": "canon entry not found"}"#);
-        match err.unwrap_err() {
-            CanonError::BadRequest {
-                status: 404,
-                message,
-            } => {
-                assert!(message.contains("not found"));
-            }
-            other => panic!("expected BadRequest 404, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn map_response_500_maps_to_server_error() {
         let err: Result<CanonMatchResponse, _> =
             map_response(500, r#"{"error": "internal server bug"}"#);
@@ -438,29 +380,12 @@ mod tests {
     // ─── url_encode ────────────────────────────────────────────────────────
 
     #[test]
-    fn url_encode_passes_through_safe_chars() {
-        assert_eq!(url_encode("foo_bar123"), "foo_bar123");
-        assert_eq!(url_encode("v0.2.1"), "v0.2.1");
-        assert_eq!(url_encode("a-b~c"), "a-b~c");
-    }
-
-    #[test]
-    fn url_encode_escapes_special_chars() {
-        assert_eq!(url_encode("foo bar"), "foo%20bar");
-        assert_eq!(url_encode("foo:bar"), "foo%3Abar");
-        assert_eq!(url_encode("foo&bar=baz"), "foo%26bar%3Dbaz");
-        assert_eq!(url_encode("foo/bar"), "foo%2Fbar");
-    }
-
-    // ─── HttpCanonClient construction ─────────────────────────────────────
-
-    #[test]
     fn http_client_construction_does_not_panic() {
         // Bare smoke test: construction shouldn't make any network
         // calls. Real request-path coverage lives in
         // tests/canon_http_e2e.rs against a localhost listener.
         let tok = Token::new("test-token");
-        let c = HttpCanonClient::new("https://example.test", &tok);
+        let c = HttpCanonClient::new("https://example.test", &tok, "widgets");
         assert_eq!(c.base_url, "https://example.test");
         // Bearer header is pre-computed.
         assert_eq!(c.bearer_header, "Bearer test-token");
@@ -469,7 +394,7 @@ mod tests {
     #[test]
     fn http_client_debug_redacts_token() {
         let tok = Token::new("super-secret-do-not-log");
-        let c = HttpCanonClient::new("https://example.test", &tok);
+        let c = HttpCanonClient::new("https://example.test", &tok, "widgets");
         let s = format!("{c:?}");
         assert!(
             !s.contains("super-secret-do-not-log"),
@@ -481,22 +406,19 @@ mod tests {
     #[test]
     fn http_client_url_construction() {
         let tok = Token::new("t");
-        let c = HttpCanonClient::new("https://api.example.test", &tok);
+        let c = HttpCanonClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
             c.url("/canon/match"),
-            "https://api.example.test/canon/match"
+            "https://api.example.test/widgets/api/canon/match"
         );
         assert_eq!(
             c.url("/canon/entry/foo"),
-            "https://api.example.test/canon/entry/foo"
+            "https://api.example.test/widgets/api/canon/entry/foo"
         );
-    }
-
-    #[test]
-    fn http_client_production_constructor_uses_default_base_url() {
-        let tok = Token::new("t");
-        let c = HttpCanonClient::production(&tok);
-        assert_eq!(c.base_url, DEFAULT_BASE_URL);
+        assert_eq!(
+            c.url("/catalogue"),
+            "https://api.example.test/widgets/api/catalogue"
+        );
     }
 
     #[test]
@@ -505,70 +427,12 @@ mod tests {
         // Box<dyn CanonClient>. The trait requires Send + Sync;
         // ureq::Agent is Send + Sync as of 2.x / 3.x.
         let tok = Token::new("t");
-        let _boxed: Box<dyn CanonClient> =
-            Box::new(HttpCanonClient::new("https://example.test", &tok));
+        let _boxed: Box<dyn CanonClient> = Box::new(HttpCanonClient::new(
+            "https://example.test",
+            &tok,
+            "widgets",
+        ));
     }
 
     // ─── Sanity: real types round-trip through map_response ───────────────
-
-    #[test]
-    fn map_response_round_trip_via_canon_entry() {
-        use std::collections::BTreeMap;
-        let mut backed_by = BTreeMap::new();
-        backed_by.insert(
-            ":vanilla".to_string(),
-            Some("specialized neural checker".to_string()),
-        );
-        let mut prefix_tier_by_scope = BTreeMap::new();
-        prefix_tier_by_scope.insert(":vanilla".to_string(), PrefixTier::Aristos);
-        let entry = CanonEntry {
-            canon_id: "foo".into(),
-            version: "v0.2.1".into(),
-            active_version: "v0.2.1".into(),
-            is_deprecated: false,
-            canon_version: "v0.2.0".into(),
-            canonical_text: "the canonical phrasing".into(),
-            applies_to: vec!["fn".into()],
-            category: "invariants".into(),
-            property_type: "safety".into(),
-            backed_by,
-            prefix_tier_by_scope,
-            description: String::new(),
-            examples: vec![],
-            invariant_sketch: String::new(),
-            references: References::default(),
-            effective_scopes: vec![":vanilla".into()],
-        };
-        let body = serde_json::to_string(&entry).unwrap();
-        let got: CanonEntry = map_response(200, &body).unwrap();
-        assert_eq!(got, entry);
-    }
-
-    #[test]
-    fn map_response_round_trip_via_request_verify_response() {
-        let resp = RequestVerifyResponse {
-            status: "submitted".into(),
-            canon_id: "foo".into(),
-            current_backing: None,
-            previously_submitted_at: None,
-        };
-        let body = serde_json::to_string(&resp).unwrap();
-        let got: RequestVerifyResponse = map_response(200, &body).unwrap();
-        assert_eq!(got, resp);
-    }
-
-    // The unused-by-CanonClient method `unused_match_request` is
-    // gated here only to ensure the imports in this file stay tied
-    // to a real use site.
-    #[allow(dead_code)]
-    fn _import_match_request_for_test() {
-        let _req = CanonMatchRequest {
-            annotations: vec![AnnotationMatchInput {
-                annotation_text: "x".into(),
-                applies_to: vec!["fn".into()],
-            }],
-            confidence_threshold: 0.85,
-            include_suggestions: false,
-        };
-    }
 }

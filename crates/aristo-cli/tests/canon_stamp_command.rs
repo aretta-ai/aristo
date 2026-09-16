@@ -188,7 +188,7 @@ fn stamp_not_signed_in_skips_canon_with_the_login_hint() {
     let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
     // NO ARISTO_CANON_FIXTURE → MockCanonClient::from_env returns None.
     // NO ARETTA_TOKEN, no credentials file → auth::resolve returns NoToken.
-    // Runner builds NoopCanonClient with is_free_tier = true.
+    // The runner short-circuits before building any client.
     let out = aristo_in(ws.path())
         .args(["stamp"])
         .output()
@@ -205,7 +205,7 @@ fn stamp_not_signed_in_skips_canon_with_the_login_hint() {
         "expected the sign-in hint, got: {stdout}"
     );
     assert!(
-        stdout.contains("aristo auth login --server https://<org>.aretta.ai --repo <owner/repo>"),
+        stdout.contains("aristo auth login --server https://<org>.aretta.ai"),
         "stdout: {stdout}"
     );
     assert!(
@@ -217,27 +217,24 @@ fn stamp_not_signed_in_skips_canon_with_the_login_hint() {
     assert!(!ws.path().join(".aristo/canon-matches.toml").exists());
 }
 
-// ─── Signed in, but not for this checkout (#76) ───────────────────────────
+// ─── Signed in to several servers, none selected ──────────────────────────
 
-/// Two stored credentials (v2 store) under the sandbox HOME, neither
-/// scoped to the repo the workspace's `.git/config` derives to.
-fn write_two_foreign_credentials(ws: &Path) {
+/// Two stored credentials (one per server) under the sandbox HOME.
+fn write_two_servers(ws: &Path) {
     let dir = ws.join("home/xdg/aristo");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("credentials"),
-        r#"version = 2
+        r#"version = 3
 
 [[entries]]
 server = "https://acme.aretta.ai"
-repo = "acme/widgets"
 token = "arta_secret_acme"
 minted_at = "2026-09-14T11:07:00Z"
 user_login = "alice"
 
 [[entries]]
-server = "https://code.aretta.ai"
-repo = "other/project"
+server = "http://127.0.0.1:9"
 token = "arta_secret_other"
 minted_at = "2026-09-14T11:08:00Z"
 "#,
@@ -245,22 +242,10 @@ minted_at = "2026-09-14T11:08:00Z"
     .unwrap();
 }
 
-fn write_git_origin(ws: &Path, url: &str) {
-    let git = ws.join(".git");
-    std::fs::create_dir_all(&git).unwrap();
-    std::fs::write(
-        git.join("config"),
-        format!("[remote \"origin\"]\n    url = {url}\n"),
-    )
-    .unwrap();
-}
-
 #[test]
-fn stamp_with_credentials_for_other_repos_explains_instead_of_nudging() {
+fn stamp_with_several_servers_and_none_selected_says_so_instead_of_nudging() {
     let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
-    write_two_foreign_credentials(ws.path());
-    // The checkout derives to a repo neither entry is scoped to (a fork).
-    write_git_origin(ws.path(), "https://github.com/alice/widgets.git");
+    write_two_servers(ws.path());
 
     let out = aristo_in(ws.path()).args(["stamp"]).output().unwrap();
     assert!(
@@ -269,47 +254,46 @@ fn stamp_with_credentials_for_other_repos_explains_instead_of_nudging() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-
-    // The user IS signed in — no trial nudge.
-    assert!(!stdout.contains("Pro feature"), "stdout: {stdout}");
-    assert!(!stdout.contains("trial"), "stdout: {stdout}");
-    // What was derived, what is on file (token-free), and both remedies.
+    // The user IS signed in — no sign-in nudge, no tier words.
     assert!(
-        stdout.contains("this checkout: alice/widgets"),
+        !stdout.contains("not signed in") && !stdout.contains("trial"),
         "stdout: {stdout}"
     );
     assert!(
-        stdout.contains("server: https://acme.aretta.ai   repo: acme/widgets   user: alice"),
+        stdout.contains("signed in to several servers"),
         "stdout: {stdout}"
     );
     assert!(
-        stdout.contains("server: https://code.aretta.ai   repo: other/project"),
+        stdout.contains("server: https://acme.aretta.ai   user: alice"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("server: http://127.0.0.1:9"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("--server <url>") && stdout.contains("ARETTA_API_URL"),
         "stdout: {stdout}"
     );
     assert!(!stdout.contains("arta_secret"), "token leaked: {stdout}");
-    assert!(
-        stdout.contains("`aristo auth login --server https://<org>.aretta.ai --repo alice/widgets` from this checkout"),
-        "stdout: {stdout}"
-    );
-    assert!(stdout.contains("ARETTA_TOKEN"), "stdout: {stdout}");
-    // Still no cache written — nothing was matched.
     assert!(!ws.path().join(".aristo/canon-matches.toml").exists());
 }
 
 #[test]
-fn canon_refresh_with_non_github_checkout_shows_the_derivation_error() {
+fn refresh_canon_with_a_named_server_selects_that_entry() {
     let ws = setup_workspace(ARISTO_TOML_DEFAULT, SOURCE_WITH_ONE_INTENT);
-    write_two_foreign_credentials(ws.path());
-    write_git_origin(ws.path(), "https://gitlab.com/alice/widgets.git");
-    // `canon refresh` needs an index; build it without a match call.
+    write_two_servers(ws.path());
     assert!(aristo_in(ws.path())
         .args(["stamp", "--skip-canon"])
         .status()
         .unwrap()
         .success());
-
+    // ARETTA_API_URL names the closed-port server: the selection succeeds
+    // and the call degrades on the network, which is the proof it was
+    // attempted against that server.
     let out = aristo_in(ws.path())
-        .args(["canon", "refresh"])
+        .env("ARETTA_API_URL", "http://127.0.0.1:9")
+        .args(["stamp", "--refresh-canon"])
         .output()
         .unwrap();
     assert!(
@@ -318,16 +302,8 @@ fn canon_refresh_with_non_github_checkout_shows_the_derivation_error() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(!stdout.contains("Pro feature"), "stdout: {stdout}");
-    assert!(
-        stdout.contains("could not derive owner/repo"),
-        "stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("doesn't look like a GitHub URL"),
-        "stdout: {stdout}"
-    );
-    assert!(stdout.contains("acme/widgets"), "stdout: {stdout}");
+    assert!(!stdout.contains("several servers"), "stdout: {stdout}");
+    assert!(stdout.contains("canon-match: skipped"), "stdout: {stdout}");
     assert!(!stdout.contains("arta_secret"), "token leaked: {stdout}");
 }
 

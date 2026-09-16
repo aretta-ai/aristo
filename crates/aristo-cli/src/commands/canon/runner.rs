@@ -10,9 +10,9 @@
 //! | Condition | Client | Behavior |
 //! |---|---|---|
 //! | `ARISTO_CANON_FIXTURE` set | [`MockCanonClient`] | reads canned TOML fixtures (test mode) |
-//! | `[canon] enabled = false` | [`NoopCanonClient`] | silent skip — opt-out for regulated buyers |
-//! | `--skip-canon` flag | [`NoopCanonClient`] | silent skip — per-invocation opt-out |
-//! | Auth token resolves | [`HttpCanonClient`] | real API call (Pro / Enterprise) |
+//! | `[canon] enabled = false` | none | silent skip — opt-out for regulated buyers |
+//! | `--skip-canon` flag | none | silent skip — per-invocation opt-out |
+//! | Auth token resolves | [`HttpCanonClient`] | real API call |
 //! | Nothing on file (`NoToken`) | none | not signed in; runner prints the sign-in hint |
 //! | Credentials on file, none usable | none | signed-in path; runner prints the resolver's diagnosis + remedies, never the nudge |
 //!
@@ -130,7 +130,7 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
 
     // ── Select the canon client. No client = no API call; the caller
     //    branches on the outcome to print the nudge or the diagnosis. ──────
-    let selection = select_client(args.config);
+    let selection = select_client(args.config, &args.ws.root);
 
     // ── Collect annotations needing a fresh match ──────────────────────────
     let batch = collect_batch(args.index, &cache, args.refresh_flag);
@@ -228,7 +228,7 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
     verify = "test",
     id = "canon_client_selection_test_mode_wins"
 )]
-fn select_client(_config: &CanonConfig) -> ClientSelection {
+fn select_client(_config: &CanonConfig, start: &std::path::Path) -> ClientSelection {
     // Test mode: ARISTO_CANON_FIXTURE always wins, even over auth.
     // Lets integration tests run end-to-end without setting up a
     // token.
@@ -236,17 +236,23 @@ fn select_client(_config: &CanonConfig) -> ClientSelection {
         return ClientSelection::Client(Box::new(mock));
     }
 
-    // Production / staging: resolve auth token. Nothing on file at all
-    // → not signed in (the sign-in hint). Anything else the resolver reports —
-    // credentials on file but none for this checkout, a malformed file
-    // — is a signed-in user's problem to fix, not a sign-in to repeat.
-    match aristo_core::auth::resolve_full() {
-        Ok(creds) => {
-            let base_url = crate::data_plane::resolve_base(&creds.server);
-            ClientSelection::Client(Box::new(HttpCanonClient::new(base_url, &creds.token)))
-        }
-        Err(AuthError::NoToken) => ClientSelection::NotSignedIn,
-        Err(other) => ClientSelection::Unresolved(other),
+    // Production / staging: resolve the credential, then the target
+    // (base + the org's repo name for this checkout). Nothing on file at
+    // all → not signed in (the sign-in hint). Anything else — several
+    // servers unselected, a malformed file, a repo the org does not
+    // have, an unreachable server — is reported as is.
+    let creds = match aristo_core::auth::resolve_full() {
+        Ok(creds) => creds,
+        Err(AuthError::NoToken) => return ClientSelection::NotSignedIn,
+        Err(other) => return ClientSelection::Unresolved(other),
+    };
+    match crate::data_plane::resolve_target(&creds, start) {
+        Ok(t) => ClientSelection::Client(Box::new(HttpCanonClient::new(
+            t.base_url,
+            &creds.token,
+            t.repo,
+        ))),
+        Err(e) => ClientSelection::Unresolved(e),
     }
 }
 

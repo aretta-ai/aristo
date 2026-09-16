@@ -12,8 +12,6 @@
 //!   (fixtures + on-disk cache).
 //! - [`client`]: the [`CanonClient`] trait + [`CanonError`] +
 //!   [`AuthError`].
-//! - [`noop_client`]: [`NoopCanonClient`] — free-tier / opt-out
-//!   path; every method returns [`CanonError::NotEnabled`].
 //! - [`mock_client`]: [`MockCanonClient`] — fixture-driven for
 //!   tests; reads canned TOML from `ARISTO_CANON_FIXTURE` or an
 //!   explicit path.
@@ -52,7 +50,6 @@ pub mod client;
 pub mod http_client;
 pub mod instrumentation;
 pub mod mock_client;
-pub mod noop_client;
 pub mod reconcile;
 pub mod rewrite;
 pub mod types;
@@ -63,18 +60,16 @@ pub use cache::{
     RejectedMatch,
 };
 pub use client::{AuthError, CanonClient, CanonError};
-pub use http_client::{HttpCanonClient, DEFAULT_BASE_URL};
+pub use http_client::HttpCanonClient;
 pub use instrumentation::{
     sanitize_bundle_for_persistence, union_accepted_bundles, union_bundles, BundleUnion,
 };
 pub use mock_client::MockCanonClient;
-pub use noop_client::NoopCanonClient;
 pub use reconcile::{raw_live_ids, reconcile, RawLiveIds, ReconcileReport};
 pub use rewrite::{compute_rewrite, AcceptRewriteRequest, AttributeRewrite, RewriteError};
 pub use types::{
     synthesize_phase1_linked, AnnotationMatchInput, BundleCompanion, BundleCompileCheck,
-    BundleProvenance, CanonCatalogue, CanonCatalogueEntry, CanonEntry, CanonMatch,
-    CanonMatchRequest, CanonMatchResponse, ClusterSuggestion, InstrumentationBundle,
-    InstrumentationRecord, PrefixTier, RecordLanding, RecordPresence, References, Relationship,
-    RequestVerifyBody, RequestVerifyResponse, SuggestedEntry, VerificationMetadata,
+    BundleProvenance, CanonCatalogue, CanonCatalogueEntry, CanonMatch, CanonMatchRequest,
+    CanonMatchResponse, ClusterSuggestion, InstrumentationBundle, InstrumentationRecord,
+    PrefixTier, RecordLanding, RecordPresence, Relationship, SuggestedEntry, VerificationMetadata,
 };
