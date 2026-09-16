@@ -25,7 +25,7 @@ use serde::Serialize;
 use ureq::http::Response as HttpResponse;
 
 use super::client::{AuthError, CanonClient, CanonError};
-use super::types::{CanonCatalogue, CanonMatchRequest, CanonMatchResponse};
+use super::types::{CanonCatalogue, CanonCatalogueEntry, CanonMatchRequest, CanonMatchResponse};
 use super::Token;
 
 /// L3 graceful-degradation timeout. Applies to each individual
@@ -134,7 +134,9 @@ impl CanonClient for HttpCanonClient {
     }
 
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
-        self.get_json("/catalogue")
+        // The wire is the bare list of entries.
+        let entries: Vec<CanonCatalogueEntry> = self.get_json("/catalogue")?;
+        Ok(CanonCatalogue { entries })
     }
 }
 

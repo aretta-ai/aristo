@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- cli: `aristo canon catalogue` reads the catalogue as the org's server sends it on `/<repo>/api/catalogue` — the bare list of entries — instead of failing to decode it. The `notice` envelope field, which the server does not send, is gone from the snapshot type.
+
 ### Changed
 - **cli: rejecting a pending canon match is one action.** Deciding `rejected` on a primary match in an `intent-review` session (`aristo session decide --item match:<annotation>#<canon_id> --bucket rejected [--note …]`) now also pins the rejection in `.aristo/canon-matches.toml`, so `stamp` stops re-surfacing it until the annotation text changes — what `aristo canon reject` used to do on its own. `aristo canon reject` is removed; `aristo canon migrate` (the catalog version-drift check, hand-only) is hidden from `--help`.
 - cli: `--help` shows only what a person runs by hand. The worker plumbing the skills drive (`verify --pop-next/--queue-status/--submit-verdict/--id/--json/--apply-verdicts/--rewrite-hashes`, `critique --pop-next/--queue-status/--submit-findings/--id/--json/--apply-findings/--include-closed/--rerun/--all/--yes`, `session status/decide/list`) and the `canon unbind` escape hatch still work exactly as before but are hidden from the listings.
