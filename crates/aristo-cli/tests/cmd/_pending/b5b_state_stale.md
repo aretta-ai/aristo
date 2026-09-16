@@ -43,10 +43,10 @@ aristos:edit_page_writes_each_cell_once  (intent)
 
 ```
 
-## `aristo verify --check` (CI gate) fails on stale
+## `aristo verify` (CI gate) fails on stale
 
 ```console
-$ aristo verify --check
+$ aristo verify
 ? 1
 error: 1 stale verified outcome (CI mode requires resolution)
   • aristos:edit_page_writes_each_cell_once

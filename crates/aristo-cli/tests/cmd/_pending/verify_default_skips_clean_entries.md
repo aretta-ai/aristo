@@ -58,9 +58,9 @@ ok: 1 annotation verified (method: test), 2 skipped (already clean).
 ## `--check` (CI gate) treats already-clean entries as still passing
 
 ```console
-$ aristo verify --check
+$ aristo verify
 [..]
-ok: 3 annotations verified at the strongest method available on this tier
+ok: 3 annotations verified at the strongest method available
     (3 already clean, 0 freshly verified).
 
 ```

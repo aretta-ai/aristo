@@ -6,9 +6,8 @@
 //!
 //! Module layout:
 //!
-//! - [`types`]: request/response shapes for the three Phase 1
-//!   endpoints (`/canon/match`, `/canon/entry/<id>`,
-//!   `/canon/request-verify`). Serialize to JSON (wire) and TOML
+//! - [`types`]: request/response shapes for the canon match call
+//!   and the catalogue download. Serialize to JSON (wire) and TOML
 //!   (fixtures + on-disk cache).
 //! - [`client`]: the [`CanonClient`] trait + [`CanonError`] +
 //!   [`AuthError`].

@@ -5,7 +5,7 @@
 //! (Option B), `.aristo/index.toml` is a gitignored, regenerable cache and
 //! `aristo stamp` is OPTIONAL — it just refreshes that cache so readers hit a
 //! fast path. It produces exactly what `regenerate_index` produces for a
-//! reader. Adds, over `aristo index`:
+//! reader. Adds, over the bare index walk (`aristo stamp --skip-canon`):
 //!
 //! - **Status from proofs.** Status is sourced from `.aristo/proofs/` via
 //!   [`merge_status_from_proofs`] (anchor check + validator), not carried from
@@ -25,7 +25,7 @@
 //!   at all.)
 //!
 //! Slice 17 deferred the offer-rename UX (interactive promotion of opaque ids
-//! to readable ones); opaque ids assigned by `aristo index` stay opaque until
+//! to readable ones); opaque ids assigned by the index walk stay opaque until
 //! the user runs `aristo rename` (slice 32).
 
 use std::fs;

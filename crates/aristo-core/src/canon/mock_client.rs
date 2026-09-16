@@ -13,10 +13,9 @@
 //! ```text
 //! <fixture_dir>/
 //!   match.toml                        ← canned POST /canon/match response
-//!   request-verify.toml               ← canned POST /canon/request-verify response
 //! ```
 //!
-//! Multi-fixture scenarios (one stamp + several canon shows) point
+//! Multi-fixture scenarios (one stamp + several matches) point
 //! `ARISTO_CANON_FIXTURE` at the same directory; each endpoint's
 //! response is independent.
 //!

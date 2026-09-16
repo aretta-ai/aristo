@@ -107,7 +107,7 @@ Pick the level based on the **verifiability shape of the load-bearing claim** â€
 |---|---|
 | A runtime property a mined assertion or test could catch (postconditions, equivalence classes, round-trips, ordering invariants) | `verify = "test"` |
 | A design decision, a refactor-trap warning, or "intentional, not incomplete" guidance â€” reviewable by reading the code, not reducible to a runtime check | `verify = "neural"` |
-| A formal-proof candidate (algorithmic invariant amenable to a solver) | `verify = "full"` (paid tier) |
+| A formal-proof candidate (algorithmic invariant amenable to a solver) | `verify = "full"` |
 | Pure coordination convention with no checkable shape | `verify = false` |
 | You're not sure and the project default is the right call | omit `verify` (or `verify = true`, same effect) |
 

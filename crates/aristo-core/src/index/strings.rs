@@ -318,8 +318,7 @@ pub enum IdNamespace {
     /// `kanon:checkout_total_non_negative`). Per canon-strategy.md
     /// §CS13 this is the "bound but unbacked" tier — canonical text
     /// plus `linked`, but no `backed_by` and no scheduled
-    /// verification. Users signal demand for a backing via
-    /// `aristo canon request-verify`.
+    /// verification.
     Kanon,
 }
 
@@ -404,8 +403,7 @@ string_newtype! {
     ///   `backed_by` for the user's scope per canon-strategy.md §CS13.
     /// - Server-bound, unbacked: `kanon:<readable>` (e.g.,
     ///   `kanon:checkout_total_non_negative`) — canon entry has no
-    ///   `backed_by` yet; user signals demand via `aristo canon
-    ///   request-verify`.
+    ///   `backed_by` yet.
     ///
     /// All three reserved namespaces (`aristos:`, `kanon:`, `aret_*`)
     /// are not user-writable — `aristo stamp` rejects user-written

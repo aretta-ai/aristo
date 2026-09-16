@@ -55,10 +55,10 @@ aristos:cell_array_indices_in_bounds  (intent)
 
 ```
 
-## `aristo verify --check` exits non-zero (exit code 2)
+## `aristo verify` exits non-zero (exit code 2)
 
 ```console
-$ aristo verify --check
+$ aristo verify
 ? 2
 error: 1 orphan verified outcome — refusing to gate verification
   • aristos:cell_array_indices_in_bounds

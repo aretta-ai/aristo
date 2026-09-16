@@ -20,7 +20,7 @@ warning: 3 annotations cannot confirm commit ancestry (shallow clone)
   confirm it belongs to this repository's history.
 
   To confirm:        git fetch --unshallow
-  To gate strictly:  aristo verify --check --strict   (treats unknown as failure)
+  To gate strictly:  aristo verify --strict   (treats unknown as failure)
   To allow:          (default) — status marked "verified-pending-deepen"
 
   No changes written.

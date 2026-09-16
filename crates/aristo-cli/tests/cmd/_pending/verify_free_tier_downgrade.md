@@ -30,11 +30,11 @@ ok: [..] annotations verified ([..] downgraded full→test).
 
 ```
 
-## CI gate doesn't fail on tier alone
+## CI gate doesn't fail on the downgrade alone
 
 ```console
-$ aristo verify --check
+$ aristo verify
 [..]
-ok: [..] annotations verified at the strongest method available on this tier.
+ok: [..] annotations verified at the strongest method available.
 
 ```

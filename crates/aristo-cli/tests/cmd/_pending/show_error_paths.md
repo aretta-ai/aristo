@@ -22,7 +22,7 @@ Did you mean:
 $ aristo show aristos:balance_no_duplicate_cells
 
 ⚠️  .aristo/index.toml is older than [..] .rs files. Output below may be stale.
-   Re-run `aristo index` to refresh.
+   Re-run `aristo stamp --skip-canon` to refresh.
 
 aristos:balance_no_duplicate_cells (intent)
 [..]
@@ -37,6 +37,6 @@ No items matching `fn does_not_exist` found in indexed source files.
 
 Try:
   • `aristo show --list-functions` to see all indexed functions
-  • `aristo index` to refresh if you've added new sources
+  • `aristo stamp --skip-canon` to refresh if you've added new sources
 
 ```

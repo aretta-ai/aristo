@@ -117,7 +117,7 @@ pub(crate) fn read_index(path: &std::path::Path) -> CliResult<IndexFile> {
         return Err(CliError::Other {
             message: format!(
                 "no .aristo/index.toml at {}\n\
-                 hint: run `aristo stamp` (or `aristo index`) to build one",
+                 hint: run `aristo stamp` to build one",
                 path.display()
             ),
             exit_code: 2,
