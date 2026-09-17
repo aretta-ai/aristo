@@ -11,6 +11,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ### Changed
 - cli: `aristo init --ci-verify`'s setup note (and the verify workflow's header) points at the org's Tokens page — `https://<org>.aretta.ai/<repo>/#/tokens` mints a CI token and installs both the `ARETTA_TOKEN` secret and the `ARETTA_API_URL` variable — and keeps the by-hand secret + variable lines as the fallback. The org's server fills in when one credential is on file. Pushing workflow files over HTTPS with a PAT needs the `workflow` scope; the note says so.
 
+### Fixed
+- cli: a token the server rejects is reported with the server it was sent to and the checkout the command ran from — "the credential for https://<org>.aretta.ai was rejected by that server (expired or revoked). This checkout is owner/repo; if it belongs to another org, run `aristo auth login --server https://<org>.aretta.ai`" — instead of the bare "auth token rejected by server". An org mismatch is no longer indistinguishable from an expired token.
+
 ### Added
 - cli: `aristo init` prints `next: cargo add aristo` when the crate's `Cargo.toml` does not depend on `aristo` yet (the annotation macros come from it). Print only; init never edits `Cargo.toml`.
 

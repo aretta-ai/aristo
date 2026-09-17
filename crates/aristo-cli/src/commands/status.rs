@@ -172,7 +172,7 @@ fn print_canon_health(ws: &crate::Workspace) {
         Err(aristo_core::canon::AuthError::Malformed(_)) => {
             "malformed credentials file".to_string()
         }
-        Err(aristo_core::canon::AuthError::Invalid) => {
+        Err(aristo_core::canon::AuthError::Invalid { .. }) => {
             "invalid token (server rejected)".to_string()
         }
         Err(aristo_core::canon::AuthError::EnvTokenWithoutServer) => {

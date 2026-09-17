@@ -208,7 +208,7 @@ fn server_401_maps_to_auth_invalid() {
         })
         .unwrap_err();
     assert!(
-        matches!(err, CanonError::Auth(AuthError::Invalid)),
+        matches!(err, CanonError::Auth(AuthError::Invalid { .. })),
         "got {err:?}"
     );
     let _ = server.join();

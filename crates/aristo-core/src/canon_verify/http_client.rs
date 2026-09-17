@@ -77,7 +77,7 @@ impl HttpVerifyClient {
             .header("Authorization", &self.bearer_header)
             .header("Content-Type", "application/json")
             .send_json(body);
-        consume_response(result)
+        consume_response(result).map_err(|e| at_server(e, &self.base_url))
     }
 
     fn get_json<Resp>(&self, path: &str) -> Result<Resp, VerifyError>
@@ -90,7 +90,7 @@ impl HttpVerifyClient {
             .get(&url)
             .header("Authorization", &self.bearer_header)
             .call();
-        consume_response(result)
+        consume_response(result).map_err(|e| at_server(e, &self.base_url))
     }
 }
 
@@ -147,7 +147,7 @@ impl VerifyClient for HttpVerifyClient {
                     return Ok(());
                 }
                 let body = resp.body_mut().read_to_string().unwrap_or_default();
-                Err(error_for_status(status, &body))
+                Err(at_server(error_for_status(status, &body), &self.base_url))
             }
             Err(e) => Err(transport_error_to_verify_error(e)),
         }
@@ -161,6 +161,14 @@ fn cancel_path(session_id: &str) -> String {
 }
 
 // ─── Pure response mapping (mirror of canon http_client) ──────────────────
+
+/// A 401 names the server it came from; every other error passes.
+fn at_server(e: VerifyError, server: &str) -> VerifyError {
+    match e {
+        VerifyError::Auth(a) => VerifyError::Auth(a.at_server(server)),
+        other => other,
+    }
+}
 
 fn consume_response<T>(
     result: Result<HttpResponse<ureq::Body>, ureq::Error>,
@@ -197,7 +205,7 @@ where
 /// (which ignores its success body).
 pub(crate) fn error_for_status(status: u16, body: &str) -> VerifyError {
     match status {
-        401 => VerifyError::Auth(AuthError::Invalid),
+        401 => VerifyError::Auth(AuthError::rejected()),
         400..=499 => VerifyError::BadRequest {
             status,
             message: extract_message_or_body(body),
@@ -285,7 +293,7 @@ mod tests {
         let err: Result<PostVerifySessionResponse, _> = map_response(401, "{}");
         assert!(matches!(
             err.unwrap_err(),
-            VerifyError::Auth(AuthError::Invalid)
+            VerifyError::Auth(AuthError::Invalid { .. })
         ));
     }
 
@@ -405,7 +413,7 @@ mod tests {
     fn error_for_status_mirrors_map_response_classes() {
         assert!(matches!(
             error_for_status(401, "{}"),
-            VerifyError::Auth(AuthError::Invalid)
+            VerifyError::Auth(AuthError::Invalid { .. })
         ));
         assert!(matches!(
             error_for_status(409, r#"{"error": "conflict"}"#),

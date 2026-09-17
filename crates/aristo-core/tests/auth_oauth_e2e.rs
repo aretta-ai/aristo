@@ -238,7 +238,7 @@ fn oauth_exchange_403_unknown_user_maps_to_invalid() {
     });
     let err = oauth_exchange(&custom_server(&base), "c", Some("owner/repo"), None)
         .expect_err("must fail");
-    assert_eq!(err, AuthError::Invalid);
+    assert!(matches!(err, AuthError::Invalid { .. }), "got {err:?}");
 }
 
 #[test]

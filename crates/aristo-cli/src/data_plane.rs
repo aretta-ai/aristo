@@ -43,7 +43,8 @@ pub(crate) fn resolve_target(creds: &ResolvedCreds, start: &Path) -> Result<Targ
     warn_if_instance_url_set();
     let base_url = data_plane_base(std::env::var(SERVER_ENV_VAR).ok().as_deref(), &creds.server);
     let github_repo = github_repo_for(start)?;
-    let repos = fetch_org_repos(&base_url, &creds.token)?;
+    let repos =
+        fetch_org_repos(&base_url, &creds.token).map_err(|e| e.for_checkout(&github_repo))?;
     let repo = repo_segment_for(&repos, &github_repo)
         .ok_or_else(|| AuthError::RepoNotInOrg {
             github_repo: github_repo.clone(),

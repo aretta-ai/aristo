@@ -2346,7 +2346,7 @@ mod tests {
     #[test]
     fn poll_auth_error_stays_fatal_on_first_hit() {
         let mock = MockVerifyClient::with_get_results(vec![Err(VerifyError::Auth(
-            aristo_core::auth::AuthError::Invalid,
+            aristo_core::auth::AuthError::rejected(),
         ))]);
         let msg = other_message(
             poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())

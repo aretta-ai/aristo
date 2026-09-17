@@ -209,7 +209,7 @@ where
         200..=299 => serde_json::from_str::<T>(body).map_err(|e| {
             AuthError::Malformed(format!("proxy returned 2xx with unparseable body: {e}"))
         }),
-        401 | 403 => Err(AuthError::Invalid),
+        401 | 403 => Err(AuthError::rejected()),
         // 410 Gone: the retired platform default (e.g. code.aretta.ai)
         // returns this once it stops minting CLI tokens. Say so plainly and
         // point at the fix, while still surfacing whatever the server sent.
@@ -340,13 +340,13 @@ mod tests {
     #[test]
     fn map_response_401_maps_to_invalid() {
         let r: Result<OAuthInit, _> = map_response(401, r#"{"error":"bad token"}"#);
-        assert_eq!(r.unwrap_err(), AuthError::Invalid);
+        assert!(matches!(r.unwrap_err(), AuthError::Invalid { .. }));
     }
 
     #[test]
     fn map_response_403_maps_to_invalid() {
         let r: Result<OAuthInit, _> = map_response(403, r#"{"error":"forbidden"}"#);
-        assert_eq!(r.unwrap_err(), AuthError::Invalid);
+        assert!(matches!(r.unwrap_err(), AuthError::Invalid { .. }));
     }
 
     #[test]

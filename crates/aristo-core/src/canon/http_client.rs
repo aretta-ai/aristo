@@ -100,7 +100,7 @@ impl HttpCanonClient {
             .header("Authorization", &self.bearer_header)
             .header("Content-Type", "application/json")
             .send_json(body);
-        consume_response(result)
+        consume_response(result).map_err(|e| at_server(e, &self.base_url))
     }
 
     fn get_json<Resp>(&self, path: &str) -> Result<Resp, CanonError>
@@ -113,7 +113,7 @@ impl HttpCanonClient {
             .get(&url)
             .header("Authorization", &self.bearer_header)
             .call();
-        consume_response(result)
+        consume_response(result).map_err(|e| at_server(e, &self.base_url))
     }
 }
 
@@ -141,6 +141,14 @@ impl CanonClient for HttpCanonClient {
 }
 
 // ─── Pure response-mapping helpers ─────────────────────────────────────────
+
+/// A 401 names the server it came from; every other error passes.
+fn at_server(e: CanonError, server: &str) -> CanonError {
+    match e {
+        CanonError::Auth(a) => CanonError::Auth(a.at_server(server)),
+        other => other,
+    }
+}
 
 /// Drive a `ureq::Result<HttpResponse<ureq::Body>>` to either a
 /// decoded body of type `T` or a [`CanonError`]. Split out from
@@ -174,7 +182,7 @@ where
     match status {
         200..=299 => serde_json::from_str(body)
             .map_err(|e| CanonError::Decode(format!("parse 2xx body: {e}"))),
-        401 => Err(CanonError::Auth(AuthError::Invalid)),
+        401 => Err(CanonError::Auth(AuthError::rejected())),
         400..=499 => Err(CanonError::BadRequest {
             status,
             message: extract_message_or_body(body),
@@ -292,7 +300,7 @@ mod tests {
     fn map_response_401_maps_to_auth_invalid() {
         let err: Result<CanonMatchResponse, _> = map_response(401, "{}");
         let err = err.unwrap_err();
-        assert!(matches!(err, CanonError::Auth(AuthError::Invalid)));
+        assert!(matches!(err, CanonError::Auth(AuthError::Invalid { .. })));
     }
 
     #[test]
