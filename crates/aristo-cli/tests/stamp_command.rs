@@ -2,6 +2,7 @@
 //! model, orphan-proof archival, deterministic-id stability, and `--check`.
 
 use assert_cmd::Command;
+use predicates::boolean::PredicateBooleanExt;
 use predicates::str::contains;
 use std::fs;
 use std::path::Path;
@@ -839,4 +840,75 @@ fn cycle_in_source_aborts_stamp_with_diagnostic() {
         .code(2)
         .stderr(contains("cycle"))
         .stderr(contains("No files modified"));
+}
+
+#[test]
+fn stamp_renders_the_doc_artifacts_the_ci_gate_checks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    aristo_in(root).arg("init").assert().success();
+    write_lib(
+        root,
+        r#"
+#[aristo::intent("Adds two numbers.", verify = "neural", id = "adds")]
+pub fn add(a: u32, b: u32) -> u32 { a + b }
+"#,
+    );
+
+    aristo_in(root)
+        .arg("stamp")
+        .arg("--skip-canon")
+        .assert()
+        .success()
+        .stdout(contains(
+            "Rendered doc artifacts to .aristo/doc/ (1 written, 0 unchanged)",
+        ));
+    assert!(
+        root.join(".aristo/doc/adds.md").is_file(),
+        "stamp writes the per-annotation artifact"
+    );
+    aristo_in(root)
+        .args(["doc", "--check"])
+        .assert()
+        .success()
+        .stdout(contains("doc artifacts are in sync with the index"));
+
+    // A second stamp leaves the artifact alone.
+    aristo_in(root)
+        .arg("stamp")
+        .arg("--skip-canon")
+        .assert()
+        .success()
+        .stdout(contains("(0 written, 1 unchanged)"));
+}
+
+#[test]
+fn stamp_skips_doc_artifacts_when_the_workspace_does_not_commit_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    aristo_in(root).arg("init").assert().success();
+    let cfg = fs::read_to_string(root.join("aristo.toml")).unwrap();
+    fs::write(
+        root.join("aristo.toml"),
+        cfg.replace("commit_artifacts = true", "commit_artifacts = false"),
+    )
+    .unwrap();
+    write_lib(
+        root,
+        r#"
+#[aristo::intent("Adds two numbers.", verify = "neural", id = "adds")]
+pub fn add(a: u32, b: u32) -> u32 { a + b }
+"#,
+    );
+
+    aristo_in(root)
+        .arg("stamp")
+        .arg("--skip-canon")
+        .assert()
+        .success()
+        .stdout(contains("Rendered doc artifacts").not());
+    assert!(
+        !root.join(".aristo/doc/adds.md").exists(),
+        "no artifacts when the workspace does not commit them"
+    );
 }

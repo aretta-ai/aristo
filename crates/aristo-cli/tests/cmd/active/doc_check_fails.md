@@ -2,7 +2,7 @@
 
 Source: `../aretta-sdk/docs/mockups/10-doc-and-graph/cli-sessions.md` § "I1 → `--check` (CI gate)".
 
-Recomputes the expected per-annotation markdown from the index and diffs against `.aristo/doc/` on disk. Non-zero exit on any drift. Catches the developer who edited an annotation in source, ran `aristo stamp`, but forgot to re-run `aristo doc` before committing.
+Recomputes the expected per-annotation markdown from the index and diffs against `.aristo/doc/` on disk. Non-zero exit on any drift. Catches the developer who edited an annotation in source and committed without running `aristo stamp` (which renders the artifacts) or `aristo doc`.
 
 ```console
 $ aristo doc --check
