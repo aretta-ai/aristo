@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- cli: `aristo init` prints `next: cargo add aristo` when the crate's `Cargo.toml` does not depend on `aristo` yet (the annotation macros come from it). Print only; init never edits `Cargo.toml`.
+
 ## [0.8.1] — 2026-09-16
 
 ### Fixed

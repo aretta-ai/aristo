@@ -162,6 +162,13 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool, hook: bool) -> CliRes
     // 5. .aristo/doc/
     create_or_note_dir(&aristo_dir.join("doc"), ".aristo/doc/", &mut any_change)?;
 
+    // 5b. The annotation macros come from the `aristo` crate. Say so
+    //     when Cargo.toml does not depend on it yet; init never edits
+    //     Cargo.toml.
+    if cargo_toml_lacks_aristo_dep(&cwd) {
+        println!("next: cargo add aristo  (the #[aristo::intent] macros)");
+    }
+
     // 6. .git/hooks/pre-commit — DEPRECATED and OPT-IN only (`--hook`). Never
     //    auto-installed: the index is a gitignored cache, so CI
     //    (`aristo verify --audit`) is the enforcement point, not a local hook.
@@ -215,6 +222,21 @@ pub(crate) fn run(_force: bool, ci: bool, ci_verify: bool, hook: bool) -> CliRes
     }
 
     Ok(())
+}
+
+/// `true` when `Cargo.toml` exists here and its `[dependencies]` table
+/// does not name `aristo`. No Cargo.toml (or an unparseable one) is not
+/// init's business.
+fn cargo_toml_lacks_aristo_dep(cwd: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(cwd.join("Cargo.toml")) else {
+        return false;
+    };
+    let Ok(doc) = text.parse::<toml::Value>() else {
+        return false;
+    };
+    doc.get("dependencies")
+        .and_then(|d| d.get("aristo"))
+        .is_none()
 }
 
 /// Runtime, per-user, and regenerable `.aristo/` paths that must NOT be

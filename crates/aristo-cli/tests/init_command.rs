@@ -8,6 +8,7 @@
 //!   existing files.
 
 use assert_cmd::Command;
+use predicates::boolean::PredicateBooleanExt;
 use predicates::str::contains;
 use std::fs;
 use std::path::Path;
@@ -340,4 +341,42 @@ fn ci_verify_flag_writes_both_workflows() {
         !content.contains("[instance]"),
         "verify workflow must not mention the removed [instance] url; got:\n{content}"
     );
+}
+
+#[test]
+fn prints_cargo_add_when_cargo_toml_lacks_the_aristo_dep() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"w\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = \"1\"\n",
+    )
+    .unwrap();
+    aristo_in(root)
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(contains("next: cargo add aristo"));
+
+    // Once the dependency is there, a second init stays quiet about it.
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"w\"\nversion = \"0.1.0\"\n\n[dependencies]\naristo = \"0.8\"\n",
+    )
+    .unwrap();
+    aristo_in(root)
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(contains("cargo add aristo").not());
+}
+
+#[test]
+fn no_cargo_toml_means_no_cargo_add_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path())
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(contains("cargo add aristo").not());
 }
