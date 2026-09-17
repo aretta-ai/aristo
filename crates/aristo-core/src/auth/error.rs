@@ -19,9 +19,14 @@ pub enum AuthError {
     /// No `ARETTA_TOKEN` env var, no `~/.config/aristo/credentials`.
     /// Its message is the complete sign-in hint; callers print it as is.
     NoToken,
-    /// Token present but server rejected it (401). Likely expired
-    /// or revoked.
-    Invalid,
+    /// The server rejected the token (401): expired, revoked, or
+    /// minted for another org. `server` is the one addressed, when
+    /// known; `checkout` the `owner/repo` the command ran from, when
+    /// known. Both sharpen the message.
+    Invalid {
+        server: Option<String>,
+        checkout: Option<String>,
+    },
     /// Token present but the resolution code couldn't read /
     /// parse it (filesystem error, malformed credentials file).
     Malformed(String),
@@ -75,6 +80,46 @@ impl fmt::Display for EntrySummary {
     }
 }
 
+impl AuthError {
+    /// A 401 with nothing known yet about where it came from.
+    pub fn rejected() -> Self {
+        AuthError::Invalid {
+            server: None,
+            checkout: None,
+        }
+    }
+
+    /// Name the server that rejected the token, if not named yet.
+    /// Any other error passes through.
+    pub fn at_server(self, server: &str) -> Self {
+        match self {
+            AuthError::Invalid {
+                server: None,
+                checkout,
+            } => AuthError::Invalid {
+                server: Some(server.to_string()),
+                checkout,
+            },
+            other => other,
+        }
+    }
+
+    /// Name the checkout the rejected call was made for, if not named
+    /// yet. Any other error passes through.
+    pub fn for_checkout(self, checkout: &str) -> Self {
+        match self {
+            AuthError::Invalid {
+                server,
+                checkout: None,
+            } => AuthError::Invalid {
+                server,
+                checkout: Some(checkout.to_string()),
+            },
+            other => other,
+        }
+    }
+}
+
 impl fmt::Display for AuthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -84,7 +129,20 @@ impl fmt::Display for AuthError {
                  or set ARETTA_TOKEN + ARETTA_API_URL",
                 login_command()
             ),
-            AuthError::Invalid => write!(f, "auth token rejected by server (expired or revoked)"),
+            AuthError::Invalid { server, checkout } => match (server, checkout) {
+                (Some(s), Some(c)) => write!(
+                    f,
+                    "the credential for {s} was rejected by that server (expired or revoked). \
+                     This checkout is {c}; if it belongs to another org, run \
+                     `aristo auth login --server https://<org>.aretta.ai`"
+                ),
+                (Some(s), None) => write!(
+                    f,
+                    "the credential for {s} was rejected by that server (expired or revoked); \
+                     run `aristo auth login --server {s}`"
+                ),
+                (None, _) => write!(f, "auth token rejected by server (expired or revoked)"),
+            },
             AuthError::Malformed(msg) => write!(f, "credentials malformed: {msg}"),
             AuthError::Unreachable { server, reason } => {
                 write!(f, "could not reach {server}: {reason}")
@@ -143,8 +201,41 @@ mod tests {
 
     #[test]
     fn display_invalid_mentions_revoked_or_expired() {
-        let s = AuthError::Invalid.to_string();
+        let s = AuthError::rejected().to_string();
         assert!(s.contains("expired") || s.contains("revoked"), "got: {s}");
+    }
+
+    #[test]
+    fn display_invalid_names_the_server_and_the_checkout_when_known() {
+        let s = AuthError::rejected()
+            .at_server("https://acme.aretta.ai")
+            .for_checkout("acme/widgets")
+            .to_string();
+        assert!(s.contains("for https://acme.aretta.ai"), "got: {s}");
+        assert!(s.contains("This checkout is acme/widgets"), "got: {s}");
+        assert!(s.contains("--server https://<org>.aretta.ai"), "got: {s}");
+
+        let s = AuthError::rejected()
+            .at_server("https://acme.aretta.ai")
+            .to_string();
+        assert!(s.contains("--server https://acme.aretta.ai"), "got: {s}");
+        assert!(!s.contains("checkout"), "got: {s}");
+    }
+
+    #[test]
+    fn at_server_and_for_checkout_fill_only_once_and_only_invalid() {
+        let e = AuthError::rejected()
+            .at_server("https://a.example")
+            .at_server("https://b.example");
+        assert_eq!(
+            e,
+            AuthError::Invalid {
+                server: Some("https://a.example".into()),
+                checkout: None
+            }
+        );
+        assert_eq!(AuthError::NoToken.at_server("x"), AuthError::NoToken);
+        assert_eq!(AuthError::NoToken.for_checkout("x"), AuthError::NoToken);
     }
 
     #[test]

@@ -148,6 +148,28 @@ fn run_check(ws: &Workspace, index: &IndexFile, include_status: bool) -> CliResu
 
 // ─── per-annotation rendering ──────────────────────────────────────────────
 
+/// Write the per-annotation artifacts (no status block) to
+/// `.aristo/doc/`, exactly what bare `aristo doc` writes, without the
+/// narration. Returns `(written, unchanged)`. `aristo stamp` calls this
+/// so a stamped tree passes `aristo doc --check` as is.
+pub(crate) fn render_artifacts(ws: &Workspace, index: &IndexFile) -> CliResult<(usize, usize)> {
+    let doc_dir = ws.root.join(".aristo").join("doc");
+    fs::create_dir_all(&doc_dir).map_err(CliError::Io)?;
+    let mut written = 0usize;
+    let mut unchanged = 0usize;
+    for (id, entry) in &index.entries {
+        let path = doc_dir.join(format!("{}.md", id_safe(id)));
+        let rendered = render_annotation_md(id, entry, false);
+        if file_unchanged(&path, &rendered) {
+            unchanged += 1;
+        } else {
+            fs::write(&path, &rendered).map_err(CliError::Io)?;
+            written += 1;
+        }
+    }
+    Ok((written, unchanged))
+}
+
 #[aristo::intent(
     "`aristo doc` writes each annotation to .aristo/doc/<id-safe>.md \
      where `<id-safe>` substitutes `:` with `__`. Same convention as \

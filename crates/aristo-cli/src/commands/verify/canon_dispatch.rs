@@ -216,7 +216,9 @@ pub(crate) fn run_canon_dispatch(
     }
 
     // 1. Auth — required up front. If no token, surface actionable hint.
-    let creds = aristo_core::auth::resolve_full().map_err(no_auth_to_cli_error)?;
+    //    "Several servers, none named" is settled at step 5 by the org
+    //    directory, so it is not fatal here.
+    precheck_auth()?;
 
     // 2. Build tags from index + cache. Drop the no-version cases.
     let matches = CanonMatchesFile::read(matches_path).map_err(|e| CliError::Other {
@@ -295,7 +297,7 @@ pub(crate) fn run_canon_dispatch(
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {
-        let t = crate::data_plane::resolve_target(&creds, workspace_root)
+        let (creds, t) = crate::data_plane::resolve_creds_and_target(workspace_root)
             .map_err(no_auth_to_cli_error)?;
         Box::new(HttpVerifyClient::new(t.base_url, &creds.token, t.repo))
     };
@@ -360,12 +362,13 @@ fn exit_error_for(verdict: &waiver::WaiverVerdict) -> CliError {
 /// One GET (or polling loop with --wait), render, exit-code derive.
 /// Skips POST + push-first precheck entirely.
 pub(crate) fn run_view_session(session_id: &str, wait: bool) -> CliResult<()> {
-    let creds = aristo_core::auth::resolve_full().map_err(no_auth_to_cli_error)?;
+    precheck_auth()?;
     let client: Box<dyn VerifyClient> = if let Some(mock) = test_mock_client_from_env() {
         mock
     } else {
         let start = crate::data_plane::checkout_start();
-        let t = crate::data_plane::resolve_target(&creds, &start).map_err(no_auth_to_cli_error)?;
+        let (creds, t) =
+            crate::data_plane::resolve_creds_and_target(&start).map_err(no_auth_to_cli_error)?;
         Box::new(HttpVerifyClient::new(t.base_url, &creds.token, t.repo))
     };
 
@@ -1565,6 +1568,16 @@ fn short_sha(sha: &str) -> String {
     sha.chars().take(7).collect()
 }
 
+/// Credentials must resolve before any work is done — except "several
+/// servers, none named", which the org directory settles when the
+/// client is built.
+fn precheck_auth() -> CliResult<()> {
+    match aristo_core::auth::resolve_full() {
+        Ok(_) | Err(aristo_core::auth::AuthError::SeveralServers { .. }) => Ok(()),
+        Err(e) => Err(no_auth_to_cli_error(e)),
+    }
+}
+
 fn no_auth_to_cli_error(e: aristo_core::auth::AuthError) -> CliError {
     CliError::Other {
         message: format!(
@@ -2346,7 +2359,7 @@ mod tests {
     #[test]
     fn poll_auth_error_stays_fatal_on_first_hit() {
         let mock = MockVerifyClient::with_get_results(vec![Err(VerifyError::Auth(
-            aristo_core::auth::AuthError::Invalid,
+            aristo_core::auth::AuthError::rejected(),
         ))]);
         let msg = other_message(
             poll_until_terminal_with(&mock, "sid", &fast_poll_cfg())

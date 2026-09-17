@@ -36,7 +36,7 @@ pub fn fetch_org_repos(base_url: &str, token: &Token) -> Result<Vec<OrgRepo>, Au
         Ok(resp) => {
             let status = resp.status().as_u16();
             let body = read_body_capped(resp, 1 << 20);
-            map_response::<Vec<OrgRepo>>(status, &body)
+            map_response::<Vec<OrgRepo>>(status, &body).map_err(|e| e.at_server(base_url))
         }
         Err(e) => Err(AuthError::Unreachable {
             server: base_url.to_string(),

@@ -8,6 +8,7 @@
 //!   existing files.
 
 use assert_cmd::Command;
+use predicates::boolean::PredicateBooleanExt;
 use predicates::str::contains;
 use std::fs;
 use std::path::Path;
@@ -307,11 +308,13 @@ fn ci_verify_flag_writes_both_workflows() {
         .arg("--ci-verify")
         .assert()
         .success()
-        // On completion, --ci-verify prints token-setup guidance.
+        // On completion, --ci-verify says how the repo gets its secret and
+        // variable: the org's Tokens page first, by hand as the fallback.
+        .stdout(contains("/#/tokens"))
         .stdout(contains("ARETTA_TOKEN"))
-        .stdout(contains("aristo auth token"))
-        // ...including the server variable the token needs.
-        .stdout(contains("ARETTA_API_URL"));
+        .stdout(contains("ARETTA_API_URL"))
+        .stdout(contains("workflow` scope"))
+        .stdout(contains("aristo auth token").not());
 
     // --ci-verify implies the lite gate, plus the verify workflow.
     assert!(
@@ -340,4 +343,42 @@ fn ci_verify_flag_writes_both_workflows() {
         !content.contains("[instance]"),
         "verify workflow must not mention the removed [instance] url; got:\n{content}"
     );
+}
+
+#[test]
+fn prints_cargo_add_when_cargo_toml_lacks_the_aristo_dep() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"w\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = \"1\"\n",
+    )
+    .unwrap();
+    aristo_in(root)
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(contains("next: cargo add aristo"));
+
+    // Once the dependency is there, a second init stays quiet about it.
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"w\"\nversion = \"0.1.0\"\n\n[dependencies]\naristo = \"0.8\"\n",
+    )
+    .unwrap();
+    aristo_in(root)
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(contains("cargo add aristo").not());
+}
+
+#[test]
+fn no_cargo_toml_means_no_cargo_add_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path())
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(contains("cargo add aristo").not());
 }

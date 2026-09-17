@@ -150,6 +150,16 @@ pub(crate) fn run(check: bool, skip_canon: bool, refresh_canon: bool, gc: bool) 
 
     atomic_write(&ws.index_path(), &toml_text)?;
 
+    // ── The committed doc artifacts follow the index, so a stamped
+    //    tree passes the `aristo doc --check` gate as is. Off when the
+    //    workspace does not commit them. ───────────────────────────────
+    if ws.load_config().doc.commit_artifacts {
+        let (written, unchanged) = crate::commands::doc::render_artifacts(&ws, &index)?;
+        println!(
+            "→ Rendered doc artifacts to .aristo/doc/ ({written} written, {unchanged} unchanged)"
+        );
+    }
+
     // ── Source-authoritative reconcile of .aristo/canon-matches.toml
     //    against the RAW walk (never against a possibly stale on-disk
     //    index, and never against the post-validation entry set).
