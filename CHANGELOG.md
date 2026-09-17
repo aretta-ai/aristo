@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Changed
+- cli: `aristo init --ci-verify`'s setup note (and the verify workflow's header) points at the org's Tokens page — `https://<org>.aretta.ai/<repo>/#/tokens` mints a CI token and installs both the `ARETTA_TOKEN` secret and the `ARETTA_API_URL` variable — and keeps the by-hand secret + variable lines as the fallback. The org's server fills in when one credential is on file. Pushing workflow files over HTTPS with a PAT needs the `workflow` scope; the note says so.
+
 ### Added
 - cli: `aristo init` prints `next: cargo add aristo` when the crate's `Cargo.toml` does not depend on `aristo` yet (the annotation macros come from it). Print only; init never edits `Cargo.toml`.
 

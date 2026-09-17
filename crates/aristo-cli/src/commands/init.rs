@@ -93,11 +93,12 @@ const GH_VERIFY_WORKFLOW: &str = "\
 # annotations in source (the index is regenerated from source on demand).
 # Manual + nightly.
 #
-# Setup:
-#   1. Add a repository secret ARETTA_TOKEN (your arta_* token; `aristo auth token`).
-#   2. Add a repository Variable ARETTA_API_URL = https://<org>.aretta.ai — the
-#      server the token was minted against (`aristo auth status` shows it).
-#      A token carries no server, so verify refuses to run without this.
+# Setup: the org's Tokens page (https://<org>.aretta.ai/<repo>/#/tokens) mints
+# a CI token and installs the ARETTA_TOKEN secret + ARETTA_API_URL variable.
+# By hand only if it reported the install unavailable: add the secret under
+# Settings -> Secrets and variables -> Actions, and the variable
+# ARETTA_API_URL = https://<org>.aretta.ai (the server the token was minted
+# against). A token carries no server, so verify refuses to run without it.
 # NOT on pull_request — verify needs the checked-out commit pushed to origin.
 name: aristo verify
 on:
@@ -349,33 +350,36 @@ fn create_or_note_dir(path: &Path, label: &str, any_change: &mut bool) -> CliRes
     Ok(())
 }
 
-/// After `--ci-verify` writes the verify workflow, point the user at the exact
-/// GitHub secrets page + how to grab their token. The workflow is inert until
-/// `ARETTA_TOKEN` is set, so this guidance is the difference between "wrote a
-/// file" and "actually set up".
+/// After `--ci-verify` writes the verify workflow, say how the repo gets
+/// its `ARETTA_TOKEN` secret and `ARETTA_API_URL` variable: the org's
+/// Tokens page installs both; the by-hand lines are the fallback. The
+/// workflow is inert until they are set.
 fn print_verify_token_help(cwd: &Path) {
+    // The org's server, when exactly one credential is on file; else the
+    // placeholder.
+    let server = aristo_core::auth::load_store()
+        .ok()
+        .filter(|s| s.len() == 1)
+        .map(|s| s.entries[0].server.to_string())
+        .unwrap_or_else(|| "https://<org>.aretta.ai".to_string());
+    let secret_page = match aristo_core::auth::derive_repo_full_name(cwd) {
+        Ok(repo) => format!("https://github.com/{repo}/settings/secrets/actions/new"),
+        Err(_) => {
+            "Settings -> Secrets and variables -> Actions -> New repository secret".to_string()
+        }
+    };
     println!();
-    println!("Next — the verify workflow needs an ARETTA_TOKEN secret on this repo:");
-    match aristo_core::auth::derive_repo_full_name(cwd) {
-        Ok(repo) => println!(
-            "  1. Add the secret: https://github.com/{repo}/settings/secrets/actions/new  (name: ARETTA_TOKEN)"
-        ),
-        Err(_) => println!(
-            "  1. Add the secret under Settings -> Secrets and variables -> Actions -> New repository secret  (name: ARETTA_TOKEN)"
-        ),
-    }
     println!(
-        "  2. Token value:    `aristo auth token` prints yours — pipe to your clipboard, e.g. `aristo auth token | pbcopy`"
+        "Next — the verify workflow needs ARETTA_TOKEN (secret) and ARETTA_API_URL (variable) on this repo:"
     );
+    println!("  1. Open {server}/<repo>/#/tokens, mint a CI token for this repo and tick");
+    println!("     \"install as Actions secret\". That sets both ARETTA_TOKEN and ARETTA_API_URL.");
+    println!("  2. By hand only if the page reported the install unavailable:");
+    println!("       secret    ARETTA_TOKEN    at {secret_page}");
     println!(
-        "                     ...or `{}` to mint a new one.",
-        aristo_core::auth::login_command()
+        "       variable  ARETTA_API_URL = {server}   (the server the token was minted against)"
     );
-    println!(
-        "  3. Server:         add a repository Variable ARETTA_API_URL = https://<org>.aretta.ai\n\
-        \x20                    (the server your token was minted against; `aristo auth status` shows it).\n\
-        \x20                    A token carries no server, so verify refuses to run without it."
-    );
+    println!("  Pushing over HTTPS with a PAT needs the `workflow` scope (`gh auth refresh -s workflow`).");
 }
 
 fn serialize_default_config() -> CliResult<String> {

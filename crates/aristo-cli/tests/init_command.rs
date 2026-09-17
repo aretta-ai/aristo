@@ -308,11 +308,13 @@ fn ci_verify_flag_writes_both_workflows() {
         .arg("--ci-verify")
         .assert()
         .success()
-        // On completion, --ci-verify prints token-setup guidance.
+        // On completion, --ci-verify says how the repo gets its secret and
+        // variable: the org's Tokens page first, by hand as the fallback.
+        .stdout(contains("/#/tokens"))
         .stdout(contains("ARETTA_TOKEN"))
-        .stdout(contains("aristo auth token"))
-        // ...including the server variable the token needs.
-        .stdout(contains("ARETTA_API_URL"));
+        .stdout(contains("ARETTA_API_URL"))
+        .stdout(contains("workflow` scope"))
+        .stdout(contains("aristo auth token").not());
 
     // --ci-verify implies the lite gate, plus the verify workflow.
     assert!(
