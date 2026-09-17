@@ -241,18 +241,14 @@ fn select_client(_config: &CanonConfig, start: &std::path::Path) -> ClientSelect
     // all → not signed in (the sign-in hint). Anything else — several
     // servers unselected, a malformed file, a repo the org does not
     // have, an unreachable server — is reported as is.
-    let creds = match aristo_core::auth::resolve_full() {
-        Ok(creds) => creds,
-        Err(AuthError::NoToken) => return ClientSelection::NotSignedIn,
-        Err(other) => return ClientSelection::Unresolved(other),
-    };
-    match crate::data_plane::resolve_target(&creds, start) {
-        Ok(t) => ClientSelection::Client(Box::new(HttpCanonClient::new(
+    match crate::data_plane::resolve_creds_and_target(start) {
+        Ok((creds, t)) => ClientSelection::Client(Box::new(HttpCanonClient::new(
             t.base_url,
             &creds.token,
             t.repo,
         ))),
-        Err(e) => ClientSelection::Unresolved(e),
+        Err(AuthError::NoToken) => ClientSelection::NotSignedIn,
+        Err(other) => ClientSelection::Unresolved(other),
     }
 }
 

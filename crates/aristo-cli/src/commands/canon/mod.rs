@@ -39,8 +39,7 @@ pub(crate) fn required_client(
         message: format!("{what} requires authentication: {e}"),
         exit_code: 1,
     };
-    let creds = aristo_core::auth::resolve_full().map_err(fail)?;
-    let t = crate::data_plane::resolve_target(&creds, start).map_err(fail)?;
+    let (creds, t) = crate::data_plane::resolve_creds_and_target(start).map_err(fail)?;
     Ok(Box::new(HttpCanonClient::new(
         t.base_url,
         &creds.token,
