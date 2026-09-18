@@ -1,5 +1,5 @@
-//! Wire types for `POST /canon/verify/sessions` and
-//! `GET /canon/verify/sessions/:id`.
+//! Wire types for `POST /<repo>/api/verify/sessions` and
+//! `GET /<repo>/api/verify/sessions/:id`.
 //!
 //! Mirrors `.../mockups/14-canon-verification-execution/WORKFLOW.md` §6 +
 //! `PLUGIN-WIRING.md` §4 byte-for-byte. JSON over the wire; field-name
@@ -22,9 +22,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// ─── POST /canon/verify/sessions ───────────────────────────────────────────
+// ─── POST /<repo>/api/verify/sessions ───────────────────────────────────────────
 
-/// Body for `POST /canon/verify/sessions` (WIRE 1 per WORKFLOW.md §2).
+/// Body for `POST /<repo>/api/verify/sessions` (WIRE 1 per WORKFLOW.md §2).
 ///
 /// The SDK collects every eligible canon-bound annotation
 /// (`verify = "full"` + `kanon:` / `aristos:` tier) and bundles them
@@ -73,7 +73,7 @@ pub struct VerifySessionTag {
     pub source_path: String,
 }
 
-/// 202 Accepted body returned by `POST /canon/verify/sessions`.
+/// 202 Accepted body returned by `POST /<repo>/api/verify/sessions`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PostVerifySessionResponse {
     /// Session identifier; equals `aretta_ci_jobs.job_id` per §7c row
@@ -88,7 +88,7 @@ pub struct PostVerifySessionResponse {
     pub plan_size: u32,
 }
 
-// ─── GET /canon/verify/sessions/:id ────────────────────────────────────────
+// ─── GET /<repo>/api/verify/sessions/:id ────────────────────────────────────────
 
 /// Top-level GET response (WORKFLOW.md §6 — single source of truth
 /// for CLI / dashboard / Check Run).

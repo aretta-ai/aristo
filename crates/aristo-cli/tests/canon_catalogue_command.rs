@@ -159,3 +159,40 @@ minted_at = "2026-09-14T11:08:00Z"
     );
     assert!(!stderr.contains("arta_secret"), "token leaked: {stderr}");
 }
+
+#[test]
+fn catalogue_says_no_served_edition_instead_of_zero_entries() {
+    let ws = setup_workspace();
+    let fixture = ws.path().join("fixtures/canon");
+    std::fs::create_dir_all(&fixture).unwrap();
+    std::fs::write(
+        fixture.join("catalogue.toml"),
+        "[serving]\nstate = \"empty\"\n",
+    )
+    .unwrap();
+
+    let out = aristo_in(ws.path())
+        .env("ARISTO_CANON_FIXTURE", &fixture)
+        .args(["canon", "catalogue"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("no served edition for this repository"),
+        "got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("no canon corpus configured"),
+        "the old zero-entries note must not appear; got: {stdout}"
+    );
+    let snapshot = std::fs::read_to_string(ws.path().join(".aristo/catalogue.json")).unwrap();
+    assert!(
+        snapshot.contains("\"state\": \"empty\""),
+        "snapshot: {snapshot}"
+    );
+}

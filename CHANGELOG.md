@@ -8,6 +8,14 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- cli: `aristo status` prints which book answered the canon cache (`Answered by: <server> / <repo>`, from `.aristo/canon-matches.toml`) and which checkout this is (`This checkout: <owner/repo>`, from git or `ARISTO_REPO`), offline, so a wrong-org credential pick is visible before any rejection.
+- cli: `.aristo/canon-matches.toml` records which book answered — `__meta__.server` and `__meta__.repo`, the org server and repo name the match was addressed to. The cache is committed, so upgrade every checkout of a repo before the first stamp on this version commits the two fields: an older aristo refuses a `__meta__` key it does not know. From this version on, unknown `__meta__` keys are tolerated, so the next such field will not need this. `aristo stamp` prints `→ Canon: <server> / <repo>` when it matches, and warns when the cache was answered by another server or repo than the one this checkout resolves to (a re-pointed checkout no longer reinterprets cached canon ids silently; `aristo stamp --refresh-canon` re-matches). Older caches read as before.
+- cli: `aristo canon catalogue` reads the server's served-edition signal (the `x-aretta-serving`, `-edition`, `-reason` response headers) and says "no served edition for this repository" when the org has no book for it yet, instead of reporting zero entries; a served edition is printed and recorded in the snapshot (`serving` in `.aristo/catalogue.json`).
+
+### Fixed
+- cli: `aristo verify` (full mode) addresses the server at `/<repo>/api/verify/sessions…` — the path the org's server serves — instead of `/<repo>/verify/sessions…`, which it answers with 404. Every session open, poll and cancel was failing; a test now pins the path.
+
 ## [0.8.2] — 2026-09-18
 
 ### Added

@@ -6,8 +6,8 @@
 //!
 //! ## Module layout
 //!
-//! - [`types`] — wire shapes for `POST /canon/verify/sessions` and
-//!   `GET /canon/verify/sessions/:id`. JSON over the wire.
+//! - [`types`] — wire shapes for `POST /<repo>/api/verify/sessions` and
+//!   `GET /<repo>/api/verify/sessions/:id`. JSON over the wire.
 //! - [`report`] — the Phase 16 typed, relation-kind-polymorphic
 //!   [`DifferentialReport`] verify-result record (nests at
 //!   `TestOutcome::report`).

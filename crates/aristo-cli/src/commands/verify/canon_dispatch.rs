@@ -6,7 +6,7 @@
 //!
 //! 1. Builds [`VerifySessionTag`]s from the index + canon-matches cache.
 //! 2. Runs the push-first precheck via [`aristo_core::git`].
-//! 3. POSTs `/canon/verify/sessions` and prints `session_id` +
+//! 3. POSTs `/<repo>/api/verify/sessions` and prints `session_id` +
 //!    `view_url` for the user (detach default per WORKFLOW.md §7c row 1).
 //!
 //! Auth is required: the §14 design predicates canon-verify on having

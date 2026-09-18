@@ -143,3 +143,40 @@ fn status_shows_cache_stats_after_stamp_and_accept() {
         "expected pending=0 after accept; got: {stdout}"
     );
 }
+
+#[test]
+fn status_prints_which_book_answered_and_which_checkout_this_is() {
+    let ws = setup_workspace(SOURCE);
+    std::fs::write(
+        ws.path().join(".aristo/canon-matches.toml"),
+        "[__meta__]\nschema_version = 1\ncanon_version = \"v0.2.0\"\nlast_fetched = \"2026-01-01T00:00:00Z\"\nserver = \"https://acme.aretta.ai\"\nrepo = \"widgets\"\n",
+    )
+    .unwrap();
+
+    let out = aristo_in(ws.path())
+        .env("ARISTO_REPO", "acme/widgets")
+        .args(["status"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Answered by:       https://acme.aretta.ai / widgets"),
+        "got: {stdout}"
+    );
+    assert!(
+        stdout.contains("This checkout:     acme/widgets"),
+        "got: {stdout}"
+    );
+}
+
+#[test]
+fn status_says_when_no_match_is_recorded_yet() {
+    let ws = setup_workspace(SOURCE);
+    let out = aristo_in(ws.path()).args(["status"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Answered by:       — (no canon match recorded yet)"),
+        "got: {stdout}"
+    );
+    assert!(stdout.contains("This checkout:     "), "got: {stdout}");
+}

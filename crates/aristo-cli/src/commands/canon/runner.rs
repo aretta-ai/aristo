@@ -140,8 +140,8 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
     }
 
     // ── No-client short-circuits: nothing reaches the server ──────────────
-    let client = match selection {
-        ClientSelection::Client(c) => c,
+    let (client, target) = match selection {
+        ClientSelection::Client { client, target } => (client, target),
         ClientSelection::NotSignedIn => {
             return Ok(CanonStepOutcome::NotSignedIn {
                 annotations_skipped: batch.len(),
@@ -154,6 +154,16 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
             })
         }
     };
+
+    // ── Say which book answers, and warn when the cache was answered
+    //    by another one (a re-pointed checkout must not reinterpret
+    //    its cached canon ids silently). ──────────────────────────────────
+    if let Some(t) = &target {
+        println!("→ Canon: {} / {}", t.server, t.repo);
+        if let Some(warning) = answered_elsewhere(&cache.meta, t) {
+            eprintln!("warning: {warning}");
+        }
+    }
 
     // ── Call /canon/match ─────────────────────────────────────────────────
     let req = CanonMatchRequest {
@@ -184,6 +194,10 @@ pub(crate) fn run_canon_step(args: RunnerArgs) -> CliResult<CanonStepOutcome> {
     let findings_added = merge_response_into_cache(&mut cache, &batch, &response, args.found_by);
     cache.meta.canon_version = Some(response.canon_version.clone());
     cache.meta.last_fetched = Some(response.matched_at.clone());
+    if let Some(t) = &target {
+        cache.meta.server = Some(t.server.clone());
+        cache.meta.repo = Some(t.repo.clone());
+    }
     cache
         .write_atomic(&cache_path)
         .map_err(|e| CliError::Other {
@@ -233,7 +247,10 @@ fn select_client(_config: &CanonConfig, start: &std::path::Path) -> ClientSelect
     // Lets integration tests run end-to-end without setting up a
     // token.
     if let Some(mock) = MockCanonClient::from_env() {
-        return ClientSelection::Client(Box::new(mock));
+        return ClientSelection::Client {
+            client: Box::new(mock),
+            target: None,
+        };
     }
 
     // Production / staging: resolve the credential, then the target
@@ -242,20 +259,57 @@ fn select_client(_config: &CanonConfig, start: &std::path::Path) -> ClientSelect
     // servers unselected, a malformed file, a repo the org does not
     // have, an unreachable server — is reported as is.
     match crate::data_plane::resolve_creds_and_target(start) {
-        Ok((creds, t)) => ClientSelection::Client(Box::new(HttpCanonClient::new(
-            t.base_url,
-            &creds.token,
-            t.repo,
-        ))),
+        Ok((creds, t)) => ClientSelection::Client {
+            client: Box::new(HttpCanonClient::new(
+                t.base_url.clone(),
+                &creds.token,
+                t.repo.clone(),
+            )),
+            target: Some(CanonTarget {
+                server: t.base_url,
+                repo: t.repo,
+            }),
+        },
         Err(AuthError::NoToken) => ClientSelection::NotSignedIn,
         Err(other) => ClientSelection::Unresolved(other),
     }
 }
 
+/// Where a real client is addressed: the data-plane base and the
+/// org's repo name. `None` for the test-mode fixture client.
+struct CanonTarget {
+    server: String,
+    repo: String,
+}
+
+/// The warning for a cache answered by another `(server, repo)` than
+/// the one this checkout resolves to; `None` when they agree or the
+/// cache has not recorded one yet.
+fn answered_elsewhere(
+    meta: &aristo_core::canon::cache::CacheMeta,
+    t: &CanonTarget,
+) -> Option<String> {
+    let (Some(server), Some(repo)) = (&meta.server, &meta.repo) else {
+        return None;
+    };
+    if server == &t.server && repo == &t.repo {
+        return None;
+    }
+    Some(format!(
+        ".aristo/canon-matches.toml was answered by {server} / {repo}; this checkout resolves to \
+         {} / {} — cached canon ids may not mean the same thing here. Run \
+         `aristo stamp --refresh-canon` to re-match against this repository.",
+        t.server, t.repo
+    ))
+}
+
 /// Result of client selection. `NotSignedIn` and `Unresolved` both mean
 /// "no API call this run" — they differ only in what the user is told.
 enum ClientSelection {
-    Client(Box<dyn CanonClient>),
+    Client {
+        client: Box<dyn CanonClient>,
+        target: Option<CanonTarget>,
+    },
     NotSignedIn,
     Unresolved(AuthError),
 }
@@ -1090,5 +1144,55 @@ mod tests {
             },
         );
         assert_eq!(count_pending(&cache), 2);
+    }
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::*;
+    use aristo_core::canon::cache::CacheMeta;
+
+    fn target(server: &str, repo: &str) -> CanonTarget {
+        CanonTarget {
+            server: server.into(),
+            repo: repo.into(),
+        }
+    }
+
+    #[test]
+    fn a_cache_without_a_recorded_book_is_not_warned() {
+        let meta = CacheMeta::default();
+        assert_eq!(
+            answered_elsewhere(&meta, &target("https://a.example", "widgets")),
+            None
+        );
+    }
+
+    #[test]
+    fn the_same_book_is_not_warned() {
+        let meta = CacheMeta {
+            server: Some("https://a.example".into()),
+            repo: Some("widgets".into()),
+            ..CacheMeta::default()
+        };
+        assert_eq!(
+            answered_elsewhere(&meta, &target("https://a.example", "widgets")),
+            None
+        );
+    }
+
+    #[test]
+    fn another_server_or_repo_is_warned_with_both_named() {
+        let meta = CacheMeta {
+            server: Some("https://a.example".into()),
+            repo: Some("widgets".into()),
+            ..CacheMeta::default()
+        };
+        let w = answered_elsewhere(&meta, &target("https://b.example", "widgets")).unwrap();
+        assert!(w.contains("https://a.example / widgets"), "{w}");
+        assert!(w.contains("https://b.example / widgets"), "{w}");
+        assert!(w.contains("--refresh-canon"), "{w}");
+        let w = answered_elsewhere(&meta, &target("https://a.example", "gadgets")).unwrap();
+        assert!(w.contains("https://a.example / gadgets"), "{w}");
     }
 }

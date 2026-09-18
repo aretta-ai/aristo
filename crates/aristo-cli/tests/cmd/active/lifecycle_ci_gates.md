@@ -95,6 +95,8 @@ Index health:
 
 Canon binding:
   Auth:              not signed in
+  Answered by:       — (no canon match recorded yet)
+  This checkout:     [..]
   Last fetched:      never
   Catalog version:   —
   Pending:           0
