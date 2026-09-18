@@ -9,6 +9,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 ## [Unreleased]
 
 ### Added
+- cli: `.aristo/canon-matches.toml` records which book answered — `__meta__.server` and `__meta__.repo`, the org server and repo name the match was addressed to. `aristo stamp` prints `→ Canon: <server> / <repo>` when it matches, and warns when the cache was answered by another server or repo than the one this checkout resolves to (a re-pointed checkout no longer reinterprets cached canon ids silently; `aristo stamp --refresh-canon` re-matches). Older caches read as before.
 - cli: `aristo canon catalogue` reads the server's served-edition signal (the `x-aretta-serving`, `-edition`, `-reason` response headers) and says "no served edition for this repository" when the org has no book for it yet, instead of reporting zero entries; a served edition is printed and recorded in the snapshot (`serving` in `.aristo/catalogue.json`).
 
 ### Fixed

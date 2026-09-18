@@ -105,6 +105,15 @@ pub struct CacheMeta {
     /// RFC 3339 timestamp of the most-recent successful API call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_fetched: Option<String>,
+    /// The org server that answered the most-recent match (the
+    /// data-plane base, e.g. `https://acme.aretta.ai`). With `repo`,
+    /// it names the book the cached canon ids belong to; a checkout
+    /// that resolves elsewhere is warned before it reinterprets them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    /// The org's repo name the match was addressed to (`/<repo>/api/...`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
 }
 
 impl Default for CacheMeta {
@@ -113,6 +122,8 @@ impl Default for CacheMeta {
             schema_version: SCHEMA_VERSION,
             canon_version: None,
             last_fetched: None,
+            server: None,
+            repo: None,
         }
     }
 }
@@ -842,6 +853,8 @@ bound_at = "2026-06-14T17:02:11Z"
             meta: CacheMeta {
                 schema_version: 1,
                 canon_version: Some("v0.2.0".into()),
+                server: None,
+                repo: None,
                 last_fetched: Some("2026-06-15T09:14:22Z".into()),
             },
             entries: BTreeMap::new(),
@@ -1049,6 +1062,8 @@ reason      = "intentionally narrower than canon entry"
             meta: CacheMeta {
                 schema_version: 1,
                 canon_version: Some("v0.2.0".into()),
+                server: None,
+                repo: None,
                 last_fetched: None,
             },
             entries: BTreeMap::new(),
