@@ -194,6 +194,18 @@ fn print_canon_health(ws: &crate::Workspace) {
     let cache = CanonMatchesFile::read(&cache_path).unwrap_or_default();
     let last_fetched = cache.meta.last_fetched.as_deref().unwrap_or("never");
     let canon_version = cache.meta.canon_version.as_deref().unwrap_or("—");
+    // Which book answered the cache, and which checkout this is — both
+    // offline: the pair comes from the cache, the checkout from git
+    // (or ARISTO_REPO). A wrong-org credential pick shows up here as a
+    // pair that does not match the checkout, before any rejection.
+    let answered_by = match (&cache.meta.server, &cache.meta.repo) {
+        (Some(server), Some(repo)) => format!("{server} / {repo}"),
+        _ => "— (no canon match recorded yet)".to_string(),
+    };
+    let checkout = crate::data_plane::github_repo_for(&ws.root)
+        .unwrap_or_else(|_| "unknown (not a git checkout; set ARISTO_REPO)".to_string());
+    println!("  Answered by:       {answered_by}");
+    println!("  This checkout:     {checkout}");
     println!("  Last fetched:      {last_fetched}");
     println!("  Catalog version:   {canon_version}");
 
