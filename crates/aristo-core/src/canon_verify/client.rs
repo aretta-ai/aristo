@@ -25,7 +25,7 @@ use super::types::{GetVerifySessionResponse, PostVerifySessionResponse, VerifySe
 /// bearer token + base URL state internally; consumers hold a
 /// `Box<dyn VerifyClient>` across calls.
 pub trait VerifyClient: Send + Sync {
-    /// `POST /canon/verify/sessions` (WIRE 1). Returns 202 on success
+    /// `POST /<repo>/api/verify/sessions` (WIRE 1). Returns 202 on success
     /// with `session_id` + `view_url`; the actual verification run
     /// proceeds asynchronously server-side.
     fn post_session(
@@ -33,7 +33,7 @@ pub trait VerifyClient: Send + Sync {
         req: &VerifySessionRequest,
     ) -> Result<PostVerifySessionResponse, VerifyError>;
 
-    /// `GET /canon/verify/sessions/:id` (long-poll style; server may
+    /// `GET /<repo>/api/verify/sessions/:id` (long-poll style; server may
     /// hold up to ~30 s server-side when implemented, but the SDK
     /// MUST tolerate immediate responses for the prototype where the
     /// `?wait=` hint is deferred).
@@ -43,7 +43,7 @@ pub trait VerifyClient: Send + Sync {
         wait_seconds: Option<u32>,
     ) -> Result<GetVerifySessionResponse, VerifyError>;
 
-    /// `POST /verify/sessions/:id/cancel` — request server-side
+    /// `POST /<repo>/api/verify/sessions/:id/cancel` — request server-side
     /// cancellation of an in-flight session. Idempotent server-side
     /// (a session already terminal answers success without effect).
     /// The CLI fires this best-effort on SIGINT/SIGTERM during

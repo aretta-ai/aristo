@@ -41,7 +41,7 @@ pub struct HttpVerifyClient {
 
 impl HttpVerifyClient {
     /// `repo` is the org's repo name (see
-    /// [`crate::auth::repo_segment_for`]); routes are `/<repo>/verify/...`.
+    /// [`crate::auth::repo_segment_for`]); routes are `/<repo>/api/verify/...`.
     pub fn new(base_url: impl Into<String>, token: &Token, repo: impl Into<String>) -> Self {
         let base_url = base_url.into();
         let repo = repo.into();
@@ -60,9 +60,10 @@ impl HttpVerifyClient {
         }
     }
 
-    /// `<base>/<repo><path>`.
+    /// `<base>/<repo>/api<path>` — the verify routes live under the
+    /// repo's `api` prefix like the canon ones.
     fn url(&self, path: &str) -> String {
-        format!("{}/{}{}", self.base_url, self.repo, path)
+        format!("{}/{}/api{}", self.base_url, self.repo, path)
     }
 
     fn post_json<Req, Resp>(&self, path: &str, body: &Req) -> Result<Resp, VerifyError>
@@ -154,8 +155,8 @@ impl VerifyClient for HttpVerifyClient {
     }
 }
 
-/// Path for `POST /<repo>/verify/sessions/:id/cancel` (relative to the
-/// client's `<base>/<repo>`).
+/// Path for `POST /<repo>/api/verify/sessions/:id/cancel` (relative to the
+/// client's `<base>/<repo>/api`).
 fn cancel_path(session_id: &str) -> String {
     format!("/verify/sessions/{}/cancel", url_encode(session_id))
 }
@@ -396,16 +397,20 @@ mod tests {
     }
 
     #[test]
-    fn urls_are_under_the_repo_segment() {
+    fn urls_are_under_the_repo_api_prefix() {
         let tok = Token::new("t");
         let c = HttpVerifyClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
             c.url("/verify/sessions"),
-            "https://api.example.test/widgets/verify/sessions"
+            "https://api.example.test/widgets/api/verify/sessions"
         );
         assert_eq!(
-            c.url(&cancel_path("s1")),
-            "https://api.example.test/widgets/verify/sessions/s1/cancel"
+            c.url("/verify/sessions/01HN?wait=1"),
+            "https://api.example.test/widgets/api/verify/sessions/01HN?wait=1"
+        );
+        assert_eq!(
+            c.url(&cancel_path("01HN")),
+            "https://api.example.test/widgets/api/verify/sessions/01HN/cancel"
         );
     }
 

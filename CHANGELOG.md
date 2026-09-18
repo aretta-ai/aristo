@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Fixed
+- cli: `aristo verify` (full mode) addresses the server at `/<repo>/api/verify/sessions…` — the path the org's server serves — instead of `/<repo>/verify/sessions…`, which it answers with 404. Every session open, poll and cancel was failing; a test now pins the path.
+
 ## [0.8.2] — 2026-09-18
 
 ### Added
