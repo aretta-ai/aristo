@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-09-18
+
 ### Added
 - cli: `aristo status` prints which book answered the canon cache (`Answered by: <server> / <repo>`, from `.aristo/canon-matches.toml`) and which checkout this is (`This checkout: <owner/repo>`, from git or `ARISTO_REPO`), offline, so a wrong-org credential pick is visible before any rejection.
 - cli: `.aristo/canon-matches.toml` records which book answered — `__meta__.server` and `__meta__.repo`, the org server and repo name the match was addressed to. The cache is committed, so upgrade every checkout of a repo before the first stamp on this version commits the two fields: an older aristo refuses a `__meta__` key it does not know. From this version on, unknown `__meta__` keys are tolerated, so the next such field will not need this. `aristo stamp` prints `→ Canon: <server> / <repo>` when it matches, and warns when the cache was answered by another server or repo than the one this checkout resolves to (a re-pointed checkout no longer reinterprets cached canon ids silently; `aristo stamp --refresh-canon` re-matches). Older caches read as before.
