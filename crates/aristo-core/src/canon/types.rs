@@ -513,11 +513,65 @@ pub struct RecordPresence {
 /// its active version). Closed-IP fields (alternative phrasings, match
 /// signals) are stripped server-side; this is the browsable trust-card
 /// surface. On the wire, `GET /<repo>/api/catalogue` is the bare list
-/// of entries; this wrapper is the local snapshot's shape.
+/// of entries plus the `x-aretta-serving*` headers; this wrapper is the
+/// local snapshot's shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CanonCatalogue {
     #[serde(default)]
     pub entries: Vec<CanonCatalogueEntry>,
+    /// What the server said it serves for this repo. `None` when the
+    /// response carried no `x-aretta-serving` header (fixtures, older
+    /// servers) — then an empty list says nothing about why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serving: Option<Serving>,
+}
+
+/// The served-edition signal on a catalogue read, from the
+/// `x-aretta-serving`, `x-aretta-serving-edition` and
+/// `x-aretta-serving-reason` response headers. `state` is `served`
+/// (with `edition`), `empty` (the repo has no served edition yet — no
+/// book) or `unavailable` (with `reason`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Serving {
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edition: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl Serving {
+    /// Header name carrying the state.
+    pub const HEADER: &'static str = "x-aretta-serving";
+    /// Header name carrying the served edition.
+    pub const EDITION_HEADER: &'static str = "x-aretta-serving-edition";
+    /// Header name carrying the reason an edition is unavailable.
+    pub const REASON_HEADER: &'static str = "x-aretta-serving-reason";
+
+    /// Build from the three header values; `None` without a state.
+    pub fn from_headers(
+        state: Option<&str>,
+        edition: Option<&str>,
+        reason: Option<&str>,
+    ) -> Option<Self> {
+        let state = state.map(str::trim).filter(|s| !s.is_empty())?;
+        Some(Self {
+            state: state.to_string(),
+            edition: edition
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+            reason: reason
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+        })
+    }
+
+    /// `true` when the repo has no served edition (no book yet).
+    pub fn is_empty_edition(&self) -> bool {
+        self.state == "empty"
+    }
 }
 
 /// One catalogue entry: the active version of a canon id (the server
@@ -851,8 +905,26 @@ mod tests {
     }
 
     #[test]
+    fn serving_from_headers() {
+        assert_eq!(Serving::from_headers(None, None, None), None);
+        assert_eq!(Serving::from_headers(Some(" "), None, None), None);
+        let s = Serving::from_headers(Some("served"), Some("E-abc"), None).unwrap();
+        assert_eq!(s.state, "served");
+        assert_eq!(s.edition.as_deref(), Some("E-abc"));
+        assert!(!s.is_empty_edition());
+        let e = Serving::from_headers(Some("empty"), None, None).unwrap();
+        assert!(e.is_empty_edition());
+        let u = Serving::from_headers(Some("unavailable"), None, Some("registry")).unwrap();
+        assert_eq!(u.reason.as_deref(), Some("registry"));
+        // A snapshot without the field still reads.
+        let cat: CanonCatalogue = serde_json::from_str(r#"{"entries":[]}"#).unwrap();
+        assert_eq!(cat.serving, None);
+    }
+
+    #[test]
     fn catalogue_json_round_trips_and_tolerates_empty() {
         let cat = CanonCatalogue {
+            serving: None,
             entries: vec![CanonCatalogueEntry {
                 canon_id: "a".into(),
                 version: "v0.1.0".into(),

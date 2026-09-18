@@ -192,6 +192,7 @@ results = [
             "specialized neural checker".to_string(),
         );
         let cat = CanonCatalogue {
+            serving: None,
             entries: vec![
                 CanonCatalogueEntry {
                     canon_id: "foo".into(),

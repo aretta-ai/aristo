@@ -51,6 +51,30 @@ fn print_summary(catalogue: &CanonCatalogue) {
         "ok: downloaded {total} canon entr{} to {CATALOGUE_REL} (gitignored local snapshot)",
         if total == 1 { "y" } else { "ies" }
     );
+    match &catalogue.serving {
+        Some(s) if s.is_empty_edition() => {
+            println!(
+                "   note: no served edition for this repository — the org has no book for it yet, \
+                 so there are no canon entries to match. Nothing to do here until an edition is served."
+            );
+            return;
+        }
+        Some(s) if s.state == "unavailable" => {
+            println!(
+                "   note: the served edition is unavailable (reason: {}) — the list may be empty or stale.",
+                s.reason.as_deref().unwrap_or("unknown")
+            );
+            if total == 0 {
+                return;
+            }
+        }
+        Some(s) => {
+            if let Some(edition) = &s.edition {
+                println!("   served edition: {edition}");
+            }
+        }
+        None => {}
+    }
     if total == 0 {
         println!(
             "   note: the catalogue is empty — this server has no canon corpus configured \

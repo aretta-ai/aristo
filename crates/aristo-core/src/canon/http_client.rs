@@ -25,7 +25,9 @@ use serde::Serialize;
 use ureq::http::Response as HttpResponse;
 
 use super::client::{AuthError, CanonClient, CanonError};
-use super::types::{CanonCatalogue, CanonCatalogueEntry, CanonMatchRequest, CanonMatchResponse};
+use super::types::{
+    CanonCatalogue, CanonCatalogueEntry, CanonMatchRequest, CanonMatchResponse, Serving,
+};
 use super::Token;
 
 /// L3 graceful-degradation timeout. Applies to each individual
@@ -102,19 +104,6 @@ impl HttpCanonClient {
             .send_json(body);
         consume_response(result).map_err(|e| at_server(e, &self.base_url))
     }
-
-    fn get_json<Resp>(&self, path: &str) -> Result<Resp, CanonError>
-    where
-        Resp: for<'de> serde::Deserialize<'de>,
-    {
-        let url = self.url(path);
-        let result = self
-            .agent
-            .get(&url)
-            .header("Authorization", &self.bearer_header)
-            .call();
-        consume_response(result).map_err(|e| at_server(e, &self.base_url))
-    }
 }
 
 impl std::fmt::Debug for HttpCanonClient {
@@ -134,13 +123,32 @@ impl CanonClient for HttpCanonClient {
     }
 
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
-        // The wire is the bare list of entries.
-        let entries: Vec<CanonCatalogueEntry> = self.get_json("/catalogue")?;
-        Ok(CanonCatalogue { entries })
+        // The wire is the bare list of entries; the served-edition
+        // signal rides in the `x-aretta-serving*` headers.
+        let url = self.url("/catalogue");
+        let result = self
+            .agent
+            .get(&url)
+            .header("Authorization", &self.bearer_header)
+            .call();
+        let serving = result.as_ref().ok().and_then(serving_from_headers);
+        let entries: Vec<CanonCatalogueEntry> =
+            consume_response(result).map_err(|e| at_server(e, &self.base_url))?;
+        Ok(CanonCatalogue { entries, serving })
     }
 }
 
 // ─── Pure response-mapping helpers ─────────────────────────────────────────
+
+/// The `x-aretta-serving*` headers of a response, if it carries them.
+fn serving_from_headers(resp: &HttpResponse<ureq::Body>) -> Option<Serving> {
+    let get = |name: &str| resp.headers().get(name).and_then(|v| v.to_str().ok());
+    Serving::from_headers(
+        get(Serving::HEADER),
+        get(Serving::EDITION_HEADER),
+        get(Serving::REASON_HEADER),
+    )
+}
 
 /// A 401 names the server it came from; every other error passes.
 fn at_server(e: CanonError, server: &str) -> CanonError {

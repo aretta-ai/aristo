@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- cli: `aristo canon catalogue` reads the server's served-edition signal (the `x-aretta-serving`, `-edition`, `-reason` response headers) and says "no served edition for this repository" when the org has no book for it yet, instead of reporting zero entries; a served edition is printed and recorded in the snapshot (`serving` in `.aristo/catalogue.json`).
+
 ### Fixed
 - cli: `aristo verify` (full mode) addresses the server at `/<repo>/api/verify/sessions…` — the path the org's server serves — instead of `/<repo>/verify/sessions…`, which it answers with 404. Every session open, poll and cancel was failing; a test now pins the path.
 

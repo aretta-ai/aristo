@@ -33,6 +33,8 @@ use aristo_core::canon::{AuthError, CanonClient, CanonError, HttpCanonClient, To
 #[derive(Clone)]
 struct CannedResponse {
     status_line: &'static str,
+    /// Extra header lines, each `Name: value\r\n`-terminated (may be empty).
+    headers: &'static str,
     body: String,
 }
 
@@ -109,8 +111,9 @@ fn read_request(stream: &mut std::net::TcpStream) -> MockRecord {
 fn write_response(stream: &mut std::net::TcpStream, canned: &CannedResponse) {
     let body_bytes = canned.body.as_bytes();
     let response = format!(
-        "{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "{}\r\n{}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         canned.status_line,
+        canned.headers,
         body_bytes.len()
     );
     stream.write_all(response.as_bytes()).expect("write head");
@@ -147,6 +150,7 @@ fn match_annotations_happy_path_round_trips() {
     let body = serde_json::to_string(&canned_response).unwrap();
     let (base, server) = spawn_mock(CannedResponse {
         status_line: "HTTP/1.1 200 OK",
+        headers: "",
         body,
     });
 
@@ -195,6 +199,7 @@ fn match_annotations_happy_path_round_trips() {
 fn server_401_maps_to_auth_invalid() {
     let (base, server) = spawn_mock(CannedResponse {
         status_line: "HTTP/1.1 401 Unauthorized",
+        headers: "",
         body: r#"{"error": "token expired"}"#.into(),
     });
 
@@ -218,6 +223,7 @@ fn server_401_maps_to_auth_invalid() {
 fn server_400_carries_message_body() {
     let (base, server) = spawn_mock(CannedResponse {
         status_line: "HTTP/1.1 400 Bad Request",
+        headers: "",
         body: r#"{"error": "confidence_threshold below floor 0.5"}"#.into(),
     });
 
@@ -249,6 +255,7 @@ fn server_400_carries_message_body() {
 fn server_500_maps_to_server_error() {
     let (base, server) = spawn_mock(CannedResponse {
         status_line: "HTTP/1.1 500 Internal Server Error",
+        headers: "",
         body: r#"{"error": "database connection lost"}"#.into(),
     });
 
@@ -309,6 +316,7 @@ fn unreachable_server_maps_to_network_error() {
 fn malformed_response_body_maps_to_decode_error() {
     let (base, server) = spawn_mock(CannedResponse {
         status_line: "HTTP/1.1 200 OK",
+        headers: "",
         body: "this is not JSON".into(),
     });
 
@@ -323,4 +331,47 @@ fn malformed_response_body_maps_to_decode_error() {
         .unwrap_err();
     assert!(matches!(err, CanonError::Decode(_)), "got {err:?}");
     let _ = server.join();
+}
+
+// ─── End-to-end: GET /catalogue carries the served-edition headers ─────────
+
+#[test]
+fn catalogue_reads_the_serving_headers_and_the_bare_list() {
+    let (base, server) = spawn_mock(CannedResponse {
+        status_line: "HTTP/1.1 200 OK",
+        headers: "x-aretta-serving: empty\r\n",
+        body: "[]".into(),
+    });
+    let token = Token::new("t");
+    let client = HttpCanonClient::new(base, &token, "widgets");
+    let cat = client.catalogue().expect("catalogue");
+    let record = server.join().unwrap();
+    assert_eq!(record.path, "/widgets/api/catalogue");
+    assert!(cat.entries.is_empty());
+    let serving = cat.serving.expect("serving parsed from headers");
+    assert!(serving.is_empty_edition(), "got {serving:?}");
+
+    let (base, server) = spawn_mock(CannedResponse {
+        status_line: "HTTP/1.1 200 OK",
+        headers: "x-aretta-serving: served\r\nx-aretta-serving-edition: E-abc123\r\n",
+        body: r#"[{"canon_id":"foo","version":"v1","canonical_text":"t","category":"c","applies_to":["fn"],"backed_by":{},"coverage_level":"none","spec_refs":[]}]"#.into(),
+    });
+    let client = HttpCanonClient::new(base, &token, "widgets");
+    let cat = client.catalogue().expect("catalogue");
+    let _ = server.join();
+    assert_eq!(cat.entries.len(), 1);
+    let serving = cat.serving.expect("serving");
+    assert_eq!(serving.state, "served");
+    assert_eq!(serving.edition.as_deref(), Some("E-abc123"));
+
+    // No headers at all → no signal, the list still reads.
+    let (base, server) = spawn_mock(CannedResponse {
+        status_line: "HTTP/1.1 200 OK",
+        headers: "",
+        body: "[]".into(),
+    });
+    let client = HttpCanonClient::new(base, &token, "widgets");
+    let cat = client.catalogue().expect("catalogue");
+    let _ = server.join();
+    assert_eq!(cat.serving, None);
 }
