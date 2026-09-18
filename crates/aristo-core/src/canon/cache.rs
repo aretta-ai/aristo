@@ -90,9 +90,10 @@ pub struct CanonMatchesFile {
     pub entries: BTreeMap<AnnotationId, CacheEntry>,
 }
 
-/// `[__meta__]` header.
+/// `[__meta__]` header. Unknown keys are tolerated so a cache written
+/// by a newer aristo (with an extra meta field) still reads here; the
+/// per-annotation entries stay strict.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct CacheMeta {
     /// Cache schema version (currently [`SCHEMA_VERSION`]).
     pub schema_version: u32,
