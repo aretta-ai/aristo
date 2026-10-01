@@ -75,6 +75,15 @@ pub enum VerifyError {
     /// - 404 `not_found` (GET on a session_id the proxy doesn't know)
     /// - 422 unsupported test_kind
     BadRequest { status: u16, message: String },
+    /// The server did not open the session because the customer has
+    /// not confirmed their guarantee list in Aretta yet — the body is
+    /// `{"error": "awaiting_confirm", "detail": …, "confirm_url": …}`.
+    /// Keyed on that error code, never on the status. Not a failure:
+    /// the CLI reports where to confirm and exits 0.
+    AwaitingConfirm {
+        detail: Option<String>,
+        confirm_url: Option<String>,
+    },
     /// 5xx response.
     Server { status: u16, message: String },
     /// Response body didn't deserialize against our wire types.
@@ -93,6 +102,22 @@ impl fmt::Display for VerifyError {
             VerifyError::Timeout => write!(f, "verify request timed out"),
             VerifyError::BadRequest { status, message } => {
                 write!(f, "verify server returned HTTP {status}: {message}")
+            }
+            VerifyError::AwaitingConfirm {
+                detail,
+                confirm_url,
+            } => {
+                write!(
+                    f,
+                    "verify not started: awaiting your confirmation in Aretta"
+                )?;
+                if let Some(d) = detail {
+                    write!(f, " — {d}")?;
+                }
+                if let Some(u) = confirm_url {
+                    write!(f, " ({u})")?;
+                }
+                Ok(())
             }
             VerifyError::Server { status, message } => {
                 write!(f, "verify server error (HTTP {status}): {message}")

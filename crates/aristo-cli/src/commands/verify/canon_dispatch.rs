@@ -189,6 +189,58 @@ pub(crate) fn dispatch_session<C: VerifyClient + ?Sized>(
     client.post_session(req)
 }
 
+/// What the canon dispatch did.
+pub(crate) enum Dispatch {
+    /// Tags sent to the server (0 when the dispatch set was empty).
+    Sent(usize),
+    /// The server opened no session: the customer has not confirmed
+    /// their guarantee list in Aretta yet. The notice is printed; the
+    /// run is neither vacuous nor failed.
+    AwaitingConfirm,
+}
+
+/// The lines `aristo verify` prints when the server answers
+/// `awaiting_confirm`: a notice (not an error), the server's own
+/// sentence, the confirm link as the server gave it, and — under
+/// GitHub Actions — a `::notice::` workflow command so the run is
+/// annotated instead of red.
+pub(crate) fn awaiting_confirm_lines(
+    detail: Option<&str>,
+    confirm_url: Option<&str>,
+    github_actions: bool,
+) -> Vec<String> {
+    let mut lines = vec![
+        "notice: verification not started — awaiting your confirmation in Aretta.".to_string(),
+    ];
+    if let Some(d) = detail {
+        lines.push(format!("        {d}"));
+    }
+    if let Some(u) = confirm_url {
+        lines.push(format!("        confirm here: {u}"));
+    }
+    lines.push(
+        "        This is not a failure; the run starts once the list is confirmed.".to_string(),
+    );
+    if github_actions {
+        let mut msg = String::from("awaiting your confirmation in Aretta");
+        if let Some(d) = detail {
+            msg.push_str(" — ");
+            msg.push_str(d);
+        }
+        if let Some(u) = confirm_url {
+            msg.push_str(" — confirm here: ");
+            msg.push_str(u);
+        }
+        lines.push(format!(
+            "::notice title=aristo verify::{}",
+            msg.replace('%', "%25")
+                .replace('\r', "%0D")
+                .replace('\n', "%0A")
+        ));
+    }
+    lines
+}
+
 /// End-to-end canon-verify dispatch:
 ///
 /// 1. Build the tag list (silent skip for entries with no
@@ -210,9 +262,9 @@ pub(crate) fn run_canon_dispatch(
     canon_entries: &[CanonDispatchEntry<'_>],
     tags_filter: Option<&[String]>,
     wait: bool,
-) -> CliResult<usize> {
+) -> CliResult<Dispatch> {
     if canon_entries.is_empty() {
-        return Ok(0);
+        return Ok(Dispatch::Sent(0));
     }
 
     // 1. Auth — required up front. If no token, surface actionable hint.
@@ -257,7 +309,7 @@ pub(crate) fn run_canon_dispatch(
         println!(
             "  .aristo/canon-matches.toml. Run `aristo stamp --refresh-canon` to repopulate the cache."
         );
-        return Ok(0);
+        return Ok(Dispatch::Sent(0));
     }
 
     // 3. Resolve repo + commit_sha via git (ARISTO_REPO overrides the repo).
@@ -308,7 +360,26 @@ pub(crate) fn run_canon_dispatch(
         commit_sha,
         tags,
     };
-    let resp = client.post_session(&req).map_err(verify_error_to_cli)?;
+    let resp = match client.post_session(&req) {
+        Ok(r) => r,
+        // Not a failure: the customer has not confirmed their guarantee
+        // list in Aretta yet, so the server opened nothing. Say where to
+        // confirm and exit 0 — CI must not go red for this.
+        Err(VerifyError::AwaitingConfirm {
+            detail,
+            confirm_url,
+        }) => {
+            for line in awaiting_confirm_lines(
+                detail.as_deref(),
+                confirm_url.as_deref(),
+                std::env::var_os("GITHUB_ACTIONS").is_some(),
+            ) {
+                println!("{line}");
+            }
+            return Ok(Dispatch::AwaitingConfirm);
+        }
+        Err(e) => return Err(verify_error_to_cli(e)),
+    };
     let dispatched = req.tags.len();
     print_session_dispatched(&req, &resp);
 
@@ -337,7 +408,7 @@ pub(crate) fn run_canon_dispatch(
         }
     }
 
-    Ok(dispatched)
+    Ok(Dispatch::Sent(dispatched))
 }
 
 /// The `--wait` failure error, worded from the waiver-aware verdict.
@@ -1646,6 +1717,11 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
     let record_path = format!("{path}.posted.json");
     let cancel_record_path = format!("{path}.cancelled");
     let mock = match (post_resp, get_results.is_empty()) {
+        _ if parsed.post_error.is_some() => {
+            aristo_core::canon_verify::MockVerifyClient::with_post_error(
+                parsed.post_error.unwrap().into_verify_error(),
+            )
+        }
         (Some(p), true) => aristo_core::canon_verify::MockVerifyClient::with_post_response(p),
         (Some(p), false) => {
             aristo_core::canon_verify::MockVerifyClient::with_post_and_get_results(p, get_results)
@@ -1663,6 +1739,8 @@ fn test_mock_client_from_env() -> Option<Box<dyn VerifyClient>> {
 #[derive(serde::Deserialize)]
 struct FixtureFile {
     post: Option<FixturePost>,
+    /// A canned POST failure (wins over `post`).
+    post_error: Option<FixtureError>,
     gets: Option<Vec<FixtureGet>>,
 }
 
@@ -1686,6 +1764,10 @@ struct FixtureError {
     status: Option<u16>,
     #[serde(default)]
     message: Option<String>,
+    #[serde(default)]
+    detail: Option<String>,
+    #[serde(default)]
+    confirm_url: Option<String>,
 }
 
 impl FixtureError {
@@ -1702,6 +1784,10 @@ impl FixtureError {
             },
             "network" => VerifyError::Network(message),
             "timeout" => VerifyError::Timeout,
+            "awaiting_confirm" => VerifyError::AwaitingConfirm {
+                detail: self.detail,
+                confirm_url: self.confirm_url,
+            },
             other => VerifyError::Fixture(format!("unknown fixture error kind: {other}")),
         }
     }
@@ -2611,6 +2697,76 @@ mod tests {
         match err {
             VerifyError::BadRequest { status: 409, .. } => {}
             other => panic!("expected BadRequest 409, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn awaiting_confirm_lines_name_the_link_and_annotate_under_github_actions() {
+        let plain = awaiting_confirm_lines(
+            Some("Confirm your guarantee list to start the first run."),
+            Some("https://acme.aretta.ai/widgets/#/confirm"),
+            false,
+        );
+        assert!(
+            plain[0].starts_with("notice: verification not started"),
+            "{plain:?}"
+        );
+        assert!(
+            plain
+                .iter()
+                .any(|l| l.contains("Confirm your guarantee list")),
+            "{plain:?}"
+        );
+        assert!(
+            plain
+                .iter()
+                .any(|l| l.contains("confirm here: https://acme.aretta.ai/widgets/#/confirm")),
+            "{plain:?}"
+        );
+        assert!(
+            !plain.iter().any(|l| l.starts_with("::notice")),
+            "{plain:?}"
+        );
+
+        let gha =
+            awaiting_confirm_lines(None, Some("https://acme.aretta.ai/widgets/#/confirm"), true);
+        let last = gha.last().unwrap();
+        assert!(last.starts_with("::notice title=aristo verify::"), "{last}");
+        assert!(
+            last.contains("https://acme.aretta.ai/widgets/#/confirm"),
+            "{last}"
+        );
+        assert!(
+            !last.contains('\n'),
+            "a workflow command is one line: {last}"
+        );
+
+        // Nothing but the code: still a notice, still no link line.
+        let bare = awaiting_confirm_lines(None, None, false);
+        assert_eq!(bare.len(), 2, "{bare:?}");
+    }
+
+    #[test]
+    fn dispatch_session_propagates_awaiting_confirm_as_its_own_variant() {
+        let mock = aristo_core::canon_verify::MockVerifyClient::with_post_error(
+            VerifyError::AwaitingConfirm {
+                detail: None,
+                confirm_url: Some("https://acme.aretta.ai/widgets/#/confirm".into()),
+            },
+        );
+        let req = VerifySessionRequest {
+            repo_full_name: "o/r".into(),
+            commit_sha: "x".into(),
+            tags: vec![],
+        };
+        match dispatch_session(&mock, &req).unwrap_err() {
+            VerifyError::AwaitingConfirm { confirm_url, .. } => {
+                assert_eq!(
+                    confirm_url.as_deref(),
+                    Some("https://acme.aretta.ai/widgets/#/confirm")
+                );
+            }
+            other => panic!("expected AwaitingConfirm, got {other:?}"),
         }
     }
 }
