@@ -1378,3 +1378,89 @@ fn non_canon_bound_full_intent_still_yields_deferred_design_message() {
         .stderr(contains("non-canon-bound"))
         .stderr(contains("post-MVP"));
 }
+
+#[test]
+fn awaiting_confirm_is_a_notice_and_exit_zero_even_with_require_dispatch() {
+    // Before the customer confirms their guarantee list in Aretta, the
+    // server refuses to open a session with the `awaiting_confirm`
+    // code. CI must not go red for that.
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        r#"{"post_error": {"kind": "awaiting_confirm",
+                           "detail": "Confirm your guarantee list to start the first run.",
+                           "confirm_url": "https://acme.aretta.ai/widgets/#/confirm"}}"#,
+    );
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env_remove("GITHUB_ACTIONS")
+        .args(["verify", "--wait", "--require-dispatch"])
+        .assert()
+        .success()
+        .stdout(contains(
+            "notice: verification not started — awaiting your confirmation in Aretta.",
+        ))
+        .stdout(contains(
+            "Confirm your guarantee list to start the first run.",
+        ))
+        .stdout(contains(
+            "confirm here: https://acme.aretta.ai/widgets/#/confirm",
+        ))
+        .stdout(contains("::notice").not())
+        .stderr(contains("dispatch set is empty").not());
+}
+
+#[test]
+fn awaiting_confirm_under_github_actions_emits_a_notice_annotation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        r#"{"post_error": {"kind": "awaiting_confirm",
+                           "confirm_url": "https://acme.aretta.ai/widgets/#/confirm"}}"#,
+    );
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .env("GITHUB_ACTIONS", "true")
+        .args(["verify", "--wait"])
+        .assert()
+        .success()
+        .stdout(contains(
+            "::notice title=aristo verify::awaiting your confirmation in Aretta — confirm here: https://acme.aretta.ai/widgets/#/confirm",
+        ));
+}
+
+#[test]
+fn another_409_is_still_a_failure() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _bare = init_repo_with_pushed_head(tmp.path());
+    workspace_with_one_canon_bound_full_intent(tmp.path());
+    let home = tempfile::tempdir().unwrap();
+    write_aretta_token(home.path(), "https://example.test");
+    let fixture_path = write_full_fixture(
+        tmp.path(),
+        r#"{"post_error": {"kind": "bad_request", "status": 409, "message": "conflict"}}"#,
+    );
+
+    aristo_in(tmp.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join(".config"))
+        .env("ARISTO_CANON_VERIFY_FIXTURE", &fixture_path)
+        .args(["verify", "--wait"])
+        .assert()
+        .failure()
+        .stderr(contains("HTTP 409"));
+}

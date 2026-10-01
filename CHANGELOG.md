@@ -8,6 +8,9 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+### Added
+- cli: `aristo verify` treats the server's `awaiting_confirm` answer — the org has not confirmed its guarantee list in Aretta yet, so no session opens — as a notice, not a failure: it prints the server's sentence and the confirm link as given, emits a `::notice::` annotation under GitHub Actions, and exits 0 (also under `--require-dispatch`). Keyed on the `error` code in the body alone; every other 4xx, 409 included, fails as before.
+
 ## [0.8.3] — 2026-09-18
 
 ### Added

@@ -203,19 +203,24 @@ pub(crate) fn run(
     // would reject anyway, so we skip with an actionable hint rather
     // than POSTing a guaranteed-401.
     let tags_filter = if tags.is_empty() { None } else { Some(tags) };
-    let dispatched = canon_dispatch::run_canon_dispatch(
+    let (dispatched, awaiting_confirm) = match canon_dispatch::run_canon_dispatch(
         &ws.root,
         &ws.canon_matches_path(),
         &ws.expectations_path(),
         &canon_full,
         tags_filter,
         wait,
-    )?;
+    )? {
+        canon_dispatch::Dispatch::Sent(n) => (n, false),
+        // The server named why it opened nothing; that is neither a
+        // vacuous run nor a failure, so neither guard below applies.
+        canon_dispatch::Dispatch::AwaitingConfirm => (0, true),
+    };
 
     // CI guard against vacuous green (--require-dispatch): an empty
     // dispatch set means the server never saw this commit, so a 0 exit
     // would read as "verified" with nothing run.
-    if require_dispatch && dispatched == 0 {
+    if require_dispatch && dispatched == 0 && !awaiting_confirm {
         return Err(CliError::Other {
             message: "--require-dispatch: the canon-verify dispatch set is empty — nothing \
                       was sent to the server.\n  \
@@ -236,7 +241,9 @@ pub(crate) fn run(
         dispatched,
         canon_full.len(),
         skipped_clean_canon_full,
-    ) {
+    )
+    .filter(|_| !awaiting_confirm)
+    {
         eprintln!("{warning}");
     }
 

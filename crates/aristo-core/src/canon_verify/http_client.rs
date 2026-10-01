@@ -207,10 +207,10 @@ where
 pub(crate) fn error_for_status(status: u16, body: &str) -> VerifyError {
     match status {
         401 => VerifyError::Auth(AuthError::rejected()),
-        400..=499 => VerifyError::BadRequest {
+        400..=499 => awaiting_confirm(body).unwrap_or_else(|| VerifyError::BadRequest {
             status,
             message: extract_message_or_body(body),
-        },
+        }),
         500..=599 => VerifyError::Server {
             status,
             message: extract_message_or_body(body),
@@ -229,6 +229,20 @@ pub(crate) fn transport_error_to_verify_error(e: ureq::Error) -> VerifyError {
     } else {
         VerifyError::Network(s)
     }
+}
+
+/// The `awaiting_confirm` refusal, keyed on the body's `error` code
+/// alone: `{"error": "awaiting_confirm", "detail"?: …, "confirm_url"?: …}`.
+fn awaiting_confirm(body: &str) -> Option<VerifyError> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    if v.get("error").and_then(|e| e.as_str()) != Some("awaiting_confirm") {
+        return None;
+    }
+    let field = |k: &str| v.get(k).and_then(|x| x.as_str()).map(String::from);
+    Some(VerifyError::AwaitingConfirm {
+        detail: field("detail"),
+        confirm_url: field("confirm_url"),
+    })
 }
 
 fn extract_message_or_body(body: &str) -> String {
@@ -412,6 +426,50 @@ mod tests {
             c.url(&cancel_path("01HN")),
             "https://api.example.test/widgets/api/verify/sessions/01HN/cancel"
         );
+    }
+
+    #[test]
+    fn awaiting_confirm_is_keyed_on_the_body_code_not_the_status() {
+        let body = r#"{"error":"awaiting_confirm","detail":"Confirm your guarantee list to start the first run.","family":"first_run","confirm_url":"https://acme.aretta.ai/widgets/#/confirm"}"#;
+        match error_for_status(409, body) {
+            VerifyError::AwaitingConfirm {
+                detail,
+                confirm_url,
+            } => {
+                assert_eq!(
+                    detail.as_deref(),
+                    Some("Confirm your guarantee list to start the first run.")
+                );
+                assert_eq!(
+                    confirm_url.as_deref(),
+                    Some("https://acme.aretta.ai/widgets/#/confirm")
+                );
+            }
+            other => panic!("expected AwaitingConfirm, got {other:?}"),
+        }
+        // The code without the link still reads as the refusal.
+        assert!(matches!(
+            error_for_status(409, r#"{"error":"awaiting_confirm"}"#),
+            VerifyError::AwaitingConfirm {
+                detail: None,
+                confirm_url: None
+            }
+        ));
+        // Any other 409 is a failure as before.
+        assert!(matches!(
+            error_for_status(409, r#"{"error":"conflict"}"#),
+            VerifyError::BadRequest { status: 409, .. }
+        ));
+        // The code on another 4xx status still counts: the status alone decides nothing.
+        assert!(matches!(
+            error_for_status(400, r#"{"error":"awaiting_confirm"}"#),
+            VerifyError::AwaitingConfirm { .. }
+        ));
+        // A 5xx is never read as the refusal.
+        assert!(matches!(
+            error_for_status(503, r#"{"error":"awaiting_confirm"}"#),
+            VerifyError::Server { .. }
+        ));
     }
 
     #[test]
