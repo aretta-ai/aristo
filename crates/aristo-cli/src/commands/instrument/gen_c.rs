@@ -10,7 +10,7 @@ use aristo_core::walk::{
     extract_c_expose_directives, extract_c_inspect_directives, CExposeDirective, CInspectDirective,
 };
 
-use super::{write_file, WriteOutcome, ARISTO_ABI};
+use super::{drifted_files, write_file, WriteOutcome, ARISTO_ABI};
 use crate::{CliError, CliResult};
 
 /// Render the generated header: the opaque-handle include, the ABI pin, one
@@ -122,14 +122,7 @@ pub(crate) fn run(
     ];
 
     if check {
-        let mut drifted = Vec::new();
-        for (name, content) in &files {
-            let path = out.join(name);
-            let current = fs::read_to_string(&path).unwrap_or_default();
-            if current != *content {
-                drifted.push(name.to_string());
-            }
-        }
+        let drifted = drifted_files(&files, &out);
         if drifted.is_empty() {
             println!(
                 "ok: generated C instrumentation is up to date ({} accessor(s), {} exposed fn(s)).",
