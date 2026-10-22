@@ -1,12 +1,14 @@
 //! `aristo instrument vendor-c` — write the C instrumentation runtime
-//! (`aristo.h` + `aristo.c`) into a SUT's source tree so it can link Aristo's
-//! fault-injection / observation points. The files are C11, standard keywords
-//! only, and entirely gated by `-DARISTO_INSTRUMENT`.
+//! (`aristo.h` + `aristo.c`) so a SUT can link Aristo's fault-injection /
+//! observation points. The runtime carries no SUT types, so it need not live
+//! in the source tree: emit it to a scratch directory, build it once into
+//! `libaristo.a`, and link that. The files are C11, standard keywords only,
+//! and entirely gated by `-DARISTO_INSTRUMENT`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use super::{write_file, WriteOutcome};
-use crate::CliResult;
+use super::{drifted_files, write_file, WriteOutcome};
+use crate::{CliError, CliResult};
 
 const ARISTO_H_TEMPLATE: &str = include_str!("runtime/aristo.h.in");
 const ARISTO_C_TEMPLATE: &str = include_str!("runtime/aristo.c.in");
@@ -21,12 +23,32 @@ fn resolve(template: &str) -> String {
         .replace("{{ARISTO_ABI}}", &super::ARISTO_ABI.to_string())
 }
 
-pub(crate) fn run(out: PathBuf) -> CliResult<()> {
-    println!("→ Vendoring the Aristo C runtime to {}/ …", out.display());
+pub(crate) fn run(out: PathBuf, check: bool) -> CliResult<()> {
     let files = [
         ("aristo.h", resolve(ARISTO_H_TEMPLATE)),
         ("aristo.c", resolve(ARISTO_C_TEMPLATE)),
     ];
+    if check {
+        let drifted = drifted_files(&files, &out);
+        if drifted.is_empty() {
+            println!(
+                "ok: vendored Aristo C runtime is up to date (aristo {}).",
+                env!("CARGO_PKG_VERSION")
+            );
+            return Ok(());
+        }
+        return Err(CliError::Other {
+            message: format!(
+                "vendored Aristo C runtime is stale: {} differ from the aristo {} \
+                 templates.\n       Re-run `aristo instrument vendor-c` (or `make \
+                 revendor`) and commit the result.",
+                drifted.join(", "),
+                env!("CARGO_PKG_VERSION")
+            ),
+            exit_code: 2,
+        });
+    }
+    println!("→ Vendoring the Aristo C runtime to {}/ …", out.display());
     for (name, content) in &files {
         let outcome = write_file(&out.join(name), content)?;
         let verb = match outcome {
@@ -37,13 +59,28 @@ pub(crate) fn run(out: PathBuf) -> CliResult<()> {
         println!("  • {name}  {verb}");
     }
     println!();
-    println!("ok: Aristo C runtime vendored (2 files).");
-    println!(
-        "    Add {}/ to your include path; compile aristo.c and pass",
-        out.display()
-    );
-    println!("    -DARISTO_INSTRUMENT in instrumented builds (C11, -O1+).");
+    println!("{}", guidance(&out));
     Ok(())
+}
+
+/// The post-vendor guidance: how to build the emitted runtime out of the source
+/// tree and link it. Pure in `out` (the emit directory) so the exact wording
+/// can be asserted; `run` prints it after writing the files.
+fn guidance(out: &Path) -> String {
+    let dir = out.display();
+    [
+        "ok: Aristo C runtime vendored (2 files).".to_string(),
+        "    Out-of-tree link model — the runtime need not live in your source".to_string(),
+        "    tree. Build it once into a static library, then link that:".to_string(),
+        format!(
+            "      cc -std=c11 -DARISTO_INSTRUMENT -I{dir} -c {dir}/aristo.c -o {dir}/aristo.o"
+        ),
+        format!("      ar rcs {dir}/libaristo.a {dir}/aristo.o"),
+        format!("    Instrumented build: add -I{dir} (both flavors — ARISTO_TU_LOCAL pulls"),
+        "    aristo.h in unconditionally), pass -DARISTO_INSTRUMENT, and link".to_string(),
+        format!("    {dir}/libaristo.a."),
+    ]
+    .join("\n")
 }
 
 #[cfg(test)]
@@ -60,6 +97,23 @@ mod tests {
             "the SDK_VERSION placeholder must be substituted before writing"
         );
         assert!(h.contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn guidance_describes_out_of_tree_link_model() {
+        // The exact wording is the spec: the out-of-tree recipe (build the
+        // runtime once into libaristo.a, then link it) plus the both-flavors
+        // -I note. Pinned byte-for-byte so a reword is a deliberate change.
+        let expected = "\
+ok: Aristo C runtime vendored (2 files).
+    Out-of-tree link model — the runtime need not live in your source
+    tree. Build it once into a static library, then link that:
+      cc -std=c11 -DARISTO_INSTRUMENT -Iscratch -c scratch/aristo.c -o scratch/aristo.o
+      ar rcs scratch/libaristo.a scratch/aristo.o
+    Instrumented build: add -Iscratch (both flavors — ARISTO_TU_LOCAL pulls
+    aristo.h in unconditionally), pass -DARISTO_INSTRUMENT, and link
+    scratch/libaristo.a.";
+        assert_eq!(guidance(std::path::Path::new("scratch")), expected);
     }
 
     #[test]
@@ -83,7 +137,7 @@ mod tests {
     fn vendor_writes_both_files_with_expected_shape() {
         let tmp = tempfile::tempdir().unwrap();
         let out = tmp.path().join("aristo");
-        run(out.clone()).unwrap();
+        run(out.clone(), false).unwrap();
 
         let h = fs::read_to_string(out.join("aristo.h")).unwrap();
         let c = fs::read_to_string(out.join("aristo.c")).unwrap();
@@ -102,12 +156,39 @@ mod tests {
     fn vendor_is_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
         let out = tmp.path().join("aristo");
-        run(out.clone()).unwrap();
+        run(out.clone(), false).unwrap();
         let h1 = fs::read_to_string(out.join("aristo.h")).unwrap();
         let c1 = fs::read_to_string(out.join("aristo.c")).unwrap();
-        run(out.clone()).unwrap(); // second run must not change bytes
+        run(out.clone(), false).unwrap(); // second run must not change bytes
         assert_eq!(h1, fs::read_to_string(out.join("aristo.h")).unwrap());
         assert_eq!(c1, fs::read_to_string(out.join("aristo.c")).unwrap());
+    }
+
+    #[test]
+    fn check_passes_on_freshly_vendored_runtime() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("aristo");
+        run(out.clone(), false).unwrap();
+        // --check on the just-written runtime is up to date (writes nothing).
+        run(out, true).unwrap();
+    }
+
+    #[test]
+    fn check_fails_on_missing_and_on_drift() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("aristo");
+        // Absent runtime -> stale (a missing file is never "up to date").
+        assert!(
+            run(out.clone(), true).is_err(),
+            "--check must fail when the runtime is absent"
+        );
+        // Vendor, then hand-edit one file -> stale.
+        run(out.clone(), false).unwrap();
+        fs::write(out.join("aristo.c"), "/* hand-edited */\n").unwrap();
+        assert!(
+            run(out, true).is_err(),
+            "--check must fail when a vendored file drifts from the CLI template"
+        );
     }
 
     #[test]
