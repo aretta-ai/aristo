@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::config::IndexConfig;
-use crate::walk::extract::{extract_from_source, ExtractError, ExtractedAnnotation};
-use crate::walk::extract_c::extract_from_c_source;
+use crate::language::language_for_extension;
+use crate::walk::extract::{ExtractError, ExtractedAnnotation};
 
 /// One annotation discovered during a filesystem walk. Wraps
 /// [`ExtractedAnnotation`] with the file path (relative to the walk root)
@@ -126,42 +126,6 @@ impl WalkOptions {
 /// directory entry's basename (not the full path), so `vendor/target/` is
 /// also skipped.
 const DEFAULT_IGNORED_DIRS: &[&str] = &["target", ".git", ".aristo", "node_modules"];
-
-/// The source languages Aristo extracts annotations from, selected by file
-/// extension. Each dispatches to its own front-end but produces the same
-/// [`ExtractedAnnotation`] records.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SourceLang {
-    Rust,
-    C,
-}
-
-impl SourceLang {
-    fn extract(self, source: &str) -> Result<Vec<ExtractedAnnotation>, ExtractError> {
-        match self {
-            SourceLang::Rust => extract_from_source(source),
-            SourceLang::C => extract_from_c_source(source),
-        }
-    }
-}
-
-#[aristo::intent(
-    "Both the annotation walk and the freshness preflight route their \
-     extension check through this one function, so they can never disagree \
-     on which files count as source. Filtering `.c`/`.h` in here but not in \
-     the freshness walk would silently stop drift detection for C files — \
-     they would be indexed once but never re-checked for staleness. `.h` is \
-     treated as C.",
-    verify = "test",
-    id = "source_language_extension_set_is_single_authority"
-)]
-fn language_for_extension(ext: Option<&str>) -> Option<SourceLang> {
-    match ext {
-        Some("rs") => Some(SourceLang::Rust),
-        Some("c") | Some("h") => Some(SourceLang::C),
-        _ => None,
-    }
-}
 
 /// Walk `root` recursively, parse every `.rs` file, and collect the
 /// annotations they contain.
@@ -320,6 +284,8 @@ fn is_ignored_dir(entry: &walkdir::DirEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::walk::extract::extract_from_source;
+    use crate::walk::extract_c::extract_from_c_source;
     use std::fs;
 
     fn write(root: &Path, rel: &str, content: &str) {
@@ -414,6 +380,75 @@ mod tests {
         assert_eq!(paths.len(), 2, "both .c and .h are source; .md is not");
         assert!(paths.iter().any(|p| p.ends_with("src/main.c")));
         assert!(paths.iter().any(|p| p.ends_with("include/api.h")));
+    }
+
+    #[test]
+    fn mixed_source_walk_preserves_extraction_and_freshness() {
+        let tmp = tempfile::tempdir().unwrap();
+        let c = "// @aristo intent(\"keeps café bytes\")\r\nint f(void) { return 1; }\r\n";
+        let rust = "#[aristo::intent(\"first\")] fn first() {}\r\n\
+                    #[aristo::assume(\"second\")] fn second() {}\r\n";
+        let cases = [
+            ("include/api.h", c, extract_from_c_source(c).unwrap()),
+            ("src/a.c", c, extract_from_c_source(c).unwrap()),
+            ("src/z.rs", rust, extract_from_source(rust).unwrap()),
+        ];
+        let mut expected = Vec::new();
+        for (file, source, annotations) in cases {
+            write(tmp.path(), file, source);
+            expected.extend(
+                annotations
+                    .into_iter()
+                    .map(|annotation| DiscoveredAnnotation {
+                        file: PathBuf::from(file),
+                        annotation,
+                    }),
+            );
+        }
+        write(tmp.path(), "src/plain.rs", "fn plain() {}");
+        for file in [
+            "src/excluded.c",
+            "target/broken.rs",
+            "src/ignored.py",
+            "src/ignored.cpp",
+            "src/ignored.hpp",
+            "src/ignored.RS",
+            "src/ignored.C",
+            "src/no_extension",
+        ] {
+            write(tmp.path(), file, "not valid source");
+        }
+        let opts = WalkOptions::from_patterns(&["src/excluded.c"]).unwrap();
+        assert_eq!(
+            walk_directory_with(tmp.path(), &opts)
+                .expect("annotation walk must skip excluded and unsupported files"),
+            expected,
+            "mixed walk must preserve direct extractor records in file/source order"
+        );
+        let expected_paths = ["include/api.h", "src/a.c", "src/plain.rs", "src/z.rs"]
+            .map(|file| tmp.path().join(file));
+        assert_eq!(
+            walk_for_freshness_with(tmp.path(), &opts)
+                .expect("freshness walk must select source paths without parsing"),
+            expected_paths,
+            "freshness must include unannotated source and apply the same file filters"
+        );
+    }
+
+    #[test]
+    fn freshness_walk_does_not_read_source_contents() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("invalid.rs");
+        fs::write(&path, [0xff]).unwrap();
+        assert_eq!(
+            walk_for_freshness(tmp.path()).unwrap(),
+            vec![path],
+            "freshness discovery must not decode source contents"
+        );
+        assert!(
+            matches!(walk_directory(tmp.path()), Err(FsWalkError::Io { .. })),
+            "annotation extraction must report invalid UTF-8 as an I/O error"
+        );
     }
 
     #[test]

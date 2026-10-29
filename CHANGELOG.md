@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- core: Rust/C source-file selection now lives in one internal language registry, with explicit language identities and tests against conflicting extensions (no behavior change).
+
 ## [0.8.4] — 2026-10-19
 
 ### Changed
