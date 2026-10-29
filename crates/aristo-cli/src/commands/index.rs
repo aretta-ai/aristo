@@ -9,8 +9,9 @@ use std::path::Path;
 use aristo_core::id;
 use aristo_core::index::{
     AnnotationId, AnnotationKind, AssumeEntry, BindingState, IndexEntry, IntentEntry, ParentLink,
-    Status, VerifyLevel, VerifyMethod,
+    Status, VerifyLevel,
 };
+use aristo_core::language::VerifyArgument;
 use aristo_core::walk::{DiscoveredAnnotation, ParentRaw, WalkOptions};
 
 use crate::{CliError, CliResult, Workspace};
@@ -225,34 +226,26 @@ fn build_index_entry(
 }
 
 fn parse_verify(raw: &Option<String>, d: &DiscoveredAnnotation) -> CliResult<VerifyLevel> {
-    let Some(raw) = raw else {
-        // No `verify =` argument → resolves to project default at verify
-        // time; in the index we record `true` as the placeholder
-        // ("project default"), matching ConfigFile.verify.default_method's
-        // resolution rule.
-        return Ok(VerifyLevel::Bool(true));
+    // Preserve Rust/C's legacy token grammar, including quoted "false".
+    // Native frontends will supply decoded values directly to the resolver.
+    let argument = match raw.as_deref().map(str::trim) {
+        None => Some(VerifyArgument::Omitted),
+        Some("true") => Some(VerifyArgument::Bool(true)),
+        Some("false" | "\"false\"") => Some(VerifyArgument::Bool(false)),
+        Some(value) => value
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .map(|value| VerifyArgument::String(value.into())),
     };
-    // The walker captures verify as raw token text (`true`, `false`,
-    // `"test"`, `"neural"`, `"full"`, etc.). Strip surrounding quotes for
-    // string-form values.
-    let trimmed = raw.trim();
-    let inner = trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"'));
-    Ok(match (trimmed, inner) {
-        ("true", _) => VerifyLevel::Bool(true),
-        ("false", _) => VerifyLevel::Bool(false),
-        (_, Some("false")) => VerifyLevel::Bool(false),
-        (_, Some("test")) => VerifyLevel::Method(VerifyMethod::Test),
-        (_, Some("neural")) => VerifyLevel::Method(VerifyMethod::Neural),
-        (_, Some("full")) => VerifyLevel::Method(VerifyMethod::Full),
-        _ => {
-            return Err(CliError::Other {
-                message: format!(
-                    "invalid verify value `{raw}` at {}:{} (expected true, false, \"false\", \"test\", \"neural\", or \"full\")",
-                    d.file.display(),
-                    d.annotation.line
-                ),
-                exit_code: 2,
-            });
+    argument.and_then(VerifyArgument::resolve).ok_or_else(|| {
+        let raw = raw.as_deref().unwrap_or_default();
+        CliError::Other {
+            message: format!(
+                "invalid verify value `{raw}` at {}:{} (expected true, false, \"false\", \"test\", \"neural\", or \"full\")",
+                d.file.display(),
+                d.annotation.line
+            ),
+            exit_code: 2,
         }
     })
 }
@@ -288,6 +281,7 @@ pub(crate) fn now_rfc3339() -> String {
 mod tests {
     use super::*;
 
+    use aristo_core::index::VerifyMethod;
     use aristo_core::walk::AnnotationForm;
 
     #[test]
@@ -336,6 +330,85 @@ mod tests {
             parse_verify(&Some("\"false\"".into()), &dummy).unwrap(),
             VerifyLevel::Bool(false)
         );
-        assert!(parse_verify(&Some("\"yolo\"".into()), &dummy).is_err());
+        for raw in [
+            "true",
+            "false",
+            "\"false\"",
+            "\"test\"",
+            "\"neural\"",
+            "\"full\"",
+        ] {
+            assert_eq!(
+                parse_verify(&Some(format!(" \n{raw}\t")), &dummy).unwrap(),
+                parse_verify(&Some(raw.into()), &dummy).unwrap(),
+                "outer whitespace: {raw}"
+            );
+        }
+        for raw in [
+            "\"yolo\"",
+            "\"true\"",
+            "True",
+            "False",
+            "test",
+            "r#\"test\"#",
+            "\"te\\x73t\"",
+            " \" test \" ",
+        ] {
+            let error = parse_verify(&Some(raw.into()), &dummy).unwrap_err();
+            assert_eq!(error.exit_code(), 2);
+            assert_eq!(error.to_string(), format!(
+                "invalid verify value `{raw}` at x.rs:1 (expected true, false, \"false\", \"test\", \"neural\", or \"full\")"
+            ));
+        }
+    }
+
+    #[test]
+    fn rust_and_c_verification_fields_reach_the_index_unchanged() {
+        use aristo_core::walk::{extract_from_c_source, extract_from_source};
+        for (field, expected) in [
+            ("", VerifyLevel::Bool(true)),
+            (", verify = true", VerifyLevel::Bool(true)),
+            (", verify = false", VerifyLevel::Bool(false)),
+            (", verify = \"false\"", VerifyLevel::Bool(false)),
+            (
+                ", verify = \"test\"",
+                VerifyLevel::Method(VerifyMethod::Test),
+            ),
+            (
+                ", verify = \"neural\"",
+                VerifyLevel::Method(VerifyMethod::Neural),
+            ),
+            (
+                ", verify = \"full\"",
+                VerifyLevel::Method(VerifyMethod::Full),
+            ),
+        ] {
+            let args = format!("\"example\", id = \"example\"{field}");
+            for (file, annotations) in [
+                (
+                    "x.rs",
+                    extract_from_source(&format!("#[aristo::intent({args})]\nfn x() {{}}")),
+                ),
+                (
+                    "x.c",
+                    extract_from_c_source(&format!("// @aristo intent({args})\nvoid x(void) {{}}")),
+                ),
+            ] {
+                let discovered: Vec<_> = annotations
+                    .unwrap()
+                    .into_iter()
+                    .map(|annotation| DiscoveredAnnotation {
+                        file: file.into(),
+                        annotation,
+                    })
+                    .collect();
+                let (entries, _) = build_entries(&discovered, Path::new(".")).unwrap();
+                let IndexEntry::Intent(entry) = &entries[&AnnotationId::parse("example").unwrap()]
+                else {
+                    panic!("expected an intent for {file}: {field}");
+                };
+                assert_eq!(entry.verify, expected, "{file}: {field}");
+            }
+        }
     }
 }
