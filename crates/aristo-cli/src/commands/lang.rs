@@ -181,8 +181,9 @@ fn detect_c_dir_signal(cwd: &Path) -> Option<String> {
     let mut c_files: Vec<String> = std::fs::read_dir(cwd)
         .ok()?
         .flatten()
-        .filter(|e| {
-            language_for_path(&e.path()).is_some_and(|language| language.id() == LanguageId::C)
+        .filter(|entry| {
+            language_for_path(&entry.path()).is_some_and(|language| language.id() == LanguageId::C)
+                && entry.file_type().is_ok_and(|file_type| file_type.is_file())
         })
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
         .collect();
@@ -225,6 +226,49 @@ fn emit_cheat_sheet(lang: Lang) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn c_source_fallback_ignores_directories() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["vendor.c", "vendor.h"] {
+            std::fs::create_dir(tmp.path().join(name)).unwrap();
+        }
+        assert_eq!(detect_c_dir_signal(tmp.path()), None);
+        assert!(detect_for_dir(tmp.path()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn c_source_fallback_skips_symlinks_like_source_walkers() {
+        let root = tempfile::tempdir().unwrap();
+        let targets = tempfile::tempdir().unwrap();
+        std::fs::write(
+            targets.path().join("source.c"),
+            "// @aristo intent(\"external source\")\nint f(void) { return 0; }\n",
+        )
+        .unwrap();
+        std::fs::create_dir(targets.path().join("directory")).unwrap();
+        for (name, target) in [
+            ("link.c", "source.c"),
+            ("directory.h", "directory"),
+            ("broken.c", "missing"),
+        ] {
+            std::os::unix::fs::symlink(targets.path().join(target), root.path().join(name))
+                .unwrap();
+        }
+        assert_eq!(
+            detect_c_dir_signal(root.path()),
+            None,
+            "links to files, directories or missing targets must not trigger C detection"
+        );
+        assert!(detect_for_dir(root.path()).is_err());
+        assert!(aristo_core::walk::walk_directory(root.path())
+            .unwrap()
+            .is_empty());
+        assert!(aristo_core::walk::walk_for_freshness(root.path())
+            .unwrap()
+            .is_empty());
+    }
 
     #[test]
     fn cli_built_ins_have_unique_detectors_and_cheat_sheets_in_precedence_order() {
