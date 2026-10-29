@@ -2,8 +2,7 @@
 //!
 //! Auto-detects Rust or C from manifest files or C source in the current
 //! directory. File extension selection uses the core language registry.
-//! The skills
-//! that author annotations are instructed to run `aristo lang` first, so
+//! Per K5, skills that author annotations run `aristo lang` first, so
 //! they always get an authoritative source of syntax instead of guessing.
 //!
 //! `--file <path>` lets skills pick a per-file language (for polyglot
@@ -12,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use aristo_core::language::language_for_extension;
+use aristo_core::language::{language_for_path, LanguageId};
 
 use crate::{CliError, CliResult};
 
@@ -155,8 +154,7 @@ fn detect_c_dir_signal(cwd: &Path) -> Option<String> {
         .ok()?
         .flatten()
         .filter(|e| {
-            language_for_extension(e.path().extension().and_then(|s| s.to_str()))
-                .is_some_and(|language| language.id() == "c")
+            language_for_path(&e.path()).is_some_and(|language| language.id() == LanguageId::C)
         })
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
         .collect();
@@ -165,14 +163,12 @@ fn detect_c_dir_signal(cwd: &Path) -> Option<String> {
 }
 
 fn detect_for_file(path: &Path) -> CliResult<Lang> {
-    match language_for_extension(path.extension().and_then(|s| s.to_str()))
-        .map(|language| language.id())
-    {
+    match language_for_path(path).map(|language| language.id()) {
         // The manifest path is informational, so use the file's path verbatim.
-        Some("rust") => Ok(Lang::Rust {
+        Some(LanguageId::RUST) => Ok(Lang::Rust {
             manifest: path.to_path_buf(),
         }),
-        Some("c") => Ok(Lang::C {
+        Some(LanguageId::C) => Ok(Lang::C {
             detected_via: path.display().to_string(),
         }),
         _ => Err(unsupported_error()),
@@ -213,19 +209,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unsupported_message_lists_every_registered_language_as_supported() {
+        let CliError::Other { message, .. } = unsupported_error() else {
+            panic!("unsupported language must retain the custom error");
+        };
+        let supported = message
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("Aristo supports: "))
+            .expect("error must include the supported-language list");
+        for language in aristo_core::language::built_in_languages() {
+            assert!(
+                supported
+                    .trim_end_matches('.')
+                    .split(',')
+                    .any(|name| name.trim().eq_ignore_ascii_case(language.id().as_str())),
+                "registered language {:?} is missing from the supported list: {supported}",
+                language.id()
+            );
+        }
+    }
+
+    #[test]
     fn per_file_detection_preserves_language_and_reported_path() {
-        for file in ["src/lib.rs", "src/api.c", "include/api.h"] {
+        for (file, expected_language) in [
+            ("src/lib.rs", LanguageId::RUST),
+            ("src/api.c", LanguageId::C),
+            ("include/api.h", LanguageId::C),
+        ] {
             let path = Path::new(file);
-            match detect_for_file(path).unwrap() {
-                Lang::Rust { manifest } => {
-                    assert_eq!(file, "src/lib.rs", "unexpected Rust selection");
-                    assert_eq!(manifest, path, "Rust must report the supplied path");
-                }
-                Lang::C { detected_via } => {
-                    assert_ne!(file, "src/lib.rs", "unexpected C selection");
-                    assert_eq!(detected_via, file, "C must report the supplied path");
-                }
-            }
+            let (actual_language, reported_path) = match detect_for_file(path).unwrap() {
+                Lang::Rust { manifest } => (LanguageId::RUST, manifest.display().to_string()),
+                Lang::C { detected_via } => (LanguageId::C, detected_via),
+            };
+            assert_eq!(
+                actual_language, expected_language,
+                "wrong language for {file}"
+            );
+            assert_eq!(reported_path, file, "must report the supplied path");
         }
         for file in [
             "lib.RS", "api.C", "api.cpp", "api.hpp", "app.py", "app.ts", "app.go", "README",

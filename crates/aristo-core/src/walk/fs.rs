@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::config::IndexConfig;
-use crate::language::language_for_extension;
+use crate::language::language_for_path;
 use crate::walk::extract::{ExtractError, ExtractedAnnotation};
 
 /// One annotation discovered during a filesystem walk. Wraps
@@ -177,8 +177,7 @@ pub fn walk_directory_with(
         if !entry.file_type().is_file() {
             continue;
         }
-        let ext = entry.path().extension().and_then(|s| s.to_str());
-        let Some(lang) = language_for_extension(ext) else {
+        let Some(lang) = language_for_path(entry.path()) else {
             continue;
         };
 
@@ -258,8 +257,7 @@ pub fn walk_for_freshness_with(
         if !entry.file_type().is_file() {
             continue;
         }
-        let ext = entry.path().extension().and_then(|s| s.to_str());
-        if language_for_extension(ext).is_none() {
+        if language_for_path(entry.path()).is_none() {
             continue;
         }
         let rel_for_glob = entry.path().strip_prefix(root).unwrap_or(entry.path());

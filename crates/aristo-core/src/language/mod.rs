@@ -2,4 +2,4 @@
 
 mod registry;
 
-pub use registry::{language_for_extension, SourceLanguage};
+pub use registry::{built_in_languages, language_for_path, LanguageId, SourceLanguage};

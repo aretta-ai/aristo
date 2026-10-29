@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- core: `aristo_core::language` is now public, providing typed `LanguageId` constants and read-only built-in source language lookup by path.
 - cli: `aristo lang` now shares Rust/C extension selection with source discovery while preserving detection priority and syntax output.
 - core: Rust/C source-file selection now lives in one internal language registry, with explicit language identities and tests against conflicting extensions (no behavior change).
 
