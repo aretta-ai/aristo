@@ -3,5 +3,5 @@
 mod fields;
 mod registry;
 
-pub use fields::VerifyArgument;
+pub use fields::{InvalidVerifyMethod, VerifyArgument};
 pub use registry::{built_in_languages, language_for_path, LanguageId, SourceLanguage};

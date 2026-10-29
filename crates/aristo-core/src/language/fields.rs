@@ -7,34 +7,39 @@ use crate::index::{VerifyLevel, VerifyMethod};
 /// Frontends decode native literals; this type contains no source tokens.
 /// Language-specific compatibility spellings belong in those frontends.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum VerifyArgument {
     Omitted,
     Bool(bool),
-    String(String),
+    Text(String),
 }
 
-impl VerifyArgument {
-    /// Resolve an intent's argument into the existing index representation.
-    ///
-    /// `None` means an invalid method name; callers retain the original source
-    /// spelling and location for diagnostics. Check annotation-kind rules
-    /// before calling this: omission becomes the project-default marker.
+/// A decoded string that does not name a supported verification method.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown verification method `{0}`")]
+pub struct InvalidVerifyMethod(String);
+
+impl TryFrom<VerifyArgument> for VerifyLevel {
+    type Error = InvalidVerifyMethod;
+
+    /// Convert decoded values into the index representation. Omission retains
+    /// the project-default marker; unknown strings return their decoded value
+    /// in the error. Annotation-kind validation belongs to the caller.
     #[aristo::intent(
         "An omitted verification argument retains the project-default marker. \
          An unrecognized string must never fall back to that default.",
         verify = "test",
         id = "verify_argument_invalid_never_defaults"
     )]
-    pub fn resolve(self) -> Option<VerifyLevel> {
-        match self {
-            Self::Omitted => Some(VerifyLevel::Bool(true)),
-            Self::Bool(value) => Some(VerifyLevel::Bool(value)),
-            Self::String(value) => match value.as_str() {
-                "test" => Some(VerifyLevel::Method(VerifyMethod::Test)),
-                "neural" => Some(VerifyLevel::Method(VerifyMethod::Neural)),
-                "full" => Some(VerifyLevel::Method(VerifyMethod::Full)),
-                _ => None,
-            },
+    fn try_from(argument: VerifyArgument) -> Result<Self, Self::Error> {
+        match argument {
+            VerifyArgument::Omitted => Ok(Self::Bool(true)),
+            VerifyArgument::Bool(value) => Ok(Self::Bool(value)),
+            VerifyArgument::Text(value) => {
+                serde_json::from_value::<VerifyMethod>(serde_json::Value::String(value.clone()))
+                    .map(Self::Method)
+                    .map_err(|_| InvalidVerifyMethod(value))
+            }
         }
     }
 }

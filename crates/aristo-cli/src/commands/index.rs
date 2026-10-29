@@ -235,9 +235,9 @@ fn parse_verify(raw: &Option<String>, d: &DiscoveredAnnotation) -> CliResult<Ver
         Some(value) => value
             .strip_prefix('"')
             .and_then(|value| value.strip_suffix('"'))
-            .map(|value| VerifyArgument::String(value.into())),
+            .map(|value| VerifyArgument::Text(value.into())),
     };
-    argument.and_then(VerifyArgument::resolve).ok_or_else(|| {
+    argument.and_then(|argument| VerifyLevel::try_from(argument).ok()).ok_or_else(|| {
         let raw = raw.as_deref().unwrap_or_default();
         CliError::Other {
             message: format!(
