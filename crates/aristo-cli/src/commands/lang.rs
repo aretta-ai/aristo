@@ -111,10 +111,36 @@ pub(crate) fn run(file: Option<PathBuf>) -> CliResult<()> {
     Ok(())
 }
 
-enum Lang {
-    Rust { manifest: PathBuf },
-    C { detected_via: String },
+struct Lang {
+    language: &'static CliLanguage,
+    detected_via: String,
 }
+
+struct CliLanguage {
+    id: LanguageId,
+    display_name: &'static str,
+    cheat_sheet: &'static str,
+    signal_prefix: &'static str,
+    detect_dir: fn(&Path) -> Option<String>,
+}
+
+// Declared CLI precedence: Rust before C, independent of core registry order.
+static CLI_LANGUAGES: &[CliLanguage] = &[
+    CliLanguage {
+        id: LanguageId::RUST,
+        display_name: "Rust",
+        cheat_sheet: RUST_CHEAT_SHEET,
+        signal_prefix: "Cargo.toml at ",
+        detect_dir: detect_rust_dir_signal,
+    },
+    CliLanguage {
+        id: LanguageId::C,
+        display_name: "C",
+        cheat_sheet: C_CHEAT_SHEET,
+        signal_prefix: "",
+        detect_dir: detect_c_dir_signal,
+    },
+];
 
 /// C build-system manifests, checked in order for deterministic detection.
 const C_MANIFESTS: &[&str] = &[
@@ -127,18 +153,20 @@ const C_MANIFESTS: &[&str] = &[
 ];
 
 fn detect_for_dir(cwd: &Path) -> CliResult<Lang> {
-    let cargo_toml = cwd.join("Cargo.toml");
-    if cargo_toml.is_file() {
-        return Ok(Lang::Rust {
-            manifest: cargo_toml,
-        });
-    }
-    if let Some(signal) = detect_c_dir_signal(cwd) {
-        return Ok(Lang::C {
-            detected_via: signal,
-        });
-    }
-    Err(unsupported_error())
+    CLI_LANGUAGES
+        .iter()
+        .find_map(|language| {
+            (language.detect_dir)(cwd).map(|detected_via| Lang {
+                language,
+                detected_via,
+            })
+        })
+        .ok_or_else(unsupported_error)
+}
+
+fn detect_rust_dir_signal(cwd: &Path) -> Option<String> {
+    let manifest = cwd.join("Cargo.toml");
+    manifest.is_file().then(|| manifest.display().to_string())
 }
 
 /// Detect a C project by a build-system manifest, or — failing that — any C
@@ -163,16 +191,15 @@ fn detect_c_dir_signal(cwd: &Path) -> Option<String> {
 }
 
 fn detect_for_file(path: &Path) -> CliResult<Lang> {
-    match language_for_path(path).map(|language| language.id()) {
-        // The manifest path is informational, so use the file's path verbatim.
-        Some(LanguageId::RUST) => Ok(Lang::Rust {
-            manifest: path.to_path_buf(),
-        }),
-        Some(LanguageId::C) => Ok(Lang::C {
-            detected_via: path.display().to_string(),
-        }),
-        _ => Err(unsupported_error()),
-    }
+    let id = language_for_path(path).ok_or_else(unsupported_error)?.id();
+    let language = CLI_LANGUAGES
+        .iter()
+        .find(|language| language.id == id)
+        .ok_or_else(unsupported_error)?;
+    Ok(Lang {
+        language,
+        detected_via: path.display().to_string(),
+    })
 }
 
 fn unsupported_error() -> CliError {
@@ -187,21 +214,12 @@ fn unsupported_error() -> CliError {
 }
 
 fn emit_cheat_sheet(lang: Lang) {
-    match lang {
-        Lang::Rust { manifest } => {
-            println!(
-                "Detected language: Rust (from Cargo.toml at {})",
-                manifest.display()
-            );
-            println!();
-            print!("{RUST_CHEAT_SHEET}");
-        }
-        Lang::C { detected_via } => {
-            println!("Detected language: C (from {detected_via})");
-            println!();
-            print!("{C_CHEAT_SHEET}");
-        }
-    }
+    println!(
+        "Detected language: {} (from {}{})",
+        lang.language.display_name, lang.language.signal_prefix, lang.detected_via
+    );
+    println!();
+    print!("{}", lang.language.cheat_sheet);
 }
 
 #[cfg(test)]
@@ -209,7 +227,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unsupported_message_lists_every_registered_language_as_supported() {
+    fn cli_built_ins_have_unique_detectors_and_cheat_sheets_in_precedence_order() {
+        let registered = aristo_core::language::built_in_languages();
+        assert_eq!(CLI_LANGUAGES.len(), registered.len());
+        for language in registered {
+            let entries: Vec<_> = CLI_LANGUAGES
+                .iter()
+                .filter(|entry| entry.id == language.id())
+                .collect();
+            assert_eq!(
+                entries.len(),
+                1,
+                "missing or duplicate CLI entry for {:?}",
+                language.id()
+            );
+            assert!(!entries[0].cheat_sheet.trim().is_empty());
+            assert!(!entries[0].display_name.is_empty());
+        }
+        assert_eq!(
+            CLI_LANGUAGES
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            [LanguageId::RUST, LanguageId::C],
+            "CLI precedence is independent of registry order"
+        );
+    }
+
+    #[test]
+    fn unsupported_message_lists_cli_display_names() {
         let CliError::Other { message, .. } = unsupported_error() else {
             panic!("unsupported language must retain the custom error");
         };
@@ -217,14 +263,14 @@ mod tests {
             .lines()
             .find_map(|line| line.trim().strip_prefix("Aristo supports: "))
             .expect("error must include the supported-language list");
-        for language in aristo_core::language::built_in_languages() {
+        for language in CLI_LANGUAGES {
             assert!(
                 supported
                     .trim_end_matches('.')
                     .split(',')
-                    .any(|name| name.trim().eq_ignore_ascii_case(language.id().as_str())),
+                    .any(|name| name.trim() == language.display_name),
                 "registered language {:?} is missing from the supported list: {supported}",
-                language.id()
+                language.id
             );
         }
     }
@@ -237,15 +283,12 @@ mod tests {
             ("include/api.h", LanguageId::C),
         ] {
             let path = Path::new(file);
-            let (actual_language, reported_path) = match detect_for_file(path).unwrap() {
-                Lang::Rust { manifest } => (LanguageId::RUST, manifest.display().to_string()),
-                Lang::C { detected_via } => (LanguageId::C, detected_via),
-            };
+            let detected = detect_for_file(path).unwrap();
             assert_eq!(
-                actual_language, expected_language,
+                detected.language.id, expected_language,
                 "wrong language for {file}"
             );
-            assert_eq!(reported_path, file, "must report the supplied path");
+            assert_eq!(detected.detected_via, file, "must report the supplied path");
         }
         for file in [
             "lib.RS", "api.C", "api.cpp", "api.hpp", "app.py", "app.ts", "app.go", "README",
@@ -289,7 +332,7 @@ mod tests {
         );
         std::fs::write(tmp.path().join("Cargo.toml"), "").unwrap();
         assert!(
-            matches!(detect_for_dir(tmp.path()), Ok(Lang::Rust { .. })),
+            detect_for_dir(tmp.path()).unwrap().language.id == LanguageId::RUST,
             "Cargo retains precedence over C signals"
         );
     }
