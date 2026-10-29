@@ -11,7 +11,6 @@ use aristo_core::index::{
     AnnotationId, AnnotationKind, AssumeEntry, BindingState, IndexEntry, IntentEntry, ParentLink,
     Status, VerifyLevel,
 };
-use aristo_core::language::VerifyArgument;
 use aristo_core::walk::{DiscoveredAnnotation, ParentRaw, WalkOptions};
 
 use crate::{CliError, CliResult, Workspace};
@@ -161,7 +160,7 @@ fn resolve_parent_ids(d: &DiscoveredAnnotation, skipped: &mut usize) -> Option<V
 }
 
 fn resolve_verify(d: &DiscoveredAnnotation, skipped: &mut usize) -> Option<VerifyLevel> {
-    match parse_verify(&d.annotation.verify, d) {
+    match parse_verify(d) {
         Ok(v) => Some(v),
         Err(e) => {
             eprintln!(
@@ -225,18 +224,9 @@ fn build_index_entry(
     }
 }
 
-fn parse_verify(raw: &Option<String>, d: &DiscoveredAnnotation) -> CliResult<VerifyLevel> {
-    // Preserve Rust/C's legacy token grammar, including quoted "false".
-    // Native frontends will supply decoded values directly to the resolver.
-    let argument = match raw.as_deref().map(str::trim) {
-        None => Some(VerifyArgument::Omitted),
-        Some("true") => Some(VerifyArgument::Bool(true)),
-        Some("false" | "\"false\"") => Some(VerifyArgument::Bool(false)),
-        Some(value) => value
-            .strip_prefix('"')
-            .and_then(|value| value.strip_suffix('"'))
-            .map(|value| VerifyArgument::Text(value.into())),
-    };
+fn parse_verify(d: &DiscoveredAnnotation) -> CliResult<VerifyLevel> {
+    let raw = &d.annotation.verify;
+    let argument = d.annotation.verify_argument().ok();
     argument.and_then(|argument| VerifyLevel::try_from(argument).ok()).ok_or_else(|| {
         let raw = raw.as_deref().unwrap_or_default();
         CliError::Other {
@@ -283,6 +273,12 @@ mod tests {
 
     use aristo_core::index::VerifyMethod;
     use aristo_core::walk::AnnotationForm;
+
+    fn parse_verify(raw: &Option<String>, d: &DiscoveredAnnotation) -> CliResult<VerifyLevel> {
+        let mut d = d.clone();
+        d.annotation.verify.clone_from(raw);
+        super::parse_verify(&d)
+    }
 
     #[test]
     fn parse_verify_handles_all_documented_forms() {
@@ -350,8 +346,6 @@ mod tests {
             "True",
             "False",
             "test",
-            "r#\"test\"#",
-            "\"te\\x73t\"",
             " \" test \" ",
         ] {
             let error = parse_verify(&Some(raw.into()), &dummy).unwrap_err();
@@ -370,6 +364,15 @@ mod tests {
             (", verify = true", VerifyLevel::Bool(true)),
             (", verify = false", VerifyLevel::Bool(false)),
             (", verify = \"false\"", VerifyLevel::Bool(false)),
+            (
+                r##", verify = r#"test"#"##,
+                VerifyLevel::Method(VerifyMethod::Test),
+            ),
+            (
+                r#", verify = "te\x73t""#,
+                VerifyLevel::Method(VerifyMethod::Test),
+            ),
+            (r#", verify = "fal\x73e""#, VerifyLevel::Bool(false)),
             (
                 ", verify = \"test\"",
                 VerifyLevel::Method(VerifyMethod::Test),

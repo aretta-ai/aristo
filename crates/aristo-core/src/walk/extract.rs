@@ -75,6 +75,44 @@ pub struct ExtractedAnnotation {
     pub body_hash: Sha256,
 }
 
+impl ExtractedAnnotation {
+    /// Decode the Rust literal grammar shared by Rust attributes and C
+    /// directives. Keep `verify` unchanged for compatibility and diagnostics.
+    #[aristo::intent(
+        "Verification arguments use decoded literal values. Raw and escaped \
+         strings naming the same method must not drop claims from the index.",
+        verify = "test",
+        id = "verify_literals_decode_before_resolution"
+    )]
+    pub fn verify_argument(&self) -> syn::Result<crate::language::VerifyArgument> {
+        use crate::language::VerifyArgument;
+        let Some(raw) = &self.verify else {
+            return Ok(VerifyArgument::Omitted);
+        };
+        match syn::parse_str::<syn::Expr>(raw)? {
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Bool(value),
+                ..
+            }) => Ok(VerifyArgument::Bool(value.value)),
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(value),
+                ..
+            }) => {
+                let value = value.value();
+                Ok(if value == "false" {
+                    VerifyArgument::Bool(false)
+                } else {
+                    VerifyArgument::Text(value)
+                })
+            }
+            expression => Err(syn::Error::new_spanned(
+                expression,
+                "verify must be a boolean or string literal",
+            )),
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractError {
     #[error("source did not parse as Rust: {0}")]

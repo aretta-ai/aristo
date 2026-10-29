@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- core: index raw and escaped verification literals using their decoded Rust/C argument values, matching macro validation.
 - core: make decoded verification arguments extensible, with typed conversion errors and method names derived from the index schema.
 - cli: use core verification-field resolution when indexing Rust/C, preserving accepted spellings and validation errors.
 - core: add `language::VerifyArgument` to resolve decoded annotation values without depending on source-language syntax.
