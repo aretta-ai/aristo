@@ -8,6 +8,11 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- cli: reject `verify` on assumptions with a field-specific diagnostic before interpreting its value.
+- core: index raw and escaped verification literals using their decoded Rust/C argument values, matching macro validation.
+- core: make decoded verification arguments extensible, with typed conversion errors and method names derived from the index schema.
+- cli: use core verification-field resolution when indexing Rust/C, preserving accepted spellings and validation errors.
+- core: add `language::VerifyArgument` to resolve decoded annotation values without depending on source-language syntax.
 - cli: `aristo lang` ignores directories, symlinks to files or directories, plus dangling links when detecting C from source entries, matching source walkers.
 - cli: organize built-in language detectors, display names and syntax sheets in one ordered table, preserving detection behavior.
 - core: `aristo_core::language` is now public, providing typed `LanguageId` constants and read-only built-in source language lookup by path.
