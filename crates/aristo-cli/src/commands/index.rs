@@ -226,6 +226,20 @@ fn build_index_entry(
 
 fn parse_verify(d: &DiscoveredAnnotation) -> CliResult<VerifyLevel> {
     let raw = &d.annotation.verify;
+    if d.annotation.kind == AnnotationKind::Assume {
+        if raw.is_some() {
+            return Err(CliError::Other {
+                message: format!(
+                    "verify is not allowed on assume at {}:{}",
+                    d.file.display(),
+                    d.annotation.line
+                ),
+                exit_code: 2,
+            });
+        }
+        // Assume entries do not persist this placeholder.
+        return Ok(VerifyLevel::Bool(true));
+    }
     let argument = d.annotation.verify_argument().ok();
     argument.and_then(|argument| VerifyLevel::try_from(argument).ok()).ok_or_else(|| {
         let raw = raw.as_deref().unwrap_or_default();
@@ -354,6 +368,41 @@ mod tests {
                 "invalid verify value `{raw}` at x.rs:1 (expected true, false, \"false\", \"test\", \"neural\", or \"full\")"
             ));
         }
+    }
+
+    #[test]
+    fn assumptions_reject_verify_before_resolving_its_value() {
+        use aristo_core::walk::extract_from_c_source;
+        for field in [
+            ", verify = true",
+            ", verify = false",
+            ", verify = \"test\"",
+            ", verify = \"yolo\"",
+        ] {
+            let source = format!("// @aristo assume(\"external invariant\", id = \"external\"{field})\nvoid x(void) {{}}");
+            let d = DiscoveredAnnotation {
+                file: "x.c".into(),
+                annotation: extract_from_c_source(&source).unwrap().remove(0),
+            };
+            let error = super::parse_verify(&d).unwrap_err();
+            assert_eq!(error.exit_code(), 2);
+            assert_eq!(
+                error.to_string(),
+                "verify is not allowed on assume at x.c:1"
+            );
+            assert!(build_entries(&[d], Path::new(".")).unwrap().0.is_empty());
+        }
+        let source =
+            "// @aristo assume(\"external invariant\", id = \"external\")\nvoid x(void) {}";
+        let d = DiscoveredAnnotation {
+            file: "x.c".into(),
+            annotation: extract_from_c_source(source).unwrap().remove(0),
+        };
+        let (entries, _) = build_entries(&[d], Path::new(".")).unwrap();
+        assert!(matches!(
+            entries[&AnnotationId::parse("external").unwrap()],
+            IndexEntry::Assume(_)
+        ));
     }
 
     #[test]
