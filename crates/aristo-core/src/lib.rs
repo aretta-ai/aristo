@@ -27,7 +27,7 @@ pub mod git;
 pub mod hash;
 pub mod id;
 pub mod index;
-pub(crate) mod language;
+pub mod language;
 pub mod metrics;
 pub mod proof;
 pub mod spec;

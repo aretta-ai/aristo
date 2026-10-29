@@ -8,6 +8,10 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- cli: `aristo lang` ignores directories, symlinks to files or directories, plus dangling links when detecting C from source entries, matching source walkers.
+- cli: organize built-in language detectors, display names and syntax sheets in one ordered table, preserving detection behavior.
+- core: `aristo_core::language` is now public, providing typed `LanguageId` constants and read-only built-in source language lookup by path.
+- cli: `aristo lang` now shares Rust/C extension selection with source discovery while preserving detection priority and syntax output.
 - core: Rust/C source-file selection now lives in one internal language registry, with explicit language identities and tests against conflicting extensions (no behavior change).
 
 ## [0.8.4] — 2026-10-19
