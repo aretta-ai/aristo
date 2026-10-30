@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- tests: extend Rust/C reference coverage to methods, trait signatures, types, nested expressions, headers and decoded verification literals.
 - tests: keep extraction checks in aristo-core and share their reference corpus with CLI stamp checks.
 - tests: identify known Rust/C compatibility issues and report missing stamp IDs explicitly.
 - cli: guard mixed Rust/C stamp IDs, parent links and hashes against fixed reference outputs before language-provider changes.

@@ -21,7 +21,12 @@ pub fn workspace(crlf: bool) -> tempfile::TempDir {
         "[doc]\ncommit_artifacts = false\n",
     )
     .unwrap();
-    for (name, source) in [("a.rs", include_str!("a.rs")), ("b.c", include_str!("b.c"))] {
+    for (name, source) in [
+        ("a.rs", include_str!("a.rs")),
+        ("b.c", include_str!("b.c")),
+        ("c.rs", include_str!("c.rs")),
+        ("d.h", include_str!("d.h")),
+    ] {
         // Construct both byte profiles independently of Git's checkout settings.
         let source = source.replace("\r\n", "\n");
         fs::write(
