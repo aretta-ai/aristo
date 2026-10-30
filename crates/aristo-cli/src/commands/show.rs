@@ -136,19 +136,39 @@ pub(crate) fn read_index(path: &std::path::Path) -> CliResult<IndexFile> {
 /// the index is a derived, optional cache (index-as-local-cache / Option B).
 /// Read commands call this instead of `read_index` so they keep working when
 /// `aristo stamp` has not run.
+#[aristo::intent(
+    "Legacy-format ids absent from the current source-derived index cannot \
+     be returned from the local cache. Explicit source ids retain their \
+     identity through a generated-id migration.",
+    verify = "test",
+    id = "legacy_identity_caches_are_regenerated"
+)]
 pub(crate) fn load_index(ws: &Workspace) -> CliResult<IndexFile> {
-    // The index is a derived, gitignored cache. If a local `index.toml` cache is
-    // present, read it (fast path); otherwise — the normal case on a fresh
-    // clone where the gitignored cache is absent — regenerate from source +
-    // `.aristo/proofs/`. A stale local cache is no worse than the old committed
-    // index was (re-run `aristo stamp` to refresh it); a missing one is not an
-    // error. Never hard-errors merely because the file is absent.
     let path = ws.index_path();
     if path.is_file() {
-        read_index(&path)
-    } else {
-        crate::commands::stamp::regenerate_index(ws)
+        let cached = read_index(&path)?;
+        // The old generator used eight alphanumeric characters after aret_.
+        // This is disjoint from the v2 format; no schema change is required.
+        let legacy: Vec<_> = cached
+            .entries
+            .keys()
+            .filter(|id| {
+                id.as_str()
+                    .strip_prefix("aret_")
+                    .is_some_and(|body| body.len() == 8)
+            })
+            .collect();
+        if !legacy.is_empty() {
+            let fresh = crate::commands::stamp::regenerate_index(ws)?;
+            // An opaque-looking ID may be explicit in source (including the
+            // supported rename/promotion flow). Only missing legacy IDs migrated.
+            if legacy.iter().any(|id| !fresh.entries.contains_key(*id)) {
+                return Ok(fresh);
+            }
+        }
+        return Ok(cached);
     }
+    crate::commands::stamp::regenerate_index(ws)
 }
 
 // ─── Lookup paths ──────────────────────────────────────────────────────────

@@ -971,7 +971,10 @@ fn legacy_id_migration_archives_proofs_without_rebinding_them() {
     let mut legacy = read_index(tmp.path());
     let new_id = legacy.entries.keys().next().unwrap().clone();
     let old_id = deterministic_id(AnnotationKind::Intent, "returns one", "fn value", 0);
-    let entry = legacy.entries.remove(&new_id).unwrap();
+    let mut entry = legacy.entries.remove(&new_id).unwrap();
+    if let IndexEntry::Intent(ref mut intent) = entry {
+        intent.status = Status::Neural;
+    }
     legacy.entries.insert(old_id.clone(), entry);
     let index_path = tmp.path().join(".aristo/index.toml");
     fs::write(&index_path, toml::to_string(&legacy).unwrap()).unwrap();
@@ -983,16 +986,22 @@ fn legacy_id_migration_archives_proofs_without_rebinding_them() {
         .assert()
         .failure();
     assert_eq!(fs::read(&proof_path).unwrap(), proof_bytes);
-    // Fresh clones have no index cache. Regeneration must also use the new IDs.
-    fs::remove_file(&index_path).unwrap();
-    let output = aristo_in(tmp.path())
-        .args(["list", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let json = String::from_utf8(output.stdout).unwrap();
-    assert!(json.contains(new_id.as_str()), "{json}");
-    assert!(!json.contains(old_id.as_str()), "{json}");
+    // Upgrade reads must disregard a legacy cache; fresh clones must agree.
+    for cached in [true, false] {
+        if !cached {
+            fs::remove_file(&index_path).unwrap();
+        }
+        let output = aristo_in(tmp.path())
+            .args(["list", "--json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(rows[0]["status"], "unknown");
+        let json = String::from_utf8(output.stdout).unwrap();
+        assert!(json.contains(new_id.as_str()), "cached={cached}: {json}");
+        assert!(!json.contains(old_id.as_str()), "cached={cached}: {json}");
+    }
     aristo_in(tmp.path())
         .args(["stamp", "--skip-canon"])
         .assert()
