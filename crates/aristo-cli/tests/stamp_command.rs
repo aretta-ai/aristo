@@ -912,3 +912,44 @@ pub fn add(a: u32, b: u32) -> u32 { a + b }
         "no artifacts when the workspace does not commit them"
     );
 }
+
+#[test]
+fn stamp_marks_old_newline_normalized_evidence_stale() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    let source = "#[aristo::intent(\"returns one\", verify = \"neural\", id = \"newline_claim\")]\nfn value() -> i32 {\n    1\n}\n";
+    fs::write(tmp.path().join("lib.rs"), source).unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    write_valid_proof(
+        tmp.path(),
+        "newline_claim",
+        aristo_core::proof::VerdictType::Inconclusive,
+    );
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let id = aristo_core::index::AnnotationId::parse("newline_claim").unwrap();
+    assert_eq!(
+        match &read_index(tmp.path()).entries[&id] {
+            aristo_core::index::IndexEntry::Intent(e) => e.status,
+            _ => panic!("expected intent"),
+        },
+        aristo_core::index::Status::Inconclusive
+    );
+    fs::write(tmp.path().join("lib.rs"), source.replace('\n', "\r\n")).unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    assert_eq!(
+        match &read_index(tmp.path()).entries[&id] {
+            aristo_core::index::IndexEntry::Intent(e) => e.status,
+            _ => panic!("expected intent"),
+        },
+        aristo_core::index::Status::Stale
+    );
+}
