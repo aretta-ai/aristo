@@ -1,7 +1,16 @@
 //! Fixed Rust/C reference outputs for the source-provider refactor.
+//!
+//! Known issues pinned deliberately, not intended semantics:
+//! Q1: Rust statement hashes cover only the marker, not the following code.
+//!     https://github.com/aretta-ai/aristo/issues/108
+//! Q2: Rust reconstructs LF bodies; C retains original CRLF bytes.
+//!     https://github.com/aretta-ai/aristo/issues/109
+//! Q3: Global collision ordinals let edits in a.rs rename unchanged b.c claims.
+//!     https://github.com/aretta-ai/aristo/issues/110
+//! Fixes must migrate identity/evidence and update these references explicitly.
 
 use aristo_core::index::{AnnotationId, IndexFile};
-use aristo_core::walk::{walk_directory, DiscoveredAnnotation, ParentRaw};
+use aristo_core::walk::{walk_directory, AnnotationForm, DiscoveredAnnotation, ParentRaw};
 use assert_cmd::Command;
 use serde_json::{json, Value};
 use std::fs;
@@ -53,8 +62,12 @@ fn extraction(d: &DiscoveredAnnotation) -> Value {
         Some(ParentRaw::Single(id)) => json!(id),
         Some(ParentRaw::Multiple(ids)) => json!(ids),
     };
+    let form = match a.form {
+        AnnotationForm::Attribute => "attribute",
+        AnnotationForm::Statement => "statement",
+    };
     json!({
-        "file": d.file, "kind": a.kind, "form": format!("{:?}", a.form),
+        "file": d.file, "kind": a.kind, "form": form,
         "text": a.text, "raw_verify": a.verify, "id": a.id, "parent": parent,
         "site": a.site, "line": a.line, "covered_region": a.covered_region,
         "text_hash": a.text_hash, "body_hash": a.body_hash,
@@ -95,7 +108,17 @@ fn stamping_preserves_fixed_ids_hashes_and_links_in_a_mixed_workspace() {
             toml::from_str(&fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap())
                 .unwrap();
         let expected = expected(crlf);
-        assert_eq!(index.entries.len(), expected.len(), "CRLF={crlf}");
+        let mut actual_ids: Vec<_> = index.entries.keys().map(AnnotationId::as_str).collect();
+        let mut expected_ids: Vec<_> = expected
+            .iter()
+            .map(|row| row["index_id"].as_str().unwrap())
+            .collect();
+        actual_ids.sort_unstable();
+        expected_ids.sort_unstable();
+        assert_eq!(
+            actual_ids, expected_ids,
+            "annotation IDs changed (collision or dropped entry), CRLF={crlf}"
+        );
         for row in expected {
             let id = row["index_id"].as_str().unwrap();
             let entry =

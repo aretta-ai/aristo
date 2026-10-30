@@ -2,7 +2,7 @@
   {
     "file": "a.rs",
     "kind": "intent",
-    "form": "Attribute",
+    "form": "attribute",
     "text": "café stays valid",
     "raw_verify": "\"test\"",
     "id": "rust_root",
@@ -18,7 +18,7 @@
   {
     "file": "a.rs",
     "kind": "intent",
-    "form": "Statement",
+    "form": "statement",
     "text": "duplicate claim",
     "raw_verify": null,
     "id": null,
@@ -34,7 +34,7 @@
   {
     "file": "a.rs",
     "kind": "intent",
-    "form": "Statement",
+    "form": "statement",
     "text": "duplicate claim",
     "raw_verify": null,
     "id": null,
@@ -50,7 +50,7 @@
   {
     "file": "b.c",
     "kind": "assume",
-    "form": "Attribute",
+    "form": "attribute",
     "text": "external café",
     "raw_verify": null,
     "id": "c_external",
@@ -67,7 +67,7 @@
   {
     "file": "b.c",
     "kind": "intent",
-    "form": "Statement",
+    "form": "statement",
     "text": "duplicate claim",
     "raw_verify": null,
     "id": null,
