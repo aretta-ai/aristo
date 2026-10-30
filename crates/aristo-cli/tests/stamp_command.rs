@@ -687,13 +687,11 @@ fn stamp_idless_reword_changes_id() {
 }
 
 #[test]
-fn stamp_idless_duplicates_get_distinct_ordinal_ids() {
-    // Two idless annotations with identical kind+text+site must NOT collide —
-    // the source-order ordinal disambiguates them so BOTH land in the index
-    // (with random ids this happened by luck; deterministic ids would alias
-    // without the ordinal).
+fn stamp_idless_duplicates_require_explicit_ids() {
+    // Position cannot safely identify identical claims after a deletion.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
+    let original_index = fs::read(tmp.path().join(".aristo/index.toml")).unwrap();
     write_lib(
         tmp.path(),
         r#"
@@ -705,30 +703,15 @@ fn stamp_idless_duplicates_get_distinct_ordinal_ids() {
             }
         "#,
     );
-    aristo_in(tmp.path()).arg("stamp").assert().success();
-    let ids1: Vec<String> = read_index(tmp.path())
-        .entries
-        .keys()
-        .map(|k| k.as_str().to_owned())
-        .collect();
+    aristo_in(tmp.path())
+        .arg("stamp")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("assign unique explicit IDs"));
     assert_eq!(
-        ids1.len(),
-        2,
-        "duplicate-text intents must both index (ordinal disambiguates)"
-    );
-
-    // Re-stamp unchanged source: the SAME two ids must reappear (the ordinal
-    // path is itself deterministic). Under the old random scheme the two
-    // would be fresh ids every stamp, so this is a real regression guard.
-    aristo_in(tmp.path()).arg("stamp").assert().success();
-    let ids2: Vec<String> = read_index(tmp.path())
-        .entries
-        .keys()
-        .map(|k| k.as_str().to_owned())
-        .collect();
-    assert_eq!(
-        ids1, ids2,
-        "ordinal-disambiguated ids must be stable across stamps"
+        fs::read(tmp.path().join(".aristo/index.toml")).unwrap(),
+        original_index
     );
 }
 

@@ -6,19 +6,11 @@
 //!    (slice 17+); not auto-applied because text-derived ids may clash
 //!    with existing entries or just be clumsy.
 //!
-//! 2. [`deterministic_id`] — the id `aristo stamp` actually assigns when
-//!    `id` is unset. A content-addressed `aret_<8>` id derived from the
-//!    annotation's *identity*: kind + normalized text + enclosing site
-//!    (plus a source-order ordinal, appended only when those collide).
-//!    Being a pure function of identity, it is STABLE across stamps —
-//!    re-running `aristo stamp` re-mints the same id, so the index
-//!    re-associates the entry's prior status and `.proof` instead of
-//!    churning it as removed+new. An earlier version minted a fresh
-//!    *random* id (`getrandom`) on every stamp, which silently orphaned
-//!    proofs and reset verification status; this content-addressed scheme
-//!    fixes that. Per design (B5b), opaque ids are tool-managed; they
-//!    NEVER come from user input and the `aristo_check` cargo feature
-//!    rejects them in source.
+//! 2. [`source_scoped_id`] — workspace-relative path, kind, normalized text
+//!    and enclosing site identify an idless claim. Duplicate identities need
+//!    explicit IDs. Moving an idless claim changes its identity; changing its
+//!    body only changes freshness. Legacy [`deterministic_id`] remains available
+//!    for compatibility, but must not be used to attach evidence across files.
 
 use crate::index::{AnnotationId, AnnotationKind};
 
