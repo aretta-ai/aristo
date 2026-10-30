@@ -101,12 +101,16 @@ pub fn extract_from_source(source: &str) -> Result<Vec<ExtractedAnnotation>, Ext
     let file: syn::File = syn::parse_str(source)?;
     let mut visitor = Walker::new(source);
     visitor.visit_file(&file);
+    if let Some(error) = visitor.error {
+        return Err(error.into());
+    }
     Ok(visitor.found)
 }
 
 struct Walker<'a> {
     source: &'a str,
     found: Vec<ExtractedAnnotation>,
+    error: Option<syn::Error>,
     /// Site label active for any `intent_stmt!` / `assume_stmt!` invocation
     /// discovered during a `visit_block` descent. Set when entering an
     /// item-level fn / impl-method / trait default method; restored on
@@ -121,6 +125,7 @@ impl<'a> Walker<'a> {
         Self {
             source,
             found: Vec::new(),
+            error: None,
             current_site: None,
         }
     }
@@ -165,18 +170,18 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn process_stmt_macro(&mut self, stmt: &syn::StmtMacro, enclosing_site: &str) {
+    fn process_stmt_macro(
+        &mut self,
+        stmt: &syn::StmtMacro,
+        target: &syn::Stmt,
+        enclosing_site: &str,
+    ) {
         let Some(kind) = match_aristo_stmt_macro(&stmt.mac) else {
             return;
         };
         let Ok(args) = stmt.mac.parse_body::<AnnotationArgs>() else {
             return;
         };
-        // For statement form the "covered region" body is just the macro
-        // tokens for now. Hashing identical macro invocations attached to
-        // different statements WILL collide on body_hash; slice 17
-        // (`aristo stamp`) refines this by including the following stmt
-        // when computing the canonical body span.
         self.found.push(make_annotation(
             kind,
             AnnotationForm::Statement,
@@ -184,7 +189,7 @@ impl<'a> Walker<'a> {
             enclosing_site,
             stmt.span().start().line,
             CoveredRegion::Statement,
-            source_slice(self.source, stmt.span()),
+            source_slice(self.source, target.span()),
         ));
     }
 }
@@ -223,7 +228,7 @@ impl<'ast> Visit<'ast> for Walker<'_> {
         // the intent prose) leave body_hash unchanged — drift detection
         // cares about CODE drift, not annotation text drift.
         self.process_attrs(&node.attrs, &site, &node.block, CoveredRegion::Function);
-        self.with_site(site, |this| syn::visit::visit_block(this, &node.block));
+        self.with_site(site, |this| this.visit_block(&node.block));
     }
 
     #[aristo::intent(
@@ -240,14 +245,28 @@ impl<'ast> Visit<'ast> for Walker<'_> {
         verify = "test",
         id = "stmt_form_intents_use_open_visit_descent_not_whitelist"
     )]
-    fn visit_stmt_macro(&mut self, node: &'ast syn::StmtMacro) {
-        if let Some(site) = self.current_site.clone() {
-            self.process_stmt_macro(node, &site);
+    fn visit_block(&mut self, node: &'ast syn::Block) {
+        for (index, stmt) in node.stmts.iter().enumerate() {
+            if let (Some(site), syn::Stmt::Macro(marker)) = (self.current_site.clone(), stmt) {
+                if match_aristo_stmt_macro(&marker.mac).is_some() {
+                    // Adjacent annotations share the next non-annotation target.
+                    let target = node.stmts[index + 1..].iter().find(|candidate| {
+                        !matches!(candidate, syn::Stmt::Macro(m) if match_aristo_stmt_macro(&m.mac).is_some())
+                    });
+                    if let Some(target) = target {
+                        self.process_stmt_macro(marker, target, &site);
+                    } else {
+                        self.error.get_or_insert_with(|| {
+                            syn::Error::new(
+                                marker.span(),
+                                "Aristo marker has no following statement",
+                            )
+                        });
+                    }
+                }
+            }
+            syn::visit::visit_stmt(self, stmt);
         }
-        // Continue default traversal so nested macros (e.g., a macro
-        // invocation whose body contains another stmt-macro) are also
-        // visited.
-        syn::visit::visit_stmt_macro(self, node);
     }
 
     fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
@@ -314,9 +333,7 @@ impl<'ast> Visit<'ast> for Walker<'_> {
                     &method.block,
                     CoveredRegion::Function,
                 );
-                self.with_site(method_site, |this| {
-                    syn::visit::visit_block(this, &method.block)
-                });
+                self.with_site(method_site, |this| this.visit_block(&method.block));
             }
         }
     }
@@ -840,6 +857,7 @@ mod tests {
             fn build() -> impl Fn() {
                 || {
                     aristo::intent_stmt!("the closure runs on every tick");
+                    tick();
                 }
             }
         "#;
@@ -854,6 +872,7 @@ mod tests {
             fn raw() {
                 unsafe {
                     aristo::intent_stmt!("the raw pointer is non-null at this point");
+                    read_pointer();
                 }
             }
         "#;
