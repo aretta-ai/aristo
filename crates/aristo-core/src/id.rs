@@ -143,6 +143,54 @@ pub fn deterministic_id(
     AnnotationId::parse(&s).expect("deterministic-id alphabet stays inside aret_ namespace charset")
 }
 
+/// Generate an id from a workspace-relative path and annotation identity.
+/// Paths are supplied by the source walker. Components are encoded separately,
+/// preserving non-UTF-8 names without lossy conversion. Valid UTF-8 relative
+/// paths have the same encoding on Unix and Windows; native invalid names do not
+/// promise portability. Body bytes and line numbers are deliberately absent.
+/// Callers must reject duplicate identities instead of assigning ordinals.
+#[aristo::intent(
+    "Source-scoped ids depend only on the workspace-relative path, annotation \
+     kind, normalized claim text and enclosing site. Traversal order and body \
+     revisions do not change them. The versioned format cannot equal a legacy \
+     eight-character generated id.",
+    verify = "test",
+    id = "source_scoped_ids_exclude_traversal_order"
+)]
+pub fn source_scoped_id(
+    relative_path: &std::path::Path,
+    kind: AnnotationKind,
+    text: &str,
+    site: &str,
+) -> AnnotationId {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    let mut hasher = Sha256::new();
+    hasher.update(b"aristo-source-id/v2\0");
+    let components: Vec<_> = relative_path
+        .components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect();
+    hasher.update((components.len() as u64).to_be_bytes());
+    for bytes in components
+        .iter()
+        .map(|c| c.as_os_str().as_encoded_bytes())
+        .chain([
+            kind_tag(kind),
+            crate::hash::normalize_text(text).as_bytes(),
+            site.as_bytes(),
+        ])
+    {
+        hasher.update((bytes.len() as u64).to_be_bytes());
+        hasher.update(bytes);
+    }
+    let mut value = String::from("aret_v2");
+    for byte in hasher.finalize().iter().take(16) {
+        write!(value, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    AnnotationId::parse(&value).expect("versioned hex id fits the opaque namespace")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
