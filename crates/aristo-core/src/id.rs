@@ -72,12 +72,12 @@ fn kind_tag(kind: AnnotationKind) -> &'static [u8] {
     }
 }
 
-/// The collision bucket an idless annotation falls into for ordinal
+/// Legacy collision bucket used for ordinal
 /// disambiguation. Two annotations share a bucket — and therefore must get
 /// distinct `ordinal`s to avoid minting the *same* [`deterministic_id`] — iff
 /// this key matches. It is exactly the (kind, normalized-text, site) triple
-/// the id hashes over before the ordinal, so the caller (`aristo stamp`) can
-/// count occurrences without re-implementing the normalization rule.
+/// the legacy id hashes over before the ordinal. Retained for compatibility;
+/// new indexing uses [`source_scoped_id`] and rejects ambiguous identities.
 pub fn id_bucket_key(
     kind: AnnotationKind,
     text: &str,
@@ -90,16 +90,12 @@ pub fn id_bucket_key(
     )
 }
 
+/// Reproduce the legacy eight-character ID recipe for compatibility/migration.
+/// This recipe omits the file path and must not identify new indexed claims.
 #[aristo::intent(
-    "A stamp-assigned id is a pure function of the annotation's identity — \
-     its kind, its whitespace-normalized text, and its enclosing site label \
-     (plus a source-order ordinal only when those three collide). The same \
-     annotation therefore mints the same id on every `aristo stamp`, which \
-     is what lets the index re-associate its prior status and proof instead \
-     of treating it as removed-then-new. Editing the covered CODE does not \
-     change the id — that is body-hash drift, tracked separately; only \
-     rewording the claim or renaming/moving the enclosing item does. The id \
-     stays inside the `aret_` namespace charset so it always parses.",
+    "A legacy generated id is a pure function of annotation kind, normalized \
+     text, enclosing site and ordinal. Equal inputs reproduce the same \
+     eight-character opaque id; covered-code changes do not affect it.",
     verify = "test",
     id = "deterministic_id_is_pure_function_of_identity"
 )]
