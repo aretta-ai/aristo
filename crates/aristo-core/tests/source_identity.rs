@@ -26,7 +26,8 @@ fn source_identity_is_scoped_normalized_and_separate_from_legacy_ids() {
     ] {
         assert_ne!(base, other);
     }
-    assert_eq!(base.as_str().len(), 39);
+    // Independent SHA-256 vector pins the v2 encoding across releases.
+    assert_eq!(base.as_str(), "aret_v2a0356b1fced6652789aef11b282ce4f0");
     assert!(base.as_str().starts_with("aret_v2"));
 }
 
