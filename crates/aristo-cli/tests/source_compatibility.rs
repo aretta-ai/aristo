@@ -1,98 +1,13 @@
-//! Fixed Rust/C reference outputs for the source-provider refactor.
-//!
-//! Known issues pinned deliberately, not intended semantics:
-//! Q1: Rust statement hashes cover only the marker, not the following code.
-//!     https://github.com/aretta-ai/aristo/issues/108
-//! Q2: Rust reconstructs LF bodies; C retains original CRLF bytes.
-//!     https://github.com/aretta-ai/aristo/issues/109
-//! Q3: Global collision ordinals let edits in a.rs rename unchanged b.c claims.
-//!     https://github.com/aretta-ai/aristo/issues/110
-//! Fixes must migrate identity/evidence and update these references explicitly.
+//! CLI stamping against the fixed compatibility corpus; see fixture Q1–Q3.
+
+#[path = "../../aristo-core/tests/fixtures/source_compatibility/mod.rs"]
+mod fixture;
 
 use aristo_core::index::{AnnotationId, IndexFile};
-use aristo_core::walk::{walk_directory, AnnotationForm, DiscoveredAnnotation, ParentRaw};
 use assert_cmd::Command;
-use serde_json::{json, Value};
+use fixture::{expected, workspace};
+use serde_json::json;
 use std::fs;
-
-const EXPECTED: &str = include_str!("fixtures/source_compatibility/expected.json");
-
-fn workspace(crlf: bool) -> tempfile::TempDir {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("aristo.toml"),
-        "[doc]\ncommit_artifacts = false\n",
-    )
-    .unwrap();
-    for (name, source) in [
-        ("a.rs", include_str!("fixtures/source_compatibility/a.rs")),
-        ("b.c", include_str!("fixtures/source_compatibility/b.c")),
-    ] {
-        // Construct both byte profiles independently of Git's checkout settings.
-        let source = source.replace("\r\n", "\n");
-        fs::write(
-            tmp.path().join(name),
-            if crlf {
-                source.replace('\n', "\r\n")
-            } else {
-                source
-            },
-        )
-        .unwrap();
-    }
-    tmp
-}
-
-fn expected(crlf: bool) -> Vec<Value> {
-    let mut rows: Vec<Value> = serde_json::from_str(EXPECTED).unwrap();
-    for row in &mut rows {
-        if let Some(hash) = row.as_object_mut().unwrap().remove("crlf_body_hash") {
-            if crlf {
-                row["body_hash"] = hash;
-            }
-        }
-    }
-    rows
-}
-
-fn extraction(d: &DiscoveredAnnotation) -> Value {
-    let a = &d.annotation;
-    let parent = match &a.parent {
-        None => Value::Null,
-        Some(ParentRaw::Single(id)) => json!(id),
-        Some(ParentRaw::Multiple(ids)) => json!(ids),
-    };
-    let form = match a.form {
-        AnnotationForm::Attribute => "attribute",
-        AnnotationForm::Statement => "statement",
-    };
-    json!({
-        "file": d.file, "kind": a.kind, "form": form,
-        "text": a.text, "raw_verify": a.verify, "id": a.id, "parent": parent,
-        "site": a.site, "line": a.line, "covered_region": a.covered_region,
-        "text_hash": a.text_hash, "body_hash": a.body_hash,
-    })
-}
-
-#[test]
-fn extraction_matches_fixed_rust_c_reference_for_both_line_endings() {
-    for crlf in [false, true] {
-        let tmp = workspace(crlf);
-        let actual = walk_directory(tmp.path()).unwrap();
-        let expected = expected(crlf);
-        assert_eq!(actual.len(), expected.len(), "CRLF={crlf}");
-        for (position, (annotation, mut row)) in actual.iter().zip(expected).enumerate() {
-            let row = row.as_object_mut().unwrap();
-            row.remove("index_id");
-            row.remove("index_verify");
-            assert_eq!(
-                extraction(annotation),
-                json!(row),
-                "position={position}, CRLF={crlf}"
-            );
-        }
-    }
-}
 
 #[test]
 fn stamping_preserves_fixed_ids_hashes_and_links_in_a_mixed_workspace() {
