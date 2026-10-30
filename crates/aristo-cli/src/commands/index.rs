@@ -45,11 +45,12 @@ pub(crate) fn walk_options_from_workspace(ws: &Workspace) -> CliResult<WalkOptio
 #[aristo::intent(
     "Every discovered annotation gets an id: the user-written `id =` if \
      present, otherwise a deterministic content-addressed `aret_…` id \
-     derived from the annotation's kind, text, and site. The build never \
+     derived from its relative file path, kind, text, and site. The build never \
      returns an entry without an id; there is no `unindexed` half-state. \
      Because the generated id is a pure function of identity, re-stamping \
      unchanged source mints the same ids, so the index keeps each entry's \
-     prior status and proof instead of treating it as removed-then-new.",
+     prior status and proof instead of treating it as removed-then-new. \
+     Duplicate identities abort the build; source order must not choose an owner.",
     verify = "test",
     id = "build_entries_assigns_deterministic_ids_when_missing"
 )]
@@ -60,15 +61,22 @@ pub(crate) fn build_entries(
     let mut entries: BTreeMap<AnnotationId, IndexEntry> = BTreeMap::new();
     let mut parents_map: HashMap<AnnotationId, Vec<AnnotationId>> = HashMap::new();
     let mut skipped = 0usize;
-    // Counts idless annotations per identity bucket so duplicates that would
-    // otherwise mint the same deterministic id get distinct source-order
-    // ordinals. Keyed exactly the way `id::deterministic_id` hashes (ID-D2).
-    let mut ordinal_counter: HashMap<(AnnotationKind, String, String), usize> = HashMap::new();
+    let mut owners: BTreeMap<AnnotationId, &DiscoveredAnnotation> = BTreeMap::new();
 
     for d in discovered {
-        let Some(ann_id) = resolve_id(d, &mut skipped, &mut ordinal_counter) else {
+        let Some(ann_id) = resolve_id(d, &mut skipped) else {
             continue;
         };
+        if let Some(previous) = owners.insert(ann_id.clone(), d) {
+            return Err(CliError::Other {
+                message: format!(
+                    "ambiguous annotation id `{ann_id}` at {}:{} and {}:{}; assign unique explicit IDs",
+                    previous.file.display(), previous.annotation.line,
+                    d.file.display(), d.annotation.line,
+                ),
+                exit_code: 2,
+            });
+        }
         let Some(parent_ids) = resolve_parent_ids(d, &mut skipped) else {
             continue;
         };
@@ -79,16 +87,7 @@ pub(crate) fn build_entries(
         let parent_link = parent_link_from_ids(&parent_ids);
         let entry = build_index_entry(d, parent_link, verify);
 
-        if entries.insert(ann_id.clone(), entry).is_some() {
-            eprintln!(
-                "warning: skipping {}:{}: duplicate id `{}` (each id must appear at most once)",
-                d.file.display(),
-                d.annotation.line,
-                ann_id.as_str()
-            );
-            skipped += 1;
-            continue;
-        }
+        entries.insert(ann_id.clone(), entry);
         parents_map.insert(ann_id, parent_ids);
     }
 
@@ -98,11 +97,7 @@ pub(crate) fn build_entries(
     Ok((entries, parents_map))
 }
 
-fn resolve_id(
-    d: &DiscoveredAnnotation,
-    skipped: &mut usize,
-    ordinal_counter: &mut HashMap<(AnnotationKind, String, String), usize>,
-) -> Option<AnnotationId> {
+fn resolve_id(d: &DiscoveredAnnotation, skipped: &mut usize) -> Option<AnnotationId> {
     match &d.annotation.id {
         Some(s) => match AnnotationId::parse(s) {
             Ok(id) => Some(id),
@@ -116,22 +111,12 @@ fn resolve_id(
                 None
             }
         },
-        None => {
-            // No user-written id → derive a deterministic content-addressed
-            // one from (kind, text, site). Uses the LINE-FREE site
-            // (`ExtractedAnnotation.site`, not the index entry's
-            // `"… (line N)"`) so unrelated line shifts don't re-churn the id.
-            let key = id::id_bucket_key(d.annotation.kind, &d.annotation.text, &d.annotation.site);
-            let ordinal = ordinal_counter.entry(key).or_insert(0);
-            let resolved = id::deterministic_id(
-                d.annotation.kind,
-                &d.annotation.text,
-                &d.annotation.site,
-                *ordinal,
-            );
-            *ordinal += 1;
-            Some(resolved)
-        }
+        None => Some(id::source_scoped_id(
+            &d.file,
+            d.annotation.kind,
+            &d.annotation.text,
+            &d.annotation.site,
+        )),
     }
 }
 

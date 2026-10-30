@@ -6,19 +6,11 @@
 //!    (slice 17+); not auto-applied because text-derived ids may clash
 //!    with existing entries or just be clumsy.
 //!
-//! 2. [`deterministic_id`] — the id `aristo stamp` actually assigns when
-//!    `id` is unset. A content-addressed `aret_<8>` id derived from the
-//!    annotation's *identity*: kind + normalized text + enclosing site
-//!    (plus a source-order ordinal, appended only when those collide).
-//!    Being a pure function of identity, it is STABLE across stamps —
-//!    re-running `aristo stamp` re-mints the same id, so the index
-//!    re-associates the entry's prior status and `.proof` instead of
-//!    churning it as removed+new. An earlier version minted a fresh
-//!    *random* id (`getrandom`) on every stamp, which silently orphaned
-//!    proofs and reset verification status; this content-addressed scheme
-//!    fixes that. Per design (B5b), opaque ids are tool-managed; they
-//!    NEVER come from user input and the `aristo_check` cargo feature
-//!    rejects them in source.
+//! 2. [`source_scoped_id`] — workspace-relative path, kind, normalized text
+//!    and enclosing site identify an idless claim. Duplicate identities need
+//!    explicit IDs. Moving an idless claim changes its identity; changing its
+//!    body only changes freshness. Legacy [`deterministic_id`] remains available
+//!    for compatibility, but must not be used to attach evidence across files.
 
 use crate::index::{AnnotationId, AnnotationKind};
 
@@ -80,12 +72,12 @@ fn kind_tag(kind: AnnotationKind) -> &'static [u8] {
     }
 }
 
-/// The collision bucket an idless annotation falls into for ordinal
+/// Legacy collision bucket used for ordinal
 /// disambiguation. Two annotations share a bucket — and therefore must get
 /// distinct `ordinal`s to avoid minting the *same* [`deterministic_id`] — iff
 /// this key matches. It is exactly the (kind, normalized-text, site) triple
-/// the id hashes over before the ordinal, so the caller (`aristo stamp`) can
-/// count occurrences without re-implementing the normalization rule.
+/// the legacy id hashes over before the ordinal. Retained for compatibility;
+/// new indexing uses [`source_scoped_id`] and rejects ambiguous identities.
 pub fn id_bucket_key(
     kind: AnnotationKind,
     text: &str,
@@ -98,16 +90,12 @@ pub fn id_bucket_key(
     )
 }
 
+/// Reproduce the legacy eight-character ID recipe for compatibility/migration.
+/// This recipe omits the file path and must not identify new indexed claims.
 #[aristo::intent(
-    "A stamp-assigned id is a pure function of the annotation's identity — \
-     its kind, its whitespace-normalized text, and its enclosing site label \
-     (plus a source-order ordinal only when those three collide). The same \
-     annotation therefore mints the same id on every `aristo stamp`, which \
-     is what lets the index re-associate its prior status and proof instead \
-     of treating it as removed-then-new. Editing the covered CODE does not \
-     change the id — that is body-hash drift, tracked separately; only \
-     rewording the claim or renaming/moving the enclosing item does. The id \
-     stays inside the `aret_` namespace charset so it always parses.",
+    "A legacy generated id is a pure function of annotation kind, normalized \
+     text, enclosing site and ordinal. Equal inputs reproduce the same \
+     eight-character opaque id; covered-code changes do not affect it.",
     verify = "test",
     id = "deterministic_id_is_pure_function_of_identity"
 )]
@@ -141,6 +129,54 @@ pub fn deterministic_id(
         s.push(OPAQUE_ALPHABET[idx] as char);
     }
     AnnotationId::parse(&s).expect("deterministic-id alphabet stays inside aret_ namespace charset")
+}
+
+/// Generate an id from a workspace-relative path and annotation identity.
+/// Paths are supplied by the source walker. Components are encoded separately,
+/// preserving non-UTF-8 names without lossy conversion. Valid UTF-8 relative
+/// paths have the same encoding on Unix and Windows; native invalid names do not
+/// promise portability. Body bytes and line numbers are deliberately absent.
+/// Callers must reject duplicate identities instead of assigning ordinals.
+#[aristo::intent(
+    "Source-scoped ids depend only on the workspace-relative path, annotation \
+     kind, normalized claim text and enclosing site. Traversal order and body \
+     revisions do not change them. The versioned format cannot equal a legacy \
+     eight-character generated id.",
+    verify = "test",
+    id = "source_scoped_ids_exclude_traversal_order"
+)]
+pub fn source_scoped_id(
+    relative_path: &std::path::Path,
+    kind: AnnotationKind,
+    text: &str,
+    site: &str,
+) -> AnnotationId {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    let mut hasher = Sha256::new();
+    hasher.update(b"aristo-source-id/v2\0");
+    let components: Vec<_> = relative_path
+        .components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect();
+    hasher.update((components.len() as u64).to_be_bytes());
+    for bytes in components
+        .iter()
+        .map(|c| c.as_os_str().as_encoded_bytes())
+        .chain([
+            kind_tag(kind),
+            crate::hash::normalize_text(text).as_bytes(),
+            site.as_bytes(),
+        ])
+    {
+        hasher.update((bytes.len() as u64).to_be_bytes());
+        hasher.update(bytes);
+    }
+    let mut value = String::from("aret_v2");
+    for byte in hasher.finalize().iter().take(16) {
+        write!(value, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    AnnotationId::parse(&value).expect("versioned hex id fits the opaque namespace")
 }
 
 #[cfg(test)]

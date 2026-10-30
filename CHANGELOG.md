@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
+- core: document legacy ID helpers as compatibility APIs; new indexing uses source-scoped identities.
+- cli: rebuild legacy claim-ID caches on read so upgrades cannot retain obsolete proof associations before restamping.
+- cli: guard claim-ID migrations with regressions for proof transfer, legacy archival, file moves, and duplicate IDs.
+- cli: scope generated claim IDs to source files; ambiguous claims require unique explicit IDs. Restamp and reverify legacy idless claims; old proofs are archived.
+- core: add versioned, source-scoped claim IDs for safe migration away from traversal-dependent identities.
 
 ## [0.8.4] — 2026-10-19
 

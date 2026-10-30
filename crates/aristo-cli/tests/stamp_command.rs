@@ -687,13 +687,11 @@ fn stamp_idless_reword_changes_id() {
 }
 
 #[test]
-fn stamp_idless_duplicates_get_distinct_ordinal_ids() {
-    // Two idless annotations with identical kind+text+site must NOT collide —
-    // the source-order ordinal disambiguates them so BOTH land in the index
-    // (with random ids this happened by luck; deterministic ids would alias
-    // without the ordinal).
+fn stamp_idless_duplicates_require_explicit_ids() {
+    // Position cannot safely identify identical claims after a deletion.
     let tmp = tempfile::tempdir().unwrap();
     aristo_in(tmp.path()).arg("init").assert().success();
+    let original_index = fs::read(tmp.path().join(".aristo/index.toml")).unwrap();
     write_lib(
         tmp.path(),
         r#"
@@ -705,30 +703,15 @@ fn stamp_idless_duplicates_get_distinct_ordinal_ids() {
             }
         "#,
     );
-    aristo_in(tmp.path()).arg("stamp").assert().success();
-    let ids1: Vec<String> = read_index(tmp.path())
-        .entries
-        .keys()
-        .map(|k| k.as_str().to_owned())
-        .collect();
+    aristo_in(tmp.path())
+        .arg("stamp")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("assign unique explicit IDs"));
     assert_eq!(
-        ids1.len(),
-        2,
-        "duplicate-text intents must both index (ordinal disambiguates)"
-    );
-
-    // Re-stamp unchanged source: the SAME two ids must reappear (the ordinal
-    // path is itself deterministic). Under the old random scheme the two
-    // would be fresh ids every stamp, so this is a real regression guard.
-    aristo_in(tmp.path()).arg("stamp").assert().success();
-    let ids2: Vec<String> = read_index(tmp.path())
-        .entries
-        .keys()
-        .map(|k| k.as_str().to_owned())
-        .collect();
-    assert_eq!(
-        ids1, ids2,
-        "ordinal-disambiguated ids must be stable across stamps"
+        fs::read(tmp.path().join(".aristo/index.toml")).unwrap(),
+        original_index
     );
 }
 
@@ -910,5 +893,194 @@ pub fn add(a: u32, b: u32) -> u32 { a + b }
     assert!(
         !root.join(".aristo/doc/adds.md").exists(),
         "no artifacts when the workspace does not commit them"
+    );
+}
+
+#[test]
+fn deleting_another_file_cannot_transfer_a_verified_proof() {
+    use aristo_core::{
+        index::{IndexEntry, Status},
+        proof::VerdictType,
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    let source = "#[aristo::intent(\"returns one\", verify = \"neural\")] fn value() -> i32 { 1 }";
+    for file in ["a.rs", "b.rs"] {
+        fs::write(tmp.path().join(file), source).unwrap();
+    }
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let before = read_index(tmp.path());
+    let id_for = |file: &str| {
+        before
+            .entries
+            .iter()
+            .find_map(|(id, entry)| match entry {
+                IndexEntry::Intent(e) if e.file == file => Some(id.as_str().to_owned()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let removed_id = id_for("a.rs");
+    let surviving_id = id_for("b.rs");
+    write_valid_proof(tmp.path(), &removed_id, VerdictType::Verified);
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    assert!(
+        matches!(lookup(&read_index(tmp.path()), &removed_id), IndexEntry::Intent(e) if e.status == Status::Neural)
+    );
+    fs::remove_file(tmp.path().join("a.rs")).unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let after = read_index(tmp.path());
+    let entry = after.entries.values().next().unwrap();
+    assert!(
+        matches!(entry, IndexEntry::Intent(e) if e.status == Status::Unknown),
+        "different file inherited proof status: {entry:?}"
+    );
+    assert_eq!(only_id(&after), surviving_id);
+    assert!(tmp
+        .path()
+        .join(format!(".aristo/archive/proofs/{removed_id}.proof"))
+        .exists());
+}
+
+#[test]
+fn legacy_id_migration_archives_proofs_without_rebinding_them() {
+    use aristo_core::{
+        id::deterministic_id,
+        index::{AnnotationKind, IndexEntry, Status},
+        proof::VerdictType,
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        "#[aristo::intent(\"returns one\", verify = \"neural\")] fn value() -> i32 { 1 }",
+    );
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let mut legacy = read_index(tmp.path());
+    let new_id = legacy.entries.keys().next().unwrap().clone();
+    let old_id = deterministic_id(AnnotationKind::Intent, "returns one", "fn value", 0);
+    let mut entry = legacy.entries.remove(&new_id).unwrap();
+    if let IndexEntry::Intent(ref mut intent) = entry {
+        intent.status = Status::Neural;
+    }
+    legacy.entries.insert(old_id.clone(), entry);
+    let index_path = tmp.path().join(".aristo/index.toml");
+    fs::write(&index_path, toml::to_string(&legacy).unwrap()).unwrap();
+    write_valid_proof(tmp.path(), old_id.as_str(), VerdictType::Verified);
+    let proof_path = tmp.path().join(format!(".aristo/proofs/{old_id}.proof"));
+    let proof_bytes = fs::read(&proof_path).unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon", "--check"])
+        .assert()
+        .failure();
+    assert_eq!(fs::read(&proof_path).unwrap(), proof_bytes);
+    // Upgrade reads must disregard a legacy cache; fresh clones must agree.
+    for cached in [true, false] {
+        if !cached {
+            fs::remove_file(&index_path).unwrap();
+        }
+        let output = aristo_in(tmp.path())
+            .args(["list", "--json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(rows[0]["status"], "unknown");
+        let json = String::from_utf8(output.stdout).unwrap();
+        assert!(json.contains(new_id.as_str()), "cached={cached}: {json}");
+        assert!(!json.contains(old_id.as_str()), "cached={cached}: {json}");
+    }
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let current = read_index(tmp.path());
+    assert_eq!(only_id(&current), new_id.as_str());
+    assert!(
+        matches!(current.entries[&new_id], IndexEntry::Intent(ref e) if e.status == Status::Unknown)
+    );
+    assert!(!proof_path.exists());
+    assert_eq!(
+        fs::read(
+            tmp.path()
+                .join(format!(".aristo/archive/proofs/{old_id}.proof"))
+        )
+        .unwrap(),
+        proof_bytes
+    );
+}
+
+#[test]
+fn moving_an_idless_claim_requires_new_evidence() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        "#[aristo::intent(\"claim\", verify = \"neural\")] fn work() {} ",
+    );
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let old_id = only_id(&read_index(tmp.path()));
+    write_valid_proof(
+        tmp.path(),
+        &old_id,
+        aristo_core::proof::VerdictType::Verified,
+    );
+    fs::rename(
+        tmp.path().join("src/lib.rs"),
+        tmp.path().join("src/moved.rs"),
+    )
+    .unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    assert_ne!(only_id(&read_index(tmp.path())), old_id);
+    assert!(
+        matches!(read_index(tmp.path()).entries.values().next().unwrap(), aristo_core::index::IndexEntry::Intent(e) if e.status == aristo_core::index::Status::Unknown)
+    );
+}
+
+#[test]
+fn duplicate_explicit_ids_fail_without_replacing_the_existing_index() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    write_lib(
+        tmp.path(),
+        "#[aristo::intent(\"claim\", id = \"shared\")] fn a() {} ",
+    );
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let before = fs::read(tmp.path().join(".aristo/index.toml")).unwrap();
+    fs::write(
+        tmp.path().join("b.c"),
+        "// @aristo intent(\"different claim\", id = \"shared\")\nint b(void) { return 0; }",
+    )
+    .unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("ambiguous annotation id `shared`"));
+    assert_eq!(
+        fs::read(tmp.path().join(".aristo/index.toml")).unwrap(),
+        before
     );
 }

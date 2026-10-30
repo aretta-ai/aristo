@@ -24,9 +24,9 @@
 //! something actually changed.
 
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
-use crate::id::{deterministic_id, id_bucket_key};
+use crate::id::source_scoped_id;
 use crate::index::AnnotationId;
 use crate::walk::DiscoveredAnnotation;
 
@@ -89,10 +89,10 @@ pub struct RawLiveIds {
 #[aristo::intent(
     "The reconcile's live-id authority is derived from the RAW walk, \
      before build_entries validation: an annotation skipped with a \
-     warning (invalid parent id, invalid verify value, duplicate id) \
+     warning (invalid parent id or invalid verify value) \
      still contributes its id, and an idless annotation contributes \
      the same deterministic aret_* id build_entries would mint \
-     (same bucket key, same ordinal assignment). Treating \
+     (same relative path and source identity). Treating \
      'skipped from the index' as 'deleted from source' would prune — \
      and destroy — the accepted bindings and rejected-match memory of \
      annotations that still exist. The one id class the set cannot \
@@ -104,11 +104,6 @@ pub struct RawLiveIds {
 )]
 pub fn raw_live_ids(discovered: &[DiscoveredAnnotation]) -> RawLiveIds {
     let mut out = RawLiveIds::default();
-    // Same ordinal bookkeeping as build_entries' resolve_id (ID-D2):
-    // idless duplicates of one (kind, text, site) bucket mint
-    // distinct source-order ordinals.
-    let mut ordinal_counter: HashMap<(crate::index::AnnotationKind, String, String), usize> =
-        HashMap::new();
     for d in discovered {
         match &d.annotation.id {
             Some(s) => match AnnotationId::parse(s) {
@@ -118,15 +113,12 @@ pub fn raw_live_ids(discovered: &[DiscoveredAnnotation]) -> RawLiveIds {
                 Err(_) => out.unparseable_explicit_ids += 1,
             },
             None => {
-                let key = id_bucket_key(d.annotation.kind, &d.annotation.text, &d.annotation.site);
-                let ordinal = ordinal_counter.entry(key).or_insert(0);
-                out.ids.insert(deterministic_id(
+                out.ids.insert(source_scoped_id(
+                    &d.file,
                     d.annotation.kind,
                     &d.annotation.text,
                     &d.annotation.site,
-                    *ordinal,
                 ));
-                *ordinal += 1;
             }
         }
     }
@@ -850,27 +842,24 @@ mod tests {
 
     #[test]
     fn raw_live_ids_derives_the_same_deterministic_id_as_build_entries() {
-        // Idless annotations contribute the deterministic aret_* id,
-        // with the same per-bucket ordinal assignment resolve_id
-        // uses — including for identical duplicates.
         let a = discovered(None, "each cell written once", "fn edit_page", None);
-        let b = discovered(None, "each cell written once", "fn edit_page", None);
-        let raw = raw_live_ids(&[a, b]);
-        let id0 = deterministic_id(
-            AnnotationKind::Intent,
-            "each cell written once",
-            "fn edit_page",
-            0,
-        );
-        let id1 = deterministic_id(
-            AnnotationKind::Intent,
-            "each cell written once",
-            "fn edit_page",
-            1,
-        );
-        assert!(raw.ids.contains(&id0));
-        assert!(raw.ids.contains(&id1));
-        assert_eq!(raw.ids.len(), 2);
+        let mut b = a.clone();
+        b.file = "other.c".into();
+        let expected: BTreeSet<_> = [&a, &b]
+            .into_iter()
+            .map(|d| {
+                source_scoped_id(
+                    &d.file,
+                    d.annotation.kind,
+                    &d.annotation.text,
+                    &d.annotation.site,
+                )
+            })
+            .collect();
+        assert_eq!(expected.len(), 2);
+        assert_eq!(raw_live_ids(&[a.clone(), b.clone()]).ids, expected);
+        assert_eq!(raw_live_ids(&[b.clone(), a]).ids, expected);
+        assert!(raw_live_ids(&[b]).ids.is_subset(&expected));
     }
 
     #[test]
