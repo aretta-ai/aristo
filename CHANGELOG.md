@@ -7,6 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
+- core: Rust statement markers now track the following statement; terminal markers fail extraction and old marker-only proofs become stale.
 
 ## [0.8.4] — 2026-10-19
 

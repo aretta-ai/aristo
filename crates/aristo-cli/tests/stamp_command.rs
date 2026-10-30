@@ -912,3 +912,50 @@ pub fn add(a: u32, b: u32) -> u32 { a + b }
         "no artifacts when the workspace does not commit them"
     );
 }
+
+#[test]
+fn stamp_marks_marker_only_evidence_stale() {
+    let tmp = tempfile::tempdir().unwrap();
+    aristo_in(tmp.path()).arg("init").assert().success();
+    let source = "fn value() { aristo::intent_stmt!(\"returns one\", verify = \"neural\", id = \"marker_claim\"); let value = 1; }";
+    fs::write(tmp.path().join("lib.rs"), source).unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    write_valid_proof(
+        tmp.path(),
+        "marker_claim",
+        aristo_core::proof::VerdictType::Inconclusive,
+    );
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    let id = aristo_core::index::AnnotationId::parse("marker_claim").unwrap();
+    assert_eq!(
+        match &read_index(tmp.path()).entries[&id] {
+            aristo_core::index::IndexEntry::Intent(e) => e.status,
+            _ => panic!("expected intent"),
+        },
+        aristo_core::index::Status::Inconclusive
+    );
+    let proof_path = tmp.path().join(".aristo/proofs/marker_claim.proof");
+    let original = fs::read_to_string(&proof_path).unwrap();
+    let mut proof: aristo_core::proof::ProofFile = toml::from_str(&original).unwrap();
+    proof.verdict.produced_at_body_hash = aristo_core::hash::body_hash(
+        "aristo::intent_stmt!(\"returns one\", verify = \"neural\", id = \"marker_claim\");",
+    );
+    fs::write(&proof_path, proof.to_toml().unwrap()).unwrap();
+    aristo_in(tmp.path())
+        .args(["stamp", "--skip-canon"])
+        .assert()
+        .success();
+    assert_eq!(
+        match &read_index(tmp.path()).entries[&id] {
+            aristo_core::index::IndexEntry::Intent(e) => e.status,
+            _ => panic!("expected intent"),
+        },
+        aristo_core::index::Status::Stale
+    );
+}
