@@ -1,6 +1,8 @@
 //! Fixed Rust/C reference outputs for the source-provider refactor.
 
+use aristo_core::index::{AnnotationId, IndexFile};
 use aristo_core::walk::{walk_directory, DiscoveredAnnotation, ParentRaw};
+use assert_cmd::Command;
 use serde_json::{json, Value};
 use std::fs;
 
@@ -75,6 +77,53 @@ fn extraction_matches_fixed_rust_c_reference_for_both_line_endings() {
                 json!(row),
                 "position={position}, CRLF={crlf}"
             );
+        }
+    }
+}
+
+#[test]
+fn stamping_preserves_fixed_ids_hashes_and_links_in_a_mixed_workspace() {
+    for crlf in [false, true] {
+        let tmp = workspace(crlf);
+        Command::cargo_bin("aristo")
+            .unwrap()
+            .current_dir(tmp.path())
+            .args(["stamp", "--skip-canon"])
+            .assert()
+            .success();
+        let index: IndexFile =
+            toml::from_str(&fs::read_to_string(tmp.path().join(".aristo/index.toml")).unwrap())
+                .unwrap();
+        let expected = expected(crlf);
+        assert_eq!(index.entries.len(), expected.len(), "CRLF={crlf}");
+        for row in expected {
+            let id = row["index_id"].as_str().unwrap();
+            let entry =
+                serde_json::to_value(&index.entries[&AnnotationId::parse(id).unwrap()]).unwrap();
+            for field in [
+                "file",
+                "kind",
+                "text",
+                "parent",
+                "covered_region",
+                "text_hash",
+                "body_hash",
+            ] {
+                assert_eq!(
+                    entry[field], row[field],
+                    "id={id}, field={field}, CRLF={crlf}"
+                );
+            }
+            assert_eq!(
+                entry["site"],
+                json!(format!(
+                    "{} (line {})",
+                    row["site"].as_str().unwrap(),
+                    row["line"]
+                )),
+                "id={id}"
+            );
+            assert_eq!(entry["verify"], row["index_verify"], "id={id}");
         }
     }
 }

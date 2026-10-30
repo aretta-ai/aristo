@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- cli: guard mixed Rust/C stamp IDs, parent links and hashes against fixed reference outputs before language-provider changes.
 - core: pin Rust/C extraction outputs across LF and CRLF to guard source-provider refactors.
 - cli: reject `verify` on assumptions with a field-specific diagnostic before interpreting its value.
 - core: index raw and escaped verification literals using their decoded Rust/C argument values, matching macro validation.
