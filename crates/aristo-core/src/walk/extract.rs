@@ -424,41 +424,20 @@ fn path_to_string(p: &syn::Path) -> String {
         .join("::")
 }
 
+#[aristo::intent(
+    "Rust covered-region text preserves the original source bytes, including \
+     newline encodings and Unicode. Parser spans refer to the same buffer \
+     that is sliced; source text is never reconstructed from lines or tokens.",
+    verify = "test",
+    id = "rust_covered_regions_preserve_source_bytes"
+)]
 fn source_slice(source: &str, span: proc_macro2::Span) -> String {
-    let start = span.start();
-    let end = span.end();
-    if start.line == 0 || end.line == 0 {
-        // Span info missing (rare; usually means proc-macro2 was built
-        // without span-locations). Fall back to whole source.
-        return source.to_string();
-    }
-    let mut out = String::new();
-    for (idx, line) in source.lines().enumerate() {
-        let line_no = idx + 1;
-        if line_no < start.line || line_no > end.line {
-            continue;
-        }
-        let chars: Vec<char> = line.chars().collect();
-        let lo = if line_no == start.line {
-            start.column
-        } else {
-            0
-        };
-        let hi = if line_no == end.line {
-            end.column.min(chars.len())
-        } else {
-            chars.len()
-        };
-        if lo <= hi && lo <= chars.len() {
-            for ch in &chars[lo..hi] {
-                out.push(*ch);
-            }
-        }
-        if line_no != end.line {
-            out.push('\n');
-        }
-    }
-    out
+    // These spans come from syn::parse_str outside a procedural macro, where
+    // proc_macro2 guarantees accurate byte ranges on stable Rust.
+    source
+        .get(span.byte_range())
+        .expect("parsed Rust span must lie within its original source buffer")
+        .to_owned()
 }
 
 // ─── Argument parsing (mirrors aristo-macros::IntentArgs) ─────────────────
