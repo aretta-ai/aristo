@@ -42,7 +42,7 @@ pub struct HttpVerifyClient {
 
 impl HttpVerifyClient {
     /// `repo` is the org's repo name (see
-    /// [`crate::auth::repo_segment_for`]); routes are `/<repo>/api/verify/...`.
+    /// [`crate::auth::repo_segment_for`]); routes are `/<repo>/api/client/v1/verify/...`.
     pub fn new(base_url: impl Into<String>, token: &Token, repo: impl Into<String>) -> Self {
         let base_url = base_url.into();
         let repo = repo.into();
@@ -73,7 +73,7 @@ impl HttpVerifyClient {
         format!("{}{}", self.base_url, route.fill(&params))
     }
 
-    /// `GET /:repo/api/verify/sessions/:id`, with `?wait=<n>` when the
+    /// `GET /:repo/api/client/v1/verify/sessions/:id`, with `?wait=<n>` when the
     /// caller long-polls.
     fn session_url(&self, session_id: &str, wait_seconds: Option<u32>) -> String {
         let route = paths::VERIFY_SESSIONS_GET;
@@ -402,12 +402,12 @@ mod tests {
         let c = HttpVerifyClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
             c.url(paths::VERIFY_SESSIONS_CANCEL, Some("01HN1234567890")),
-            "https://api.example.test/widgets/api/verify/sessions/01HN1234567890/cancel"
+            "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN1234567890/cancel"
         );
         // Defensive: a hostile session id can't smuggle path segments.
         assert_eq!(
             c.url(paths::VERIFY_SESSIONS_CANCEL, Some("a/b")),
-            "https://api.example.test/widgets/api/verify/sessions/a%2Fb/cancel"
+            "https://api.example.test/widgets/api/client/v1/verify/sessions/a%2Fb/cancel"
         );
     }
 
@@ -417,23 +417,23 @@ mod tests {
         let c = HttpVerifyClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
             c.url(paths::VERIFY_SESSIONS_START, None),
-            "https://api.example.test/widgets/api/verify/sessions"
+            "https://api.example.test/widgets/api/client/v1/verify/sessions"
         );
         assert_eq!(
             c.session_url("01HN", None),
-            "https://api.example.test/widgets/api/verify/sessions/01HN"
+            "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN"
         );
         assert_eq!(
             c.session_url("01HN", Some(0)),
-            "https://api.example.test/widgets/api/verify/sessions/01HN"
+            "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN"
         );
         assert_eq!(
             c.session_url("01HN", Some(1)),
-            "https://api.example.test/widgets/api/verify/sessions/01HN?wait=1"
+            "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN?wait=1"
         );
         assert_eq!(
             c.url(paths::VERIFY_SESSIONS_CANCEL, Some("01HN")),
-            "https://api.example.test/widgets/api/verify/sessions/01HN/cancel"
+            "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN/cancel"
         );
     }
 
