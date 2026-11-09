@@ -1,0 +1,3033 @@
+- id: verify.sessions.start
+  method: POST
+  path: /:repo/api/client/v1/verify/sessions
+  aliases:
+  - path: /:repo/api/verify/sessions
+    deprecated: true
+  plane: customer
+  family: verify
+  at: repo
+  permission: verify
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: VerifyCreateReq
+  callers:
+  - page
+  - cli
+  records:
+  - run.requested
+  - run.held
+- id: verify.sessions.list
+  method: GET
+  path: /:repo/api/client/v1/verify/sessions
+  aliases:
+  - path: /:repo/api/verify/sessions
+    deprecated: true
+  plane: customer
+  family: verify
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+- id: verify.sessions.get
+  method: GET
+  path: /:repo/api/client/v1/verify/sessions/:id
+  aliases:
+  - path: /:repo/api/verify/sessions/:id
+    deprecated: true
+  plane: customer
+  family: verify
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - cli
+- id: verify.sessions.cancel
+  method: POST
+  path: /:repo/api/client/v1/verify/sessions/:id/cancel
+  aliases:
+  - path: /:repo/api/verify/sessions/:id/cancel
+    deprecated: true
+  plane: customer
+  family: verify
+  at: repo
+  permission: verify
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - cli
+  records:
+  - run.cancelled
+- id: verify.events.submit
+  method: POST
+  path: /:repo/api/client/v1/events
+  plane: customer
+  family: verify
+  at: repo
+  permission: steer
+  scope: repo
+  principals:
+  - machine
+  reads: path
+  request: SubmitReq
+  records: []
+  deprecated:
+    successors: []
+- id: verify.org_events.submit
+  method: POST
+  path: /api/client/v1/org/events
+  plane: customer
+  family: verify
+  at: org_level
+  permission: steer
+  scope: org
+  principals:
+  - machine
+  reads: path
+  request: SubmitReq
+  records: []
+  deprecated:
+    successors: []
+- id: identity.repos.list
+  method: GET
+  path: /api/client/v1/org/repos
+  aliases:
+  - path: /_org/api/repos
+    deprecated: true
+  plane: customer
+  family: identity
+  at: org_directory
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - cli
+- id: picture.canon.match
+  method: POST
+  path: /:repo/api/client/v1/canon/match
+  aliases:
+  - path: /:repo/api/canon/match
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: CanonMatchRequest
+  callers:
+  - cli
+  records:
+  - canon.matched
+- id: identity.whoami.get@repo
+  method: GET
+  path: /:repo/api/whoami
+  plane: customer
+  family: identity
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  deprecated:
+    successors:
+    - id: identity.whoami.get
+      query:
+        repo: :repo
+  callers:
+  - page
+- id: picture.logo.get
+  method: GET
+  path: /:repo/api/client/v1/logo
+  aliases:
+  - path: /:repo/api/logo
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+- id: verify.runs.list
+  method: GET
+  path: /:repo/api/client/v1/runs
+  aliases:
+  - path: /:repo/api/runs
+    deprecated: true
+  plane: customer
+  family: verify
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+- id: verify.runs.get
+  method: GET
+  path: /:repo/api/client/v1/runs/:seq
+  aliases:
+  - path: /:repo/api/runs/:seq
+    deprecated: true
+  plane: customer
+  family: verify
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: verify.run_evidence.get
+  method: GET
+  path: /:repo/api/client/v1/runs/:seq/evidence
+  aliases:
+  - path: /:repo/api/runs/:seq/evidence
+    deprecated: true
+  plane: customer
+  family: verify
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: picture.bugs.list
+  method: GET
+  path: /:repo/api/client/v1/bugs
+  aliases:
+  - path: /:repo/api/bugs
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: picture.bugs.get
+  method: GET
+  path: /:repo/api/client/v1/bugs/:id
+  aliases:
+  - path: /:repo/api/bugs/:id
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: picture.findings.list
+  method: GET
+  path: /:repo/api/client/v1/findings
+  aliases:
+  - path: /:repo/api/findings
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: picture.findings.get
+  method: GET
+  path: /:repo/api/client/v1/findings/:id
+  aliases:
+  - path: /:repo/api/findings/:id
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: picture.finding_history.get
+  method: GET
+  path: /:repo/api/client/v1/findings/:id/history
+  aliases:
+  - path: /:repo/api/findings/:id/history
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: findings.issue.create
+  method: POST
+  path: /:repo/api/client/v1/findings/:id/issue
+  plane: customer
+  family: findings
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  response: FindingIssue
+  deprecated:
+    successors: []
+  records: []
+- id: findings.repair.reject
+  method: POST
+  path: /:repo/api/client/v1/findings/:id/repair/reject
+  aliases:
+  - path: /:repo/api/findings/:id/repair/reject
+    deprecated: true
+  plane: customer
+  family: findings
+  at: repo
+  permission: release
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - finding.reverify_failed
+  response: RepairRejected
+- id: findings.upstream_pull.publish
+  method: POST
+  path: /:repo/api/client/v1/pulls/:number/publish
+  plane: customer
+  family: findings
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - contribution.offered
+  response: PullPublished
+  customer_outbound: true
+- id: picture.overview.get
+  method: GET
+  path: /:repo/api/client/v1/overview
+  aliases:
+  - path: /:repo/api/overview
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+- id: picture.metrics.get
+  method: GET
+  path: /:repo/api/client/v1/metrics
+  aliases:
+  - path: /:repo/api/metrics
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: picture.specgraph.get
+  method: GET
+  path: /:repo/api/client/v1/specgraph
+  aliases:
+  - path: /:repo/api/specgraph
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: picture.specs.list
+  method: GET
+  path: /:repo/api/client/v1/specs
+  aliases:
+  - path: /:repo/api/specs
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  response: SpecRowWire[]
+- id: picture.catalogue.get
+  method: GET
+  path: /:repo/api/client/v1/catalogue
+  aliases:
+  - path: /:repo/api/catalogue
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - cli
+- id: picture.labels.get
+  method: GET
+  path: /:repo/api/client/v1/labels
+  aliases:
+  - path: /:repo/api/labels
+    deprecated: true
+  plane: customer
+  family: picture
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  response: WireLabels
+- id: identity.tokens.list
+  method: GET
+  path: /:repo/api/client/v1/tokens
+  aliases:
+  - path: /:repo/api/tokens
+    deprecated: true
+  plane: customer
+  family: identity
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+- id: identity.tokens.mint
+  method: POST
+  path: /:repo/api/client/v1/tokens
+  aliases:
+  - path: /:repo/api/tokens
+    deprecated: true
+  plane: customer
+  family: identity
+  at: repo
+  permission: manage_access
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: MintRepoTokenRequest
+  callers:
+  - page
+  records:
+  - credential.minted
+  mints:
+  - ci
+- id: identity.tokens.revoke
+  method: DELETE
+  path: /:repo/api/client/v1/tokens/:id
+  aliases:
+  - path: /:repo/api/tokens/:id
+    deprecated: true
+  plane: customer
+  family: identity
+  at: repo
+  permission: manage_access
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - credential.revoked
+- id: campaigns.health.get
+  method: GET
+  path: /:repo/api/client/v1/health
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  response: WireHealth
+- id: campaigns.context.get
+  method: GET
+  path: /:repo/api/client/v1/context
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  response: WireContext
+- id: campaigns.cards.list
+  method: GET
+  path: /:repo/api/client/v1/campaigns
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  response: WireCampaigns
+- id: campaigns.credits.get
+  method: GET
+  path: /:repo/api/client/v1/credits
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  response: WireCredits
+- id: campaigns.card.launch
+  method: POST
+  path: /:repo/api/client/v1/campaigns/:id/launch
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: launch_campaign
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  - slack
+  records:
+  - campaign.launching
+  - campaign.launched
+  - credit.moved
+  response: WireLaunched
+- id: conversations.chat.create
+  method: POST
+  path: /:repo/api/client/v1/chat
+  plane: customer
+  family: conversations
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: ChatRequest
+  callers:
+  - page
+  records:
+  - strand.proposed
+  - credit.moved
+- id: conversations.conversations.list
+  method: GET
+  path: /:repo/api/client/v1/conversations
+  plane: customer
+  family: conversations
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+- id: conversations.conversations.get
+  method: GET
+  path: /:repo/api/client/v1/conversations/:id
+  plane: customer
+  family: conversations
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+- id: conversations.conversation.delete
+  method: DELETE
+  path: /api/client/v1/conversations/:id
+  plane: customer
+  family: conversations
+  at: org_level
+  permission: read
+  scope: org
+  principals:
+  - person
+  reads: org
+  callers:
+  - page
+  records:
+  - strand.ended
+- id: setup.config.get@repo
+  method: GET
+  path: /:repo/api/client/v1/config
+  plane: customer
+  family: setup
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: repo
+  deprecated:
+    successors:
+    - setup.config.get
+  callers:
+  - page
+- id: setup.contacts.put@repo
+  method: PUT
+  path: /:repo/api/client/v1/config/contacts
+  plane: customer
+  family: setup
+  at: repo
+  permission: configure
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: ContactsBody
+  callers:
+  - page
+  records:
+  - contacts.changed
+  deprecated:
+    successors:
+    - setup.contacts.put
+- id: setup.repo.get@repo
+  method: GET
+  path: /:repo/api/client/v1/config/repos/:name
+  plane: customer
+  family: setup
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: entity
+  deprecated:
+    successors:
+    - setup.repo.get
+  callers:
+  - page
+- id: setup.repo.put@repo
+  method: PUT
+  path: /:repo/api/client/v1/config/repos/:name
+  plane: customer
+  family: setup
+  at: repo
+  permission: configure
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: RepoBody
+  callers:
+  - page
+  records:
+  - strand.proposed
+  - track.requested
+  deprecated:
+    successors:
+    - setup.repo.put
+  checks:
+  - target_write_door
+- id: setup.repo_refs.get@repo
+  method: GET
+  path: /:repo/api/client/v1/config/repos/:name/refs
+  plane: customer
+  family: setup
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: entity
+  deprecated:
+    successors:
+    - setup.repo_refs.get
+  callers:
+  - page
+- id: setup.repo_preview.get@repo
+  method: GET
+  path: /:repo/api/client/v1/config/repos/:name/preview
+  plane: customer
+  family: setup
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: entity
+  deprecated:
+    successors:
+    - setup.repo_preview.get
+  callers:
+  - page
+- id: setup.image.get@repo
+  method: GET
+  path: /:repo/api/client/v1/config/image
+  plane: customer
+  family: setup
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: repo
+  deprecated:
+    successors:
+    - setup.image.get
+  callers:
+  - page
+- id: setup.image.put@repo
+  method: PUT
+  path: /:repo/api/client/v1/config/image
+  plane: customer
+  family: setup
+  at: repo
+  permission: configure
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: ImageBody
+  callers:
+  - page
+  - seat
+  records:
+  - strand.proposed
+  - image.requested
+  deprecated:
+    successors:
+    - setup.image.put
+- id: setup.image.check@repo
+  method: POST
+  path: /:repo/api/client/v1/config/image/check
+  plane: customer
+  family: setup
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: repo
+  request: ImageBody
+  callers:
+  - page
+  - seat
+  records: []
+  deprecated:
+    successors:
+    - setup.image.check
+- id: setup.config.complete@repo
+  method: POST
+  path: /:repo/api/client/v1/config/complete
+  plane: customer
+  family: setup
+  at: repo
+  permission: configure
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - onboarding.completed
+  deprecated:
+    successors:
+    - setup.config.complete
+- id: campaigns.card.author
+  method: POST
+  path: /:repo/api/client/v1/fde/campaigns
+  aliases:
+  - path: /:repo/api/fde/campaigns
+    deprecated: true
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: curate_campaign
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: AuthorBody
+  callers:
+  - page
+  - seat
+  records:
+  - campaign.authored
+  - strand.proposed
+  response: WireCardAck
+- id: campaigns.cards.finalize
+  method: POST
+  path: /:repo/api/client/v1/fde/campaigns/:id/finalize
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: curate_campaign
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: FinalizeBody
+  response: WireCardAck
+  deprecated:
+    successors:
+    - campaigns.card.author
+  records: []
+- id: campaigns.card.feedback
+  method: POST
+  path: /:repo/api/client/v1/campaigns/:id/feedback
+  aliases:
+  - path: /:repo/api/client/v1/fde/campaigns/:id/decline
+    deprecated: true
+  - path: /:repo/api/fde/campaigns/:id/decline
+    deprecated: true
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: curate_campaign
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: FeedbackBody
+  callers:
+  - page
+  - seat
+  records:
+  - campaign.feedback
+  - strand.commented
+  response: WireCardAck
+- id: campaigns.cards.stage
+  method: POST
+  path: /:repo/api/client/v1/fde/campaigns/:id/stage
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: curate_campaign
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StageBody
+  response: WireCardAck
+  deprecated:
+    successors:
+    - campaigns.card.author
+  records: []
+- id: campaigns.card.withdraw
+  method: POST
+  path: /:repo/api/client/v1/fde/campaigns/:id/withdraw
+  aliases:
+  - path: /:repo/api/fde/campaigns/:id/withdraw
+    deprecated: true
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: curate_campaign
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: WithdrawBody
+  callers:
+  - page
+  - seat
+  records:
+  - campaign.withdrawn
+  - strand.retired
+  response: WireCardAck
+- id: campaigns.card.repropose
+  method: POST
+  path: /:repo/api/client/v1/campaigns/:id/repropose
+  plane: customer
+  family: campaigns
+  at: repo
+  permission: curate_campaign
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+  records:
+  - campaign.reproposed
+  - strand.proposed
+  response: WireCardAck
+- id: shell.repo_page.redirect
+  method: GET
+  path: /:repo
+  plane: customer
+  family: shell
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+- id: setup.config.get
+  method: GET
+  path: /api/client/v1/org/config
+  aliases:
+  - path: /api/client/v1/config
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: read
+  scope: org
+  principals:
+  - person
+  reads: org
+  callers:
+  - page
+- id: setup.contacts.put
+  method: PUT
+  path: /api/client/v1/org/config/contacts
+  aliases:
+  - path: /api/client/v1/config/contacts
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: ContactsBody
+  callers:
+  - page
+  records:
+  - contacts.changed
+- id: setup.repo.get
+  method: GET
+  path: /api/client/v1/org/config/repos/:name
+  aliases:
+  - path: /api/client/v1/config/repos/:name
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: read
+  scope: org
+  principals:
+  - person
+  reads: entity
+  callers:
+  - page
+- id: setup.repo.put
+  method: PUT
+  path: /api/client/v1/org/config/repos/:name
+  aliases:
+  - path: /api/client/v1/config/repos/:name
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: RepoBody
+  callers:
+  - page
+  records:
+  - strand.proposed
+  - track.requested
+  checks:
+  - target_write_door
+- id: setup.repo_refs.get
+  method: GET
+  path: /api/client/v1/org/config/repos/:name/refs
+  aliases:
+  - path: /api/client/v1/config/repos/:name/refs
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: read
+  scope: org
+  principals:
+  - person
+  reads: entity
+  callers:
+  - page
+- id: setup.repo_preview.get
+  method: GET
+  path: /api/client/v1/org/config/repos/:name/preview
+  aliases:
+  - path: /api/client/v1/config/repos/:name/preview
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: read
+  scope: org
+  principals:
+  - person
+  reads: entity
+  callers:
+  - page
+- id: setup.image.get
+  method: GET
+  path: /api/client/v1/org/config/image
+  aliases:
+  - path: /api/client/v1/config/image
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: read
+  scope: org
+  principals:
+  - person
+  reads: org
+  callers:
+  - page
+- id: setup.image.put
+  method: PUT
+  path: /api/client/v1/org/config/image
+  aliases:
+  - path: /api/client/v1/config/image
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: ImageBody
+  callers:
+  - page
+  - seat
+  records:
+  - strand.proposed
+  - image.requested
+- id: setup.image.check
+  method: POST
+  path: /api/client/v1/org/config/image/check
+  aliases:
+  - path: /api/client/v1/config/image/check
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: org
+  request: ImageBody
+  callers:
+  - page
+  - seat
+  records: []
+- id: setup.config.complete
+  method: POST
+  path: /api/client/v1/org/config/complete
+  aliases:
+  - path: /api/client/v1/config/complete
+    deprecated: true
+  plane: customer
+  family: setup
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - onboarding.completed
+- id: identity.whoami.get
+  method: GET
+  path: /api/client/v1/org/whoami
+  plane: customer
+  family: identity
+  at: org_root
+  permission: authenticated
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+- id: setup.overview.get
+  method: GET
+  path: /api/client/v1/org/overview
+  plane: customer
+  family: setup
+  at: org_root
+  permission: read
+  scope: org
+  principals:
+  - person
+  reads: org
+  callers:
+  - page
+- id: tenants.onboard.check
+  method: GET
+  path: /admin/orgs/:org/onboard/check
+  plane: admin
+  family: tenants
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  release2: true
+- id: live.org.get
+  method: GET
+  path: /admin/orgs/:org
+  plane: admin
+  family: live
+  at: admin
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: org
+  callers:
+  - box
+- id: tenants.org.retire
+  method: DELETE
+  path: /admin/orgs/:org
+  plane: admin
+  family: tenants
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - org.retired
+  status: specified-unbuilt
+- id: tenants.backfill_held.list
+  method: GET
+  path: /admin/backfill/held
+  plane: admin
+  family: tenants
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  response: BackfillHeld[]
+- id: tenants.installations_pending.list
+  method: GET
+  path: /admin/installations/pending
+  plane: admin
+  family: tenants
+  at: admin
+  permission: read
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  - cli
+  response: WireInstallationsPending
+- id: setup.queue.get
+  method: GET
+  path: /admin/orgs/:org/queue
+  plane: admin
+  family: setup
+  at: admin
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: org
+  callers:
+  - seat
+- id: setup.events.list
+  method: GET
+  path: /admin/orgs/:org/events
+  plane: admin
+  family: setup
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+- id: setup.request.get
+  method: GET
+  path: /admin/orgs/:org/config/*entity
+  plane: admin
+  family: setup
+  at: admin
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: repo
+  callers:
+  - seat
+  machine_reach: org
+- id: setup.repo_request.get
+  method: GET
+  path: /admin/orgs/:org/config/repos/:repo
+  plane: admin
+  family: setup
+  at: admin
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: repo
+  callers:
+  - seat
+  machine_reach: org
+- id: live.repo.get
+  method: GET
+  path: /admin/orgs/:org/repos/:repo
+  plane: admin
+  family: live
+  at: admin
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: repo
+- id: setup.image_plans.get
+  method: GET
+  path: /admin/orgs/:org/image/plans
+  plane: admin
+  family: setup
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - seat
+- id: live.image.get
+  method: GET
+  path: /admin/orgs/:org/image/:kind
+  plane: admin
+  family: live
+  at: admin
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: org
+  callers:
+  - seat
+  - box
+- id: identity.ci_tokens.mint
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: MintTokenRequest
+  callers:
+  - cli
+  records:
+  - credential.minted
+  mints:
+  - ci
+  release2: true
+- id: identity.ci_tokens.revoke
+  method: DELETE
+  path: /admin/orgs/:org/repos/:repo/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: RevokeTokenRequest
+  callers:
+  - cli
+  records:
+  - credential.revoked
+  release2: true
+- id: identity.ci_token.revoke
+  method: DELETE
+  path: /admin/orgs/:org/repos/:repo/tokens/:id
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - credential.revoked
+  release2: true
+- id: identity.service_tokens.mint
+  method: POST
+  path: /admin/orgs/:org/services/:name/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  release2: true
+  mints: []
+  deprecated:
+    successors: []
+  records: []
+- id: identity.service_tokens.revoke
+  method: DELETE
+  path: /admin/orgs/:org/services/:name/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: RevokeTokenRequest
+  release2: true
+  deprecated:
+    successors: []
+  records: []
+- id: identity.seat_tokens.mint
+  method: POST
+  path: /admin/orgs/:org/seats/:name/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - credential.minted
+  mints:
+  - seat
+- id: identity.seat_tokens.revoke
+  method: DELETE
+  path: /admin/orgs/:org/seats/:name/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: RevokeTokenRequest
+  callers:
+  - cli
+  records:
+  - credential.revoked
+- id: identity.seat_tokens.list
+  method: GET
+  path: /admin/orgs/:org/seats/:name/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+- id: identity.seat_token.revoke
+  method: DELETE
+  path: /admin/orgs/:org/seats/:name/tokens/:id
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - credential.revoked
+- id: findings.finding.disclose
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/findings/:id/disclose
+  plane: admin
+  family: findings
+  at: admin
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: repo
+  request: DiscloseReq
+  callers:
+  - page
+  records:
+  - finding.withhold
+  - disclosure.recorded
+  customer_outbound: true
+  release2: true
+- id: findings.heal.redrive
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/findings/:id/heal-redrive
+  plane: admin
+  family: findings
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: HealRedriveReq
+  callers:
+  - seat
+  records:
+  - heal.redrive_requested
+  - run.requested
+- id: findings.pull.publish
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/pulls/:number/publish
+  plane: admin
+  family: findings
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  records:
+  - contribution.offered
+  customer_outbound: true
+  release2: true
+- id: verify.run.amend
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/runs/:run_seq/amend
+  plane: admin
+  family: verify
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: AmendReq
+  callers:
+  - cli
+  records:
+  - run.amended
+  release2: true
+- id: findings.bug.dispose
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/bugs/:bug_key/dispose
+  plane: admin
+  family: findings
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: DisposeReq
+  callers:
+  - cli
+  records:
+  - bug.verdict
+  release2: true
+- id: findings.finding.curate
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/findings/:id/curate
+  plane: admin
+  family: findings
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - strand.proposed
+  - finding.curated
+  release2: true
+- id: findings.finding.retract
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/findings/:id/retract
+  plane: admin
+  family: findings
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - strand.retired
+  - finding.revised
+  release2: true
+- id: findings.triage.verdict
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/findings/:id/triage/verdict/:verdict
+  plane: admin
+  family: findings
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  - slack
+  records:
+  - strand.accepted
+  - finding.defer
+  - finding.reverify_failed
+  - finding.proof_repair_pending
+  release2: true
+- id: setup.repo_features.get
+  method: GET
+  path: /admin/orgs/:org/repos/:repo/features
+  plane: admin
+  family: setup
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  release2: true
+- id: setup.repo_features.put
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/features
+  plane: admin
+  family: setup
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: RepoFeaturesBody
+  callers:
+  - cli
+  records:
+  - repo.features_set
+  release2: true
+- id: mirrors.track.request_sync
+  method: POST
+  path: /:repo/api/client/v1/track/sync-request
+  plane: customer
+  family: mirrors
+  at: repo
+  permission: configure
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - track.sync_requested
+- id: mirrors.track.reset
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/track/reset
+  plane: admin
+  family: mirrors
+  at: admin
+  permission: read
+  scope: repo
+  principals:
+  - person
+  reads: repo
+  request: ResetBody
+  callers:
+  - page
+  - slack
+  records:
+  - track.reset
+  release2: true
+- id: mirrors.layers.detect
+  method: GET
+  path: /admin/orgs/:org/repos/:repo/detect
+  plane: admin
+  family: mirrors
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  release2: true
+- id: live.track.accept
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/track/accept
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: AcceptBody
+  deprecated:
+    successors: []
+  records: []
+- id: live.track.lock
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/lock
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: LockBody
+  deprecated:
+    successors:
+    - live.track_state.lock
+  records: []
+- id: live.track_state.lock
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/track/lock
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  - cli
+  records:
+  - track.locked
+- id: live.track_state.unlock
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/track/unlock
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  - cli
+  records:
+  - track.unlocked
+- id: mirrors.track.sync
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/track/sync
+  aliases:
+  - path: /admin/orgs/:org/repos/:repo/sync-now
+    deprecated: true
+  plane: admin
+  family: mirrors
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: SyncNowBody
+  callers:
+  - seat
+  records: []
+- id: live.image.accept
+  method: POST
+  path: /admin/orgs/:org/image/accept
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  request: AcceptBody
+  callers:
+  - seat
+  records:
+  - strand.accepted
+  - image.accepted
+  - image.dispatched
+- id: live.image.report
+  method: POST
+  path: /admin/orgs/:org/image/:kind/report-built
+  aliases:
+  - path: /admin/orgs/:org/image/:kind/built
+    deprecated: true
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  request: BuiltBody
+  callers:
+  - seat
+  records:
+  - run.requested
+  - image.built
+- id: live.image.unpin
+  method: POST
+  path: /admin/orgs/:org/image/:kind/unpin
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  request: UnpinBody
+  callers:
+  - seat
+  records:
+  - strand.proposed
+  - image.unpinned
+- id: live.platform.put
+  method: PUT
+  path: /admin/orgs/:org/platform
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: PlatformBody
+  callers:
+  - cli
+  records:
+  - repo.removed
+  - platform.changed
+- id: live.logo.put
+  method: PUT
+  path: /admin/orgs/:org/logo
+  plane: admin
+  family: live
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - theme.changed
+- id: identity.access.explain
+  method: GET
+  path: /admin/orgs/:org/explain
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+- id: live.digests.list
+  method: GET
+  path: /admin/verify/digests-in-use
+  plane: admin
+  family: live
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  release2: true
+- id: pricing.rate.put
+  method: PUT
+  path: /admin/pricing/rate
+  plane: admin
+  family: pricing
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  request: PricingRateBody
+  callers:
+  - cli
+  records:
+  - pricing.changed
+  status: specified-unbuilt
+- id: pricing.limits.put
+  method: PUT
+  path: /admin/pricing/limits
+  plane: admin
+  family: pricing
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  request: PricingLimitsBody
+  callers:
+  - cli
+  records:
+  - pricing.changed
+  status: specified-unbuilt
+- id: clock.pause.put
+  method: PUT
+  path: /admin/clock/pause
+  plane: admin
+  family: clock
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  request: ClockPauseBody
+  records:
+  - clock.paused
+  status: specified-unbuilt
+  floor_opens: 1
+- id: campaigns.campaigns.retire
+  method: POST
+  path: /admin/orgs/:org/campaigns/retire
+  plane: admin
+  family: campaigns
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - campaign.retired
+  - strand.retired
+- id: campaigns.org_credits.get
+  method: GET
+  path: /admin/orgs/:org/credits
+  plane: admin
+  family: campaigns
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  release2: true
+- id: campaigns.org_credits.put
+  method: POST
+  path: /admin/orgs/:org/credits
+  plane: admin
+  family: campaigns
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: PoolBody
+  callers:
+  - cli
+  records:
+  - credit.moved
+  release2: true
+- id: campaigns.label_map.get
+  method: GET
+  path: /admin/orgs/:org/label-map
+  plane: admin
+  family: campaigns
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  response: MapView
+  release2: true
+- id: campaigns.label_map.put
+  method: POST
+  path: /admin/orgs/:org/label-map
+  plane: admin
+  family: campaigns
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: MappingBody
+  callers:
+  - cli
+  records:
+  - installation.label
+  release2: true
+- id: books.global.sync
+  method: POST
+  path: /admin/books/sync
+  plane: admin
+  family: books
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - cli
+  records: []
+  release2: true
+- id: books.trunk.sync
+  method: POST
+  path: /admin/books/trunk-sync
+  plane: admin
+  family: books
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - cli
+  records: []
+  release2: true
+- id: books.fork.sync
+  method: POST
+  path: /admin/orgs/:org/books/sync
+  plane: admin
+  family: books
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  request: OrgBooksSyncReq
+  callers:
+  - seat
+  records:
+  - book.completed
+  release2: true
+- id: books.edition.promote
+  method: POST
+  path: /admin/orgs/:org/books/promote
+  plane: admin
+  family: books
+  at: admin
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: org
+  request: OrgBooksPromoteReq
+  callers:
+  - cli
+  - seat
+  records:
+  - edition.advanced
+  release2: true
+- id: findings.publication.hold
+  method: POST
+  path: /admin/orgs/:org/publication-hold
+  plane: admin
+  family: findings
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: PublicationHoldReq
+  callers:
+  - cli
+  records:
+  - org.publication_hold
+  release2: true
+- id: books.dev_arc.create
+  method: POST
+  path: /admin/orgs/:org/books/dev/:arc
+  plane: admin
+  family: books
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records: []
+  release2: true
+- id: books.cut.merge
+  method: POST
+  path: /admin/orgs/:org/books/cuts/:pr/merge
+  plane: admin
+  family: books
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  release2: true
+  deprecated:
+    successors: []
+  records: []
+- id: mirrors.clone.sync
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/sync
+  plane: admin
+  family: mirrors
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - seat
+  records: []
+  release2: true
+- id: mirrors.mirror.sync
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/mirror-sync
+  plane: admin
+  family: mirrors
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: OrgRepoMirrorSyncReq
+  callers:
+  - seat
+  records: []
+  release2: true
+- id: mirrors.accessor_prs.sweep
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/accessor-prs/sweep
+  plane: admin
+  family: mirrors
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - instrumentation.observed
+  release2: true
+- id: mirrors.capabilities.fold
+  method: POST
+  path: /admin/orgs/:org/repos/:repo/capabilities/fold
+  plane: admin
+  family: mirrors
+  at: admin
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  reads: path
+  request: FoldBody
+  callers:
+  - cli
+  records:
+  - capability.observed
+  release2: true
+- id: identity.session.create
+  method: GET
+  path: /auth/callback
+  plane: platform
+  family: identity
+  at: sign_in
+  permission: authenticated
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  records:
+  - credential.minted
+  mints:
+  - session
+- id: identity.cli_token.mint
+  method: POST
+  path: /auth/cli-token
+  plane: platform
+  family: identity
+  at: sign_in
+  permission: authenticated
+  scope: platform
+  principals:
+  - person
+  reads: none
+  request: CliTokenRequest
+  callers:
+  - cli
+  records:
+  - credential.minted
+  mints:
+  - cli
+- id: identity.own_cli_tokens.list
+  method: GET
+  path: /api/client/v1/me/cli-tokens
+  plane: customer
+  family: identity
+  at: org_root
+  permission: authenticated
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  response: WireCliTokens
+- id: identity.own_cli_token.revoke
+  method: DELETE
+  path: /api/client/v1/me/cli-tokens/:id
+  plane: customer
+  family: identity
+  at: org_root
+  permission: authenticated
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  - cli
+  records:
+  - credential.revoked
+- id: identity.cli_tokens.list
+  method: GET
+  path: /api/client/v1/org/cli-tokens
+  plane: customer
+  family: identity
+  at: org_root
+  permission: manage_access
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  response: WireOrgCliTokens
+- id: identity.cli_token.revoke
+  method: DELETE
+  path: /api/client/v1/org/cli-tokens/:id
+  plane: customer
+  family: identity
+  at: org_root
+  permission: manage_access
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - credential.revoked
+- id: identity.audit.list
+  method: GET
+  path: /api/client/v1/org/audit
+  plane: customer
+  family: identity
+  at: org_root
+  permission: manage_access
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  response: WireAudit
+- id: identity.slack_link.start
+  method: GET
+  path: /api/client/v1/me/slack/link
+  plane: customer
+  family: identity
+  at: org_root
+  permission: authenticated
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+- id: identity.slack_link.receive
+  method: GET
+  path: /auth/slack/link/callback
+  plane: platform
+  family: identity
+  at: sign_in
+  permission: authenticated
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  records:
+  - slack.linked
+- id: identity.own_slack_link.get
+  method: GET
+  path: /api/client/v1/me/slack
+  plane: customer
+  family: identity
+  at: org_root
+  permission: authenticated
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  response: WireSlackLink
+- id: identity.own_slack_link.revoke
+  method: DELETE
+  path: /api/client/v1/me/slack
+  plane: customer
+  family: identity
+  at: org_root
+  permission: authenticated
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - slack.unlinked
+- id: identity.slack_links.list
+  method: GET
+  path: /api/client/v1/org/slack/links
+  plane: customer
+  family: identity
+  at: org_root
+  permission: manage_access
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  response: WireSlackLinks
+- id: identity.slack_link.revoke
+  method: DELETE
+  path: /api/client/v1/org/slack/links/:alias
+  plane: customer
+  family: identity
+  at: org_root
+  permission: manage_access
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - slack.unlinked
+- id: identity.own_profile.put
+  method: PUT
+  path: /api/client/v1/me/profile
+  plane: customer
+  family: identity
+  at: org_root
+  permission: authenticated
+  scope: org
+  principals:
+  - person
+  reads: path
+  request: WireOwnProfilePut
+  callers:
+  - page
+  records:
+  - person.renamed
+  response: WireOwnProfile
+- id: identity.service_token.revoke
+  method: DELETE
+  path: /admin/orgs/:org/services/:name/tokens/:id
+  plane: admin
+  family: identity
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  deprecated:
+    successors: []
+  records: []
+- id: identity.platform_tokens.mint
+  method: POST
+  path: /admin/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  request: PlatformTokenMint
+  callers:
+  - cli
+  records:
+  - credential.minted
+  response: PlatformTokenMinted
+  mints:
+  - box
+- id: identity.platform_tokens.list
+  method: GET
+  path: /admin/tokens
+  plane: admin
+  family: identity
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  response: WirePlatformTokens
+- id: identity.platform_token.revoke
+  method: DELETE
+  path: /admin/tokens/:id
+  plane: admin
+  family: identity
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - cli
+  records:
+  - credential.revoked
+- id: identity.session.login
+  method: GET
+  path: /auth/login
+  plane: platform
+  family: identity
+  callers:
+  - page
+  - cli
+  auth: none
+- id: identity.session.revoke
+  method: POST
+  path: /auth/logout
+  plane: platform
+  family: identity
+  at: sign_in
+  permission: authenticated
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  records:
+  - credential.revoked
+- id: identity.session.check
+  method: GET
+  path: /auth/verify
+  plane: platform
+  family: identity
+  at: sign_in
+  permission: read
+  scope: platform
+  principals:
+  - person
+  reads: none
+  unauthenticated: login_redirect
+- id: shell.page.get
+  method: GET
+  path: /
+  plane: platform
+  family: shell
+  callers:
+  - page
+  auth: none
+- id: shell.asset.get
+  method: GET
+  path: /assets/*asset
+  plane: platform
+  family: shell
+  callers:
+  - page
+  auth: none
+- id: intake.webhook.receive
+  method: POST
+  path: /gh/webhook
+  plane: platform
+  family: intake
+  records:
+  - credential.revoked
+  - strand.retired
+  - heal.redrive_requested
+  - bug.forwarded
+  - bug.refused
+  - track.upstream_moved
+  - run.requested
+  - installation.changed
+  auth: hmac:github.webhook_secret_file
+- id: intake.forge.receive
+  method: POST
+  path: /forge/webhook
+  plane: platform
+  family: intake
+  records:
+  - campaign.launched
+  - strand.proposed
+  - strand.accepted
+  - finding.curated
+  - finding.revised
+  - finding.reverify_failed
+  - finding.proof_repair_pending
+  - edition.cut
+  - edition.dropped
+  auth: hmac:forge.hook_secret_file
+  events:
+  - issue.created
+  - issue.edited
+  - label.publish
+  - label.verdict.bug_persists
+  - label.verdict.over_strict_dt
+  - label.verdict.uncertain
+  - pull_request.closed
+  - pull_request.merged
+- id: verify.box_job.start
+  method: POST
+  path: /api/platform/v1/box/jobs/:job_id/started
+  plane: platform
+  family: verify
+  callers:
+  - box
+  records:
+  - run.started
+  auth: credential:box
+- id: shell.health.get
+  method: GET
+  path: /healthz
+  plane: platform
+  family: shell
+  auth: none
+- id: notify.slack.get
+  method: GET
+  path: /api/client/v1/org/notify/slack
+  plane: customer
+  family: notify
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+- id: notify.slack.put
+  method: PUT
+  path: /api/client/v1/org/notify/slack
+  plane: customer
+  family: notify
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records:
+  - notify.requested
+  - notify.bound
+  - notify.interactive_enabled
+  - notify.interactive_disabled
+- id: notify.slack.check
+  method: POST
+  path: /api/client/v1/org/notify/slack/check
+  plane: customer
+  family: notify
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  records: []
+  response: NotifySlackCheck
+- id: notify.channels.list
+  method: GET
+  path: /api/client/v1/org/notify/slack/channels
+  plane: customer
+  family: notify
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+- id: notify.install.redirect
+  method: GET
+  path: /api/client/v1/org/notify/slack/install
+  plane: customer
+  family: notify
+  at: org_root
+  permission: configure
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+- id: notify.install.receive
+  method: GET
+  path: /auth/slack/callback
+  plane: platform
+  family: notify
+  at: sign_in
+  permission: authenticated
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  records:
+  - notify.interactive_disabled
+  - notify.bound
+- id: notify.events.receive
+  method: POST
+  path: /slack/events
+  plane: platform
+  family: notify
+  records:
+  - strand.proposed
+  - strand.commented
+  - notify.unbound
+  auth: hmac:slack.signing_secret_file
+- id: notify.interactions.receive
+  method: POST
+  path: /slack/interactions
+  plane: platform
+  family: notify
+  records:
+  - slack.pressed
+  auth: hmac:slack.signing_secret_file
+  auth_shared_with: notify.events.receive
+- id: notify.binding.get
+  method: GET
+  path: /admin/orgs/:org/notify/slack
+  plane: admin
+  family: notify
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+- id: notify.binding.put
+  method: PUT
+  path: /admin/orgs/:org/notify/slack
+  plane: admin
+  family: notify
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records:
+  - notify.unbound
+  - notify.interactive_disabled
+- id: notify.binding.check
+  method: POST
+  path: /admin/orgs/:org/notify/slack/check
+  plane: admin
+  family: notify
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - cli
+  records: []
+- id: notify.deliveries.list
+  method: GET
+  path: /admin/orgs/:org/notify/deliveries
+  plane: admin
+  family: notify
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+- id: notify.internal.check
+  method: POST
+  path: /admin/notify/internal/check
+  plane: admin
+  family: notify
+  at: admin
+  permission: operate
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - cli
+  records: []
+- id: strands.strand.propose
+  method: POST
+  path: /:repo/api/client/v1/fde/strands
+  plane: customer
+  family: strands
+  at: repo
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StrandPropose
+  callers:
+  - page
+  - seat
+  records:
+  - strand.proposed
+  response: WireStrand
+- id: strands.strand.revise
+  method: POST
+  path: /:repo/api/client/v1/fde/strands/:id/revise
+  plane: customer
+  family: strands
+  at: repo
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StrandRevise
+  callers:
+  - page
+  - seat
+  records:
+  - strand.revised
+  response: WireStrand
+- id: strands.strand.withdraw
+  method: POST
+  path: /:repo/api/client/v1/fde/strands/:id/withdraw
+  plane: customer
+  family: strands
+  at: repo
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+  records:
+  - strand.withdrawn
+  response: WireStrand
+- id: strands.strand.retire
+  method: POST
+  path: /:repo/api/client/v1/fde/strands/:id/retire
+  plane: customer
+  family: strands
+  at: repo
+  permission: steer
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StrandReason
+  callers:
+  - page
+  - seat
+  records:
+  - strand.retired
+  response: WireStrand
+- id: strands.inbox.list
+  method: GET
+  path: /api/client/v1/org/strands
+  plane: customer
+  family: strands
+  at: org_root
+  permission: steer
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+  response: WireStrands
+- id: strands.inbox_all.list
+  method: GET
+  path: /admin/strands
+  plane: admin
+  family: strands
+  at: admin
+  permission: read
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  response: WireStrandsInbox
+  host: both
+- id: identity.staff.whoami
+  method: GET
+  path: /admin/staff/whoami
+  plane: admin
+  family: identity
+  at: admin
+  permission: read
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  response: StaffWhoami
+  host: staff
+- id: strands.strand.list
+  method: GET
+  path: /:repo/api/client/v1/strands
+  plane: customer
+  family: strands
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+  response: WireStrands
+- id: strands.strand.get
+  method: GET
+  path: /:repo/api/client/v1/strands/:id
+  plane: customer
+  family: strands
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  callers:
+  - page
+  - seat
+  response: WireStrand
+- id: strands.strand.comment
+  method: POST
+  path: /:repo/api/client/v1/strands/:id/comment
+  plane: customer
+  family: strands
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StrandComment
+  callers:
+  - page
+  - slack
+  records:
+  - campaign.feedback
+  - strand.commented
+  - finding.feedback
+  response: WireStrand
+- id: strands.strand.end
+  method: POST
+  path: /api/client/v1/strands/:id/end
+  plane: customer
+  family: strands
+  at: org_level
+  permission: read
+  scope: org
+  principals:
+  - person
+  - machine
+  reads: org
+  callers:
+  - page
+  - slack
+  records:
+  - strand.ended
+  response: WireStrand
+- id: strands.strand.accept
+  method: POST
+  path: /:repo/api/client/v1/strands/:id/accept
+  plane: customer
+  family: strands
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StrandAccept
+  callers:
+  - page
+  - slack
+  records:
+  - campaign.launching
+  - campaign.launched
+  - strand.accepted
+  - finding.withhold
+  - disclosure.recorded
+  - finding.reverify_failed
+  - finding.proof_repair_pending
+  - contribution.offered
+  - edition.advanced
+  - track.reset
+  - image.accepted
+  - credit.moved
+  - strand.accept_refused
+  response: WireStrand
+  records_include_targets: true
+  confirms: target
+- id: strands.strand.reject
+  method: POST
+  path: /:repo/api/client/v1/strands/:id/reject
+  plane: customer
+  family: strands
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StrandReject
+  callers:
+  - page
+  - slack
+  records:
+  - strand.rejected
+  response: WireStrand
+  confirms: target
+- id: strands.strand.defer
+  method: POST
+  path: /:repo/api/client/v1/strands/:id/defer
+  plane: customer
+  family: strands
+  at: repo
+  permission: read
+  scope: repo
+  principals:
+  - person
+  - machine
+  reads: path
+  request: StrandVersion
+  callers:
+  - page
+  - slack
+  records:
+  - strand.deferred
+  response: WireStrand

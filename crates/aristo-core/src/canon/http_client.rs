@@ -57,7 +57,7 @@ pub struct HttpCanonClient {
 impl HttpCanonClient {
     /// Construct a client. `base_url` should NOT end with `/`; `repo`
     /// is the org's repo name (see [`crate::auth::repo_segment_for`]) —
-    /// the client builds `/<repo>/api/canon/...` paths under it.
+    /// the client builds `/<repo>/api/client/v1/canon/...` paths under it.
     pub fn new(base_url: impl Into<String>, token: &Token, repo: impl Into<String>) -> Self {
         let base_url = base_url.into();
         let repo = repo.into();
@@ -432,11 +432,11 @@ mod tests {
         let c = HttpCanonClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
             c.url(paths::PICTURE_CANON_MATCH),
-            "https://api.example.test/widgets/api/canon/match"
+            "https://api.example.test/widgets/api/client/v1/canon/match"
         );
         assert_eq!(
             c.url(paths::PICTURE_CATALOGUE_GET),
-            "https://api.example.test/widgets/api/catalogue"
+            "https://api.example.test/widgets/api/client/v1/catalogue"
         );
     }
 

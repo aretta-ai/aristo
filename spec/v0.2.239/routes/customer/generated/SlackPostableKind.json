@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aretta.ai/spec/routes/customer/generated/SlackPostableKind.json",
+  "type": "string",
+  "description": "the customer-audience postable kinds whose front is slack (scripts/postable_vocab.py): what a Slack binding may carry; the postable's front is its surface (0.2.230 §1, 0.2.231 §2)",
+  "enum": [
+    "finding.disclosed",
+    "verify.run_failed",
+    "onboarding.step_completed",
+    "strand.opened",
+    "strand.updated",
+    "strand.revised"
+  ]
+}

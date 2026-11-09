@@ -1,7 +1,7 @@
-//! The org's repo directory: `GET <server>/_org/api/repos`.
+//! The org's repo directory: `GET <server>/api/client/v1/org/repos`.
 //!
 //! The conductor addresses every data-plane route by the org's repo
-//! NAME (`/<name>/verify/sessions`, `/<name>/api/canon/match`), while
+//! NAME (`/<name>/verify/sessions`, `/<name>/api/client/v1/canon/match`), while
 //! the CLI knows the checkout's GitHub `owner/repo`. This one read
 //! bridges the two: the directory lists the repos the token admits,
 //! each with its GitHub upstream, and [`repo_segment_for`] picks the

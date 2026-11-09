@@ -512,7 +512,7 @@ pub struct RecordPresence {
 /// The full active canon corpus catalogue (one entry per canon id, at
 /// its active version). Closed-IP fields (alternative phrasings, match
 /// signals) are stripped server-side; this is the browsable trust-card
-/// surface. On the wire, `GET /<repo>/api/catalogue` is the bare list
+/// surface. On the wire, `GET /<repo>/api/client/v1/catalogue` is the bare list
 /// of entries plus the `x-aretta-serving*` headers; this wrapper is the
 /// local snapshot's shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

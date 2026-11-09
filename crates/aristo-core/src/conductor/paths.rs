@@ -14,37 +14,187 @@ pub struct Route {
 pub const VERIFY_SESSIONS_START: Route = Route {
     id: "verify.sessions.start",
     method: "POST",
-    path: "/:repo/api/verify/sessions",
+    path: "/:repo/api/client/v1/verify/sessions",
 };
 
 pub const VERIFY_SESSIONS_GET: Route = Route {
     id: "verify.sessions.get",
     method: "GET",
-    path: "/:repo/api/verify/sessions/:id",
+    path: "/:repo/api/client/v1/verify/sessions/:id",
 };
 
 pub const VERIFY_SESSIONS_CANCEL: Route = Route {
     id: "verify.sessions.cancel",
     method: "POST",
-    path: "/:repo/api/verify/sessions/:id/cancel",
+    path: "/:repo/api/client/v1/verify/sessions/:id/cancel",
 };
 
 pub const IDENTITY_REPOS_LIST: Route = Route {
     id: "identity.repos.list",
     method: "GET",
-    path: "/_org/api/repos",
+    path: "/api/client/v1/org/repos",
 };
 
 pub const PICTURE_CANON_MATCH: Route = Route {
     id: "picture.canon.match",
     method: "POST",
-    path: "/:repo/api/canon/match",
+    path: "/:repo/api/client/v1/canon/match",
 };
 
 pub const PICTURE_CATALOGUE_GET: Route = Route {
     id: "picture.catalogue.get",
     method: "GET",
-    path: "/:repo/api/catalogue",
+    path: "/:repo/api/client/v1/catalogue",
+};
+
+pub const TENANTS_INSTALLATIONS_PENDING_LIST: Route = Route {
+    id: "tenants.installations_pending.list",
+    method: "GET",
+    path: "/admin/installations/pending",
+};
+
+pub const IDENTITY_CI_TOKENS_MINT: Route = Route {
+    id: "identity.ci_tokens.mint",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/tokens",
+};
+
+pub const IDENTITY_CI_TOKENS_REVOKE: Route = Route {
+    id: "identity.ci_tokens.revoke",
+    method: "DELETE",
+    path: "/admin/orgs/:org/repos/:repo/tokens",
+};
+
+pub const IDENTITY_CI_TOKEN_REVOKE: Route = Route {
+    id: "identity.ci_token.revoke",
+    method: "DELETE",
+    path: "/admin/orgs/:org/repos/:repo/tokens/:id",
+};
+
+pub const IDENTITY_SEAT_TOKENS_MINT: Route = Route {
+    id: "identity.seat_tokens.mint",
+    method: "POST",
+    path: "/admin/orgs/:org/seats/:name/tokens",
+};
+
+pub const IDENTITY_SEAT_TOKENS_REVOKE: Route = Route {
+    id: "identity.seat_tokens.revoke",
+    method: "DELETE",
+    path: "/admin/orgs/:org/seats/:name/tokens",
+};
+
+pub const IDENTITY_SEAT_TOKEN_REVOKE: Route = Route {
+    id: "identity.seat_token.revoke",
+    method: "DELETE",
+    path: "/admin/orgs/:org/seats/:name/tokens/:id",
+};
+
+pub const VERIFY_RUN_AMEND: Route = Route {
+    id: "verify.run.amend",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/runs/:run_seq/amend",
+};
+
+pub const FINDINGS_BUG_DISPOSE: Route = Route {
+    id: "findings.bug.dispose",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/bugs/:bug_key/dispose",
+};
+
+pub const SETUP_REPO_FEATURES_PUT: Route = Route {
+    id: "setup.repo_features.put",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/features",
+};
+
+pub const MIRRORS_LAYERS_DETECT: Route = Route {
+    id: "mirrors.layers.detect",
+    method: "GET",
+    path: "/admin/orgs/:org/repos/:repo/detect",
+};
+
+pub const LIVE_TRACK_STATE_LOCK: Route = Route {
+    id: "live.track_state.lock",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/track/lock",
+};
+
+pub const LIVE_TRACK_STATE_UNLOCK: Route = Route {
+    id: "live.track_state.unlock",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/track/unlock",
+};
+
+pub const LIVE_PLATFORM_PUT: Route = Route {
+    id: "live.platform.put",
+    method: "PUT",
+    path: "/admin/orgs/:org/platform",
+};
+
+pub const LIVE_LOGO_PUT: Route = Route {
+    id: "live.logo.put",
+    method: "PUT",
+    path: "/admin/orgs/:org/logo",
+};
+
+pub const CAMPAIGNS_CAMPAIGNS_RETIRE: Route = Route {
+    id: "campaigns.campaigns.retire",
+    method: "POST",
+    path: "/admin/orgs/:org/campaigns/retire",
+};
+
+pub const CAMPAIGNS_ORG_CREDITS_PUT: Route = Route {
+    id: "campaigns.org_credits.put",
+    method: "POST",
+    path: "/admin/orgs/:org/credits",
+};
+
+pub const CAMPAIGNS_LABEL_MAP_PUT: Route = Route {
+    id: "campaigns.label_map.put",
+    method: "POST",
+    path: "/admin/orgs/:org/label-map",
+};
+
+pub const BOOKS_GLOBAL_SYNC: Route = Route {
+    id: "books.global.sync",
+    method: "POST",
+    path: "/admin/books/sync",
+};
+
+pub const BOOKS_TRUNK_SYNC: Route = Route {
+    id: "books.trunk.sync",
+    method: "POST",
+    path: "/admin/books/trunk-sync",
+};
+
+pub const BOOKS_EDITION_PROMOTE: Route = Route {
+    id: "books.edition.promote",
+    method: "POST",
+    path: "/admin/orgs/:org/books/promote",
+};
+
+pub const FINDINGS_PUBLICATION_HOLD: Route = Route {
+    id: "findings.publication.hold",
+    method: "POST",
+    path: "/admin/orgs/:org/publication-hold",
+};
+
+pub const BOOKS_DEV_ARC_CREATE: Route = Route {
+    id: "books.dev_arc.create",
+    method: "POST",
+    path: "/admin/orgs/:org/books/dev/:arc",
+};
+
+pub const MIRRORS_ACCESSOR_PRS_SWEEP: Route = Route {
+    id: "mirrors.accessor_prs.sweep",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/accessor-prs/sweep",
+};
+
+pub const MIRRORS_CAPABILITIES_FOLD: Route = Route {
+    id: "mirrors.capabilities.fold",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/capabilities/fold",
 };
 
 pub const IDENTITY_CLI_TOKEN_MINT: Route = Route {
@@ -53,8 +203,44 @@ pub const IDENTITY_CLI_TOKEN_MINT: Route = Route {
     path: "/auth/cli-token",
 };
 
+pub const IDENTITY_OWN_CLI_TOKEN_REVOKE: Route = Route {
+    id: "identity.own_cli_token.revoke",
+    method: "DELETE",
+    path: "/api/client/v1/me/cli-tokens/:id",
+};
+
+pub const IDENTITY_PLATFORM_TOKENS_MINT: Route = Route {
+    id: "identity.platform_tokens.mint",
+    method: "POST",
+    path: "/admin/tokens",
+};
+
+pub const IDENTITY_PLATFORM_TOKEN_REVOKE: Route = Route {
+    id: "identity.platform_token.revoke",
+    method: "DELETE",
+    path: "/admin/tokens/:id",
+};
+
 pub const IDENTITY_SESSION_LOGIN: Route = Route {
     id: "identity.session.login",
     method: "GET",
     path: "/auth/login",
+};
+
+pub const NOTIFY_BINDING_PUT: Route = Route {
+    id: "notify.binding.put",
+    method: "PUT",
+    path: "/admin/orgs/:org/notify/slack",
+};
+
+pub const NOTIFY_BINDING_CHECK: Route = Route {
+    id: "notify.binding.check",
+    method: "POST",
+    path: "/admin/orgs/:org/notify/slack/check",
+};
+
+pub const NOTIFY_INTERNAL_CHECK: Route = Route {
+    id: "notify.internal.check",
+    method: "POST",
+    path: "/admin/notify/internal/check",
 };

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aretta.ai/spec/routes/customer/generated/RefusalFamily.json",
+  "type": "string",
+  "description": "which plane answered (scripts/codes_vocab.py REFUSAL_FAMILY; not the registry's families)",
+  "enum": [
+    "client",
+    "admin",
+    "config",
+    "onboarding",
+    "origin",
+    "issues",
+    "org",
+    "dashboard",
+    "credits",
+    "label-map",
+    "fde",
+    "campaigns"
+  ]
+}

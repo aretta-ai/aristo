@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aretta.ai/spec/routes/box/generated/JobDiagnostic.json",
+  "type": "string",
+  "description": "the box's job-state and prune words (layer box, no status)",
+  "enum": [
+    "admission_missing",
+    "composite_missing",
+    "composite_unavailable",
+    "disk_low",
+    "model_mismatch",
+    "model_unreachable",
+    "budget_exhausted",
+    "no_output",
+    "closing_writes_missing",
+    "wrapper_unhashable",
+    "input_unreadable",
+    "input_malformed",
+    "conductor_missing",
+    "conductor_history_unreadable",
+    "jobs_unknown",
+    "pin_file_incomplete",
+    "no_pin_anchors_the_image_list",
+    "images_from_another_host"
+  ]
+}

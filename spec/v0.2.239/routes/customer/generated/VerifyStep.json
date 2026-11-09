@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aretta.ai/spec/routes/customer/generated/VerifyStep.json",
+  "type": "string",
+  "description": "the in-process opener that fired a verify session (scripts/registry_vocab.py VERIFY_STEP_WORDS); absent = a hand post through verify.sessions.start",
+  "enum": [
+    "readiness_battery",
+    "candidate_verify",
+    "external_verify",
+    "served_remeasure",
+    "heal_redrive",
+    "heal_redrive_press",
+    "grounding_verify"
+  ]
+}
