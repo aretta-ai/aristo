@@ -185,6 +185,18 @@ pub const BOOKS_DEV_ARC_CREATE: Route = Route {
     path: "/admin/orgs/:org/books/dev/:arc",
 };
 
+pub const MIRRORS_CLONE_SYNC: Route = Route {
+    id: "mirrors.clone.sync",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/sync",
+};
+
+pub const MIRRORS_MIRROR_SYNC: Route = Route {
+    id: "mirrors.mirror.sync",
+    method: "POST",
+    path: "/admin/orgs/:org/repos/:repo/mirror-sync",
+};
+
 pub const MIRRORS_ACCESSOR_PRS_SWEEP: Route = Route {
     id: "mirrors.accessor_prs.sweep",
     method: "POST",

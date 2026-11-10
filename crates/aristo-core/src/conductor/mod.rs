@@ -1,8 +1,8 @@
 //! The conductor routes the CLI calls, generated from the spec's route registry.
 //!
-//! [`paths`] is GENERATED from `CampanileSkyForge/aretta-registry` tag **v0.2.239**
-//! (commit `f15d83cf8d3a474e25d453be863af186b3379ed5`, spec root `data/`), vendored at
-//! `spec/v0.2.239/` in this repo: the registry rows with `callers: cli`. Never edit it
+//! [`paths`] is GENERATED from `CampanileSkyForge/aretta-registry` tag **v0.2.240**
+//! (commit `fb19fba80dfe30ed571eaa6f221d094dad927ac0`, spec root `data/`), vendored at
+//! `spec/v0.2.240/` in this repo: the registry rows with `callers: cli`. Never edit it
 //! by hand: change the registry, re-vendor it, and regenerate with
 //! `scripts/check-conductor-paths.sh --write`. CI runs the same script without
 //! `--write` and fails on any difference.
@@ -60,7 +60,7 @@ mod tests {
     }
 
     /// The (method, path) set the CLI calls: eight of the routes of
-    /// `callers: cli` at v0.2.239. A registry change that adds, drops or
+    /// `callers: cli` at v0.2.240. A registry change that adds, drops or
     /// moves one shows up here as well as in the drift check.
     #[test]
     fn the_cli_calls_the_eight_generated_routes() {
@@ -93,10 +93,18 @@ mod tests {
     }
 
     /// The vendored registry version: `spec/<SPEC>/` and `spec/<SPEC>.sha256`.
-    const SPEC: &str = "v0.2.239";
+    const SPEC: &str = "v0.2.240";
 
-    /// `spec/v0.2.239/` is the tag's files byte for byte: each one's
-    /// sha256 equals its line in `spec/v0.2.239.sha256`.
+    /// `spec/<SPEC>/VERSION` names the vendored directory's version.
+    #[test]
+    fn the_vendored_version_is_the_directorys() {
+        let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec");
+        let version = std::fs::read_to_string(spec.join(SPEC).join("VERSION")).unwrap();
+        assert_eq!(format!("v{}", version.trim()), SPEC);
+    }
+
+    /// `spec/v0.2.240/` is the tag's files byte for byte: each one's
+    /// sha256 equals its line in `spec/v0.2.240.sha256`.
     #[test]
     fn the_vendored_spec_matches_its_sha256_list() {
         let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec");
