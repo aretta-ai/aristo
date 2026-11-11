@@ -1,8 +1,8 @@
 //! The conductor routes the CLI calls, generated from the spec's route registry.
 //!
-//! [`paths`] is GENERATED from `CampanileSkyForge/aretta-registry` tag **v0.2.239**
-//! (commit `f15d83cf8d3a474e25d453be863af186b3379ed5`, spec root `data/`), vendored at
-//! `spec/v0.2.239/` in this repo: the registry rows with `callers: cli`. Never edit it
+//! [`paths`] is GENERATED from `CampanileSkyForge/aretta-registry` tag **v0.2.244**
+//! (commit `3cca2c0f13276750818df9a1733ed57489adac47`, spec root `data/`), vendored at
+//! `spec/v0.2.244/` in this repo: the registry rows with `callers: cli`. Never edit it
 //! by hand: change the registry, re-vendor it, and regenerate with
 //! `scripts/check-conductor-paths.sh --write`. CI runs the same script without
 //! `--write` and fails on any difference.
@@ -47,32 +47,32 @@ mod tests {
     #[test]
     fn fill_replaces_each_parameter_segment() {
         assert_eq!(
-            VERIFY_SESSIONS_CANCEL.fill(&[("repo", "widgets"), ("id", "01HN")]),
+            SESSIONS_SESSION_CANCEL.fill(&[("repo", "widgets"), ("id", "01HN")]),
             "/widgets/api/client/v1/verify/sessions/01HN/cancel"
         );
-        assert_eq!(IDENTITY_REPOS_LIST.fill(&[]), "/api/client/v1/org/repos");
+        assert_eq!(REPOS_REPOS_LIST.fill(&[]), "/api/client/v1/org/repos");
     }
 
     #[test]
-    #[should_panic(expected = "route verify.sessions.get needs :id")]
+    #[should_panic(expected = "route sessions.session.get needs :id")]
     fn fill_refuses_a_missing_parameter() {
-        VERIFY_SESSIONS_GET.fill(&[("repo", "widgets")]);
+        SESSIONS_SESSION_GET.fill(&[("repo", "widgets")]);
     }
 
     /// The (method, path) set the CLI calls: eight of the routes of
-    /// `callers: cli` at v0.2.239. A registry change that adds, drops or
+    /// `callers: cli` at v0.2.244. A registry change that adds, drops or
     /// moves one shows up here as well as in the drift check.
     #[test]
     fn the_cli_calls_the_eight_generated_routes() {
         let called: Vec<(&str, &str)> = [
-            PICTURE_CANON_MATCH,
-            PICTURE_CATALOGUE_GET,
-            VERIFY_SESSIONS_START,
-            VERIFY_SESSIONS_GET,
-            VERIFY_SESSIONS_CANCEL,
-            IDENTITY_SESSION_LOGIN,
-            IDENTITY_CLI_TOKEN_MINT,
-            IDENTITY_REPOS_LIST,
+            FINDINGS_CANON_MATCH,
+            REPOS_CATALOGUE_GET,
+            SESSIONS_SESSIONS_START,
+            SESSIONS_SESSION_GET,
+            SESSIONS_SESSION_CANCEL,
+            AUTH_LOGIN_REDIRECT,
+            TOKENS_CLI_TOKENS_MINT,
+            REPOS_REPOS_LIST,
         ]
         .iter()
         .map(|r| (r.method, r.path))
@@ -93,10 +93,18 @@ mod tests {
     }
 
     /// The vendored registry version: `spec/<SPEC>/` and `spec/<SPEC>.sha256`.
-    const SPEC: &str = "v0.2.239";
+    const SPEC: &str = "v0.2.244";
 
-    /// `spec/v0.2.239/` is the tag's files byte for byte: each one's
-    /// sha256 equals its line in `spec/v0.2.239.sha256`.
+    /// `spec/<SPEC>/VERSION` names the vendored directory's version.
+    #[test]
+    fn the_vendored_version_is_the_directorys() {
+        let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec");
+        let version = std::fs::read_to_string(spec.join(SPEC).join("VERSION")).unwrap();
+        assert_eq!(format!("v{}", version.trim()), SPEC);
+    }
+
+    /// `spec/v0.2.244/` is the tag's files byte for byte: each one's
+    /// sha256 equals its line in `spec/v0.2.244.sha256`.
     #[test]
     fn the_vendored_spec_matches_its_sha256_list() {
         let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec");

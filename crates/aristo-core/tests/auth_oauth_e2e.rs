@@ -122,7 +122,7 @@ fn oauth_start_decodes_authorize_url_from_proxy_response() {
     assert!(
         record.path.starts_with(&format!(
             "{}?redirect_uri=",
-            paths::IDENTITY_SESSION_LOGIN.path
+            paths::AUTH_LOGIN_REDIRECT.path
         )),
         "expected the sign-in route with redirect_uri query; got: {}",
         record.path
@@ -183,7 +183,7 @@ fn oauth_exchange_happy_path_returns_arta_token_and_user() {
     // Verify the request shape: POST /auth/cli-token with JSON body.
     let record = handle.join().unwrap();
     assert_eq!(record.method, "POST");
-    assert_eq!(record.path, paths::IDENTITY_CLI_TOKEN_MINT.path);
+    assert_eq!(record.path, paths::TOKENS_CLI_TOKENS_MINT.path);
     // ureq sends the JSON pretty-printed; assert by parsing back.
     let parsed: serde_json::Value =
         serde_json::from_str(&record.body).expect("body parses as JSON");

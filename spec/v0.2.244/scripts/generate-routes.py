@@ -382,6 +382,9 @@ def routes_rs(rows):
             out.append(f'    Deprecated {{ id: {rust_str(r["id"])}, method: {rust_str(r["method"])}, '
                        f'path: {rust_str(path)}, successors: &[{", ".join(rust_str(x) for x in succ)}] }},\n')
     out.append('];\n')
+    out += ['\n/// The retired routes (registry Route.retired): each answers 410 route_retired before any admission, to everyone;\n',
+            '/// a row stays here for one cut after its retirement, then leaves `ROUTES`.\n',
+            'pub const RETIRED: &[&str] = &[' + ', '.join(rust_str(r['id']) for r in rows if r.get('retired')) + '];\n']
     return ''.join(out)
 
 

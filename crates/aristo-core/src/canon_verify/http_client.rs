@@ -76,7 +76,7 @@ impl HttpVerifyClient {
     /// `GET /:repo/api/client/v1/verify/sessions/:id`, with `?wait=<n>` when the
     /// caller long-polls.
     fn session_url(&self, session_id: &str, wait_seconds: Option<u32>) -> String {
-        let route = paths::VERIFY_SESSIONS_GET;
+        let route = paths::SESSIONS_SESSION_GET;
         debug_assert_eq!(route.method, "GET", "{}", route.id);
         let mut url = self.url(route, Some(session_id));
         if let Some(n) = wait_seconds.filter(|n| *n > 0) {
@@ -129,7 +129,7 @@ impl VerifyClient for HttpVerifyClient {
         &self,
         req: &VerifySessionRequest,
     ) -> Result<PostVerifySessionResponse, VerifyError> {
-        self.post_json(paths::VERIFY_SESSIONS_START, req)
+        self.post_json(paths::SESSIONS_SESSIONS_START, req)
     }
 
     fn get_session(
@@ -141,7 +141,7 @@ impl VerifyClient for HttpVerifyClient {
     }
 
     fn cancel_session(&self, session_id: &str) -> Result<(), VerifyError> {
-        let route = paths::VERIFY_SESSIONS_CANCEL;
+        let route = paths::SESSIONS_SESSION_CANCEL;
         debug_assert_eq!(route.method, "POST", "{}", route.id);
         let url = self.url(route, Some(session_id));
         // Same agent (keeps the connection pool), but a short
@@ -401,12 +401,12 @@ mod tests {
         let tok = Token::new("t");
         let c = HttpVerifyClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
-            c.url(paths::VERIFY_SESSIONS_CANCEL, Some("01HN1234567890")),
+            c.url(paths::SESSIONS_SESSION_CANCEL, Some("01HN1234567890")),
             "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN1234567890/cancel"
         );
         // Defensive: a hostile session id can't smuggle path segments.
         assert_eq!(
-            c.url(paths::VERIFY_SESSIONS_CANCEL, Some("a/b")),
+            c.url(paths::SESSIONS_SESSION_CANCEL, Some("a/b")),
             "https://api.example.test/widgets/api/client/v1/verify/sessions/a%2Fb/cancel"
         );
     }
@@ -416,7 +416,7 @@ mod tests {
         let tok = Token::new("t");
         let c = HttpVerifyClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
-            c.url(paths::VERIFY_SESSIONS_START, None),
+            c.url(paths::SESSIONS_SESSIONS_START, None),
             "https://api.example.test/widgets/api/client/v1/verify/sessions"
         );
         assert_eq!(
@@ -432,7 +432,7 @@ mod tests {
             "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN?wait=1"
         );
         assert_eq!(
-            c.url(paths::VERIFY_SESSIONS_CANCEL, Some("01HN")),
+            c.url(paths::SESSIONS_SESSION_CANCEL, Some("01HN")),
             "https://api.example.test/widgets/api/client/v1/verify/sessions/01HN/cancel"
         );
     }

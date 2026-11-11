@@ -127,7 +127,7 @@ pub fn oauth_start(server: &ServerUrl) -> Result<OAuthInit, AuthError> {
 /// generated sign-in route. The redirect target is the proxy's callback
 /// page, a value the CLI passes and never calls.
 fn login_url(server: &ServerUrl) -> String {
-    let route = paths::IDENTITY_SESSION_LOGIN;
+    let route = paths::AUTH_LOGIN_REDIRECT;
     debug_assert_eq!(route.method, "GET", "{}", route.id);
     let redirect_uri = format!("{}/auth/callback", server.as_str());
     format!(
@@ -165,7 +165,7 @@ pub fn oauth_exchange(
     repo_full_name: Option<&str>,
     name: Option<&str>,
 ) -> Result<CliTokenResponse, AuthError> {
-    let route = paths::IDENTITY_CLI_TOKEN_MINT;
+    let route = paths::TOKENS_CLI_TOKENS_MINT;
     debug_assert_eq!(route.method, "POST", "{}", route.id);
     let url = format!("{}{}", server.as_str(), route.fill(&[]));
     let req = CliTokenRequest {
@@ -307,12 +307,12 @@ mod tests {
     #[test]
     fn oauth_start_calls_the_generated_sign_in_route() {
         let server = ServerUrl::parse("https://conductor.example.test");
-        assert_eq!(paths::IDENTITY_SESSION_LOGIN.method, "GET");
+        assert_eq!(paths::AUTH_LOGIN_REDIRECT.method, "GET");
         assert_eq!(
             login_url(&server),
             format!(
                 "https://conductor.example.test{}?redirect_uri={}",
-                paths::IDENTITY_SESSION_LOGIN.path,
+                paths::AUTH_LOGIN_REDIRECT.path,
                 "https%3A%2F%2Fconductor.example.test%2Fauth%2Fcallback"
             )
         );

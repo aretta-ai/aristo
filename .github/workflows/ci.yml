@@ -74,7 +74,7 @@ jobs:
       - run: cargo test --workspace --all-targets
 
   # The conductor route list (crates/aristo-core/src/conductor/paths.rs) is
-  # GENERATED from the spec's route registry, vendored at spec/v0.2.239/.
+  # GENERATED from the spec's route registry, vendored at spec/v0.2.244/.
   # Regenerate it with the spec's own generator and the PINNED rustfmt
   # (Rust 1.96.0's, the generator's pin) and fail on any difference.
   conductor-paths:

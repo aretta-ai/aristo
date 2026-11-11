@@ -182,7 +182,7 @@ fn match_annotations_happy_path_round_trips() {
     assert_eq!(record.method, "POST");
     assert_eq!(
         record.path,
-        paths::PICTURE_CANON_MATCH.fill(&[("repo", "widgets")])
+        paths::FINDINGS_CANON_MATCH.fill(&[("repo", "widgets")])
     );
     assert_eq!(
         record.authorization.as_deref(),
@@ -352,7 +352,7 @@ fn catalogue_reads_the_serving_headers_and_the_bare_list() {
     let record = server.join().unwrap();
     assert_eq!(
         record.path,
-        paths::PICTURE_CATALOGUE_GET.fill(&[("repo", "widgets")])
+        paths::REPOS_CATALOGUE_GET.fill(&[("repo", "widgets")])
     );
     assert!(cat.entries.is_empty());
     let serving = cat.serving.expect("serving parsed from headers");

@@ -1,11 +1,11 @@
-- id: verify.sessions.start
+- id: sessions.sessions.start
   method: POST
   path: /:repo/api/client/v1/verify/sessions
   aliases:
   - path: /:repo/api/verify/sessions
     deprecated: true
   plane: customer
-  family: verify
+  family: sessions
   at: repo
   permission: verify
   scope: repo
@@ -17,17 +17,18 @@
   callers:
   - page
   - cli
+  - seat
   records:
   - run.requested
   - run.held
-- id: verify.sessions.list
+- id: sessions.sessions.list
   method: GET
   path: /:repo/api/client/v1/verify/sessions
   aliases:
   - path: /:repo/api/verify/sessions
     deprecated: true
   plane: customer
-  family: verify
+  family: sessions
   at: repo
   permission: read
   scope: repo
@@ -38,14 +39,14 @@
   callers:
   - page
   - seat
-- id: verify.sessions.get
+- id: sessions.session.get
   method: GET
   path: /:repo/api/client/v1/verify/sessions/:id
   aliases:
   - path: /:repo/api/verify/sessions/:id
     deprecated: true
   plane: customer
-  family: verify
+  family: sessions
   at: repo
   permission: read
   scope: repo
@@ -55,14 +56,14 @@
   reads: path
   callers:
   - cli
-- id: verify.sessions.cancel
+- id: sessions.session.cancel
   method: POST
   path: /:repo/api/client/v1/verify/sessions/:id/cancel
   aliases:
   - path: /:repo/api/verify/sessions/:id/cancel
     deprecated: true
   plane: customer
-  family: verify
+  family: sessions
   at: repo
   permission: verify
   scope: repo
@@ -73,6 +74,7 @@
   callers:
   - page
   - cli
+  - seat
   records:
   - run.cancelled
 - id: verify.events.submit
@@ -90,6 +92,7 @@
   records: []
   deprecated:
     successors: []
+  retired: true
 - id: verify.org_events.submit
   method: POST
   path: /api/client/v1/org/events
@@ -105,14 +108,15 @@
   records: []
   deprecated:
     successors: []
-- id: identity.repos.list
+  retired: true
+- id: repos.repos.list
   method: GET
   path: /api/client/v1/org/repos
   aliases:
   - path: /_org/api/repos
     deprecated: true
   plane: customer
-  family: identity
+  family: repos
   at: org_directory
   permission: read
   scope: org
@@ -122,14 +126,14 @@
   reads: path
   callers:
   - cli
-- id: picture.canon.match
+- id: findings.canon.match
   method: POST
   path: /:repo/api/client/v1/canon/match
   aliases:
   - path: /:repo/api/canon/match
     deprecated: true
   plane: customer
-  family: picture
+  family: findings
   at: repo
   permission: read
   scope: repo
@@ -142,11 +146,11 @@
   - cli
   records:
   - canon.matched
-- id: identity.whoami.get@repo
+- id: auth.whoami.get@repo
   method: GET
   path: /:repo/api/whoami
   plane: customer
-  family: identity
+  family: auth
   at: repo
   permission: read
   scope: repo
@@ -156,19 +160,19 @@
   reads: path
   deprecated:
     successors:
-    - id: identity.whoami.get
+    - id: auth.whoami.get
       query:
         repo: :repo
   callers:
   - page
-- id: picture.logo.get
+- id: orgs.logo.get
   method: GET
   path: /:repo/api/client/v1/logo
   aliases:
   - path: /:repo/api/logo
     deprecated: true
   plane: customer
-  family: picture
+  family: orgs
   at: repo
   permission: read
   scope: repo
@@ -176,14 +180,14 @@
   - person
   - machine
   reads: path
-- id: verify.runs.list
+- id: runs.runs.list
   method: GET
   path: /:repo/api/client/v1/runs
   aliases:
   - path: /:repo/api/runs
     deprecated: true
   plane: customer
-  family: verify
+  family: runs
   at: repo
   permission: read
   scope: repo
@@ -194,14 +198,14 @@
   callers:
   - page
   - seat
-- id: verify.runs.get
+- id: runs.run.get
   method: GET
   path: /:repo/api/client/v1/runs/:seq
   aliases:
   - path: /:repo/api/runs/:seq
     deprecated: true
   plane: customer
-  family: verify
+  family: runs
   at: repo
   permission: read
   scope: repo
@@ -211,14 +215,14 @@
   reads: path
   callers:
   - page
-- id: verify.run_evidence.get
+- id: runs.evidence.get
   method: GET
   path: /:repo/api/client/v1/runs/:seq/evidence
   aliases:
   - path: /:repo/api/runs/:seq/evidence
     deprecated: true
   plane: customer
-  family: verify
+  family: runs
   at: repo
   permission: read
   scope: repo
@@ -228,14 +232,14 @@
   reads: path
   callers:
   - page
-- id: picture.bugs.list
+- id: bugs.bugs.list
   method: GET
   path: /:repo/api/client/v1/bugs
   aliases:
   - path: /:repo/api/bugs
     deprecated: true
   plane: customer
-  family: picture
+  family: bugs
   at: repo
   permission: read
   scope: repo
@@ -245,14 +249,14 @@
   reads: path
   callers:
   - page
-- id: picture.bugs.get
+- id: bugs.bug.get
   method: GET
   path: /:repo/api/client/v1/bugs/:id
   aliases:
   - path: /:repo/api/bugs/:id
     deprecated: true
   plane: customer
-  family: picture
+  family: bugs
   at: repo
   permission: read
   scope: repo
@@ -262,14 +266,14 @@
   reads: path
   callers:
   - page
-- id: picture.findings.list
+- id: findings.findings.list
   method: GET
   path: /:repo/api/client/v1/findings
   aliases:
   - path: /:repo/api/findings
     deprecated: true
   plane: customer
-  family: picture
+  family: findings
   at: repo
   permission: read
   scope: repo
@@ -279,14 +283,14 @@
   reads: path
   callers:
   - page
-- id: picture.findings.get
+- id: findings.finding.get
   method: GET
   path: /:repo/api/client/v1/findings/:id
   aliases:
   - path: /:repo/api/findings/:id
     deprecated: true
   plane: customer
-  family: picture
+  family: findings
   at: repo
   permission: read
   scope: repo
@@ -296,14 +300,14 @@
   reads: path
   callers:
   - page
-- id: picture.finding_history.get
+- id: findings.history.get
   method: GET
   path: /:repo/api/client/v1/findings/:id/history
   aliases:
   - path: /:repo/api/findings/:id/history
     deprecated: true
   plane: customer
-  family: picture
+  family: findings
   at: repo
   permission: read
   scope: repo
@@ -349,11 +353,11 @@
   records:
   - finding.reverify_failed
   response: RepairRejected
-- id: findings.upstream_pull.publish
+- id: pulls.upstream_pull.publish
   method: POST
   path: /:repo/api/client/v1/pulls/:number/publish
   plane: customer
-  family: findings
+  family: pulls
   at: repo
   permission: read
   scope: repo
@@ -366,14 +370,14 @@
   - contribution.offered
   response: PullPublished
   customer_outbound: true
-- id: picture.overview.get
+- id: repos.overview.get
   method: GET
   path: /:repo/api/client/v1/overview
   aliases:
   - path: /:repo/api/overview
     deprecated: true
   plane: customer
-  family: picture
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -384,14 +388,14 @@
   callers:
   - page
   - seat
-- id: picture.metrics.get
+- id: repos.metrics.get
   method: GET
   path: /:repo/api/client/v1/metrics
   aliases:
   - path: /:repo/api/metrics
     deprecated: true
   plane: customer
-  family: picture
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -401,14 +405,14 @@
   reads: path
   callers:
   - page
-- id: picture.specgraph.get
+- id: repos.specgraph.get
   method: GET
   path: /:repo/api/client/v1/specgraph
   aliases:
   - path: /:repo/api/specgraph
     deprecated: true
   plane: customer
-  family: picture
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -418,14 +422,14 @@
   reads: path
   callers:
   - page
-- id: picture.specs.list
+- id: repos.specs.list
   method: GET
   path: /:repo/api/client/v1/specs
   aliases:
   - path: /:repo/api/specs
     deprecated: true
   plane: customer
-  family: picture
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -436,14 +440,14 @@
   callers:
   - page
   response: SpecRowWire[]
-- id: picture.catalogue.get
+- id: repos.catalogue.get
   method: GET
   path: /:repo/api/client/v1/catalogue
   aliases:
   - path: /:repo/api/catalogue
     deprecated: true
   plane: customer
-  family: picture
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -454,14 +458,14 @@
   callers:
   - page
   - cli
-- id: picture.labels.get
+- id: repos.labels.get
   method: GET
   path: /:repo/api/client/v1/labels
   aliases:
   - path: /:repo/api/labels
     deprecated: true
   plane: customer
-  family: picture
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -470,14 +474,14 @@
   - machine
   reads: path
   response: WireLabels
-- id: identity.tokens.list
+- id: tokens.repo_tokens.list
   method: GET
   path: /:repo/api/client/v1/tokens
   aliases:
   - path: /:repo/api/tokens
     deprecated: true
   plane: customer
-  family: identity
+  family: tokens
   at: repo
   permission: read
   scope: repo
@@ -486,14 +490,14 @@
   reads: path
   callers:
   - page
-- id: identity.tokens.mint
+- id: tokens.repo_tokens.mint
   method: POST
   path: /:repo/api/client/v1/tokens
   aliases:
   - path: /:repo/api/tokens
     deprecated: true
   plane: customer
-  family: identity
+  family: tokens
   at: repo
   permission: manage_access
   scope: repo
@@ -507,14 +511,14 @@
   - credential.minted
   mints:
   - ci
-- id: identity.tokens.revoke
+- id: tokens.repo_token.revoke
   method: DELETE
   path: /:repo/api/client/v1/tokens/:id
   aliases:
   - path: /:repo/api/tokens/:id
     deprecated: true
   plane: customer
-  family: identity
+  family: tokens
   at: repo
   permission: manage_access
   scope: repo
@@ -525,11 +529,11 @@
   - page
   records:
   - credential.revoked
-- id: campaigns.health.get
+- id: repos.health.get
   method: GET
   path: /:repo/api/client/v1/health
   plane: customer
-  family: campaigns
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -570,11 +574,11 @@
   callers:
   - page
   response: WireCampaigns
-- id: campaigns.credits.get
+- id: credits.usage.get
   method: GET
   path: /:repo/api/client/v1/credits
   plane: customer
-  family: campaigns
+  family: credits
   at: repo
   permission: read
   scope: repo
@@ -604,7 +608,7 @@
   - campaign.launched
   - credit.moved
   response: WireLaunched
-- id: conversations.chat.create
+- id: conversations.conversations.create
   method: POST
   path: /:repo/api/client/v1/chat
   plane: customer
@@ -619,8 +623,9 @@
   callers:
   - page
   records:
-  - strand.proposed
+  - credential.minted
   - credit.moved
+  - strand.proposed
 - id: conversations.conversations.list
   method: GET
   path: /:repo/api/client/v1/conversations
@@ -634,7 +639,7 @@
   reads: path
   callers:
   - page
-- id: conversations.conversations.get
+- id: conversations.conversation.get
   method: GET
   path: /:repo/api/client/v1/conversations/:id
   plane: customer
@@ -647,11 +652,11 @@
   reads: path
   callers:
   - page
-- id: conversations.conversation.delete
+- id: strands.conversation.delete
   method: DELETE
   path: /api/client/v1/conversations/:id
   plane: customer
-  family: conversations
+  family: strands
   at: org_level
   permission: read
   scope: org
@@ -662,11 +667,11 @@
   - page
   records:
   - strand.ended
-- id: setup.config.get@repo
+- id: config.own_org.get@repo
   method: GET
   path: /:repo/api/client/v1/config
   plane: customer
-  family: setup
+  family: config
   at: repo
   permission: read
   scope: repo
@@ -675,14 +680,14 @@
   reads: repo
   deprecated:
     successors:
-    - setup.config.get
+    - config.own_org.get
   callers:
   - page
-- id: setup.contacts.put@repo
+- id: config.own_org.put@repo
   method: PUT
   path: /:repo/api/client/v1/config/contacts
   plane: customer
-  family: setup
+  family: config
   at: repo
   permission: configure
   scope: repo
@@ -696,12 +701,12 @@
   - contacts.changed
   deprecated:
     successors:
-    - setup.contacts.put
-- id: setup.repo.get@repo
+    - config.own_org.put
+- id: config.own_repo.get@repo
   method: GET
   path: /:repo/api/client/v1/config/repos/:name
   plane: customer
-  family: setup
+  family: config
   at: repo
   permission: read
   scope: repo
@@ -710,14 +715,14 @@
   reads: entity
   deprecated:
     successors:
-    - setup.repo.get
+    - config.own_repo.get
   callers:
   - page
-- id: setup.repo.put@repo
+- id: config.own_repo.put@repo
   method: PUT
   path: /:repo/api/client/v1/config/repos/:name
   plane: customer
-  family: setup
+  family: config
   at: repo
   permission: configure
   scope: repo
@@ -728,18 +733,18 @@
   callers:
   - page
   records:
-  - strand.proposed
   - track.requested
+  - strand.proposed
   deprecated:
     successors:
-    - setup.repo.put
+    - config.own_repo.put
   checks:
   - target_write_door
-- id: setup.repo_refs.get@repo
+- id: repos.refs.get@repo
   method: GET
   path: /:repo/api/client/v1/config/repos/:name/refs
   plane: customer
-  family: setup
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -748,14 +753,14 @@
   reads: entity
   deprecated:
     successors:
-    - setup.repo_refs.get
+    - repos.refs.get
   callers:
   - page
-- id: setup.repo_preview.get@repo
+- id: repos.preview.get@repo
   method: GET
   path: /:repo/api/client/v1/config/repos/:name/preview
   plane: customer
-  family: setup
+  family: repos
   at: repo
   permission: read
   scope: repo
@@ -764,14 +769,14 @@
   reads: entity
   deprecated:
     successors:
-    - setup.repo_preview.get
+    - repos.preview.get
   callers:
   - page
-- id: setup.image.get@repo
+- id: images.own_image.get@repo
   method: GET
   path: /:repo/api/client/v1/config/image
   plane: customer
-  family: setup
+  family: images
   at: repo
   permission: read
   scope: repo
@@ -780,14 +785,14 @@
   reads: repo
   deprecated:
     successors:
-    - setup.image.get
+    - images.own_image.get
   callers:
   - page
-- id: setup.image.put@repo
+- id: images.image.put@repo
   method: PUT
   path: /:repo/api/client/v1/config/image
   plane: customer
-  family: setup
+  family: images
   at: repo
   permission: configure
   scope: repo
@@ -797,18 +802,17 @@
   request: ImageBody
   callers:
   - page
-  - seat
   records:
-  - strand.proposed
   - image.requested
+  - strand.proposed
   deprecated:
     successors:
-    - setup.image.put
-- id: setup.image.check@repo
+    - images.image.put
+- id: images.image.check@repo
   method: POST
   path: /:repo/api/client/v1/config/image/check
   plane: customer
-  family: setup
+  family: images
   at: repo
   permission: read
   scope: repo
@@ -823,12 +827,12 @@
   records: []
   deprecated:
     successors:
-    - setup.image.check
-- id: setup.config.complete@repo
+    - images.image.check
+- id: orgs.onboarding.complete@repo
   method: POST
   path: /:repo/api/client/v1/config/complete
   plane: customer
-  family: setup
+  family: orgs
   at: repo
   permission: configure
   scope: repo
@@ -841,8 +845,8 @@
   - onboarding.completed
   deprecated:
     successors:
-    - setup.config.complete
-- id: campaigns.card.author
+    - orgs.onboarding.complete
+- id: campaigns.cards.author
   method: POST
   path: /:repo/api/client/v1/fde/campaigns
   aliases:
@@ -881,7 +885,7 @@
   response: WireCardAck
   deprecated:
     successors:
-    - campaigns.card.author
+    - campaigns.cards.author
   records: []
 - id: campaigns.card.feedback
   method: POST
@@ -924,7 +928,7 @@
   response: WireCardAck
   deprecated:
     successors:
-    - campaigns.card.author
+    - campaigns.cards.author
   records: []
 - id: campaigns.card.withdraw
   method: POST
@@ -980,14 +984,14 @@
   - person
   - machine
   reads: path
-- id: setup.config.get
+- id: config.own_org.get
   method: GET
   path: /api/client/v1/org/config
   aliases:
   - path: /api/client/v1/config
     deprecated: true
   plane: customer
-  family: setup
+  family: config
   at: org_root
   permission: read
   scope: org
@@ -996,14 +1000,14 @@
   reads: org
   callers:
   - page
-- id: setup.contacts.put
+- id: config.own_org.put
   method: PUT
   path: /api/client/v1/org/config/contacts
   aliases:
   - path: /api/client/v1/config/contacts
     deprecated: true
   plane: customer
-  family: setup
+  family: config
   at: org_root
   permission: configure
   scope: org
@@ -1015,14 +1019,14 @@
   - page
   records:
   - contacts.changed
-- id: setup.repo.get
+- id: config.own_repo.get
   method: GET
   path: /api/client/v1/org/config/repos/:name
   aliases:
   - path: /api/client/v1/config/repos/:name
     deprecated: true
   plane: customer
-  family: setup
+  family: config
   at: org_root
   permission: read
   scope: org
@@ -1031,14 +1035,14 @@
   reads: entity
   callers:
   - page
-- id: setup.repo.put
+- id: config.own_repo.put
   method: PUT
   path: /api/client/v1/org/config/repos/:name
   aliases:
   - path: /api/client/v1/config/repos/:name
     deprecated: true
   plane: customer
-  family: setup
+  family: config
   at: org_root
   permission: configure
   scope: org
@@ -1049,18 +1053,18 @@
   callers:
   - page
   records:
-  - strand.proposed
   - track.requested
+  - strand.proposed
   checks:
   - target_write_door
-- id: setup.repo_refs.get
+- id: repos.refs.get
   method: GET
   path: /api/client/v1/org/config/repos/:name/refs
   aliases:
   - path: /api/client/v1/config/repos/:name/refs
     deprecated: true
   plane: customer
-  family: setup
+  family: repos
   at: org_root
   permission: read
   scope: org
@@ -1069,14 +1073,14 @@
   reads: entity
   callers:
   - page
-- id: setup.repo_preview.get
+- id: repos.preview.get
   method: GET
   path: /api/client/v1/org/config/repos/:name/preview
   aliases:
   - path: /api/client/v1/config/repos/:name/preview
     deprecated: true
   plane: customer
-  family: setup
+  family: repos
   at: org_root
   permission: read
   scope: org
@@ -1085,14 +1089,14 @@
   reads: entity
   callers:
   - page
-- id: setup.image.get
+- id: images.own_image.get
   method: GET
   path: /api/client/v1/org/config/image
   aliases:
   - path: /api/client/v1/config/image
     deprecated: true
   plane: customer
-  family: setup
+  family: images
   at: org_root
   permission: read
   scope: org
@@ -1101,14 +1105,14 @@
   reads: org
   callers:
   - page
-- id: setup.image.put
+- id: images.image.put
   method: PUT
   path: /api/client/v1/org/config/image
   aliases:
   - path: /api/client/v1/config/image
     deprecated: true
   plane: customer
-  family: setup
+  family: images
   at: org_root
   permission: configure
   scope: org
@@ -1118,18 +1122,17 @@
   request: ImageBody
   callers:
   - page
-  - seat
   records:
-  - strand.proposed
   - image.requested
-- id: setup.image.check
+  - strand.proposed
+- id: images.image.check
   method: POST
   path: /api/client/v1/org/config/image/check
   aliases:
   - path: /api/client/v1/config/image/check
     deprecated: true
   plane: customer
-  family: setup
+  family: images
   at: org_root
   permission: read
   scope: org
@@ -1142,14 +1145,14 @@
   - page
   - seat
   records: []
-- id: setup.config.complete
+- id: orgs.onboarding.complete
   method: POST
   path: /api/client/v1/org/config/complete
   aliases:
   - path: /api/client/v1/config/complete
     deprecated: true
   plane: customer
-  family: setup
+  family: orgs
   at: org_root
   permission: configure
   scope: org
@@ -1160,11 +1163,11 @@
   - page
   records:
   - onboarding.completed
-- id: identity.whoami.get
+- id: auth.whoami.get
   method: GET
   path: /api/client/v1/org/whoami
   plane: customer
-  family: identity
+  family: auth
   at: org_root
   permission: authenticated
   scope: org
@@ -1174,11 +1177,11 @@
   reads: path
   callers:
   - page
-- id: setup.overview.get
+- id: orgs.overview.get
   method: GET
   path: /api/client/v1/org/overview
   plane: customer
-  family: setup
+  family: orgs
   at: org_root
   permission: read
   scope: org
@@ -1187,11 +1190,11 @@
   reads: org
   callers:
   - page
-- id: tenants.onboard.check
+- id: orgs.onboarding.check
   method: GET
   path: /admin/orgs/:org/onboard/check
   plane: admin
-  family: tenants
+  family: orgs
   at: admin
   permission: steer
   scope: org
@@ -1199,11 +1202,11 @@
   - person
   reads: path
   release2: true
-- id: live.org.get
+- id: orgs.org.get
   method: GET
   path: /admin/orgs/:org
   plane: admin
-  family: live
+  family: orgs
   at: admin
   permission: read
   scope: org
@@ -1213,11 +1216,11 @@
   reads: org
   callers:
   - box
-- id: tenants.org.retire
+- id: orgs.org.retire
   method: DELETE
   path: /admin/orgs/:org
   plane: admin
-  family: tenants
+  family: orgs
   at: admin
   permission: steer
   scope: org
@@ -1229,11 +1232,11 @@
   records:
   - org.retired
   status: specified-unbuilt
-- id: tenants.backfill_held.list
+- id: orgs.backfill_held.list
   method: GET
   path: /admin/backfill/held
   plane: admin
-  family: tenants
+  family: orgs
   at: admin
   permission: operate
   scope: platform
@@ -1243,11 +1246,11 @@
   callers:
   - page
   response: BackfillHeld[]
-- id: tenants.installations_pending.list
+- id: orgs.pending_installations.list
   method: GET
   path: /admin/installations/pending
   plane: admin
-  family: tenants
+  family: orgs
   at: admin
   permission: read
   scope: platform
@@ -1258,11 +1261,25 @@
   - page
   - cli
   response: WireInstallationsPending
-- id: setup.queue.get
+- id: orgs.orgs.list
+  method: GET
+  path: /admin/orgs
+  plane: admin
+  family: orgs
+  at: admin
+  permission: read
+  scope: platform
+  principals:
+  - person
+  reads: none
+  callers:
+  - page
+  response: WireOrg[]
+- id: orgs.queue.get
   method: GET
   path: /admin/orgs/:org/queue
   plane: admin
-  family: setup
+  family: orgs
   at: admin
   permission: read
   scope: org
@@ -1272,11 +1289,11 @@
   reads: org
   callers:
   - seat
-- id: setup.events.list
+- id: orgs.events.list
   method: GET
   path: /admin/orgs/:org/events
   plane: admin
-  family: setup
+  family: orgs
   at: admin
   permission: steer
   scope: org
@@ -1284,11 +1301,11 @@
   - person
   - machine
   reads: path
-- id: setup.request.get
+- id: config.org_request.get
   method: GET
-  path: /admin/orgs/:org/config/*entity
+  path: /admin/orgs/:org/config/:entity
   plane: admin
-  family: setup
+  family: config
   at: admin
   permission: read
   scope: org
@@ -1299,11 +1316,11 @@
   callers:
   - seat
   machine_reach: org
-- id: setup.repo_request.get
+- id: config.repo_request.get
   method: GET
   path: /admin/orgs/:org/config/repos/:repo
   plane: admin
-  family: setup
+  family: config
   at: admin
   permission: read
   scope: repo
@@ -1314,11 +1331,11 @@
   callers:
   - seat
   machine_reach: org
-- id: live.repo.get
+- id: repos.repo.get
   method: GET
   path: /admin/orgs/:org/repos/:repo
   plane: admin
-  family: live
+  family: repos
   at: admin
   permission: read
   scope: repo
@@ -1326,11 +1343,11 @@
   - person
   - machine
   reads: repo
-- id: setup.image_plans.get
+- id: images.plans.get
   method: GET
   path: /admin/orgs/:org/image/plans
   plane: admin
-  family: setup
+  family: images
   at: admin
   permission: steer
   scope: org
@@ -1340,11 +1357,11 @@
   reads: path
   callers:
   - seat
-- id: live.image.get
+- id: images.image.get
   method: GET
   path: /admin/orgs/:org/image/:kind
   plane: admin
-  family: live
+  family: images
   at: admin
   permission: read
   scope: org
@@ -1355,11 +1372,11 @@
   callers:
   - seat
   - box
-- id: identity.ci_tokens.mint
+- id: tokens.ci_tokens.mint
   method: POST
   path: /admin/orgs/:org/repos/:repo/tokens
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: steer
   scope: repo
@@ -1374,11 +1391,11 @@
   mints:
   - ci
   release2: true
-- id: identity.ci_tokens.revoke
+- id: tokens.ci_tokens.revoke
   method: DELETE
   path: /admin/orgs/:org/repos/:repo/tokens
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: steer
   scope: repo
@@ -1391,11 +1408,11 @@
   records:
   - credential.revoked
   release2: true
-- id: identity.ci_token.revoke
+- id: tokens.ci_token.revoke
   method: DELETE
   path: /admin/orgs/:org/repos/:repo/tokens/:id
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: steer
   scope: repo
@@ -1439,11 +1456,11 @@
   deprecated:
     successors: []
   records: []
-- id: identity.seat_tokens.mint
+- id: tokens.seat_tokens.mint
   method: POST
   path: /admin/orgs/:org/seats/:name/tokens
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: steer
   scope: org
@@ -1456,11 +1473,11 @@
   - credential.minted
   mints:
   - seat
-- id: identity.seat_tokens.revoke
+- id: tokens.seat_tokens.revoke
   method: DELETE
   path: /admin/orgs/:org/seats/:name/tokens
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: steer
   scope: org
@@ -1472,22 +1489,22 @@
   - cli
   records:
   - credential.revoked
-- id: identity.seat_tokens.list
+- id: tokens.seat_tokens.list
   method: GET
   path: /admin/orgs/:org/seats/:name/tokens
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: steer
   scope: org
   principals:
   - person
   reads: path
-- id: identity.seat_token.revoke
+- id: tokens.seat_token.revoke
   method: DELETE
   path: /admin/orgs/:org/seats/:name/tokens/:id
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: steer
   scope: org
@@ -1535,26 +1552,29 @@
   records:
   - heal.redrive_requested
   - run.requested
-- id: findings.pull.publish
+- id: pulls.pull.publish
   method: POST
   path: /admin/orgs/:org/repos/:repo/pulls/:number/publish
   plane: admin
-  family: findings
+  family: pulls
   at: admin
   permission: steer
   scope: repo
   principals:
   - person
+  - machine
   reads: path
+  callers:
+  - seat
   records:
   - contribution.offered
   customer_outbound: true
   release2: true
-- id: verify.run.amend
+- id: runs.run.amend
   method: POST
   path: /admin/orgs/:org/repos/:repo/runs/:run_seq/amend
   plane: admin
-  family: verify
+  family: runs
   at: admin
   permission: steer
   scope: repo
@@ -1567,11 +1587,11 @@
   records:
   - run.amended
   release2: true
-- id: findings.bug.dispose
+- id: bugs.bug.dispose
   method: POST
   path: /admin/orgs/:org/repos/:repo/bugs/:bug_key/dispose
   plane: admin
-  family: findings
+  family: bugs
   at: admin
   permission: steer
   scope: repo
@@ -1598,8 +1618,8 @@
   callers:
   - page
   records:
-  - strand.proposed
   - finding.curated
+  - strand.proposed
   release2: true
 - id: findings.finding.retract
   method: POST
@@ -1615,8 +1635,8 @@
   callers:
   - page
   records:
-  - strand.retired
   - finding.revised
+  - strand.retired
   release2: true
 - id: findings.triage.verdict
   method: POST
@@ -1633,16 +1653,16 @@
   - page
   - slack
   records:
-  - strand.accepted
   - finding.defer
   - finding.reverify_failed
   - finding.proof_repair_pending
+  - strand.accepted
   release2: true
-- id: setup.repo_features.get
+- id: config.repo_features.get
   method: GET
   path: /admin/orgs/:org/repos/:repo/features
   plane: admin
-  family: setup
+  family: config
   at: admin
   permission: steer
   scope: repo
@@ -1651,11 +1671,11 @@
   - machine
   reads: path
   release2: true
-- id: setup.repo_features.put
+- id: config.repo_features.put
   method: POST
   path: /admin/orgs/:org/repos/:repo/features
   plane: admin
-  family: setup
+  family: config
   at: admin
   permission: steer
   scope: repo
@@ -1669,11 +1689,11 @@
   records:
   - repo.features_set
   release2: true
-- id: mirrors.track.request_sync
+- id: tracks.track.request_sync
   method: POST
   path: /:repo/api/client/v1/track/sync-request
   plane: customer
-  family: mirrors
+  family: tracks
   at: repo
   permission: configure
   scope: repo
@@ -1684,11 +1704,11 @@
   - page
   records:
   - track.sync_requested
-- id: mirrors.track.reset
+- id: tracks.track.reset
   method: POST
   path: /admin/orgs/:org/repos/:repo/track/reset
   plane: admin
-  family: mirrors
+  family: tracks
   at: admin
   permission: read
   scope: repo
@@ -1746,13 +1766,13 @@
   request: LockBody
   deprecated:
     successors:
-    - live.track_state.lock
+    - tracks.track.lock
   records: []
-- id: live.track_state.lock
+- id: tracks.track.lock
   method: POST
   path: /admin/orgs/:org/repos/:repo/track/lock
   plane: admin
-  family: live
+  family: tracks
   at: admin
   permission: steer
   scope: repo
@@ -1764,11 +1784,11 @@
   - cli
   records:
   - track.locked
-- id: live.track_state.unlock
+- id: tracks.track.unlock
   method: POST
   path: /admin/orgs/:org/repos/:repo/track/unlock
   plane: admin
-  family: live
+  family: tracks
   at: admin
   permission: steer
   scope: repo
@@ -1780,14 +1800,14 @@
   - cli
   records:
   - track.unlocked
-- id: mirrors.track.sync
+- id: tracks.track.sync
   method: POST
   path: /admin/orgs/:org/repos/:repo/track/sync
   aliases:
   - path: /admin/orgs/:org/repos/:repo/sync-now
     deprecated: true
   plane: admin
-  family: mirrors
+  family: tracks
   at: admin
   permission: steer
   scope: repo
@@ -1799,11 +1819,11 @@
   callers:
   - seat
   records: []
-- id: live.image.accept
+- id: images.image.accept
   method: POST
   path: /admin/orgs/:org/image/accept
   plane: admin
-  family: live
+  family: images
   at: admin
   permission: steer
   scope: org
@@ -1813,19 +1833,21 @@
   reads: path
   request: AcceptBody
   callers:
+  - page
   - seat
+  - slack
   records:
-  - strand.accepted
   - image.accepted
   - image.dispatched
-- id: live.image.report
+  - strand.accepted
+- id: images.image.report
   method: POST
   path: /admin/orgs/:org/image/:kind/report-built
   aliases:
   - path: /admin/orgs/:org/image/:kind/built
     deprecated: true
   plane: admin
-  family: live
+  family: images
   at: admin
   permission: steer
   scope: org
@@ -1839,11 +1861,11 @@
   records:
   - run.requested
   - image.built
-- id: live.image.unpin
+- id: images.image.unpin
   method: POST
   path: /admin/orgs/:org/image/:kind/unpin
   plane: admin
-  family: live
+  family: images
   at: admin
   permission: steer
   scope: org
@@ -1855,8 +1877,8 @@
   callers:
   - seat
   records:
-  - strand.proposed
   - image.unpinned
+  - strand.proposed
 - id: live.platform.put
   method: PUT
   path: /admin/orgs/:org/platform
@@ -1874,11 +1896,48 @@
   records:
   - repo.removed
   - platform.changed
-- id: live.logo.put
+  deprecated:
+    successors:
+    - id: config.org.put
+- id: config.org.get
+  method: GET
+  path: /admin/orgs/:org/config
+  plane: admin
+  family: config
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: entity
+  callers:
+  - page
+  - cli
+- id: config.org.put
+  method: PUT
+  path: /admin/orgs/:org/config
+  plane: admin
+  family: config
+  at: admin
+  permission: steer
+  scope: org
+  principals:
+  - person
+  reads: path
+  callers:
+  - page
+  - cli
+  records:
+  - repo.removed
+  - platform.changed
+  - notify.interactive_enabled
+  - notify.interactive_disabled
+  - admin.configure
+- id: orgs.logo.put
   method: PUT
   path: /admin/orgs/:org/logo
   plane: admin
-  family: live
+  family: orgs
   at: admin
   permission: steer
   scope: org
@@ -1889,22 +1948,22 @@
   - cli
   records:
   - theme.changed
-- id: identity.access.explain
+- id: orgs.access.explain
   method: GET
   path: /admin/orgs/:org/explain
   plane: admin
-  family: identity
+  family: orgs
   at: admin
   permission: steer
   scope: org
   principals:
   - person
   reads: path
-- id: live.digests.list
+- id: images.digests.list
   method: GET
   path: /admin/verify/digests-in-use
   plane: admin
-  family: live
+  family: images
   at: admin
   permission: operate
   scope: platform
@@ -1978,11 +2037,11 @@
   records:
   - campaign.retired
   - strand.retired
-- id: campaigns.org_credits.get
+- id: credits.balance.get
   method: GET
   path: /admin/orgs/:org/credits
   plane: admin
-  family: campaigns
+  family: credits
   at: admin
   permission: steer
   scope: org
@@ -1990,11 +2049,11 @@
   - person
   reads: path
   release2: true
-- id: campaigns.org_credits.put
+- id: credits.balance.put
   method: POST
   path: /admin/orgs/:org/credits
   plane: admin
-  family: campaigns
+  family: credits
   at: admin
   permission: steer
   scope: org
@@ -2018,13 +2077,16 @@
   principals:
   - person
   reads: path
+  deprecated:
+    successors:
+    - id: config.org.get
   response: MapView
   release2: true
-- id: campaigns.label_map.put
+- id: config.label_map.put
   method: POST
   path: /admin/orgs/:org/label-map
   plane: admin
-  family: campaigns
+  family: config
   at: admin
   permission: steer
   scope: org
@@ -2104,7 +2166,7 @@
   records:
   - edition.advanced
   release2: true
-- id: findings.publication.hold
+- id: findings.publications.hold
   method: POST
   path: /admin/orgs/:org/publication-hold
   plane: admin
@@ -2121,7 +2183,7 @@
   records:
   - org.publication_hold
   release2: true
-- id: books.dev_arc.create
+- id: books.arc.create
   method: POST
   path: /admin/orgs/:org/books/dev/:arc
   plane: admin
@@ -2161,8 +2223,10 @@
   scope: repo
   principals:
   - person
+  - machine
   reads: path
   callers:
+  - cli
   - seat
   records: []
   release2: true
@@ -2176,11 +2240,16 @@
   scope: repo
   principals:
   - person
+  - machine
   reads: path
   request: OrgRepoMirrorSyncReq
   callers:
+  - cli
   - seat
   records: []
+  deprecated:
+    successors:
+    - id: tracks.track.sync
   release2: true
 - id: mirrors.accessor_prs.sweep
   method: POST
@@ -2215,11 +2284,11 @@
   records:
   - capability.observed
   release2: true
-- id: identity.session.create
+- id: auth.session.create
   method: GET
   path: /auth/callback
   plane: platform
-  family: identity
+  family: auth
   at: sign_in
   permission: authenticated
   scope: platform
@@ -2232,11 +2301,11 @@
   - credential.minted
   mints:
   - session
-- id: identity.cli_token.mint
+- id: tokens.cli_tokens.mint
   method: POST
   path: /auth/cli-token
   plane: platform
-  family: identity
+  family: tokens
   at: sign_in
   permission: authenticated
   scope: platform
@@ -2250,11 +2319,11 @@
   - credential.minted
   mints:
   - cli
-- id: identity.own_cli_tokens.list
+- id: tokens.own_tokens.list
   method: GET
   path: /api/client/v1/me/cli-tokens
   plane: customer
-  family: identity
+  family: tokens
   at: org_root
   permission: authenticated
   scope: org
@@ -2264,11 +2333,11 @@
   callers:
   - page
   response: WireCliTokens
-- id: identity.own_cli_token.revoke
+- id: tokens.own_token.revoke
   method: DELETE
   path: /api/client/v1/me/cli-tokens/:id
   plane: customer
-  family: identity
+  family: tokens
   at: org_root
   permission: authenticated
   scope: org
@@ -2280,11 +2349,11 @@
   - cli
   records:
   - credential.revoked
-- id: identity.cli_tokens.list
+- id: tokens.cli_tokens.list
   method: GET
   path: /api/client/v1/org/cli-tokens
   plane: customer
-  family: identity
+  family: tokens
   at: org_root
   permission: manage_access
   scope: org
@@ -2294,11 +2363,11 @@
   callers:
   - page
   response: WireOrgCliTokens
-- id: identity.cli_token.revoke
+- id: tokens.cli_token.revoke
   method: DELETE
   path: /api/client/v1/org/cli-tokens/:id
   plane: customer
-  family: identity
+  family: tokens
   at: org_root
   permission: manage_access
   scope: org
@@ -2309,11 +2378,11 @@
   - page
   records:
   - credential.revoked
-- id: identity.audit.list
+- id: orgs.audit.list
   method: GET
   path: /api/client/v1/org/audit
   plane: customer
-  family: identity
+  family: orgs
   at: org_root
   permission: manage_access
   scope: org
@@ -2323,11 +2392,11 @@
   callers:
   - page
   response: WireAudit
-- id: identity.slack_link.start
+- id: links.link.start
   method: GET
   path: /api/client/v1/me/slack/link
   plane: customer
-  family: identity
+  family: links
   at: org_root
   permission: authenticated
   scope: org
@@ -2336,11 +2405,11 @@
   reads: path
   callers:
   - page
-- id: identity.slack_link.receive
+- id: links.link.receive
   method: GET
   path: /auth/slack/link/callback
   plane: platform
-  family: identity
+  family: links
   at: sign_in
   permission: authenticated
   scope: platform
@@ -2351,11 +2420,11 @@
   - page
   records:
   - slack.linked
-- id: identity.own_slack_link.get
+- id: links.own_link.get
   method: GET
   path: /api/client/v1/me/slack
   plane: customer
-  family: identity
+  family: links
   at: org_root
   permission: authenticated
   scope: org
@@ -2365,11 +2434,11 @@
   callers:
   - page
   response: WireSlackLink
-- id: identity.own_slack_link.revoke
+- id: links.own_link.revoke
   method: DELETE
   path: /api/client/v1/me/slack
   plane: customer
-  family: identity
+  family: links
   at: org_root
   permission: authenticated
   scope: org
@@ -2380,11 +2449,11 @@
   - page
   records:
   - slack.unlinked
-- id: identity.slack_links.list
+- id: links.links.list
   method: GET
   path: /api/client/v1/org/slack/links
   plane: customer
-  family: identity
+  family: links
   at: org_root
   permission: manage_access
   scope: org
@@ -2394,11 +2463,11 @@
   callers:
   - page
   response: WireSlackLinks
-- id: identity.slack_link.revoke
+- id: links.link.revoke
   method: DELETE
   path: /api/client/v1/org/slack/links/:alias
   plane: customer
-  family: identity
+  family: links
   at: org_root
   permission: manage_access
   scope: org
@@ -2409,11 +2478,11 @@
   - page
   records:
   - slack.unlinked
-- id: identity.own_profile.put
+- id: auth.profile.put
   method: PUT
   path: /api/client/v1/me/profile
   plane: customer
-  family: identity
+  family: auth
   at: org_root
   permission: authenticated
   scope: org
@@ -2440,11 +2509,11 @@
   deprecated:
     successors: []
   records: []
-- id: identity.platform_tokens.mint
+- id: tokens.platform_tokens.mint
   method: POST
   path: /admin/tokens
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: operate
   scope: platform
@@ -2459,11 +2528,11 @@
   response: PlatformTokenMinted
   mints:
   - box
-- id: identity.platform_tokens.list
+- id: tokens.platform_tokens.list
   method: GET
   path: /admin/tokens
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: operate
   scope: platform
@@ -2471,11 +2540,11 @@
   - person
   reads: none
   response: WirePlatformTokens
-- id: identity.platform_token.revoke
+- id: tokens.platform_token.revoke
   method: DELETE
   path: /admin/tokens/:id
   plane: admin
-  family: identity
+  family: tokens
   at: admin
   permission: operate
   scope: platform
@@ -2486,20 +2555,20 @@
   - cli
   records:
   - credential.revoked
-- id: identity.session.login
+- id: auth.login.redirect
   method: GET
   path: /auth/login
   plane: platform
-  family: identity
+  family: auth
   callers:
   - page
   - cli
   auth: none
-- id: identity.session.revoke
+- id: auth.session.revoke
   method: POST
   path: /auth/logout
   plane: platform
-  family: identity
+  family: auth
   at: sign_in
   permission: authenticated
   scope: platform
@@ -2510,11 +2579,11 @@
   - page
   records:
   - credential.revoked
-- id: identity.session.check
+- id: auth.session.check
   method: GET
   path: /auth/verify
   plane: platform
-  family: identity
+  family: auth
   at: sign_in
   permission: read
   scope: platform
@@ -2538,36 +2607,36 @@
   callers:
   - page
   auth: none
-- id: intake.webhook.receive
+- id: webhooks.github.receive
   method: POST
   path: /gh/webhook
   plane: platform
-  family: intake
+  family: webhooks
   records:
   - credential.revoked
-  - strand.retired
   - heal.redrive_requested
   - bug.forwarded
   - bug.refused
   - track.upstream_moved
   - run.requested
   - installation.changed
+  - strand.retired
   auth: hmac:github.webhook_secret_file
-- id: intake.forge.receive
+- id: webhooks.forge.receive
   method: POST
   path: /forge/webhook
   plane: platform
-  family: intake
+  family: webhooks
   records:
   - campaign.launched
-  - strand.proposed
-  - strand.accepted
   - finding.curated
   - finding.revised
   - finding.reverify_failed
   - finding.proof_repair_pending
   - edition.cut
   - edition.dropped
+  - strand.proposed
+  - strand.accepted
   auth: hmac:forge.hook_secret_file
   events:
   - issue.created
@@ -2594,11 +2663,11 @@
   plane: platform
   family: shell
   auth: none
-- id: notify.slack.get
+- id: notifications.own_binding.get
   method: GET
   path: /api/client/v1/org/notify/slack
   plane: customer
-  family: notify
+  family: notifications
   at: org_root
   permission: configure
   scope: org
@@ -2607,11 +2676,11 @@
   reads: path
   callers:
   - page
-- id: notify.slack.put
+- id: notifications.own_binding.put
   method: PUT
   path: /api/client/v1/org/notify/slack
   plane: customer
-  family: notify
+  family: notifications
   at: org_root
   permission: configure
   scope: org
@@ -2625,11 +2694,11 @@
   - notify.bound
   - notify.interactive_enabled
   - notify.interactive_disabled
-- id: notify.slack.check
+- id: notifications.own_binding.check
   method: POST
   path: /api/client/v1/org/notify/slack/check
   plane: customer
-  family: notify
+  family: notifications
   at: org_root
   permission: configure
   scope: org
@@ -2640,11 +2709,11 @@
   - page
   records: []
   response: NotifySlackCheck
-- id: notify.channels.list
+- id: notifications.channels.list
   method: GET
   path: /api/client/v1/org/notify/slack/channels
   plane: customer
-  family: notify
+  family: notifications
   at: org_root
   permission: configure
   scope: org
@@ -2653,11 +2722,11 @@
   reads: path
   callers:
   - page
-- id: notify.install.redirect
+- id: notifications.install.redirect
   method: GET
   path: /api/client/v1/org/notify/slack/install
   plane: customer
-  family: notify
+  family: notifications
   at: org_root
   permission: configure
   scope: org
@@ -2666,11 +2735,11 @@
   reads: path
   callers:
   - page
-- id: notify.install.receive
+- id: notifications.install.receive
   method: GET
   path: /auth/slack/callback
   plane: platform
-  family: notify
+  family: notifications
   at: sign_in
   permission: authenticated
   scope: platform
@@ -2682,41 +2751,41 @@
   records:
   - notify.interactive_disabled
   - notify.bound
-- id: notify.events.receive
+- id: webhooks.slack_events.receive
   method: POST
   path: /slack/events
   plane: platform
-  family: notify
+  family: webhooks
   records:
+  - notify.unbound
   - strand.proposed
   - strand.commented
-  - notify.unbound
   auth: hmac:slack.signing_secret_file
-- id: notify.interactions.receive
+- id: webhooks.slack_interactions.receive
   method: POST
   path: /slack/interactions
   plane: platform
-  family: notify
+  family: webhooks
   records:
   - slack.pressed
   auth: hmac:slack.signing_secret_file
-  auth_shared_with: notify.events.receive
-- id: notify.binding.get
+  auth_shared_with: webhooks.slack_events.receive
+- id: notifications.binding.get
   method: GET
   path: /admin/orgs/:org/notify/slack
   plane: admin
-  family: notify
+  family: notifications
   at: admin
   permission: steer
   scope: org
   principals:
   - person
   reads: path
-- id: notify.binding.put
+- id: notifications.binding.put
   method: PUT
   path: /admin/orgs/:org/notify/slack
   plane: admin
-  family: notify
+  family: notifications
   at: admin
   permission: steer
   scope: org
@@ -2728,11 +2797,11 @@
   records:
   - notify.unbound
   - notify.interactive_disabled
-- id: notify.binding.check
+- id: notifications.binding.check
   method: POST
   path: /admin/orgs/:org/notify/slack/check
   plane: admin
-  family: notify
+  family: notifications
   at: admin
   permission: steer
   scope: org
@@ -2742,22 +2811,22 @@
   callers:
   - cli
   records: []
-- id: notify.deliveries.list
+- id: notifications.deliveries.list
   method: GET
   path: /admin/orgs/:org/notify/deliveries
   plane: admin
-  family: notify
+  family: notifications
   at: admin
   permission: steer
   scope: org
   principals:
   - person
   reads: path
-- id: notify.internal.check
+- id: notifications.internal.check
   method: POST
   path: /admin/notify/internal/check
   plane: admin
-  family: notify
+  family: notifications
   at: admin
   permission: operate
   scope: platform
@@ -2767,7 +2836,7 @@
   callers:
   - cli
   records: []
-- id: strands.strand.propose
+- id: strands.strands.propose
   method: POST
   path: /:repo/api/client/v1/fde/strands
   plane: customer
@@ -2858,7 +2927,7 @@
   - page
   - seat
   response: WireStrands
-- id: strands.inbox_all.list
+- id: strands.inboxes.list
   method: GET
   path: /admin/strands
   plane: admin
@@ -2873,11 +2942,11 @@
   - page
   response: WireStrandsInbox
   host: both
-- id: identity.staff.whoami
+- id: auth.staff.whoami
   method: GET
   path: /admin/staff/whoami
   plane: admin
-  family: identity
+  family: auth
   at: admin
   permission: read
   scope: platform
@@ -2888,7 +2957,7 @@
   - page
   response: StaffWhoami
   host: staff
-- id: strands.strand.list
+- id: strands.strands.list
   method: GET
   path: /:repo/api/client/v1/strands
   plane: customer
@@ -2938,8 +3007,8 @@
   - slack
   records:
   - campaign.feedback
-  - strand.commented
   - finding.feedback
+  - strand.commented
   response: WireStrand
 - id: strands.strand.end
   method: POST
@@ -2976,18 +3045,20 @@
   - page
   - slack
   records:
-  - campaign.launching
-  - campaign.launched
-  - strand.accepted
   - finding.withhold
   - disclosure.recorded
-  - finding.reverify_failed
-  - finding.proof_repair_pending
   - contribution.offered
+  - campaign.launching
+  - campaign.launched
+  - credit.moved
   - edition.advanced
   - track.reset
   - image.accepted
-  - credit.moved
+  - image.dispatched
+  - finding.defer
+  - finding.reverify_failed
+  - finding.proof_repair_pending
+  - strand.accepted
   - strand.accept_refused
   response: WireStrand
   records_include_targets: true

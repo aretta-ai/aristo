@@ -193,12 +193,14 @@ CODES_TS = generated(GEN_CODES_TS)
 STORES_VOCAB_TS = generated(GEN_STORES_VOCAB_TS)
 
 
-# the Rust files scripts/generate-routes.sh formats with the pinned rustfmt, in its order
+# the Rust files scripts/generate-routes.sh formats with the pinned rustfmt, in its order, each at its consumer's edition:
+# the conductor and the CLI are edition 2021, aretta-box 2024 (its `cargo fmt --check` reads the vendored files at 2024)
 RUSTFMT = tuple(generated(p) for p in (
     GEN_DOORS_RS, GEN_ROUTES_RS, GEN_CAPABILITIES_RS, GEN_PERMISSIONS_RS, GEN_ROLE_SETS_RS, GEN_CLI_PATHS_RS,
-    GEN_CONDUCTOR_CODES_RS, GEN_CLI_CODES_RS, GEN_BOX_DIAGNOSTICS_RS, GEN_KINDS_RS, GEN_BOX_LABELS_RS,
-    GEN_CONDUCTOR_LABELS_RS, GEN_POSTABLE_RS, GEN_ORG_KEYS_RS, GEN_CONDUCTOR_KEYS_RS, GEN_BOX_CONFIG_KEYS_RS,
+    GEN_CONDUCTOR_CODES_RS, GEN_CLI_CODES_RS, GEN_KINDS_RS,
+    GEN_CONDUCTOR_LABELS_RS, GEN_POSTABLE_RS, GEN_ORG_KEYS_RS, GEN_CONDUCTOR_KEYS_RS,
     GEN_VOCABULARY_RS))
+RUSTFMT_2024 = tuple(generated(p) for p in (GEN_BOX_DIAGNOSTICS_RS, GEN_BOX_LABELS_RS, GEN_BOX_CONFIG_KEYS_RS))
 # the emitted codes.rs files CI compiles standalone (0.2.122)
 CODES_RS = (generated(GEN_CONDUCTOR_CODES_RS), generated(GEN_CLI_CODES_RS))
 

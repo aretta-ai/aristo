@@ -122,13 +122,13 @@ impl std::fmt::Debug for HttpCanonClient {
 
 impl CanonClient for HttpCanonClient {
     fn match_annotations(&self, req: &CanonMatchRequest) -> Result<CanonMatchResponse, CanonError> {
-        self.post_json(paths::PICTURE_CANON_MATCH, req)
+        self.post_json(paths::FINDINGS_CANON_MATCH, req)
     }
 
     fn catalogue(&self) -> Result<CanonCatalogue, CanonError> {
         // The wire is the bare list of entries; the served-edition
         // signal rides in the `x-aretta-serving*` headers.
-        let route = paths::PICTURE_CATALOGUE_GET;
+        let route = paths::REPOS_CATALOGUE_GET;
         debug_assert_eq!(route.method, "GET", "{}", route.id);
         let url = self.url(route);
         let result = self
@@ -431,11 +431,11 @@ mod tests {
         let tok = Token::new("t");
         let c = HttpCanonClient::new("https://api.example.test", &tok, "widgets");
         assert_eq!(
-            c.url(paths::PICTURE_CANON_MATCH),
+            c.url(paths::FINDINGS_CANON_MATCH),
             "https://api.example.test/widgets/api/client/v1/canon/match"
         );
         assert_eq!(
-            c.url(paths::PICTURE_CATALOGUE_GET),
+            c.url(paths::REPOS_CATALOGUE_GET),
             "https://api.example.test/widgets/api/client/v1/catalogue"
         );
     }

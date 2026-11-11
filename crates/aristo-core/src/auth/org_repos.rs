@@ -23,8 +23,8 @@ pub struct OrgRepo {
 }
 
 /// Path of the directory route, relative to the data-plane base: the
-/// generated `identity.repos.list` route.
-pub const ORG_REPOS_PATH: &str = crate::conductor::paths::IDENTITY_REPOS_LIST.path;
+/// generated `repos.repos.list` route.
+pub const ORG_REPOS_PATH: &str = crate::conductor::paths::REPOS_REPOS_LIST.path;
 
 /// Fetch the repos the token admits at `base_url` (no trailing `/`).
 pub fn fetch_org_repos(base_url: &str, token: &Token) -> Result<Vec<OrgRepo>, AuthError> {
