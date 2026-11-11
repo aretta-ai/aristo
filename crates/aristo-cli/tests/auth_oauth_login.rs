@@ -254,13 +254,13 @@ fn auth_login_oauth_persists_arta_token_on_happy_path() {
     assert!(
         rec1.path.starts_with(&format!(
             "{}?redirect_uri=",
-            paths::IDENTITY_SESSION_LOGIN.path
+            paths::AUTH_LOGIN_REDIRECT.path
         )),
         "expected explicit redirect_uri query; got: {}",
         rec1.path
     );
     assert_eq!(rec2.method, "POST");
-    assert_eq!(rec2.path, paths::IDENTITY_CLI_TOKEN_MINT.path);
+    assert_eq!(rec2.path, paths::TOKENS_CLI_TOKENS_MINT.path);
     let body: serde_json::Value = serde_json::from_str(&rec2.body).expect("body parses as JSON");
     assert_eq!(body["code"], "oauth-code-from-callback");
     // No checkout in the sandbox: the informational repo hint is absent.

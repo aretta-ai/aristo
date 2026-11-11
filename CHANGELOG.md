@@ -8,6 +8,7 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- core: conductor paths generated from registry v0.2.244; no request URL or method the CLI sends changes. Route ids and the `aristo_core::conductor::paths` constant names follow the registry's route rename (for example `VERIFY_SESSIONS_START` is now `SESSIONS_SESSIONS_START`), and four staff routes are added (`CONFIG_ORG_GET`, `CONFIG_ORG_PUT`, `MIRRORS_CLONE_SYNC`, `MIRRORS_MIRROR_SYNC`).
 - ci: the conductor-paths drift check regenerates from a copy of the vendored registry, so `spec/` holds only the files its sha256 list locks.
 
 ## [0.8.4] — 2026-10-19

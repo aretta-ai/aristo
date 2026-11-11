@@ -48,7 +48,7 @@ def rows():
     # 0.2.131: the sign-in codes, the vocabulary's sign_in layer in its order (the customer plane's SignInRefusal.error)
     out.append(('customer', 'SignInCode', SIGN_IN, [r[0] for r in C.CODES if 'sign_in' in C.layers(r)]))
     # 0.2.215 §1: the clock step (or in-process hook) that opened a verify session; absent on the wire = a hand post
-    out.append(('customer', 'VerifyStep', 'the in-process opener that fired a verify session (scripts/registry_vocab.py VERIFY_STEP_WORDS); absent = a hand post through verify.sessions.start',
+    out.append(('customer', 'VerifyStep', 'the in-process opener that fired a verify session (scripts/registry_vocab.py VERIFY_STEP_WORDS); absent = a hand post through sessions.sessions.start',
                 list(R.VERIFY_STEP_WORDS)))
     out.append(('box', 'RefusalCode', 'the box\'s coded refusals (scripts/codes_vocab.py, layer box with a status)',
                 C.box_refusals()))

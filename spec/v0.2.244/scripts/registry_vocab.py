@@ -4,12 +4,33 @@ an edit here first, reviewed like any vocabulary change."""
 
 PLANES = ('customer', 'admin', 'box', 'platform')
 # routes.md §2, F1–F12 by name.
-FAMILIES = ('identity', 'setup', 'live', 'mirrors', 'verify', 'picture', 'findings', 'books',
-            'campaigns', 'intake', 'tenants', 'shell', 'notify',   # `notify` the 13th (T1, 0.2.110)
-            'strands',   # 0.2.168: F14, the strand routes
-            'pricing',   # 0.2.209: F15, the operator's pricing rows (the tenant rate and the job time limits)
-            'clock',     # 0.2.212: F16, the operator's clock rows (the per-repo pause)
-            'conversations')   # 0.2.220 §11.9 (E122.9): the chat and conversation rows leave `campaigns`
+FAMILIES = ('sessions',
+            'verify',
+            'repos',
+            'findings',
+            'auth',
+            'orgs',
+            'runs',
+            'bugs',
+            'pulls',
+            'tokens',
+            'campaigns',
+            'credits',
+            'conversations',
+            'strands',
+            'config',
+            'images',
+            'shell',
+            'identity',
+            'tracks',
+            'mirrors',
+            'live',
+            'pricing',
+            'clock',
+            'books',
+            'links',
+            'webhooks',
+            'notifications')   # the registry's (emit/registry_vocab_tables.py)
 AT = ('repo', 'org_level', 'org_directory', 'org_root', 'admin', 'sign_in')
 # 0.2.150 (0.6 slice 2): THE PERMISSION VOCABULARY replaces the rungs (RUNGS) and the capabilities as the door
 # vocabulary. Each door row names ONE `permission` (or `authenticated`: any principal, no permission) and a `scope`.
@@ -41,19 +62,19 @@ PERMISSION_SCOPES = {
 # hold it; a CI token and a customer member do not and keep external, main-line runs). This replaces the conductor's rule
 # that a seat's run is always external and main-line.
 # (re-marked f7f9e39a, the lane's G2): the line is the `X-Aristo-Line` request HEADER, never a body field; the plane is the
-# body's `plane`. On verify.sessions.start only, naming any line, or `plane: internal`, needs `steer`; elsewhere the line
+# body's `plane`. On sessions.sessions.start only, naming any line, or `plane: internal`, needs `steer`; elsewhere the line
 # selector keeps today's rule (a caller deemed external may name no line; Actor::is_external is not redefined). The
 # external-on-dev diagonal stays 400 `line_not_selectable`.
 FIELD_DOORS = (    # (row id, where, name, value, the extra permission that value needs at the row's scope)
-    ('verify.sessions.start', 'body',   'plane',         'internal', 'steer'),
-    ('verify.sessions.start', 'header', 'x-aristo-line', 'main',     'steer'),
-    ('verify.sessions.start', 'header', 'x-aristo-line', 'dev',      'steer'),
+    ('sessions.sessions.start', 'body',   'plane',         'internal', 'steer'),
+    ('sessions.sessions.start', 'header', 'x-aristo-line', 'main',     'steer'),
+    ('sessions.sessions.start', 'header', 'x-aristo-line', 'dev',      'steer'),
     # 0.2.214 §1, §4 (arc-verify slice 2): naming an arc needs `steer`, the same door as `plane: internal`. The value column is the
     # typed PARSE of the field (a FORK_REFS word, BODY_GRAMMARS / QUERY_SELECTORS), not an enum word: `arc` = the value parses as
     # Arc(slug) per 0.2.213. Admission: `arc_ref` requires `plane: internal` and line `dev` (400 arc_ref_internal_only); a value
     # that is no Arc(slug) is 422 arc_ref_invalid; the runs-list `ref` filter from an external caller is 400 arc_filter_internal_only.
-    ('verify.sessions.start', 'body',   'arc_ref',       'arc',      'steer'),
-    ('verify.runs.list',      'query',  'ref',           'arc',      'steer'),
+    ('sessions.sessions.start', 'body',   'arc_ref',       'arc',      'steer'),
+    ('runs.runs.list',      'query',  'ref',           'arc',      'steer'),
 )
 HEADER_SELECTORS = (('x-aristo-line', 'RUN_LINES'),)   # the request headers a FIELD_DOORS `header` entry may name, and the vocabulary tuple of their values
 QUERY_SELECTORS = (('ref', 'FORK_REFS'),)   # 0.2.214 §4: the query parameters a FIELD_DOORS `query` entry may name, and the vocabulary tuple the value's typed parse comes from (`ref=dev-<slug>` parses as `arc`)
@@ -77,11 +98,11 @@ HOLDERS = {
                                       'steer', 'configure', 'manage_access', 'operate')),
     'ci':                 ('machine', ('read', 'verify')),
     # 0.2.238 §1 (registry HLD__SEAT): the seat loses configure — it is Aretta: it STEERS what the customer configured (an image
-    # through live.image.accept, which it holds); the `setup.image.put` rows keep their configure door (the customer's request)
+    # through images.image.accept, which it holds); the `images.image.put` rows keep their configure door (the customer's request)
     # and refuse a seat by the permission. No launch (ruling C); formalize retired (0.2.220 §11.6; not added this cut).
     'seat':               ('machine', ('read', 'verify', 'curate_campaign', 'steer')),
-    # 0.2.200 §1 (E94 block N): the box is a MACHINE role at platform reach (its two calls, live.org.get and
-    # live.image.get, are `read`). `ops` and `operator_token` leave: the ops role is eliminated (a staff or operator person acts
+    # 0.2.200 §1 (E94 block N): the box is a MACHINE role at platform reach (its two calls, orgs.org.get and
+    # images.image.get, are `read`). `ops` and `operator_token` leave: the ops role is eliminated (a staff or operator person acts
     # with their own `cli` credential); 0.2.238 §3: the operator token is the operator's own PERSON credential.
     'box':                ('machine', ('read',)),
 }
@@ -212,7 +233,7 @@ SURFACE_OF_KIND = (('session', 'dashboard'), ('cli', 'cli'), ('conversation', 'a
 # does not proceed. Per org, in the tenant's identity store `tenants/<slug>/identity.db` (0.2.165 E6: STORES row
 # `identity`; state/stores/identity/), its tables: `persons
 # {person_subject PK, display_name?, created_at}` (created on first link or first sight, display_name NULL; set by the
-# person through `identity.own_profile.put` since 0.2.166) and `aliases {alias_subject PK, person_subject FK, created_at, created_by, revoked_at?}` (at most one
+# person through `auth.profile.put` since 0.2.166) and `aliases {alias_subject PK, person_subject FK, created_at, created_by, revoked_at?}` (at most one
 # live alias per Slack user and one per person and provider, as constraints), written DIRECTLY by the link and unlink
 # routes; every lookup reads the store, never a fold of the chain (the operator, 2026-10-23T07:25:37Z: the ledger is not a
 # source of truth for auth). `<provider>.linked` / `<provider>.unlinked` (ledger_kinds_vocab) are its AUDIT and never
@@ -228,7 +249,7 @@ ALIAS_SUBJECT_GRAMMAR = '<provider>:<provider-specific id>'
 # 0.2.165 E6: the alias entry names identity.db (there is no org.db).
 REVOCATION_RECORDS = (('credential', 'credential.created_at'), ('alias', 'identity.db aliases.created_at'))
 # 0.2.166 (USER SETUP, first element; vyasa's FINAL SPEC-0.2.166-own-profile-display-name.md; the operator 2026-10-24T03:16:14Z):
-# the person sets their OWN display name, identity.db `persons.display_name` (`identity.own_profile.put`). The rule as data
+# the person sets their OWN display name, identity.db `persons.display_name` (`auth.profile.put`). The rule as data
 # (the door, 2026-10-24T03:19:25Z): ONE rule for the conductor's check, the openapi's maxLength/pattern and the dashboard's
 # sentence. The conductor applies its rules in DISPLAY_NAME_ORDER (0.2.167 erratum B: not_subject before classes).
 DISPLAY_NAME = (                      # registry_vocab; ONE rule for the conductor's check, the openapi's maxLength/pattern and the dashboard's sentence
@@ -310,8 +331,8 @@ RETIRED_FOLDS = ('runs', 'bugs', 'disclosure-gate', 'findings', 'capabilities', 
 # key of the page's last row only when a row exists past the page (peek limit + 1), else null; an amended run sorts by its stamp
 # seq, not the amendment's ledger_seq (0.2.205). The conductor's test oracle reads the tuple (vocabulary.rs).
 READ_ORDER_RULES = (   # (rule, reader, key, direction, cursor param, cursor type, cursor test, limit default, limit max)
-    ('runs.order',     'verify.runs.list and every runs reader', 'the stamp chain seq (run.stamped / run.imported envelope seq) = run_seq', 'descending', None,    None,      None,          None, None),
-    ('runs.page',      'verify.runs.list',                     'runs.order',                                                             'descending', 'after', 'integer', 'run_seq < after', 50,  500),
+    ('runs.order',     'runs.runs.list and every runs reader', 'the stamp chain seq (run.stamped / run.imported envelope seq) = run_seq', 'descending', None,    None,      None,          None, None),
+    ('runs.page',      'runs.runs.list',                     'runs.order',                                                             'descending', 'after', 'integer', 'run_seq < after', 50,  500),
     ('runs.get',       'the run read',                         '(repo, run_seq)',                                                        'first match in chain order: on a duplicate run_seq (a remint) the EARLIEST stamp answers', None, None, None, None, None),
     ('findings.page',  'the story and internal findings pages', 'finding id (string)',                                                   'ascending (byte order)', 'after', 'string', 'id > after', 50, None),
     ('history.ordinal','a finding\'s history',                 'the chain seq of each act',                                              'ascending; one act per record per finding (a disclosure naming several findings gives each one act)', None, None, None, None, None),
@@ -336,7 +357,7 @@ CENSUS_GAP_PROJECTIONS = ('advances', 'track_positions', 'bug_disclosure')
 # ledger line in ONE step (an append-only writer is a defect); the block's B12 carries a census that none remains. E124 (79): for the
 # config-ledger writers "one step" = STORE-FIRST ORDER (the row, then the line) with the boot catch-up as the repair.
 LEDGER_FILES = ('ledger/events.jsonl', 'live/configevents.jsonl')   # TENANT_FILES paths: the verification ledger and the config ledger
-LEDGER_READERS = ('backfill', 'setup.events.list', 'identity.audit.list', 'boot_rules')   # §0: the route words are live ROUTE_SOURCES rows of class ledger whose block N+1 source is still the ledger
+LEDGER_READERS = ('backfill', 'orgs.events.list', 'orgs.audit.list', 'boot_rules')   # §0: the route words are live ROUTE_SOURCES rows of class ledger whose block N+1 source is still the ledger
 # §1: ROUTE_SOURCES, (route, class, source, after_source): what answers each read route TODAY (the census) and what answers it from
 # block 14, once the door is gone. Seeded from the census CENSUS-read-routes-store-vs-ledger (conductor b91fbeb0, sha b00888f4: a CODE READ, 70 rows; the
 # FINAL's "66" is its count); ROUTE_SOURCES_MEASURED flips to True when cMeasure confirms the table on the running conductor (a
@@ -352,119 +373,119 @@ ROUTE_SOURCE_CLASSES = ('store', 'ledger', 'file', 'mix')
 ROUTE_SOURCES_MEASURED = False   # §1: True once cMeasure's numbers land (a lane, read-only on the real binary)
 ROUTE_SOURCES = (
     # (route, class, source today (census b91fbeb0), source from block 14 (§2))
-    ('verify.sessions.list',             'file',   'runs/<repo>/sessions/',                                          'runs/<repo>/sessions/'),
-    ('verify.sessions.get',              'file',   'runs/<repo>/sessions/',                                          'runs/<repo>/sessions/'),
-    ('identity.repos.list',              'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('identity.whoami.get@repo',         'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('picture.logo.get',                 'file',   '<theme.logo>',                                                   '<theme.logo>'),
-    ('verify.runs.list',                 'mix',    'runs.runs | ledger/events.jsonl | books/main/',                  'runs.runs | books/main/'),
-    ('verify.runs.get',                  'mix',    'runs.runs | ledger/events.jsonl',                                'runs.runs'),
-    ('verify.run_evidence.get',          'mix',    'runs.runs | ledger/events.jsonl | runs/<repo>/artifacts/',       'runs.runs | runs/<repo>/artifacts/'),   # the artifact stays a file (an artifact, not state)
-    ('picture.bugs.list',                'mix',    'bugs.bugs | runs.runs | findings.findings | ledger/events.jsonl', 'bugs.bugs | runs.runs | findings.findings'),   # fold_bugs always runs today (the bug-disclosure residual); repair_hold reads the finding row (liveness under_review + repair_state)
-    ('picture.bugs.get',                 'mix',    'bugs.bugs | ledger/events.jsonl',                                'bugs.bugs | findings.finding_history'),   # the disclosure trail reads finding_history rows
-    ('picture.findings.list',            'mix',    'findings.findings | ledger/events.jsonl | books/main/',          'findings.findings | books/main/'),
-    ('picture.findings.get',             'mix',    'findings.findings | ledger/events.jsonl | books/main/',          'findings.findings | books/main/'),
-    ('picture.finding_history.get',      'mix',    'findings.finding_history | ledger/events.jsonl',                 'findings.finding_history'),
-    ('picture.overview.get',             'mix',    'books/main/ | ledger/events.jsonl | runs.runs',                  'books/main/ | editions.promotions | editions.tracks | runs.runs'),   # the rollback flag from promotions (the advances fold); the position from tracks
-    ('picture.metrics.get',              'mix',    'runs.runs | findings.findings | ledger/events.jsonl',            'runs.runs | findings.findings'),
-    ('picture.specgraph.get',            'file',   'books/main/',                                                    'books/main/'),
-    ('picture.specs.list',               'mix',    'books/main/ | runs.capabilities | ledger/events.jsonl',          'books/main/ | runs.capabilities | editions.editions'),   # the capability set from runs rows only (the instrumentation fold retires); the served set from the edition row
-    ('picture.catalogue.get',            'file',   'books/main/',                                                    'books/main/'),
-    ('picture.labels.get',               'file',   'none',                                                           'none'),
-    ('identity.tokens.list',             'file',   'credentials',                                                    'credentials'),
-    ('campaigns.health.get',             'store',  'campaigns.schema_meta',                                          'campaigns.schema_meta'),
+    ('sessions.sessions.list',             'file',   'runs/<repo>/sessions/',                                          'runs/<repo>/sessions/'),
+    ('sessions.session.get',              'file',   'runs/<repo>/sessions/',                                          'runs/<repo>/sessions/'),
+    ('repos.repos.list',              'file',   'live/org.toml',                                                  'live/org.toml'),
+    ('auth.whoami.get@repo',         'file',   'live/org.toml',                                                  'live/org.toml'),
+    ('orgs.logo.get',                 'file',   '<theme.logo>',                                                   '<theme.logo>'),
+    ('runs.runs.list',                 'mix',    'runs.runs | ledger/events.jsonl | books/main/',                  'runs.runs | books/main/'),
+    ('runs.run.get',                  'mix',    'runs.runs | ledger/events.jsonl',                                'runs.runs'),
+    ('runs.evidence.get',          'mix',    'runs.runs | ledger/events.jsonl | runs/<repo>/artifacts/',       'runs.runs | runs/<repo>/artifacts/'),   # the artifact stays a file (an artifact, not state)
+    ('bugs.bugs.list',                'mix',    'bugs.bugs | runs.runs | findings.findings | ledger/events.jsonl', 'bugs.bugs | runs.runs | findings.findings'),   # fold_bugs always runs today (the bug-disclosure residual); repair_hold reads the finding row (liveness under_review + repair_state)
+    ('bugs.bug.get',                 'mix',    'bugs.bugs | ledger/events.jsonl',                                'bugs.bugs | findings.finding_history'),   # the disclosure trail reads finding_history rows
+    ('findings.findings.list',            'mix',    'findings.findings | ledger/events.jsonl | books/main/',          'findings.findings | books/main/'),
+    ('findings.finding.get',             'mix',    'findings.findings | ledger/events.jsonl | books/main/',          'findings.findings | books/main/'),
+    ('findings.history.get',      'mix',    'findings.finding_history | ledger/events.jsonl',                 'findings.finding_history'),
+    ('repos.overview.get',             'mix',    'books/main/ | ledger/events.jsonl | runs.runs',                  'books/main/ | editions.promotions | editions.tracks | runs.runs'),   # the rollback flag from promotions (the advances fold); the position from tracks
+    ('repos.metrics.get',              'mix',    'runs.runs | findings.findings | ledger/events.jsonl',            'runs.runs | findings.findings'),
+    ('repos.specgraph.get',            'file',   'books/main/',                                                    'books/main/'),
+    ('repos.specs.list',               'mix',    'books/main/ | runs.capabilities | ledger/events.jsonl',          'books/main/ | runs.capabilities | editions.editions'),   # the capability set from runs rows only (the instrumentation fold retires); the served set from the edition row
+    ('repos.catalogue.get',            'file',   'books/main/',                                                    'books/main/'),
+    ('repos.labels.get',               'file',   'none',                                                           'none'),
+    ('tokens.repo_tokens.list',             'file',   'credentials',                                                    'credentials'),
+    ('repos.health.get',             'store',  'campaigns.schema_meta',                                          'campaigns.schema_meta'),
     ('campaigns.context.get',            'store',  'campaigns.label_display_map',                                    'campaigns.label_display_map'),
     ('campaigns.cards.list',             'store',  'campaigns.campaigns | campaigns.campaign_observations',          'campaigns.campaigns | campaigns.campaign_observations'),
-    ('campaigns.credits.get',            'store',  'credits.credit_pool | campaigns.credit_pool',                    'credits.credit_pool | campaigns.credit_pool'),
+    ('credits.usage.get',            'store',  'credits.credit_pool | campaigns.credit_pool',                    'credits.credit_pool | campaigns.credit_pool'),
     ('conversations.conversations.list', 'store',  'campaigns.conversations',                                        'campaigns.conversations'),
-    ('conversations.conversations.get',  'store',  'campaigns.conversations',                                        'campaigns.conversations'),
-    ('setup.config.get@repo',            'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
-    ('setup.config.get',                 'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
-    ('setup.repo.get@repo',              'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
-    ('setup.repo.get',                   'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
-    ('setup.repo_refs.get@repo',         'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
-    ('setup.repo_refs.get',              'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
-    ('setup.repo_preview.get@repo',      'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
-    ('setup.repo_preview.get',           'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
-    ('setup.image.get@repo',             'file',   'live/org.toml | config/',                                        'editions.images | editions.bakes | live/org.toml | config/'),   # §2 image: the card from the images row (seeded on its first write, E124 (61)) and the bake lines
-    ('setup.image.get',                  'file',   'live/org.toml | config/',                                        'editions.images | editions.bakes | live/org.toml | config/'),
-    ('identity.whoami.get',              'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('setup.overview.get',               'store',  'campaigns.schema_meta | credits.credit_pool | live/org.toml',    'campaigns.schema_meta | credits.credit_pool | live/org.toml'),
+    ('conversations.conversation.get',  'store',  'campaigns.conversations',                                        'campaigns.conversations'),
+    ('config.own_org.get@repo',            'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
+    ('config.own_org.get',                 'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
+    ('config.own_repo.get@repo',              'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
+    ('config.own_repo.get',                   'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
+    ('repos.refs.get@repo',         'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
+    ('repos.refs.get',              'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
+    ('repos.preview.get@repo',      'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
+    ('repos.preview.get',           'file',   'clones/<repo>/',                                                 'clones/<repo>/'),
+    ('images.own_image.get@repo',             'file',   'live/org.toml | config/',                                        'editions.images | editions.bakes | live/org.toml | config/'),   # §2 image: the card from the images row (seeded on its first write, E124 (61)) and the bake lines
+    ('images.own_image.get',                  'file',   'live/org.toml | config/',                                        'editions.images | editions.bakes | live/org.toml | config/'),
+    ('auth.whoami.get',              'file',   'live/org.toml',                                                  'live/org.toml'),
+    ('orgs.overview.get',               'store',  'campaigns.schema_meta | credits.credit_pool | live/org.toml',    'campaigns.schema_meta | credits.credit_pool | live/org.toml'),
     ('strands.inbox.list',               'store',  'strands.strands',                                                'strands.strands'),
-    ('strands.inbox_all.list',           'store',  'strands.strands',                                                'strands.strands'),
-    ('strands.strand.list',              'store',  'strands.strands',                                                'strands.strands'),
+    ('strands.inboxes.list',           'store',  'strands.strands',                                                'strands.strands'),
+    ('strands.strands.list',              'store',  'strands.strands',                                                'strands.strands'),
     ('strands.strand.get',               'store',  'strands.strands',                                                'strands.strands'),
-    ('identity.staff.whoami',            'file',   'conductor_config',                                               'conductor_config'),   # the deployment's conductor.toml staff roster, no tenant file
-    ('tenants.onboard.check',            'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('live.org.get',                     'mix',    'live/org.toml | live/configevents.jsonl',                        'live/org.toml | editions.promotions | editions.bakes'),   # limits from org.toml; the history from promotions and bakes; the answer's `head` = max(ledger_seq) over the rows read
-    ('tenants.installations_pending.list', 'file', 'pending_installations',                                          'pending_installations'),   # the orgstate pending dir (PENDING_INSTALLATION_SCHEMA), no tenant file
-    ('setup.queue.get',                  'ledger', 'live/configevents.jsonl',                                        'editions.tracks | editions.images'),   # derived from rows: tracks.requested_commit IS NOT NULL ∪ images.state = requested; the answer's `head` = max(ledger_seq) over the rows read
-    ('setup.events.list',                'ledger', 'live/configevents.jsonl',                                        'live/configevents.jsonl'),   # KEPT: it serves ledger lines by definition (LEDGER_READERS)
-    ('setup.request.get',                'file',   'config/',                                                        'config/'),
-    ('setup.repo_request.get',           'file',   'config/',                                                        'config/'),
-    ('live.repo.get',                    'file',   'live/org.toml | config/',                                        'live/org.toml | editions.tracks'),   # the TrackCard from the tracks row
-    ('setup.image_plans.get',            'file',   'catalogue | live/org.toml',                                      'catalogue | live/org.toml'),
-    ('live.image.get',                   'store',  'live/org.toml | editions.images | editions.bakes',               'live/org.toml | editions.images | editions.bakes'),   # 0.2.227 §1 (E124 (91)): the pin history from the bakes rows (m10: the entry's fields, the unpinned rows), configevents.jsonl LEAVES the row (the last ledger fold); the keep count from org.toml
-    ('identity.seat_tokens.list',        'file',   'credentials',                                                    'credentials'),
-    ('setup.repo_features.get',          'ledger', 'ledger/events.jsonl',                                            'live/org.toml | findings.findings'),   # E124 (66), (86): hold = the repo's dt_repair_hold SETTING (org.toml repos[].features, written by setup.repo_features.put) OR any finding of the repo under_review with its repair_state (0.2.221); the latest-event read retires
+    ('auth.staff.whoami',            'file',   'conductor_config',                                               'conductor_config'),   # the deployment's conductor.toml staff roster, no tenant file
+    ('orgs.onboarding.check',            'file',   'live/org.toml',                                                  'live/org.toml'),
+    ('orgs.org.get',                     'mix',    'live/org.toml | live/configevents.jsonl',                        'live/org.toml | editions.promotions | editions.bakes'),   # limits from org.toml; the history from promotions and bakes; the answer's `head` = max(ledger_seq) over the rows read
+    ('orgs.pending_installations.list', 'file', 'pending_installations',                                          'pending_installations'),   # the orgstate pending dir (PENDING_INSTALLATION_SCHEMA), no tenant file
+    ('orgs.queue.get',                  'ledger', 'live/configevents.jsonl',                                        'editions.tracks | editions.images'),   # derived from rows: tracks.requested_commit IS NOT NULL ∪ images.state = requested; the answer's `head` = max(ledger_seq) over the rows read
+    ('orgs.events.list',                'ledger', 'live/configevents.jsonl',                                        'live/configevents.jsonl'),   # KEPT: it serves ledger lines by definition (LEDGER_READERS)
+    ('config.org_request.get',                'file',   'config/',                                                        'config/'),
+    ('config.repo_request.get',           'file',   'config/',                                                        'config/'),
+    ('repos.repo.get',                    'file',   'live/org.toml | config/',                                        'live/org.toml | editions.tracks'),   # the TrackCard from the tracks row
+    ('images.plans.get',            'file',   'catalogue | live/org.toml',                                      'catalogue | live/org.toml'),
+    ('images.image.get',                   'store',  'live/org.toml | editions.images | editions.bakes',               'live/org.toml | editions.images | editions.bakes'),   # 0.2.227 §1 (E124 (91)): the pin history from the bakes rows (m10: the entry's fields, the unpinned rows), configevents.jsonl LEAVES the row (the last ledger fold); the keep count from org.toml
+    ('tokens.seat_tokens.list',        'file',   'credentials',                                                    'credentials'),
+    ('config.repo_features.get',          'ledger', 'ledger/events.jsonl',                                            'live/org.toml | findings.findings'),   # E124 (66), (86): hold = the repo's dt_repair_hold SETTING (org.toml repos[].features, written by config.repo_features.put) OR any finding of the repo under_review with its repair_state (0.2.221); the latest-event read retires
     ('mirrors.layers.detect',            'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('identity.access.explain',          'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('live.digests.list',                'file',   'runs/<repo>/sessions/',                                          'runs/<repo>/sessions/'),
-    ('campaigns.org_credits.get',        'store',  'credits.credit_pool | campaigns.credit_pool',                    'credits.credit_pool | campaigns.credit_pool'),
+    ('orgs.access.explain',          'file',   'live/org.toml',                                                  'live/org.toml'),
+    ('images.digests.list',                'file',   'runs/<repo>/sessions/',                                          'runs/<repo>/sessions/'),
+    ('credits.balance.get',        'store',  'credits.credit_pool | campaigns.credit_pool',                    'credits.credit_pool | campaigns.credit_pool'),
     ('campaigns.label_map.get',          'store',  'campaigns.label_display_map',                                    'campaigns.label_display_map'),
-    ('identity.own_cli_tokens.list',     'file',   'credentials',                                                    'credentials'),
-    ('identity.cli_tokens.list',         'file',   'credentials',                                                    'credentials'),
-    ('identity.audit.list',              'ledger', 'ledger/events.jsonl',                                            'ledger/events.jsonl'),   # KEPT: it serves ledger lines by definition (LEDGER_READERS)
-    ('identity.own_slack_link.get',      'store',  'identity.aliases',                                               'identity.aliases'),
-    ('identity.slack_links.list',        'store',  'identity.aliases',                                               'identity.aliases'),
-    ('identity.platform_tokens.list',    'file',   'credentials',                                                    'credentials'),
-    ('notify.slack.get',                 'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
-    ('notify.channels.list',             'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('notify.binding.get',               'file',   'live/org.toml',                                                  'live/org.toml'),
-    ('notify.deliveries.list',           'file',   'observations.log',                                               'observations.log'),
+    ('tokens.own_tokens.list',     'file',   'credentials',                                                    'credentials'),
+    ('tokens.cli_tokens.list',         'file',   'credentials',                                                    'credentials'),
+    ('orgs.audit.list',              'ledger', 'ledger/events.jsonl',                                            'ledger/events.jsonl'),   # KEPT: it serves ledger lines by definition (LEDGER_READERS)
+    ('links.own_link.get',      'store',  'identity.aliases',                                               'identity.aliases'),
+    ('links.links.list',        'store',  'identity.aliases',                                               'identity.aliases'),
+    ('tokens.platform_tokens.list',    'file',   'credentials',                                                    'credentials'),
+    ('notifications.own_binding.get',                 'file',   'live/org.toml | config/',                                        'live/org.toml | config/'),
+    ('notifications.channels.list',             'file',   'live/org.toml',                                                  'live/org.toml'),
+    ('notifications.binding.get',               'file',   'live/org.toml',                                                  'live/org.toml'),
+    ('notifications.deliveries.list',           'file',   'observations.log',                                               'observations.log'),
 )
 # 0.2.233 §1 (R1 completed): a witness proves a change to DURABLE state. An action whose effects fall only on DERIVED data state (a clone, a
 # mirror, the materialised books) or that changes nothing (a check) writes no witness BY RULE: UNWITNESSED_BY_RULE (route, reason), reason
 # ∈ UNWITNESS_REASONS. 0.2.237 §3: the credential facet's org- and repo-scoped routes (CREDENTIAL_ROUTES, derived below) record the credential
 # kinds; its platform-scoped routes (PLATFORM_CREDENTIAL_ROUTES) record nothing, with the reason PLATFORM_CREDENTIAL_REASON. 0.2.234 §2 (E124
 # 112): the audit's three pending rows got their kinds and UNWITNESSED_PENDING_ROUTES, empty, is deleted; 0.2.234 §4 (E124 117):
-# books.dev_arc.create joins the rule (derived: it materialises an arc a box job authored on the forge).
+# books.arc.create joins the rule (derived: it materialises an arc a box job authored on the forge).
 # validate: every UNWITNESSED_BY_RULE route records nothing; every non-GET live row that records nothing is in UNWITNESSED_BY_RULE or
 # PLATFORM_CREDENTIAL_ROUTES (0.2.237 §3: a CREDENTIAL_ROUTES row records its kind).
 UNWITNESS_REASONS = ('derived', 'check')
 UNWITNESSED_BY_RULE = (
-    ('books.global.sync',    'derived'), ('books.trunk.sync',      'derived'), ('mirrors.track.sync',  'derived'),
-    ('mirrors.clone.sync',   'derived'), ('mirrors.mirror.sync',   'derived'),
-    ('setup.image.check',    'check'),   ('notify.binding.check',  'check'),   ('notify.internal.check', 'check'),
-    ('notify.slack.check',   'check'),   # the customer's own check (0.2.226 §6a): a test post, nothing durable changes
-    ('books.dev_arc.create', 'derived'),   # 0.2.234 §4 (E124 117): arc.created retires; the arc is a box job's forge write, materialised
+    ('books.global.sync',    'derived'), ('books.trunk.sync',      'derived'), ('tracks.track.sync',  'derived'),
+    ('mirrors.clone.sync',   'derived'),   # mirrors.mirror.sync: deprecated (successor tracks.track.sync), no longer a live row
+    ('images.image.check',    'check'),   ('notifications.binding.check',  'check'),   ('notifications.internal.check', 'check'),
+    ('notifications.own_binding.check',   'check'),   # the customer's own check (0.2.226 §6a): a test post, nothing durable changes
+    ('books.arc.create', 'derived'),   # 0.2.234 §4 (E124 117): arc.created retires; the arc is a box job's forge write, materialised
 )
 # 0.2.237 §1 (registry/identity.py CREDENTIAL, the operator 2026-11-03: a credential is a FACET — a store record (state/credentials/
 # credential.schema.json) whose word is derived: live until revoked_at or expires_at is set / passed). CREDENTIAL_STATES = the registry's CRD_LIVE,
 # CRD_REVOKED, CRD_EXPIRED; CREDENTIAL_TRANSITIONS = the registry's fifteen (IDENTITY_ACTIONS), one row each, (from, action, cause, to) as every
-# facet's table (0.2.221): the cause names the route(s) the action is, as MEASURED at LIVE 6e15f706 — identity.tokens.mint / .revoke are the
-# ci tokens' repo-plane twins (mint_ci / revoke_ci); identity.ci_tokens.revoke and identity.seat_tokens.revoke revoke ONE token by value
+# facet's table (0.2.221): the cause names the route(s) the action is, as MEASURED at LIVE 6e15f706 — tokens.repo_tokens.mint / .revoke are the
+# ci tokens' repo-plane twins (mint_ci / revoke_ci); tokens.ci_tokens.revoke and tokens.seat_tokens.revoke revoke ONE token by value
 # (revoke_ci / revoke_seat); identity.service_tokens.mint / .revoke are retired (410, no store write) and identity.service_token.revoke revokes a
 # platform-scoped service token: none of the three is a cause. `lapse` and `expire` are true clocks (registry EV__TK_CONVERSATION_TOTAL / _IDLE,
 # EV__TK_CREDENTIAL_TTL). THREE transitions have NO store write at LIVE (CREDENTIAL_STORELESS_ACTIONS, each a divergence the registry carries):
 # purge (the member.removed arm writes principal.revoked and deletes no credential; the App does not subscribe), converse
-# (conversations.chat.create mints no credential), lapse (no conversation clock exists): their rows stay as the target, their lines come with
+# (conversations.conversations.create mints no credential), lapse (no conversation clock exists): their rows stay as the target, their lines come with
 # the mechanisms. validate: a facet table (states, actions snake, every cause a registry row, the webhook's arm or a clock); fifteen rows.
 CREDENTIAL_STATES = ('live', 'revoked', 'expired')
 CREDENTIAL_TRANSITIONS = (   # (from, action, cause, to)
-    ('—',       'signin',          'identity.session.create',                                                    'live'),      # a browser session (GET /auth/callback)
-    ('—',       'mint_cli',        'identity.cli_token.mint',                                                    'live'),      # a cli token for the presser
-    ('—',       'converse',        'conversations.chat.create',                                                  'live'),      # the conversation credential (auth.md §4.2); storeless at LIVE
-    ('—',       'mint_ci',         'identity.ci_tokens.mint | identity.tokens.mint',                             'live'),      # a ci token: the admin row and its repo-plane twin
-    ('—',       'mint_seat',       'identity.seat_tokens.mint',                                                  'live'),      # a seat token
-    ('—',       'mint_platform',   'identity.platform_tokens.mint',                                              'live'),      # a box or ops token
-    ('live',    'signout',         'identity.session.revoke',                                                    'revoked'),   # POST /auth/logout
-    ('live',    'revoke_own',      'identity.own_cli_token.revoke',                                              'revoked'),
-    ('live',    'revoke_cli',      'identity.cli_token.revoke',                                                  'revoked'),
-    ('live',    'revoke_ci',       'identity.ci_token.revoke | identity.ci_tokens.revoke | identity.tokens.revoke', 'revoked'),   # by id; by value; the repo-plane twin
-    ('live',    'revoke_seat',     'identity.seat_token.revoke | identity.seat_tokens.revoke',                    'revoked'),   # by id; by value
-    ('live',    'revoke_platform', 'identity.platform_token.revoke',                                             'revoked'),
-    ('live',    'purge',           'intake.webhook.receive · member.removed',                                    'revoked'),   # every credential of the removed person; storeless at LIVE
+    ('—',       'signin',          'auth.session.create',                                                    'live'),      # a browser session (GET /auth/callback)
+    ('—',       'mint_cli',        'tokens.cli_tokens.mint',                                                    'live'),      # a cli token for the presser
+    ('—',       'converse',        'conversations.conversations.create',                                                  'live'),      # the conversation credential (auth.md §4.2); storeless at LIVE
+    ('—',       'mint_ci',         'tokens.ci_tokens.mint | tokens.repo_tokens.mint',                             'live'),      # a ci token: the admin row and its repo-plane twin
+    ('—',       'mint_seat',       'tokens.seat_tokens.mint',                                                  'live'),      # a seat token
+    ('—',       'mint_platform',   'tokens.platform_tokens.mint',                                              'live'),      # a box or ops token
+    ('live',    'signout',         'auth.session.revoke',                                                    'revoked'),   # POST /auth/logout
+    ('live',    'revoke_own',      'tokens.own_token.revoke',                                              'revoked'),
+    ('live',    'revoke_cli',      'tokens.cli_token.revoke',                                                  'revoked'),
+    ('live',    'revoke_ci',       'tokens.ci_token.revoke | tokens.ci_tokens.revoke | tokens.repo_token.revoke', 'revoked'),   # by id; by value; the repo-plane twin
+    ('live',    'revoke_seat',     'tokens.seat_token.revoke | tokens.seat_tokens.revoke',                    'revoked'),   # by id; by value
+    ('live',    'revoke_platform', 'tokens.platform_token.revoke',                                             'revoked'),
+    ('live',    'purge',           'webhooks.github.receive · member.removed',                                    'revoked'),   # every credential of the removed person; storeless at LIVE
     ('live',    'lapse',           'clock.credential.conversation_total | clock.credential.conversation_idle',   'revoked'),   # 12 h total, 1 h idle; conversations only; storeless at LIVE
     ('live',    'expire',          'clock.credential.ttl',                                                       'expired'),   # the kind's ttl, noticed on use and by the hourly sweep
 )
@@ -474,9 +495,7 @@ CREDENTIAL_STORELESS_ACTIONS = ('converse', 'purge', 'lapse')   # 0.2.237 §1: n
 # platform (box, ops) tokens — belong to no org: their mint and revoke rows record NOTHING this cut, the gap closes when a platform chain
 # exists; the KINDS rows admit scope `platform` for that day. identity.service_token.revoke (a platform-scoped service token's; a 410 row
 # today) is listed with them. validate: each row is a live registry row, in no other tuple, recording no credential kind.
-PLATFORM_CREDENTIAL_ROUTES = ('identity.session.create', 'identity.cli_token.mint', 'identity.platform_tokens.mint',
-                              'identity.session.revoke', 'identity.own_cli_token.revoke', 'identity.cli_token.revoke', 'identity.platform_token.revoke',
-                              'identity.service_token.revoke')
+PLATFORM_CREDENTIAL_ROUTES = ()   # the registry's (emit/registry_vocab_tables.py)
 PLATFORM_CREDENTIAL_REASON = 'platform-scoped records (browser sessions, cli, platform, box and operator tokens) have no chain: every ledger is per org; closes when a platform ledger exists'
 # 0.2.237 §3: the routes that RECORD the credential kinds, DERIVED from the table: every route a mint (→ live) or revoke (live → revoked)
 # transition names, the storeless actions' and the platform-scoped routes aside. CREDENTIAL_ROUTES (0.2.233 §1) is their union; the
@@ -485,12 +504,28 @@ CREDENTIAL_MINT_ROUTES = tuple(_r for _f, _a, _c, _t in CREDENTIAL_TRANSITIONS i
                                for _r in _c.split(' | ') if ' ' not in _r and _r not in PLATFORM_CREDENTIAL_ROUTES)
 CREDENTIAL_REVOKE_ROUTES = tuple(_r for _f, _a, _c, _t in CREDENTIAL_TRANSITIONS if _f == 'live' and _t == 'revoked' and _a not in CREDENTIAL_STORELESS_ACTIONS
                                  for _r in _c.split(' | ') if ' ' not in _r and _r not in PLATFORM_CREDENTIAL_ROUTES)
-CREDENTIAL_ROUTES = CREDENTIAL_MINT_ROUTES + CREDENTIAL_REVOKE_ROUTES
+CREDENTIAL_ROUTES = ('tokens.repo_tokens.mint',
+                     'tokens.repo_token.revoke',
+                     'conversations.conversations.create',
+                     'tokens.ci_tokens.mint',
+                     'tokens.ci_tokens.revoke',
+                     'tokens.ci_token.revoke',
+                     'tokens.seat_tokens.mint',
+                     'tokens.seat_tokens.revoke',
+                     'tokens.seat_token.revoke',
+                     'auth.session.create',
+                     'tokens.cli_tokens.mint',
+                     'tokens.own_token.revoke',
+                     'tokens.cli_token.revoke',
+                     'tokens.platform_tokens.mint',
+                     'tokens.platform_token.revoke',
+                     'auth.session.revoke',
+                     'webhooks.github.receive')   # the registry's (emit/registry_vocab_tables.py)
 # 0.2.233 §3: who sets each org.toml key, (key, setter, ref, field): setter ∈ CONFIG_SETTER_WORDS. `route`: ref = the registry row whose body
 # carries `field` (the key itself when field is the key; `-` = the row's own action sets the key with no body field: the lock, the accept);
 # `provision`, `config_repo`, `hand`: ref = the conductor site at 8017d8c2 (a file:line, or `-`; 0.2.234 §1's two rows at 9e377334). One row per org.schema key, top level
 # then repos[]; validate: every key once, no row for a key the schema lacks; a route setter's row is live and its body carries the field.
-# 0.2.236 §3 (rule A3; block 19 cert L): a route setter whose write changes nothing writes NO config-ledger witness (campaigns.label_map.put
+# 0.2.236 §3 (rule A3; block 19 cert L): a route setter whose write changes nothing writes NO config-ledger witness (config.label_map.put
 # re-posting the stored mapping unchanged writes no installation.label line): the config ledger records changes, not requests — the rule of
 # every config kind; the handler compares before writing. Prose only.
 CONFIG_SETTER_WORDS = ('route', 'provision', 'config_repo', 'hand')
@@ -507,14 +542,14 @@ CONFIG_SETTERS = (
     ('limits',                'route',       'live.platform.put',         'limits'),   # pricing.limits.put writes two of its keys (PricingLimitsBody)
     ('internal_default_line', 'route',       'live.platform.put',         'internal_default_line'),
     ('onboarding',            'route',       'live.platform.put',         'onboarding'),
-    ('notify',                'route',       'notify.slack.put',          'channel_id'),   # the binding: channel_id, channel_name, events, enabled (NotifyBindingRequest); installation_ref by the install callback
+    ('notify',                'route',       'notifications.own_binding.put',          'channel_id'),   # the binding: channel_id, channel_name, events, enabled (NotifyBindingRequest); installation_ref by the install callback
     ('switches',              'route',       'live.platform.put',         'switches'),
     ('whitelist',             'route',       'live.platform.put',         'whitelist'),
     ('access',                'route',       'live.platform.put',         'access'),
     ('private_upstream',      'route',       'live.platform.put',         'private_upstream'),
     ('credit_rate_per_hour',  'route',       'live.platform.put',         'credit_rate_per_hour'),
     ('profile',               'route',       'live.platform.put',         'profile'),
-    ('theme',                 'route',       'live.platform.put',         'theme'),   # live.logo.put writes theme.logo (no body key)
+    ('theme',                 'route',       'live.platform.put',         'theme'),   # orgs.logo.put writes theme.logo (no body key)
     ('repos',                 'route',       'live.platform.put',         'repos'),
     ('images',                'route',       'live.platform.put',         'images'),   # the built route moves the pin (image.built)
     ('internal',              'provision',   'crates/orgstate/src/provision.rs:1220', ''),
@@ -529,22 +564,22 @@ CONFIG_SETTERS = (
     ('repos[].upstream',      'provision',   'crates/auth/src/access_facts.rs:463', ''),   # read-side only at 8017d8c2
     ('repos[].track',         'config_repo', 'crates/routes/src/adminwrites.rs:374', ''),   # the accept applies repos/<repo>.toml (RepoBody.track)
     ('repos[].advance',       'config_repo', '-',                         ''),   # repos/<repo>.toml (RepoBody.advance)
-    ('repos[].advance_locked','route',       'live.track_state.lock',     '-'),   # the lock route's own action, no body field (crates/orgstate/src/apply.rs:1019); live.track_state.unlock clears it
+    ('repos[].advance_locked','route',       'tracks.track.lock',     '-'),   # the lock route's own action, no body field (crates/orgstate/src/apply.rs:1019); tracks.track.unlock clears it
     ('repos[].accepted_commit','config_repo','crates/routes/src/adminwrites.rs:374', ''),   # the accept
     ('repos[].chain_aliases', 'hand',        '-',                         ''),   # crates/orgstate/src/live.rs:1366 constructs it empty; no writer
-    ('repos[].features',      'route',       'setup.repo_features.put',   'dt_repair'),   # RepoFeaturesBody.dt_repair -> features.dt_repair_hold (0.2.226 E124 (86))
+    ('repos[].features',      'route',       'config.repo_features.put',   'dt_repair'),   # RepoFeaturesBody.dt_repair -> features.dt_repair_hold (0.2.226 E124 (86))
 )
 KIND_WRITERS = (   # (kind, writer); 0.2.233 §4; a name both ledgers carry (track.reset) is one row
     ('org.imported',                    'ingest'),
     ('run.stamped',                     'box.callback'),
     ('run.imported',                    'ingest'),
-    ('run.amended',                     'verify.run.amend'),
+    ('run.amended',                     'runs.run.amend'),
     ('bug.opened',                      'ingest'),
     ('bug.evidence',                    'ingest'),
-    ('bug.verdict',                     'findings.bug.dispose'),
+    ('bug.verdict',                     'bugs.bug.dispose'),
     ('disclosure.recorded',             'findings.finding.disclose'),
     ('disclosure.withheld',             'retired'),
-    ('org.publication_hold',            'findings.publication.hold'),
+    ('org.publication_hold',            'findings.publications.hold'),
     ('edition.advanced',                'books.edition.promote'),
     ('book.completed',                  'books.fork.sync'),
     ('finding.curated',                 'findings.finding.curate'),
@@ -570,7 +605,7 @@ KIND_WRITERS = (   # (kind, writer); 0.2.233 §4; a name both ledgers carry (tra
     ('dt.build_gate_filed',             'ingest'),
     ('triage.filed',                    'ingest'),
     ('dt.repair_hold',                  'retired'),
-    ('contribution.offered',            'findings.upstream_pull.publish'),
+    ('contribution.offered',            'pulls.upstream_pull.publish'),
     ('heal.redriven',                   'ingest'),
     ('heal.red_surfaced',               'ingest'),
     ('serving.unmeasured_alarmed',      'clock'),
@@ -582,27 +617,27 @@ KIND_WRITERS = (   # (kind, writer); 0.2.233 §4; a name both ledgers carry (tra
     ('heal.redrive_requested',          'findings.heal.redrive'),   # 0.2.238 §2: the submit seam retired; the one live route recording it (heal.rs:5039 heal_redrive at 2312529f)
     ('ledger.compacted',                'ops'),
     ('bug.refused',                     'ingest'),
-    ('track.sync_requested',            'mirrors.track.request_sync'),
-    ('track.reset',                     'mirrors.track.reset'),
+    ('track.sync_requested',            'tracks.track.request_sync'),
+    ('track.reset',                     'tracks.track.reset'),
     ('notify.delivered',                'clock'),
     ('notify.blocked',                  'clock'),
     ('slack.mention',                   'ingest'),
     ('publish.blocked',                 'retired'),   # 0.2.236 §2: a RETIRED_KINDS row — both writers flipped (at 6e15f706 heal.rs:2849 and publisher_issues.rs:1625 still stamped it; block 20 flips both)
     ('finding.defer',                   'box.callback'),   # 0.2.235 §3 / 0.2.236 §2: the heal's hold gate (heal.rs:2821 deliver_or_defer at 6e15f706, the settle of a box re-verify); flips in block 20 (the floor knows the kind: kinds.rs:467)
     ('finding.withhold',                'publisher'),   # 0.2.235 §3 / 0.2.236 §2: the publisher's terminal-4xx back-off (publisher_issues.rs:1599 record_publish_block at 6e15f706); the writer flips in block 20 (the floor reads both)
-    ('notify.interactive_enabled',      'notify.slack.put'),
-    ('notify.interactive_disabled',     'notify.slack.put'),
+    ('notify.interactive_enabled',      'notifications.own_binding.put'),
+    ('notify.interactive_disabled',     'notifications.own_binding.put'),
     ('slack.answered',                  'ingest'),
-    ('slack.pressed',                   'notify.interactions.receive'),
+    ('slack.pressed',                   'webhooks.slack_interactions.receive'),
     ('slack.declined',                  'ingest'),
     ('slack.reply',                     'ingest'),
     ('principal.revoked',               'clock'),
-    ('slack.linked',                    'identity.slack_link.receive'),
-    ('slack.unlinked',                  'identity.own_slack_link.revoke'),
-    ('person.renamed',                  'identity.own_profile.put'),
+    ('slack.linked',                    'links.link.receive'),
+    ('slack.unlinked',                  'links.own_link.revoke'),
+    ('person.renamed',                  'auth.profile.put'),
     ('credit.moved',                    'campaigns.card.launch'),
     ('job.cost_recorded',               'box.callback'),
-    ('strand.proposed',                 'campaigns.card.author'),
+    ('strand.proposed',                 'campaigns.cards.author'),
     ('strand.revised',                  'strands.strand.revise'),
     ('strand.commented',                'campaigns.card.feedback'),
     ('strand.accepted',                 'findings.triage.verdict'),
@@ -613,7 +648,7 @@ KIND_WRITERS = (   # (kind, writer); 0.2.233 §4; a name both ledgers carry (tra
     ('strand.invalidated',              'retired'),
     ('strand.revalidated',              'retired'),
     ('strand.retired',                  'campaigns.card.withdraw'),
-    ('campaign.authored',               'campaigns.card.author'),
+    ('campaign.authored',               'campaigns.cards.author'),
     ('campaign.finalized',              'retired'),
     ('campaign.declined',               'retired'),
     ('campaign.staged',                 'retired'),
@@ -630,44 +665,45 @@ KIND_WRITERS = (   # (kind, writer); 0.2.233 §4; a name both ledgers carry (tra
     ('edition.dropped',                 'clock'),
     ('finding.feedback',                'strands.strand.comment'),
     ('triage.requested',                'ingest'),
-    ('run.requested',                   'verify.sessions.start'),
+    ('run.requested',                   'sessions.sessions.start'),
     ('run.started',                     'verify.box_job.start'),   # 0.2.234 §7: the box's start callback records it (was the in-process word box.callback)
     ('run.held',                        'box.callback'),
-    ('run.cancelled',                   'verify.sessions.cancel'),
+    ('run.cancelled',                   'sessions.session.cancel'),
     ('strand.accept_refused',           'strands.strand.accept'),
-    ('org.retired',                     'tenants.org.retire'),
+    ('org.retired',                     'orgs.org.retire'),
     ('arc.created',                     'retired'),   # 0.2.234 §4 (E124 117): retired; the dev arc is derived
     ('capability.observed',             'mirrors.capabilities.fold'),
-    ('canon.matched',                   'picture.canon.match'),
-    ('track.requested',                 'setup.repo.put'),
+    ('canon.matched',                   'findings.canon.match'),
+    ('track.requested',                 'config.own_repo.put'),
     ('track.accepted',                  'clock'),
-    ('track.locked',                    'live.track_state.lock'),
-    ('track.unlocked',                  'live.track_state.unlock'),
-    ('image.requested',                 'setup.image.put'),
-    ('image.accepted',                  'live.image.accept'),
-    ('image.built',                     'live.image.report'),
-    ('image.unpinned',                  'live.image.unpin'),
-    ('onboarding.completed',            'setup.config.complete'),
+    ('track.locked',                    'tracks.track.lock'),
+    ('track.unlocked',                  'tracks.track.unlock'),
+    ('image.requested',                 'images.image.put'),
+    ('image.accepted',                  'images.image.accept'),
+    ('image.built',                     'images.image.report'),
+    ('image.unpinned',                  'images.image.unpin'),
+    ('onboarding.completed',            'orgs.onboarding.complete'),
     ('repo.removed',                    'live.platform.put'),
-    ('notify.requested',                'notify.slack.put'),
-    ('notify.bound',                    'notify.slack.put'),
-    ('notify.unbound',                  'notify.events.receive'),
+    ('notify.requested',                'notifications.own_binding.put'),
+    ('notify.bound',                    'notifications.own_binding.put'),
+    ('notify.unbound',                  'webhooks.slack_events.receive'),
     ('installation.changed',            'ingest'),
     ('image.dispatched',                'clock'),
     ('pricing.changed',                 'pricing.rate.put'),
     ('clock.paused',                    'clock.pause.put'),
-    ('repo.features_set',               'setup.repo_features.put'),
+    ('repo.features_set',               'config.repo_features.put'),
     ('platform.changed',                'live.platform.put'),
-    ('contacts.changed',                'setup.contacts.put'),
-    ('theme.changed',                   'live.logo.put'),
-    ('installation.label',              'campaigns.label_map.put'),   # 0.2.234 §2 (E124 112): the label map's witness (the registry's setup.label_map.put)
+    ('contacts.changed',                'config.own_org.put'),
+    ('theme.changed',                   'orgs.logo.put'),
+    ('installation.label',              'config.label_map.put'),   # 0.2.234 §2 (E124 112): the label map's witness (the registry's config.label_map.put)
     # 0.2.237 §3 (registry EV__CREDENTIAL_MINTED / _REVOKED / _EXPIRED): the mint and revoke rows by the §4 rule (the first CREDENTIAL_ROUTES row
     # by registry order); credential.expired → clock, written at BOTH sites that notice an expiry at 6e15f706 — the lazy check on use
     # (crates/auth/src/store.rs:753 lookup_credential, is_live false → delete) and the hourly ttl sweep (crates/routes/src/login.rs:1228
     # spawn_auth_session_sweep → store.rs:1295 purge_expired) — for org- and repo-scoped credentials only (ci, seat)
-    ('credential.minted',               'identity.tokens.mint'),   # 0.2.237 §3
-    ('credential.revoked',              'identity.tokens.revoke'),   # 0.2.237 §3
+    ('credential.minted',               'tokens.repo_tokens.mint'),   # 0.2.237 §3
+    ('credential.revoked',              'tokens.repo_token.revoke'),   # 0.2.237 §3
     ('credential.expired',              'clock'),   # 0.2.237 §3: the lazy check on use and the hourly sweep
+    ('admin.configure',                 'config.org.put'),   # the registry's (emit/registry_vocab_tables.py)
 )
 # §0: where each retired residual fold's rows live from block 14, (fold word, store.table[.column]): the advances fold becomes the
 # editions promotions table (m6), the track positions the tracks rows (m3/m5), the bug disclosure a bugs column (m5). validate: the
@@ -783,11 +819,11 @@ REJECT_REASONS_BY_KIND = {'finding': ('not_a_bug', 'wont_fix', 'duplicate'), 'pu
 # (launch_campaign: an accept by a holder without it is refused 403 with nothing written in either store).
 STRAND_TARGETS = (
     ('finding',  'findings.finding.disclose'),   # 0.2.221 §4 (E122.60): replaces findings.issue.create
-    ('pull',     'findings.upstream_pull.publish'),
+    ('pull',     'pulls.upstream_pull.publish'),
     ('campaign', 'campaigns.card.launch'),
     ('edition_promote', 'books.edition.promote'),
-    ('track_move',      'mirrors.track.reset'),
-    ('image',           'live.image.accept'),        # 0.2.222 §2 (E122.68): the image strand's accept is the human accept of the image request
+    ('track_move',      'tracks.track.reset'),
+    ('image',           'images.image.accept'),        # 0.2.222 §2 (E122.68): the image strand's accept is the human accept of the image request
     ('triage',          'findings.triage.verdict'),   # 0.2.221 §4 (E122.60): the staff triage strand's accept is the person's verdict
 )
 # 0.2.183 (the ruling of 2026-10-26 on W7; actions.md §4: "a finalize opens the campaign's strand"): the route ids whose action
@@ -795,13 +831,17 @@ STRAND_TARGETS = (
 # each row's records carry strand.proposed, and every row whose records carry it is one of these.
 # 0.2.220 §2 (E122.34): (the event that opens a strand, the strand kind it opens; `*` = any): a registry row's request or a system
 # event; the same event also causes the facet's action (R4: the target facet first, then the strand).
-STRAND_OPENERS = (
-    ('strands.strand.propose', '*'), ('campaigns.card.author', 'campaign'), ('campaigns.card.repropose', 'campaign'),
-    ('findings.finding.curate | intake.forge.receive · label.publish', 'finding'), ('notify.events.receive', 'conversation'),   # 0.2.221 §4: curate opens the customer's strand (was disclose)
-    ('box.job.finished · triage.uncertain', 'triage'),   # 0.2.221 §4: the staff triage strand (Aretta-internal)
-    ('setup.repo.put | setup.repo.put@repo', 'track'),    # 0.2.222 §1: a track request (a config commit) opens the customer's track strand; the same event causes run::start (the battery)
-    ('setup.image.put | setup.image.put@repo | live.image.unpin', 'image'),  # 0.2.222 §2: an image request opens the Aretta-internal image strand (the accept button); E124 (36) O4: an unpin re-opens it (0.2.225 §2, E124 (58): live.image.unpin records strand.proposed)
-    ('run.battery_completed', 'track_move'), ('the candidate run completes with customer_visible_change', 'edition_promote'))
+STRAND_OPENERS = (('strands.strands.propose', '*'),
+                  ('campaigns.cards.author', 'campaign'),
+                  ('campaigns.card.repropose', 'campaign'),
+                  ('findings.finding.curate | webhooks.forge.receive · label.publish', 'finding'),
+                  ('webhooks.slack_events.receive', 'conversation'),
+                  ('box.job.finished · triage.uncertain', 'triage'),
+                  ('config.own_repo.put | config.own_repo.put@repo', 'track'),
+                  ('images.image.put | images.image.put@repo | images.image.unpin', 'image'),
+                  ('run.battery_completed', 'track_move'),
+                  ('the candidate run completes with customer_visible_change', 'edition_promote'),
+                  ('conversations.conversations.create', 'conversation'))   # the registry's (emit/registry_vocab_tables.py)
 # 0.2.189 §2 (E48, E54, E56): the system producers, as data: (producing record kind, the strand kind it opens); a person's
 # propose is not here. THE CATCH-UP (E48): at boot the head opens every produced strand missing against the chain's producing
 # records, idempotent, one strand per producing record's key, reading from the strands store's catchup.seq (STORE_META_KEYS):
@@ -833,7 +873,7 @@ STRAND_CUSTOMER_ACTIONS = {           # closed per kind; every word is a strands
 # button (0.2.211 §2). validate: exactly these internal kinds list defer.
 INTERNAL_DEFER_KINDS = ('image',)
 # 0.2.176 §3: who is asked to decide. An internal strand shows only to holders of `steer`, posts to the deployment's internal
-# channels naming its org, repo and edition, and is listed across tenants (strands.inbox_all.list); its accept runs its
+# channels naming its org, repo and edition, and is listed across tenants (strands.inboxes.list); its accept runs its
 # target as the presser. A kind's audience flips outward by this one word when Aretta can state the effect and price.
 STRAND_AUDIENCES = ('customer', 'internal')      # who is asked to decide; the words the POSTABLE rows already use
 STRAND_KIND_AUDIENCE = {'finding': 'customer', 'pull': 'customer', 'campaign': 'customer',
@@ -893,7 +933,7 @@ CAMPAIGN_STATES_RETIRED = ('being_prepared', 'discarded')
 CAMPAIGN_STORED_STATES = CAMPAIGN_STATES + CAMPAIGN_STATES_RETIRED
 CAMPAIGN_OUTCOMES = ('passed', 'failed', 'killed')   # campaign.completed's outcome (§10.4): done -> passed, failed -> failed, cancelled | parked -> killed
 CAMPAIGN_TRANSITIONS = (                                                                               # (from, action, to)
-    ('—',          'campaigns.card.author',    'launchable'),   # E122.30: author = create + finalize in one tx (§10.10); the same request causes strand::propose
+    ('—',          'campaigns.cards.author',    'launchable'),   # E122.30: author = create + finalize in one tx (§10.10); the same request causes strand::propose
     ('launchable', 'campaigns.card.feedback',  'launchable'),   # E122.1 (was decline), E122.31: also caused by strands.strand.comment on the card's strand when the presser holds curate_campaign
     ('launchable', 'campaigns.card.withdraw',  'withdrawn'),
     ('withdrawn',  'campaigns.card.repropose', 'launchable'),   # E122.29; the same request causes strand::propose (a new strand)
@@ -960,19 +1000,19 @@ FINDING_LIVENESS_RETIRED = ('open',)
 FINDING_LIVENESS_STORED = FINDING_LIVENESS + FINDING_LIVENESS_RETIRED
 FINDING_LIVENESS_READ_MAP = {'open': 'live'}
 FINDING_FACETS = (('visibility', 'FINDING_VISIBILITY'), ('liveness', 'FINDING_LIVENESS'))
-FINDING_TRANSITIONS = (   # (column, from, action, cause, to): `—` = no word yet; a cause names its event (a route id, `box.job.finished · <BOX_JOB_FINISHED_WORDS word>`, `intake.forge.receive · <forge word>`); `|` joins alternatives
-    ('visibility', '—',           'curate',   'findings.finding.curate | intake.forge.receive · label.publish', 'disclosable'),   # the SAME event causes strand::propose (topic finding); writes the disclosure gate + approval columns
+FINDING_TRANSITIONS = (   # (column, from, action, cause, to): `—` = no word yet; a cause names its event (a route id, `box.job.finished · <BOX_JOB_FINISHED_WORDS word>`, `webhooks.forge.receive · <forge word>`); `|` joins alternatives
+    ('visibility', '—',           'curate',   'findings.finding.curate | webhooks.forge.receive · label.publish', 'disclosable'),   # the SAME event causes strand::propose (topic finding); writes the disclosure gate + approval columns
     ('visibility', 'disclosable', 'feedback', 'strands.strand.comment',                   'disclosable'),   # E122.61: mirrored onto the forge staging issue; writes finding.feedback
-    ('visibility', 'disclosable', 'revise',   'intake.forge.receive · issue.edited',      'disclosable'),   # a staff edit of the staging issue: a new version on the strand
+    ('visibility', 'disclosable', 'revise',   'webhooks.forge.receive · issue.edited',      'disclosable'),   # a staff edit of the staging issue: a new version on the strand
     ('visibility', 'disclosable', 'disclose', 'strands.strand.accept | findings.finding.disclose', 'disclosed'),   # publishes UPSTREAM AT ONCE: the issue is opened, issue_number a column
-    ('visibility', 'disclosed',   'revise',   'intake.forge.receive · issue.edited',      'disclosed'),     # E122.63: replicated as a comment upstream (deferred under a hold); the aretta-lead block stays stripped
-    ('liveness',   '—',           'curate',   'findings.finding.curate | intake.forge.receive · label.publish', 'live'),   # the same curate
-    ('liveness',   'live',        'heal',     'intake.webhook.receive · pull_request.merged | findings.heal.redrive', 'live'),   # requests nothing: the same event causes run::start (purpose heal); refused unless live (409 not_live)
+    ('visibility', 'disclosed',   'revise',   'webhooks.forge.receive · issue.edited',      'disclosed'),     # E122.63: replicated as a comment upstream (deferred under a hold); the aretta-lead block stays stripped
+    ('liveness',   '—',           'curate',   'findings.finding.curate | webhooks.forge.receive · label.publish', 'live'),   # the same curate
+    ('liveness',   'live',        'heal',     'webhooks.github.receive · pull_request.merged | findings.heal.redrive', 'live'),   # requests nothing: the same event causes run::start (purpose heal); refused unless live (409 not_live)
     ('liveness',   'live',        'healed',   'box.job.finished · heal_reverify.green',   'healed'),
     ('liveness',   'live',        'triage',   'box.job.finished · heal_reverify.red',     'live'),          # E122.60: requests box.jobs.submit {purpose: triage}; writes triage.requested
     ('liveness',   'live',        'incomplete','box.job.finished · heal_reverify.incomplete', 'live'),
-    ('liveness',   'live',        'stands',   'box.job.finished · triage.bug_persists | findings.triage.verdict | intake.forge.receive · label.verdict', 'live'),   # 0.2.224 §3: was `persist` ("persist" reads as "make persistent"); bug_persists | uncertain: reverify_failed; the upstream issue reopened (deferred under a hold)
-    ('liveness',   'live',        'review',   'findings.triage.verdict | intake.forge.receive · label.verdict', 'under_review'),   # over_strict_dt: proof_repair_pending; 0.2.224 §5: a PERSON's verdict only, never a box word (a machine never puts Aretta's own claim under review)
+    ('liveness',   'live',        'stands',   'box.job.finished · triage.bug_persists | findings.triage.verdict | webhooks.forge.receive · label.verdict', 'live'),   # 0.2.224 §3: was `persist` ("persist" reads as "make persistent"); bug_persists | uncertain: reverify_failed; the upstream issue reopened (deferred under a hold)
+    ('liveness',   'live',        'review',   'findings.triage.verdict | webhooks.forge.receive · label.verdict', 'under_review'),   # over_strict_dt: proof_repair_pending; 0.2.224 §5: a PERSON's verdict only, never a box word (a machine never puts Aretta's own claim under review)
     ('liveness',   'live',        'escalate', 'box.job.finished · triage.uncertain',      'live'),          # E122.60: the staff triage strand (topic triage) + the triage issue on the forge; writes triage.filed
     ('liveness',   'under_review','insist',   'findings.repair.reject',                   'live'),          # the customer: the problem is real; admitted only here (409 not_under_review)
     ('liveness',   'live',        'retract',  'findings.finding.retract',                 'retracted'),
@@ -980,7 +1020,7 @@ FINDING_TRANSITIONS = (   # (column, from, action, cause, to): `—` = no word y
 )
 FINDING_TRANSITION_VERDICTS = (('stands', ('bug_persists', 'uncertain')), ('review', ('over_strict_dt',)))   # which TRIAGE_VERDICTS word a verdict cause names, per action (0.2.224 §3: stands, was persist)
 # 0.2.220 §3b (the heal): its triggers, preconditions, plan and outcomes, as data (actions.md §3.3b)
-HEAL_TRIGGERS = ('intake.webhook.receive: a merged PR whose body closes a finding issue', 'findings.heal.redrive', 'the reconcile sweep meets a merged PR the webhook missed')
+HEAL_TRIGGERS = ('webhooks.github.receive: a merged PR whose body closes a finding issue', 'findings.heal.redrive', 'the reconcile sweep meets a merged PR the webhook missed')
 HEAL_PRECONDITIONS = ('already_healed', 'judged_for_rev', 'heal_switch_off', 'clock_paused')       # the route form refuses 409 on the first two; the webhook form skips
 HEAL_ROUTE_REFUSES = ('already_healed', 'judged_for_rev')                                          # ⊂ HEAL_PRECONDITIONS: 409 on findings.heal.redrive
 HEAL_PLANS = (   # the FINAL's HEAL_PLAN, named plural (0.2.183 Rule A)
@@ -1021,7 +1061,7 @@ BUG_VERDICTS = ('satisfied', 'untested', 'violated')
 # arrives over verify.events.submit from a service:bug-ledger credential; each dispose writes bug.verdict with the disposition
 # and the stored word (E122.16, R1). BUG_SOURCES `verify` is unbuilt in practice (E122.44).
 BUG_TRANSITIONS = (('—', 'the in-process bug-ledger opens the bug', 'open'),   # 0.2.220 §10.5: no out-of-process submitter; BUG_SOURCES verify is unbuilt until then
-                   ('*', 'findings.bug.dispose confirmed', 'confirmed'), ('*', 'findings.bug.dispose wontfix', 'wontfix'), ('*', 'findings.bug.dispose retracted', 'retracted'))
+                   ('*', 'bugs.bug.dispose confirmed', 'confirmed'), ('*', 'bugs.bug.dispose wontfix', 'wontfix'), ('*', 'bugs.bug.dispose retracted', 'retracted'))
 EDITION_SLOTS = ('served', 'rollback')
 # 0.2.221 §1 (E122.52, E122.64): an edition STORES its word (R1); `regressed` is NOT stored (read from the run). Each row is (from,
 # action, cause, to); a cause names its event; `(the same event)` marks the R4 shape (one event, two facets' actions).
@@ -1029,9 +1069,9 @@ EDITION_STATES = ('proposed', 'cut', 'served', 'superseded', 'skipped')
 EDITION_TRANSITIONS = (
     ('—',          'propose',  'box.job.finished · cut_job.done',                     'proposed'),    # the box's staging pass opened the cut PR as the tenant bot; id by tools/atlas-cut.sh
     ('proposed',   'cut',      'box.job.finished · cut_pr_check.green',               'cut'),         # AUTOMATIC: head-bound merge as the bot; writes edition.cut
-    ('proposed',   'cut',      'intake.forge.receive · pull_request.merged',          'cut'),         # the hand merge stays
+    ('proposed',   'cut',      'webhooks.forge.receive · pull_request.merged',          'cut'),         # the hand merge stays
     ('proposed',   'drop',     'box.job.finished · cut_pr_check.red',                 'skipped'),     # edition.dropped {reason: check_red}
-    ('proposed',   'drop',     'intake.forge.receive · pull_request.closed',          'skipped'),     # edition.dropped {reason: pr_closed}
+    ('proposed',   'drop',     'webhooks.forge.receive · pull_request.closed',          'skipped'),     # edition.dropped {reason: pr_closed}
     ('cut',        'cut',      'a newer cut landed (the same event)',                 'skipped'),     # the newest cut is the candidate; older unserved cuts skip
     ('cut',        'verify',   'edition.cut (the same event)',                        'cut'),         # the candidate verify: the cut event also causes run::start (R4 amended)
     ('cut',        'judge',    'box.job.finished · candidate_verify.pass | box.job.finished · candidate_verify.fail | box.job.finished · candidate_verify.inconclusive', 'cut'),   # writes candidate_verdict
@@ -1050,34 +1090,33 @@ CUT_JOB_SPEC_FIELDS = (('kind', 'agent'), ('runner', 'claude'), ('repos', ('book
                 ('identity', 'aretta-conductor-bot'), ('token', 'the conductor box operator token'))   # E122.52 §E4(a), as the code runs it
 # 0.2.221 §6 R6 (E122.59): a route whose body picked the action carries the words in its PATH: (route id, path parameter, the
 # vocabulary tuple of its words); a word outside the tuple is an unknown route, never 400 invalid_body
-STRAND_ACCEPT_ONLY_ROWS = ('mirrors.track.reset', 'books.edition.promote')   # 0.2.221 §1 (E124 (15)): admin POSTs at read reached by readers ONLY through strands.strand.accept (the admin HTTP plane stays GET-only for persons)
+STRAND_ACCEPT_ONLY_ROWS = ('tracks.track.reset', 'books.edition.promote')   # 0.2.221 §1 (E124 (15)): admin POSTs at read reached by readers ONLY through strands.strand.accept (the admin HTTP plane stays GET-only for persons)
 PATH_WORDS = (('findings.triage.verdict', 'verdict', 'TRIAGE_VERDICTS'),)
 # 0.2.221 (E122.50): the route events the transitions name whose rows land with the forge webhook (a third peer holder `forge`,
 # credential kind forge_webhook_signature; cut C / E122.50): named, not yet registry rows
-PROPOSED_ROUTE_EVENTS = ()   # 0.2.235 §1: intake.forge.receive's row landed (INTAKE_FORGE_ROUTE); nothing is proposed
+PROPOSED_ROUTE_EVENTS = ()   # 0.2.235 §1: webhooks.forge.receive's row landed (INTAKE_FORGE_ROUTE); nothing is proposed
 CUT_PRECONDITIONS = ('one open cut PR per repo', 'the PR head is the sha the checks were seen on (409 head_moved)', 'both ci and scan statuses are success')
 CUSTOMER_VISIBLE_CHANGE = 'released spec ids(new) != released spec ids(served) or disclosed finding ids(new) != disclosed finding ids(served)'   # membership only; content changes do not count
 CUT_DISPATCH_SKIP_REASONS = ('no_seat', 'no_image', 'no_verify_dispatch')   # 0.2.221 E124 (25) O6: notify.cut_dispatch_skipped's reason
 CUT_KNOB_DEFAULTS = (('cut_dispatch', True), ('cut_auto_merge', True))   # 0.2.221 §1: default ON (today absent = off): new behaviour for every org
 EDITION_CLOCKS = (('clock.edition.unmeasured', 24 * 3600),)   # (clock event, seconds since edition.advanced)
 # 0.2.221 §3 (E122.62): a run (a verify session) STORES its word; `queued` retires (never written; read on the wire for one
-# release); `lost` is failed {reason: lost}, by the one true clock clock.run.lost.
+# release); `lost` is failed {reason: lost}, written by the crash-restart reconcile (0.2.244: the clock row retired).
 RUN_STATES = ('requested', 'running', 'waiting_image', 'done', 'failed', 'cancelled')
 RUN_STATES_RETIRED = ('queued', 'lost')
 RUN_STORED_STATES = RUN_STATES + RUN_STATES_RETIRED
 RUN_STATE_READ_MAP = {'queued': 'requested', 'lost': 'failed'}
 RUN_FAIL_REASONS = ('lost',)
 RUN_TRANSITIONS = (   # (from, action, cause, to)
-    ('—',             'start',    'verify.sessions.start | intake.webhook.receive · pull_request.merged | findings.heal.redrive | edition.cut (the same event) | edition.advanced (the same event) | track.reset (the same event) | track.upstream_moved (the same event)', 'requested'),   # requests box.jobs.submit; writes run.requested {step}; 0.2.224 §4: a start with purpose battery is NOT started while a battery is in flight at that commit (BATTERY_RULES)
+    ('—',             'start',    'sessions.sessions.start | webhooks.github.receive · pull_request.merged | findings.heal.redrive | edition.cut (the same event) | edition.advanced (the same event) | track.reset (the same event) | track.upstream_moved (the same event)', 'requested'),   # requests box.jobs.submit; writes run.requested {step}; 0.2.224 §4: a start with purpose battery is NOT started while a battery is in flight at that commit (BATTERY_RULES)
     ('—',             'hold',     'the same open, when the verify image track_ref differs from the pinned image', 'waiting_image'),   # writes run.held
-    ('waiting_image', 'release',  'live.image.report | box.job.finished · image_bake.built', 'requested'),   # requests box.jobs.submit
-    ('waiting_image', 'cancel',   'verify.sessions.cancel',                   'cancelled'),
+    ('waiting_image', 'release',  'images.image.report | box.job.finished · image_bake.built', 'requested'),   # requests box.jobs.submit
+    ('waiting_image', 'cancel',   'sessions.session.cancel',                   'cancelled'),
     ('requested',     'dispatch', 'box.job.started',                          'running'),      # the box took the job; writes run.started (the watchdog anchor)
-    ('requested',     'cancel',   'verify.sessions.cancel',                   'cancelled'),
+    ('requested',     'cancel',   'sessions.session.cancel',                   'cancelled'),
     ('running',       'stamp',    'box.job.finished · verify.done | box.job.finished · battery.done | box.job.finished · candidate_verify.pass | box.job.finished · candidate_verify.fail | box.job.finished · external_verify.done | box.job.finished · heal_reverify.green | box.job.finished · heal_reverify.red', 'done'),   # the conductor's in-process stamp; the same event drives edition::judge, track::settle, finding::healed / triage
     ('running',       'fail',     'box.job.finished · verify.failed | box.job.finished · battery.failed | box.job.finished · candidate_verify.inconclusive | box.job.finished · external_verify.failed | box.job.finished · heal_reverify.incomplete', 'failed'),
-    ('running',       'lost',     'clock.run.lost',                           'failed'),       # verify.lost_after_seconds since run.started; today the watchdog sweep; 0.2.224 §3: was `lose` (the verb)
-    ('running',       'cancel',   'verify.sessions.cancel',                   'cancelled'),
+    ('running',       'cancel',   'sessions.session.cancel',                   'cancelled'),
 )
 RUN_COLUMNS = (('state', 'RUN_STORED_STATES'), ('step', 'VERIFY_STEP_WORDS'), ('requested_by', 'the actor word (the cause\'s holder)'))   # E124 (26): the session JSON's fields (runs/<repo>/sessions/), NOT runs.db (unchanged this cut)   # step replaces the marker file (0.2.215), read by the deploy hold
 # 0.2.221 §1–§3, §6: the box's job-finished words the transitions name (`box.job.finished · <word>`), as data; box.job.started is
@@ -1090,8 +1129,8 @@ BOX_JOB_FINISHED_WORDS = ('verify.done', 'verify.failed', 'battery.done', 'batte
                           'triage.bug_persists', 'triage.uncertain',   # 0.2.224 §5: triage.over_strict_dt REMOVED from the box demux (BOX_TRIAGE_WORDS)
                           'image_bake.failed')   # 0.2.222 §2: a bake that fails (the job ends without a built report, 0.2.202 §3b); image_bake.* exist as the FINAL says, the failed word named here
 BOX_JOB_STARTED = 'box.job.started'
-FORGE_EVENT_WORDS = ('pull_request.merged', 'pull_request.closed', 'issue.edited', 'label.publish', 'label.verdict',   # intake.forge.receive's words the transitions name (E122.50)
-                     'push', 'installation.created', 'installation.suspended', 'installation.unsuspended', 'installation.deleted',   # 0.2.222 §1, §3: intake.webhook.receive's words (the GitHub App's push and installation events)
+FORGE_EVENT_WORDS = ('pull_request.merged', 'pull_request.closed', 'issue.edited', 'label.publish', 'label.verdict',   # webhooks.forge.receive's words the transitions name (E122.50)
+                     'push', 'installation.created', 'installation.suspended', 'installation.unsuspended', 'installation.deleted',   # 0.2.222 §1, §3: webhooks.github.receive's words (the GitHub App's push and installation events)
                      'member.removed')   # 0.2.237 §1: the App webhook's arm the credential facet's purge names (registry RT__INTAKE_WEBHOOK_RECEIVE.on("member.removed"); hooks.rs:2445 at 6e15f706)
 # 0.2.222 §0 R7 (E122.66): the spec models CONTROL state only. A word exists only where a decision branches (R2); everything else
 # the system holds is DATA state (settings, balances, profiles, admin writes, syncs), documented as a ROUTE WITH AN ACTION (door,
@@ -1105,18 +1144,18 @@ TRACK_STORED_STATES = TRACK_STATES + TRACK_STATES_RETIRED
 TRACK_STATE_READ_MAP = {'accepted': 'tracking', 'upstream_moved': 'tracking'}
 TRACK_FLOOR_STATES = ('requested', 'accepted', 'locked', 'upstream_moved')   # today's words (the config ledger's track.* lines + advance_locked): what the floor reads; the floor_boot_rule lands every row on one (validate probes it); for images the floor's words are IMAGE_REQUEST_STATES
 TRACK_TRANSITIONS = (   # (from, action, cause, to); a cause names its event; the precondition that splits one box word is TRACK_BATTERY_OUTCOMES
-    ('—',         'request',      'setup.repo.put | setup.repo.put@repo',                        'requested'),   # a config commit; the same event causes run::start (purpose battery, at the requested commit) and strand::propose (topic track, the customer's)
-    ('tracking',  'request',      'setup.repo.put | setup.repo.put@repo',                        'requested'),   # a new track: the old position serves until accepted; refused while locked (409 locked)
+    ('—',         'request',      'config.own_repo.put | config.own_repo.put@repo',                        'requested'),   # a config commit; the same event causes run::start (purpose battery, at the requested commit) and strand::propose (topic track, the customer's)
+    ('tracking',  'request',      'config.own_repo.put | config.own_repo.put@repo',                        'requested'),   # a new track: the old position serves until accepted; refused while locked (409 locked)
     ('requested', 'accept',       'box.job.finished · battery.done',                             'tracking'),    # AUTOMATIC: no failing units, at the REQUESTED commit; the position is written; the track strand closes accepted with no press (strand::expire, track_accepted)
     ('requested', 'not_ready',    'box.job.finished · battery.done | box.job.finished · battery.failed', 'requested'),   # failing units, or battery.failed, at the requested commit; the same settle authors the maintenance card (campaign::author); 0.2.224 §3: was `hold` (`hold` also names run's image wait)
-    ('requested', 'move',         'intake.webhook.receive · push',                               'requested'),   # E124 (36) O1: RECORDED (track.upstream_moved, a self-loop): no battery, the old position does not move, the request stands
-    ('tracking',  'lock',         'live.track_state.lock',                                       'locked'),      # staff; a dashboard button (CALLERS_SET)
-    ('locked',    'unlock',       'live.track_state.unlock',                                     'tracking'),    # E124 (36) O2: nothing fires by itself afterwards; the next push or request_sync runs the battery
-    ('tracking',  'move',         'intake.webhook.receive · push',                               'tracking'),    # a push on the tracked default branch: writes track.upstream_moved; the same event causes run::start (battery at the new commit) unless advance = manual (O3)
-    ('locked',    'move',         'intake.webhook.receive · push',                               'locked'),      # recorded; the battery runs; a move needs an unlock first
-    ('tracking',  'request_sync', 'mirrors.track.request_sync',                                  'tracking'),    # the customer: writes track.sync_requested; causes run::start (battery at upstream head); 503 maintenance_unconfigured when the price is unset
+    ('requested', 'move',         'webhooks.github.receive · push',                               'requested'),   # E124 (36) O1: RECORDED (track.upstream_moved, a self-loop): no battery, the old position does not move, the request stands
+    ('tracking',  'lock',         'tracks.track.lock',                                       'locked'),      # staff; a dashboard button (CALLERS_SET)
+    ('locked',    'unlock',       'tracks.track.unlock',                                     'tracking'),    # E124 (36) O2: nothing fires by itself afterwards; the next push or request_sync runs the battery
+    ('tracking',  'move',         'webhooks.github.receive · push',                               'tracking'),    # a push on the tracked default branch: writes track.upstream_moved; the same event causes run::start (battery at the new commit) unless advance = manual (O3)
+    ('locked',    'move',         'webhooks.github.receive · push',                               'locked'),      # recorded; the battery runs; a move needs an unlock first
+    ('tracking',  'request_sync', 'tracks.track.request_sync',                                  'tracking'),    # the customer: writes track.sync_requested; causes run::start (battery at upstream head); 503 maintenance_unconfigured when the price is unset
     ('tracking',  'settle',       'box.job.finished · battery.done | box.job.finished · battery.failed', 'tracking'),   # at a MOVED commit (0.2.224 §4: the settle reads the track's own row, BATTERY_RULES): run.battery_completed {repo, run_seq, to_commit, failing_units}; 0 -> strand::propose (track_move), else campaign::author (the maintenance card)
-    ('tracking',  'reset',        'strands.strand.accept | mirrors.track.reset',                 'tracking'),    # the position moves; writes track.reset (the cut and served_remeasure fire on it, 0.2.212); readers reach the reset only through the strand's accept (STRAND_ACCEPT_ONLY_ROWS)
+    ('tracking',  'reset',        'strands.strand.accept | tracks.track.reset',                 'tracking'),    # the position moves; writes track.reset (the cut and served_remeasure fire on it, 0.2.212); readers reach the reset only through the strand's accept (STRAND_ACCEPT_ONLY_ROWS)
 )
 TRACK_BATTERY_OUTCOMES = (   # one box word (battery.done) causes accept | not_ready | settle, disjoint by precondition (requested vs moved commit; green vs red); 0.2.224 §3: not_ready was hold
     ('accept',    'battery.done, no failing units, at the requested commit'),
@@ -1142,14 +1181,13 @@ ACTION_RENAMES = (
     ('track',   'hold',    'not_ready'),    # `hold` also names run's image wait
     ('finding', 'persist', 'stands'),       # "persist" reads as "make persistent"
     ('edition', 'nag',     'unmeasured'),   # tone
-    ('run',     'lose',    'lost'),         # the verb
 )
 TRACK_ADVANCE_WORDS = ('auto', 'manual')   # org.toml repos[].advance: a SETTING read by the webhook (manual suppresses only the automatic battery on a push; never an accept or a request_sync, O3)
 TRACK_POSITION_SOURCES = ('run', 'reset', 'accept')   # 0.2.226 E124 (83): editions.db tracks.position_from — what last moved the position: a run's stamp, an admin reset, an accept
 TRACK_COLUMNS = (('state', 'TRACK_STORED_STATES'), ('position_commit', 'string'), ('position_line', 'string'), ('advance', 'TRACK_ADVANCE_WORDS'),   # editions.db tracks (m3)
                  ('requested_commit', 'string'),   # 0.2.225 §3b
                  ('position_from', 'TRACK_POSITION_SOURCES'), ('position_at', 'time'), ('position_seq', 'integer'), ('last_reset_seq', 'integer'), ('last_reset_at', 'time'))   # 0.2.226 E124 (83), m9 (additive): the position's provenance (what moved it, when, the record's seq) and the last reset's seq and time; NULL on a row the floor writes (E124 (60), m5): the SUT commit the open request resolves to (from track.requested's requested_commit), NULL when none is open; accept clears it; validate: exactly the tracks columns beside the key and ledger_seq
-TRACK_MECHANISM = ('mirrors.track.sync', 'mirrors.clone.sync', 'mirrors.mirror.sync', 'mirrors.accessor_prs.sweep', 'mirrors.capabilities.fold')   # R7: routes with actions; records: [] (the sweep: instrumentation.observed); no transitions
+TRACK_MECHANISM = ('tracks.track.sync', 'mirrors.clone.sync', 'mirrors.mirror.sync', 'mirrors.accessor_prs.sweep', 'mirrors.capabilities.fold')   # R7: routes with actions; records: [] (the sweep: instrumentation.observed); no transitions
 # 0.2.222 §2 (E122.65, E122.68): an image STORES its word (editions.db images, m4: one row per kind); build_failed / probe_failed are
 # NOT states (the failure sits on the bake line: last_bake_failure); today's dispatched reads as baking. IMAGE_REQUEST_STATES stays
 # the WIRE's tuple (ImageView.state) for one release: build_failed / probe_failed retire as state words, read through the map.
@@ -1159,17 +1197,17 @@ IMAGE_STATES_RETIRED = ('dispatched',) + IMAGE_BAKE_FAILURES
 IMAGE_STORED_STATES = IMAGE_STATES + IMAGE_STATES_RETIRED
 IMAGE_STATE_READ_MAP = {'dispatched': 'baking', 'build_failed': 'accepted', 'probe_failed': 'accepted'}
 IMAGE_TRANSITIONS = (   # (from, action, cause, to)
-    ('—',         'request',  'setup.image.put | setup.image.put@repo',                       'requested'),   # the same request causes strand::propose (topic image, audience INTERNAL: the accept button on the dashboard / Slack) — E122.68
-    ('requested', 'accept',   'strands.strand.accept | live.image.accept',                    'accepted'),    # a HUMAN act (a bake is heavy): never automatic; the strand closes accepted
+    ('—',         'request',  'images.image.put | images.image.put@repo',                       'requested'),   # the same request causes strand::propose (topic image, audience INTERNAL: the accept button on the dashboard / Slack) — E122.68
+    ('requested', 'accept',   'strands.strand.accept | images.image.accept',                    'accepted'),    # a HUMAN act (a bake is heavy): never automatic; the strand closes accepted
     ('accepted',  'dispatch', 'image.accepted (the same event)',                              'baking'),      # requests box.jobs.submit {image_bake}; precondition: no open dispatch for this commit
-    ('accepted',  'rebake',   'live.image.accept',                                            'baking'),      # when the last bake line is a failure and no dispatch is open: Aretta fixes and re-bakes (today the hand command)
-    ('baking',    'built',    'live.image.report | box.job.finished · image_bake.built',      'built'),       # the pin in org.toml; the same event causes run::release for held runs
-    ('baking',    'fail',     'live.image.report | box.job.finished · image_bake.failed',     'accepted'),    # image.built carries {state: build_failed | probe_failed, reason}; the request stands; customer notice pending_reason_build_failed
-    ('built',     'unpin',    'live.image.unpin',                                             'requested'),   # E124 (36) O4: ALSO causes strand::propose (topic image, internal): the request stands and needs a fresh accept
+    ('accepted',  'rebake',   'images.image.accept',                                            'baking'),      # when the last bake line is a failure and no dispatch is open: Aretta fixes and re-bakes (today the hand command)
+    ('baking',    'built',    'images.image.report | box.job.finished · image_bake.built',      'built'),       # the pin in org.toml; the same event causes run::release for held runs
+    ('baking',    'fail',     'images.image.report | box.job.finished · image_bake.failed',     'accepted'),    # image.built carries {state: build_failed | probe_failed, reason}; the request stands; customer notice pending_reason_build_failed
+    ('built',     'unpin',    'images.image.unpin',                                             'requested'),   # E124 (36) O4: ALSO causes strand::propose (topic image, internal): the request stands and needs a fresh accept
 )
 IMAGE_KINDS = ('verify', 'sandbox')   # the config ledger's image_kind (validate: equal); editions.db images.kind
 # 0.2.226 §2 (E122.75): the edition facet's history as rows (editions.db m6, m7; additive). PROMOTIONS: one row per promote (the advances
-# fold: picture.overview.get's rollback flag, live.org.get's history); BAKES: one row per image.built line (the pin history of live.image.get
+# fold: repos.overview.get's rollback flag, orgs.org.get's history); BAKES: one row per image.built line (the pin history of images.image.get
 # and the ImageCard's last bake). bakes.state is the config ledger's image.built `state` enum (IMAGE_BUILT_STATES) and bakes.reason its
 # `reason` enum (IMAGE_BAKE_REASONS); `failure` is the report's failure word (free, NULL when built). validate: each table's columns
 # beside the key and ledger_seq are exactly its tuple; the two enums equal the config-ledger schema's.
@@ -1178,37 +1216,37 @@ IMAGE_BAKE_REASONS = ('bake', 'rollback', 'custom', 'seed')      # editions.db b
 PROMOTION_COLUMNS = (('from_edition', 'string'), ('to_edition', 'string'), ('actor', 'string'))   # editions.db promotions (m6); key (edition_id, at)
 BAKE_COLUMNS = (('request_commit', 'string'), ('state', 'IMAGE_BUILT_STATES'), ('failure', 'string'), ('reason', 'IMAGE_BAKE_REASONS'),   # editions.db bakes (m7); key (kind, ledger_seq) since m10 (0.2.228, E124 (96): every row comes from one config line; `at` is a plain column; the pin history orders by ledger_seq); 0.2.227 §1 (m10): reason NULL on an unpinned row
                 ('digest', 'string'), ('recipe', 'string'), ('plan_digest', 'string'), ('probe_record', 'json'),   # 0.2.227 §1 (E124 (91), m10): the pin entry's fields, carried from the image.built line at the same write and by the bakes backfill; NULL on a failed bake and on an unpinned row
-                ('track_ref', 'string'), ('artifact_version', 'string'), ('note', 'string'))   # 0.2.230 §3 (E124 (97), m11): the entry's last three fields (errata 0.1.1's tag-layer fields and the report's note), the same carry; NULL on a failed bake and an unpinned row; live.image.get's history entry serves them again
+                ('track_ref', 'string'), ('artifact_version', 'string'), ('note', 'string'))   # 0.2.230 §3 (E124 (97), m11): the entry's last three fields (errata 0.1.1's tag-layer fields and the report's note), the same carry; NULL on a failed bake and an unpinned row; images.image.get's history entry serves them again
 IMAGE_COLUMNS = (('state', 'IMAGE_STORED_STATES'), ('last_bake_failure', 'the last bake line\'s failed state word (build_failed | probe_failed), NULL once a bake builds'), ('last_bake_reason', 'the report\'s failure word'))
-IMAGE_MECHANISM = ('setup.image.check', 'setup.image.check@repo')   # R7: routes with actions, no transitions; the boot re-poll of an open dispatch (0.2.202 §3b) is in-process, no row
+IMAGE_MECHANISM = ('images.image.check', 'images.image.check@repo')   # R7: routes with actions, no transitions; the boot re-poll of an open dispatch (0.2.202 §3b) is in-process, no row
 # 0.2.222 §3 (E122.66): CONTROL state only; the GitHub App's installation events move it (org.toml installation_state, INSTALLATION_STATES above)
 INSTALLATION_TRANSITIONS = (
-    ('—',         'install', 'intake.webhook.receive · installation.created',     'active'),
-    ('deleted',   'install', 'intake.webhook.receive · installation.created',     'active'),      # E124 (36) O7: a re-install
-    ('active',    'suspend', 'intake.webhook.receive · installation.suspended',   'suspended'),
-    ('suspended', 'resume',  'intake.webhook.receive · installation.unsuspended', 'active'),
-    ('active',    'delete',  'intake.webhook.receive · installation.deleted',     'deleted'),
-    ('suspended', 'delete',  'intake.webhook.receive · installation.deleted',     'deleted'),
+    ('—',         'install', 'webhooks.github.receive · installation.created',     'active'),
+    ('deleted',   'install', 'webhooks.github.receive · installation.created',     'active'),      # E124 (36) O7: a re-install
+    ('active',    'suspend', 'webhooks.github.receive · installation.suspended',   'suspended'),
+    ('suspended', 'resume',  'webhooks.github.receive · installation.unsuspended', 'active'),
+    ('active',    'delete',  'webhooks.github.receive · installation.deleted',     'deleted'),
+    ('suspended', 'delete',  'webhooks.github.receive · installation.deleted',     'deleted'),
 )
-INSTALLATION_SETTINGS = ('setup.config.complete', 'setup.contacts.put', 'live.logo.put', 'campaigns.label_map.put', 'setup.repo_features.put', 'live.platform.put')   # the FINAL's setup.label_map.put is the registry's campaigns.label_map.put (a reading)   # R7: DATA state, routes with actions witnessed by the config commit; onboarding.completed is a SETTING (no route is refused before it)
+INSTALLATION_SETTINGS = ('orgs.onboarding.complete', 'config.own_org.put', 'orgs.logo.put', 'config.label_map.put', 'config.repo_features.put', 'live.platform.put')   # the FINAL's config.label_map.put is the registry's config.label_map.put (a reading)   # R7: DATA state, routes with actions witnessed by the config commit; onboarding.completed is a SETTING (no route is refused before it)
 INSTALLATION_REMOVE = ('live.platform.put', 'repo.removed')   # §3: `remove` is its own action and event: the platform write that drops a repo from repos[] writes repo.removed as its witness (the write's other keys are a setting, records: [])
 # 0.2.222 §4 (E122.66): the org's Slack binding, org.toml [notify.slack]; the bind is AUTOMATIC (the staff bind retires); the clear stays
 NOTIFY_STATES = ('unbound', 'requested', 'bound')
 NOTIFY_TRANSITIONS = (
-    ('—',         'configure', 'notify.slack.put',                                              'requested'),   # the customer picks channel + events, no Slack install yet
-    ('unbound',   'configure', 'notify.slack.put',                                              'requested'),
-    ('requested', 'bind',      'notify.install.receive',                                        'bound'),       # AUTOMATIC: Slack's OAuth callback when a channel is picked
-    ('—',         'bind',      'notify.slack.put',                                              'bound'),       # AUTOMATIC: when the install exists
-    ('unbound',   'bind',      'notify.slack.put',                                              'bound'),
-    ('bound',     'bind',      'notify.slack.put',                                              'bound'),       # a re-pick: stays bound; never through unbound
-    ('bound',     'unbind',    'notify.binding.put | notify.events.receive · app_uninstalled | notify.events.receive · tokens_revoked', 'unbound'),   # the staff clear; E124 (36) O8: Slack's app_uninstalled / tokens_revoked words
+    ('—',         'configure', 'notifications.own_binding.put',                                              'requested'),   # the customer picks channel + events, no Slack install yet
+    ('unbound',   'configure', 'notifications.own_binding.put',                                              'requested'),
+    ('requested', 'bind',      'notifications.install.receive',                                        'bound'),       # AUTOMATIC: Slack's OAuth callback when a channel is picked
+    ('—',         'bind',      'notifications.own_binding.put',                                              'bound'),       # AUTOMATIC: when the install exists
+    ('unbound',   'bind',      'notifications.own_binding.put',                                              'bound'),
+    ('bound',     'bind',      'notifications.own_binding.put',                                              'bound'),       # a re-pick: stays bound; never through unbound
+    ('bound',     'unbind',    'notifications.binding.put | webhooks.slack_events.receive · app_uninstalled | webhooks.slack_events.receive · tokens_revoked', 'unbound'),   # the staff clear; E124 (36) O8: Slack's app_uninstalled / tokens_revoked words
 )
-NOTIFY_BINDING_WORDS = ('clear',)   # §4: notify.binding.put loses `bind` (the staff bind retires): the body's enabled is false; interactive_enabled / disabled is a column
-NOTIFY_SLACK_EVENT_WORDS = ('app_uninstalled', 'tokens_revoked')   # notify.events.receive's words the transitions name (Slack's Events API)
-NOTIFY_MECHANISM = ('notify.binding.check', 'notify.internal.check', 'notify.interactions.receive', 'notify.slack.check')   # 0.2.226 §6a (E124 (71)): the customer's own check through the org's install (answers {ok, is_member, channel})   # R7: test posts; the button-press TRANSPORT (R3: a route event of whatever the button presses)
+NOTIFY_BINDING_WORDS = ('clear',)   # §4: notifications.binding.put loses `bind` (the staff bind retires): the body's enabled is false; interactive_enabled / disabled is a column
+NOTIFY_SLACK_EVENT_WORDS = ('app_uninstalled', 'tokens_revoked')   # webhooks.slack_events.receive's words the transitions name (Slack's Events API)
+NOTIFY_MECHANISM = ('notifications.binding.check', 'notifications.internal.check', 'webhooks.slack_interactions.receive', 'notifications.own_binding.check')   # 0.2.226 §6a (E124 (71)): the customer's own check through the org's install (answers {ok, is_member, channel})   # R7: test posts; the button-press TRANSPORT (R3: a route event of whatever the button presses)
 # 0.2.222 §5 (R7): credit is a balance, no machine: every move writes credit.moved (validate: each route's records carry it)
-CREDIT_MOVES = (('set', 'campaigns.org_credits.put'), ('draw', 'campaigns.card.launch'), ('draw', 'strands.strand.accept'),
-                ('refund', 'clock.campaign.stranded_launch'), ('chat_draw', 'conversations.chat.create'))
+CREDIT_MOVES = (('set', 'credits.balance.put'), ('draw', 'campaigns.card.launch'), ('draw', 'strands.strand.accept'),
+                ('refund', 'clock.campaign.stranded_launch'), ('chat_draw', 'conversations.conversations.create'))
 # 0.2.179 §3 (G3, G5, G6): the fold's words -> the stores' vocabularies; every map is TOTAL, and validate holds the two sets
 # equal after the map. The maps are the draft's (CAPABILITY_WORD_MAP 'lowercase', BUG_STATE_WORD_MAP "'-' -> '_'"); the fold's
 # words they map from are data tuples here (G4, ruled): the capability words measured by cBackfill on the prod copy (wire
@@ -1393,7 +1431,7 @@ START_LANDING_CODES = (   # a subset of LINK_LANDING_CODES
     'oauth_unconfigured', # the Slack OAuth provider is not configured
 )
 # 0.2.169 erratum E8 (the door, DECISIONS 2026-10-24T17:17:47Z): the operator added `users:read` to the Slack app the install
-# route requests (`notify.install.redirect`; the notify client, Slack app "Aristo Agent"; "Aretta Code" is a different app and
+# route requests (`notifications.install.redirect`; the notify client, Slack app "Aristo Agent"; "Aretta Code" is a different app and
 # is not touched). The fixed scope string is data; the customer install operation and the admin install callback carry
 # `x-scopes` held equal to it. With users:read, `slack_name` is served live (users.info), never stored. The Slack front
 # (0.2.172 after the door's merge-order renumbering; 0.2.175 erratum E9) added channels:history.
@@ -1413,7 +1451,7 @@ BOX_JOB_KINDS = (
     ('verify',       'the conductor\'s verification run',         'spec.source None',             'command', 'the conductor (its verify rows: `verify` · repo)'),
     ('conversation', 'a 0.7b chat container (specified, unbuilt)', '—',                            'prompt',  'the conductor (0.7b)'),
     # 0.2.202 §1: a seat's image accept dispatches the bake as a box job (tolerate-first: the kind ships before the dispatch)
-    ('image_bake',   'the bake and probe of an org\'s accepted image request, both kinds', 'spec.source None', 'command', 'the conductor (live.image.accept)'),
+    ('image_bake',   'the bake and probe of an org\'s accepted image request, both kinds', 'spec.source None', 'command', 'the conductor (images.image.accept)'),
 )
 # §2 (RULED, the operator): of the per-tenant cap (the org's quotas.max_concurrent, else min(4, max_slots)), ONE slot only a
 # `ci` job may hold. A tenant's non-ci jobs hold at most cap − reserved(ci); ci jobs up to cap; FIFO by (created_at, id)
@@ -1448,8 +1486,8 @@ BOX_KIND_PRIORITIES = (('image_bake', 'ahead of agent, verify and conversation w
 PUBLICATION_HOLD_GATES = (    # (writer, what it does while the org is held)
     ('findings.finding.disclose',      'refuse'),   # a person's act: 409 publication_held, nothing written; 0.2.224 §6b (E124 (54)): replaces the retired findings.issue.create row (0.2.221 §6: the disclose publishes upstream at once)
     ('findings.repair.reject',         'refuse'),
-    ('findings.upstream_pull.publish', 'refuse'),
-    ('findings.pull.publish',          'refuse'),
+    ('pulls.upstream_pull.publish', 'refuse'),
+    ('pulls.pull.publish',          'refuse'),
     ('heal.outcome_write',             'defer'),    # the heal's reopen and comment: recorded, written when the hold clears
     ('publisher.mirror',               'defer'),    # the publisher's mirroring, as today
 )
@@ -1623,7 +1661,7 @@ PIPELINE_STEPS = (        # (step, trigger event, gate, actor, pausable[, basis_
     ('readiness_battery', 'upstream_moved | requested', 'rule',  'seat', True),   # 0.2.225 §3b (E124 (60)): one step, two causes: track.upstream_moved and track.requested (the request battery at the resolved commit); the one-battery-per-commit rule (0.2.224 §4, BATTERY_RULES) applies; no new step word
     ('harness_fix',       'readiness_battery_failed',  'rule: merge when green and run-proven', 'seat', True),   # 0.2.190 §2 (E68.2): on a customer-requested sync (E64) the step's first part is the maintenance card: the rule authors AND finalizes it (source MAINTENANCE_CARD_SOURCE, estimated_by MAINTENANCE_ESTIMATED_BY, the estimate MAINTENANCE_ESTIMATE in whole credits, estimated_duration [maintenance] estimated_duration, words MAINTENANCE_CARD_WORDS), and the fix runs as the campaign's agent job on the customer's launch; on a heal-driven sync the step runs the fix directly, payer aretta (0.2.176 §5)
     ('track_move',        'readiness_battery_green',   'press: track_move strand', 'presser', True),
-    # 0.2.212 §2 (row 7): on a track.reset record (the track_move strand's accept through mirrors.track.reset; the word `cut` reads) a
+    # 0.2.212 §2 (row 7): on a track.reset record (the track_move strand's accept through tracks.track.reset; the word `cut` reads) a
     # candidate-kind verify of the SERVED edition at the moved track's commit (edition_anchor = the served edition, sut_commit = the new
     # commit, line dev, purpose customer, external 0), once per (served edition, commit); its result is the SERVED_RUN for the next
     # promote; no customer post; payer JOB_PAYERS `pipeline` (aretta), job_kind verify. The same dispatch runs on a promote_basis_pending refusal.
@@ -1661,7 +1699,7 @@ RECORD_SHAPE_RULES = (   # errata v3 (the turso FDE, measured on t-turso/bug-que
 # JSON file under runs/<repo>/sessions/, and its wire twin InFlightSession) is OPTIONAL, a VERIFY_STEP_WORDS word. EVERY in-process
 # opener writes it: the clock's steps through the RuleStep marker, the merge-to-main hook battery (readiness_battery), the heal's
 # automatic re-drive (heal_redrive) and the auto grounding verify (grounding_verify, a hook with no PIPELINE_STEPS row); the HTTP route
-# verify.sessions.start NEVER sets it, whatever the credential (a seat's hand post, CI, a person); the HTTP press
+# sessions.sessions.start NEVER sets it, whatever the credential (a seat's hand post, CI, a person); the HTTP press
 # findings.heal.redrive writes heal_redrive_press at open (0.2.225 §3, E124 (59) v2; it wrote none). Absent = a hand post; old records
 # read as absent. `step` is on the INTERNAL session wire only (stripped for external callers, like progress).
 VERIFY_STEP_WORDS = ('readiness_battery', 'candidate_verify', 'external_verify', 'served_remeasure',   # the PIPELINE_STEPS rows that dispatch a verify
@@ -1708,7 +1746,7 @@ COMMIT_SHORT_HEX = 12   # the short commit form everywhere a sentence shows one 
 JOB_PAYERS = (   # (what dispatched the job, the agent_costs.reason it records, who pays)  — 0.2.176 §3's agentic-cost column, now per dispatch
     ('campaigns.cards.launch (a campaign)',                     'launch',       'customer'),   # the existing draw reason
     ('a conversation turn (0.2.182)',                            'chat_message', 'customer'),
-    ('mirrors.track.request_sync (the maintenance campaign)',   'maintenance',  'customer'),
+    ('tracks.track.request_sync (the maintenance campaign)',   'maintenance',  'customer'),
     ('findings.heal.redrive and the heal reconciler',           'heal',         'aretta'),
     ('the readiness battery and the harness fix (0.2.176 §2)',  'pipeline',     'aretta'),
     # 0.2.207 (forge job cost): produced by the conductor's pull of the box's GET /v1/jobs on the campaign observer tick, per org,
@@ -1767,10 +1805,16 @@ BOX_START_ROUTE = 'verify.box_job.start'   # 0.2.234 §7: the registry's box.job
 # 0.2.235 §1 (E122.50; registry RT__INTAKE_FORGE_RECEIVE, secret.forge_hook_secret_conductor): the forge's hooks reach the conductor. The row
 # renders the registry's IdentityAdmission(FORGE_SIGNATURE) as the two sibling signature rows render theirs (hmac:<table>.<key>, the key naming
 # the secret's file: conductor.toml [forge].hook_secret_file, read once at boot); `events` = the registry's demux words, exactly; no caller.
-INTAKE_FORGE_ROUTE = 'intake.forge.receive'
+INTAKE_FORGE_ROUTE = 'webhooks.forge.receive'
 INTAKE_FORGE_AUTH = 'forge.hook_secret_file'   # the hmac: key (conductor.schema.json [forge])
-INTAKE_FORGE_EVENTS = ('issue.created', 'pull_request.merged', 'pull_request.closed', 'label.publish',
-                       'label.verdict.over_strict_dt', 'label.verdict.bug_persists', 'label.verdict.uncertain', 'issue.edited')
+INTAKE_FORGE_EVENTS = ('issue.created',
+                       'issue.edited',
+                       'label.publish',
+                       'label.verdict.bug_persists',
+                       'label.verdict.over_strict_dt',
+                       'label.verdict.uncertain',
+                       'pull_request.closed',
+                       'pull_request.merged')   # the registry's (emit/registry_vocab_tables.py)
 # 0.2.148: a door row's optional `unauthenticated` column: what it answers when no credential is presented, instead of
 # the refusal order's 401. `login_redirect` = 302 to the sign-in (the forge gate, a forward_auth consumer's door). Only a
 # GET `at: sign_in` row may carry it; validate refuses a word no row uses.
@@ -1781,23 +1825,33 @@ CALLERS = ('page', 'seat', 'box', 'cli', 'ci',   # 0.2.200 §1: `ops` retires (t
            'slack')   # 0.2.220 §9: a Slack action button (internal channel for an admin-plane row, the bound customer channel for a customer-plane row)
 # 0.2.220 §9 (operator 2026-11-02: the cut also names the buttons): the registry's `callers` for these rows, as data; validate holds
 # each row's `callers` equal. page = a dashboard button (a dashboard def id); slack = a notify postable with action buttons.
-CALLERS_SET = (
-    ('campaigns.card.author',     ('page',)),   # 0.2.221 R4: seat leaves
-    ('campaigns.card.feedback',   ('page', 'slack', 'seat')),
-    ('campaigns.card.withdraw',   ('page', 'seat')),
-    ('campaigns.card.repropose',  ('page', 'seat')),
-    ('campaigns.card.launch',     ('page', 'slack')),
-    ('strands.strand.comment',    ('page', 'slack')), ('strands.strand.accept', ('page', 'slack')), ('strands.strand.reject', ('page', 'slack')),
-    ('strands.strand.defer',      ('page', 'slack')), ('strands.strand.end', ('page', 'slack')),
-    ('strands.strand.propose',    ('page', 'seat')), ('strands.strand.revise', ('page', 'seat')), ('strands.strand.withdraw', ('page', 'seat')), ('strands.strand.retire', ('page', 'seat')),
-    ('findings.finding.disclose', ('page',)), ('findings.finding.retract', ('page',)), ('findings.finding.curate', ('page',)),
-    ('findings.triage.verdict',   ('page', 'slack')),
-    ('findings.repair.reject',    ('page',)), ('findings.issue.create', ('page',)), ('findings.upstream_pull.publish', ('page',)),
-    ('mirrors.track.reset',       ('page', 'slack')),
-    ('live.track_state.lock',     ('page',)), ('live.track_state.unlock', ('page',)),   # 0.2.222 §1 (E124 (37) 1): staff buttons on the internal repo page's track card
-    ('live.image.accept',         ('seat', 'page', 'slack')),   # 0.2.222 §2: the seat's CLI, and the image strand's accept button (dashboard / Slack) running the target as the presser
-    ('findings.bug.dispose',      ('cli',)), ('campaigns.campaigns.retire', ('cli',)),
-)
+CALLERS_SET = (('campaigns.cards.author', ('page', 'seat')),
+               ('campaigns.card.feedback', ('page', 'seat')),
+               ('campaigns.card.withdraw', ('page', 'seat')),
+               ('campaigns.card.repropose', ('page', 'seat')),
+               ('campaigns.card.launch', ('page', 'slack')),
+               ('strands.strand.comment', ('page', 'slack')),
+               ('strands.strand.accept', ('page', 'slack')),
+               ('strands.strand.reject', ('page', 'slack')),
+               ('strands.strand.defer', ('page', 'slack')),
+               ('strands.strand.end', ('page', 'slack')),
+               ('strands.strands.propose', ('page', 'seat')),
+               ('strands.strand.revise', ('page', 'seat')),
+               ('strands.strand.withdraw', ('page', 'seat')),
+               ('strands.strand.retire', ('page', 'seat')),
+               ('findings.finding.disclose', ('page',)),
+               ('findings.finding.retract', ('page',)),
+               ('findings.finding.curate', ('page',)),
+               ('findings.triage.verdict', ('page', 'slack')),
+               ('findings.repair.reject', ('page',)),
+               ('findings.issue.create', ('page',)),
+               ('pulls.upstream_pull.publish', ('page',)),
+               ('tracks.track.reset', ('page', 'slack')),
+               ('tracks.track.lock', ('page', 'cli')),
+               ('tracks.track.unlock', ('page', 'cli')),
+               ('images.image.accept', ('page', 'seat', 'slack')),
+               ('bugs.bug.dispose', ('cli',)),
+               ('campaigns.campaigns.retire', ('cli',)))   # the registry's (emit/registry_vocab_tables.py)
 # 0.2.220 §1 (E122.31): a strand message that also causes a facet route (the comment on a card's strand is the card's feedback
 # when the presser holds curate_campaign): (strand row, the route it causes)
 STRAND_MESSAGE_CAUSES = (('strands.strand.comment', 'campaigns.card.feedback'),)
@@ -1820,7 +1874,7 @@ HOSTS = ('both', 'staff')                 # the `host` column's words: both = ev
 PLANE_HOSTS = (('admin', 'both'),)        # the plane→host rule: an admin-plane row answers on every host; absent = the org hosts only
 STAFF_HOST_SLUG = 'internal'              # the staff host's slug: the Host's first label, the org slug no org may take
 STAFF_HOST = STAFF_HOST_SLUG + '.<domain>'   # internal.<domain>: <domain> is conductor.toml's `domain` (the org hosts' parent domain)
-STAFF_HOST_ROWS = ('identity.staff.whoami',)   # the rows marked host: staff — served on the staff host and nowhere else
+STAFF_HOST_ROWS = ('auth.staff.whoami',)   # the rows marked host: staff — served on the staff host and nowhere else
 
 
 def host_of(row):
@@ -1846,10 +1900,10 @@ VERBS = ('list', 'get', 'put', 'create', 'delete', 'start', 'cancel', 'accept', 
          'seed', 'upload', 'receive', 'login', 'redirect') + (
          'file',) + (   # 0.2.154: findings.finding.file, the FILE act (vyasa's draft names the row)
          'propose', 'revise', 'comment', 'defer') + (   # 0.2.168: the strand routes' verbs
-         'request_sync',    # 0.2.176 §5: mirrors.track.request_sync (vyasa's draft names the row)
+         'request_sync',    # 0.2.176 §5: tracks.track.request_sync (vyasa's draft names the row)
          'end') + (         # 0.2.182 §1: strands.strand.end (specified-unbuilt until 0.7b)
          'curate', 'retract', 'verdict', 'merge', 'repropose', 'feedback') + (   # 0.2.220: the FINAL names the rows (§§1, 3, 5)
-         'whoami',)   # 0.2.223 §2: identity.staff.whoami (vyasa's draft names the row; the org whoami is identity.whoami.get)
+         'whoami',)   # 0.2.223 §2: auth.staff.whoami (vyasa's draft names the row; the org whoami is auth.whoami.get)
 # The server qualifier `@repo` (rule 2): only the per-repo twins of the org-root setup routes and
 # the per-repo whoami.
 QUALIFIERS = ('repo',)
@@ -2035,10 +2089,10 @@ IMAGE_DISPATCHED_FIELDS = ('commit', 'job_id', 'attempt', 'image_kinds')
 # base images already carry it (95eb07a7). The bake writes it on every image; the box resolves "recipe R at catalogue C" to the
 # local tag carrying this label with value C.
 IMAGE_CATALOGUE_LABEL = 'org.opencontainers.image.revision'
-# 0.2.202 §6: no new token class. The job does not call live.image.report: the conductor reads the job's completion (the
+# 0.2.202 §6: no new token class. The job does not call images.image.report: the conductor reads the job's completion (the
 # verify run's path) and appends image.built itself, moving the pin on state = built; the completion manifest carries the TYPED
 # field image_bake: {kinds: [{kind, report: BuiltReport}]} (never parsed text); the submit is idempotent on (org,
-# request_commit, attempt). live.image.report stays for the hand fallback, called by the seat; a job that posts it is not
+# request_commit, attempt). images.image.report stays for the hand fallback, called by the seat; a job that posts it is not
 # admitted (the job holds no credential).
 # 0.2.207 (forge job cost): the box's GET /v1/jobs page bound, its settle window, and the states it lists (the box's spelling)
 BOX_JOB_LIST_LIMIT = 100
@@ -2090,3 +2144,168 @@ PRICING_CHANGED_FIELDS = ('key', 'old', 'new', 'by')
 # whose repo is listed does not fire (one journal INFO pipeline.paused per skipped fire); the pause is per repo, never per org as a whole.
 CLOCK_LEDGER_KIND = 'clock.paused'   # configevents kind, entity `org`, fields repos (the whole list as written) + by; written on EVERY call, an unchanged list too
 CLOCK_PAUSED_FIELDS = ('repos', 'by')
+
+CONFIG_LEDGER_LINE_KEYS = (('admin.configure', ('key', 'old', 'new', 'actor')),
+                           ('track.requested', ('commit',)),
+                           ('track.accepted', ('commit',)),
+                           ('track.locked', ()),
+                           ('track.unlocked', ()),
+                           ('track.reset', ()),
+                           ('image.requested', ('commit',)),
+                           ('image.accepted', ('commit',)),
+                           ('image.built', ('image_kind', 'state', 'reason', 'digest')),
+                           ('image.unpinned', ('image_kind',)),
+                           ('onboarding.completed', ()),
+                           ('repo.removed', ('closes',)),
+                           ('notify.requested', ('commit',)),
+                           ('notify.bound', ('installation_ref', 'audience')),
+                           ('notify.unbound', ('installation_ref',)),
+                           ('installation.changed', ('installation_state', 'installation_id')),
+                           ('image.dispatched', ('commit', 'job_id', 'attempt', 'image_kinds')),
+                           ('pricing.changed', ('key', 'old', 'new', 'by')),
+                           ('clock.paused', ('repos', 'by')),
+                           ('repo.features_set', ('features',)),
+                           ('platform.changed', ()),
+                           ('contacts.changed', ('contacts',)),
+                           ('theme.changed', ('theme',)),
+                           ('installation.label', ('axis', 'from', 'display', 'status')))   # the registry's (emit/registry_vocab_tables.py)
+ROUTE_RENAMES = (('books.dev_arc.create', 'books.arc.create'),
+                 ('box.images.presence', 'box.images.check'),
+                 ('box.intake.bug', 'box.bugs.create'),
+                 ('box.repo.verify_ref.create', 'box.verify_refs.create'),
+                 ('box.repo.verify_ref.delete', 'box.verify_ref.delete'),
+                 ('campaigns.card.author', 'campaigns.cards.author'),
+                 ('campaigns.credits.get', 'credits.usage.get'),
+                 ('campaigns.health.get', 'repos.health.get'),
+                 ('campaigns.label_map.put', 'config.label_map.put'),
+                 ('campaigns.org_credits.get', 'credits.balance.get'),
+                 ('campaigns.org_credits.put', 'credits.balance.put'),
+                 ('conversations.chat.create', 'conversations.conversations.create'),
+                 ('conversations.conversation.delete', 'strands.conversation.delete'),
+                 ('conversations.conversations.get', 'conversations.conversation.get'),
+                 ('findings.bug.dispose', 'bugs.bug.dispose'),
+                 ('findings.publication.hold', 'findings.publications.hold'),
+                 ('findings.pull.publish', 'pulls.pull.publish'),
+                 ('findings.upstream_pull.publish', 'pulls.upstream_pull.publish'),
+                 ('forge.issue.create', 'forge.issues.create'),
+                 ('forge.status.post', 'forge.statuses.create'),
+                 ('identity.access.explain', 'orgs.access.explain'),
+                 ('identity.audit.list', 'orgs.audit.list'),
+                 ('identity.ci_token.revoke', 'tokens.ci_token.revoke'),
+                 ('identity.ci_tokens.mint', 'tokens.ci_tokens.mint'),
+                 ('identity.ci_tokens.revoke', 'tokens.ci_tokens.revoke'),
+                 ('identity.cli_token.mint', 'tokens.cli_tokens.mint'),
+                 ('identity.cli_token.revoke', 'tokens.cli_token.revoke'),
+                 ('identity.cli_tokens.list', 'tokens.cli_tokens.list'),
+                 ('identity.own_cli_token.revoke', 'tokens.own_token.revoke'),
+                 ('identity.own_cli_tokens.list', 'tokens.own_tokens.list'),
+                 ('identity.own_profile.put', 'auth.profile.put'),
+                 ('identity.own_slack_link.get', 'links.own_link.get'),
+                 ('identity.own_slack_link.revoke', 'links.own_link.revoke'),
+                 ('identity.platform_token.revoke', 'tokens.platform_token.revoke'),
+                 ('identity.platform_tokens.list', 'tokens.platform_tokens.list'),
+                 ('identity.platform_tokens.mint', 'tokens.platform_tokens.mint'),
+                 ('identity.repos.list', 'repos.repos.list'),
+                 ('identity.seat_token.revoke', 'tokens.seat_token.revoke'),
+                 ('identity.seat_tokens.list', 'tokens.seat_tokens.list'),
+                 ('identity.seat_tokens.mint', 'tokens.seat_tokens.mint'),
+                 ('identity.seat_tokens.revoke', 'tokens.seat_tokens.revoke'),
+                 ('identity.session.check', 'auth.session.check'),
+                 ('identity.session.create', 'auth.session.create'),
+                 ('identity.session.login', 'auth.login.redirect'),
+                 ('identity.session.revoke', 'auth.session.revoke'),
+                 ('identity.slack_link.receive', 'links.link.receive'),
+                 ('identity.slack_link.revoke', 'links.link.revoke'),
+                 ('identity.slack_link.start', 'links.link.start'),
+                 ('identity.slack_links.list', 'links.links.list'),
+                 ('identity.staff.whoami', 'auth.staff.whoami'),
+                 ('identity.tokens.list', 'tokens.repo_tokens.list'),
+                 ('identity.tokens.mint', 'tokens.repo_tokens.mint'),
+                 ('identity.tokens.revoke', 'tokens.repo_token.revoke'),
+                 ('identity.whoami.get', 'auth.whoami.get'),
+                 ('identity.whoami.get@repo', 'auth.whoami.get@repo'),
+                 ('intake.forge.receive', 'webhooks.forge.receive'),
+                 ('intake.webhook.receive', 'webhooks.github.receive'),
+                 ('live.digests.list', 'images.digests.list'),
+                 ('live.image.accept', 'images.image.accept'),
+                 ('live.image.get', 'images.image.get'),
+                 ('live.image.report', 'images.image.report'),
+                 ('live.image.unpin', 'images.image.unpin'),
+                 ('live.logo.put', 'orgs.logo.put'),
+                 ('live.org.get', 'orgs.org.get'),
+                 ('live.repo.get', 'repos.repo.get'),
+                 ('live.track_state.lock', 'tracks.track.lock'),
+                 ('live.track_state.unlock', 'tracks.track.unlock'),
+                 ('mirrors.track.request_sync', 'tracks.track.request_sync'),
+                 ('mirrors.track.reset', 'tracks.track.reset'),
+                 ('mirrors.track.sync', 'tracks.track.sync'),
+                 ('notify.binding.check', 'notifications.binding.check'),
+                 ('notify.binding.get', 'notifications.binding.get'),
+                 ('notify.binding.put', 'notifications.binding.put'),
+                 ('notify.channels.list', 'notifications.channels.list'),
+                 ('notify.deliveries.list', 'notifications.deliveries.list'),
+                 ('notify.events.receive', 'webhooks.slack_events.receive'),
+                 ('notify.install.receive', 'notifications.install.receive'),
+                 ('notify.install.redirect', 'notifications.install.redirect'),
+                 ('notify.interactions.receive', 'webhooks.slack_interactions.receive'),
+                 ('notify.internal.check', 'notifications.internal.check'),
+                 ('notify.slack.check', 'notifications.own_binding.check'),
+                 ('notify.slack.get', 'notifications.own_binding.get'),
+                 ('notify.slack.put', 'notifications.own_binding.put'),
+                 ('picture.bugs.get', 'bugs.bug.get'),
+                 ('picture.bugs.list', 'bugs.bugs.list'),
+                 ('picture.canon.match', 'findings.canon.match'),
+                 ('picture.catalogue.get', 'repos.catalogue.get'),
+                 ('picture.finding_history.get', 'findings.history.get'),
+                 ('picture.findings.get', 'findings.finding.get'),
+                 ('picture.findings.list', 'findings.findings.list'),
+                 ('picture.labels.get', 'repos.labels.get'),
+                 ('picture.logo.get', 'orgs.logo.get'),
+                 ('picture.metrics.get', 'repos.metrics.get'),
+                 ('picture.overview.get', 'repos.overview.get'),
+                 ('picture.specgraph.get', 'repos.specgraph.get'),
+                 ('picture.specs.list', 'repos.specs.list'),
+                 ('setup.config.complete', 'orgs.onboarding.complete'),
+                 ('setup.config.complete@repo', 'orgs.onboarding.complete@repo'),
+                 ('setup.config.get', 'config.own_org.get'),
+                 ('setup.config.get@repo', 'config.own_org.get@repo'),
+                 ('setup.contacts.put', 'config.own_org.put'),
+                 ('setup.contacts.put@repo', 'config.own_org.put@repo'),
+                 ('setup.events.list', 'orgs.events.list'),
+                 ('setup.image.check', 'images.image.check'),
+                 ('setup.image.check@repo', 'images.image.check@repo'),
+                 ('setup.image.get', 'images.own_image.get'),
+                 ('setup.image.get@repo', 'images.own_image.get@repo'),
+                 ('setup.image.put', 'images.image.put'),
+                 ('setup.image.put@repo', 'images.image.put@repo'),
+                 ('setup.image_plans.get', 'images.plans.get'),
+                 ('setup.overview.get', 'orgs.overview.get'),
+                 ('setup.queue.get', 'orgs.queue.get'),
+                 ('setup.repo.get', 'config.own_repo.get'),
+                 ('setup.repo.get@repo', 'config.own_repo.get@repo'),
+                 ('setup.repo.put', 'config.own_repo.put'),
+                 ('setup.repo.put@repo', 'config.own_repo.put@repo'),
+                 ('setup.repo_features.get', 'config.repo_features.get'),
+                 ('setup.repo_features.put', 'config.repo_features.put'),
+                 ('setup.repo_preview.get', 'repos.preview.get'),
+                 ('setup.repo_preview.get@repo', 'repos.preview.get@repo'),
+                 ('setup.repo_refs.get', 'repos.refs.get'),
+                 ('setup.repo_refs.get@repo', 'repos.refs.get@repo'),
+                 ('setup.repo_request.get', 'config.repo_request.get'),
+                 ('setup.request.get', 'config.org_request.get'),
+                 ('strands.inbox_all.list', 'strands.inboxes.list'),
+                 ('strands.strand.list', 'strands.strands.list'),
+                 ('strands.strand.propose', 'strands.strands.propose'),
+                 ('tenants.backfill_held.list', 'orgs.backfill_held.list'),
+                 ('tenants.installations_pending.list', 'orgs.pending_installations.list'),
+                 ('tenants.onboard.check', 'orgs.onboarding.check'),
+                 ('tenants.org.retire', 'orgs.org.retire'),
+                 ('tenants.orgs.list', 'orgs.orgs.list'),
+                 ('verify.run.amend', 'runs.run.amend'),
+                 ('verify.run_evidence.get', 'runs.evidence.get'),
+                 ('verify.runs.get', 'runs.run.get'),
+                 ('verify.runs.list', 'runs.runs.list'),
+                 ('verify.sessions.cancel', 'sessions.session.cancel'),
+                 ('verify.sessions.get', 'sessions.session.get'),
+                 ('verify.sessions.list', 'sessions.sessions.list'),
+                 ('verify.sessions.start', 'sessions.sessions.start'))   # the registry's (emit/registry_vocab_tables.py)
