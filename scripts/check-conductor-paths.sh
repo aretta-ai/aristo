@@ -21,7 +21,10 @@ case "$v" in *"$PIN"*) ;; *) echo "check-conductor-paths: rustfmt is '$v', the p
 
 out=$(mktemp -d "${TMPDIR:-/tmp}/conductor-paths.XXXXXX")
 trap 'rm -rf "$out"' EXIT
-python3 -B "$spec/scripts/generate-routes.py" --registry "$spec/routes/registry.yaml" --out "$out"
+# The generator also writes enum schemas and a CI stub next to the registry, so it runs on a copy:
+# spec/ keeps exactly the files its .sha256 lists.
+cp -R "$spec" "$out/spec"
+python3 -B "$out/spec/scripts/generate-routes.py" --registry "$out/spec/routes/registry.yaml" --out "$out"
 fresh="$out/cli/crates/aristo-core/src/conductor/paths.rs"
 "$RUSTFMT" --edition 2021 "$fresh"
 

@@ -8,6 +8,8 @@ See [`CLAUDE.md`](./CLAUDE.md) §3 for the discipline.
 
 ## [Unreleased]
 
+- ci: the conductor-paths drift check regenerates from a copy of the vendored registry, so `spec/` holds only the files its sha256 list locks.
+
 ## [0.8.4] — 2026-10-19
 
 ### Changed
